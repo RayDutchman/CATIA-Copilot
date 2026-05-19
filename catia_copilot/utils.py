@@ -118,12 +118,24 @@ def _find_catia_v5_in_rot():
                     )
                     continue
                 dispatch = _wcc_dynamic.Dispatch(idispatch)
-                _ = dispatch.Name   # 功能性测试
-                if _is_catia_v5_dispatch(dispatch):
-                    logger.debug(f"通过 ROT 枚举找到 CATIA V5 COM 对象：{display_name}")
-                    return dispatch
-                else:
+                _ = dispatch.Name   # 浅层功能性测试
+                if not _is_catia_v5_dispatch(dispatch):
                     logger.debug(f"ROT moniker [{display_name}] 不是 CATIA V5，跳过")
+                    continue
+                # 深层可用性测试：访问 Documents 集合，确认跨权限时深层 COM 调用
+                # 也可正常工作。仅 Name 可用但 Documents 不可用说明存在权限隔离
+                # （例如 CATIA 以管理员运行、本程序以普通用户运行），此时应返回 None
+                # 而非返回一个"半可用"对象，使调用方能正确识别为 broken 状态。
+                try:
+                    _ = dispatch.Documents
+                except Exception as deep_exc:
+                    logger.debug(
+                        f"ROT moniker [{display_name}] 深层访问（Documents）失败，"
+                        f"可能存在权限隔离：{deep_exc}"
+                    )
+                    continue
+                logger.debug(f"通过 ROT 枚举找到 CATIA V5 COM 对象：{display_name}")
+                return dispatch
             except Exception as exc:
                 logger.debug(f"ROT moniker [{display_name}] 处理失败：{exc}")
                 continue
@@ -353,12 +365,15 @@ def _is_catia_process_running() -> bool:
     无需管理员权限。返回 True 表示进程存在，False 表示不存在或检测失败。
     """
     import subprocess
+    # CREATE_NO_WINDOW 防止打包为无控制台 exe 时子进程弹出黑色终端窗口
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq CNEXT.exe", "/NH"],
+            [r"C:\Windows\System32\tasklist.exe", "/FI", "IMAGENAME eq CNEXT.exe", "/NH"],
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=no_window,
         )
         # tasklist 找到匹配项时输出中会包含 "CNEXT.exe"
         return "CNEXT.exe" in result.stdout
@@ -433,16 +448,22 @@ def check_catia_connection() -> str:
 
     返回以下三种状态之一：
 
-    - ``"connected"``    — CATIA V5 进程存在，COM 对象可获取，功能性测试通过。
+    - ``"connected"``    — COM 对象可获取，功能性测试通过。
     - ``"broken"``       — CATIA V5 进程存在，但所有 COM 连接方式均失败（包括权限
                            不匹配导致的 UAC ROT 隔离）；或 COM 对象可获取但属性访问失败。
     - ``"disconnected"`` — CATIA V5 未运行或 win32com 不可用。
 
     检测策略（按优先级）：
-    1. CNEXT.exe 进程不在 → 直接返回 "disconnected"，跳过所有 COM 调用。
-    2. 快速路径：用上次成功的 key（_last_working_key）尝试一次，命中则返回 "connected"。
-    3. 全量探测：注册表 ProgID → 已知 CLSID → ROT 枚举。
-    4. 全部失败 → "broken"。
+    1. 快速路径：用上次成功的 key（_last_working_key）尝试一次，命中则返回 "connected"。
+    2. 全量探测：注册表 ProgID → 已知 CLSID → ROT 枚举。
+    3. 全部失败时调用 _is_catia_process_running() 区分：
+       - 进程存在 → "broken"（COM 隔离或权限不匹配）
+       - 进程不存在 → "disconnected"
+
+    注意：不再将 _is_catia_process_running() 用作快速短路条件，原因是：
+    某些安全软件会屏蔽 tasklist 对特定进程的可见性（CNEXT.exe 被隐藏），
+    导致进程已运行但 _is_catia_process_running() 返回 False，从而错误地
+    跳过 COM 探测，指示器持续显示"未连接"。
     """
     global _last_working_key, _prev_connection_status
 
@@ -455,11 +476,6 @@ def check_catia_connection() -> str:
         return status
 
     if _win32com_client is None:
-        return _report("disconnected")
-
-    # ── 进程快速短路 ─────────────────────────────────────────────────────
-    if not _is_catia_process_running():
-        _last_working_key = None
         return _report("disconnected")
 
     import win32com.client as _wcc
@@ -515,8 +531,16 @@ def check_catia_connection() -> str:
     # （ROT 枚举仅保留在 get_catia_v5_com_dispatch() 中作为最后手段；
     #  此处轮询路径不做 ROT 枚举，避免每 5 秒遍历全部 ROT 条目带来的性能损耗）
 
-    logger.debug("CNEXT.exe 存在但所有 COM 方式均失败 → broken")
-    return _report("broken")
+    # ── 所有 COM 方式均失败：用进程检测区分 broken / disconnected ──────────
+    # 注意：tasklist 可能被安全软件屏蔽，仅作为区分依据，不作为前置短路条件。
+    if _is_catia_process_running():
+        logger.debug("CNEXT.exe 存在但所有 COM 方式均失败 → broken")
+        _last_working_key = None
+        return _report("broken")
+
+    logger.debug("CNEXT.exe 未检测到 → disconnected")
+    _last_working_key = None
+    return _report("disconnected")
 
 
 def diagnose_catia_connection() -> dict:

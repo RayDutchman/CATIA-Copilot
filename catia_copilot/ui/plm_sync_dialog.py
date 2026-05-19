@@ -10,11 +10,14 @@ PLM 同步对话框。
 
 import logging
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QSettings, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -24,14 +27,39 @@ from PySide6.QtWidgets import (
 
 logger = logging.getLogger(__name__)
 
-# ── PLM 连接配置（后续可做成可配置界面） ──────────────────────────────────────
+# ── PLM 连接配置默认值 ────────────────────────────────────────────────────────
+# 实际使用值由 QSettings 持久化；常量仅在首次启动（无保存记录时）作为初始值。
 # 注意：必须用 127.0.0.1 而非 localhost。
 # Windows 将 localhost 解析为 ::1（IPv6）优先，Payara 仅监听 IPv4，
 # 导致每次 TCP 连接等待 21 秒超时后才回落到 127.0.0.1，每个零件耗时 63 秒以上。
-_PLM_BASE_URL  = "http://127.0.0.1:8001/docdoku-plm-server-rest/api"
-_PLM_LOGIN     = "admin"
-_PLM_PASSWORD  = "password"
-_PLM_WORKSPACE = "Workspace_0"
+_DEFAULT_PLM_BASE_URL  = "http://127.0.0.1:8001/docdoku-plm-server-rest/api"
+_DEFAULT_PLM_LOGIN     = "admin"
+_DEFAULT_PLM_PASSWORD  = "password"
+_DEFAULT_PLM_WORKSPACE = "Workspace_0"
+
+_SETTINGS_ORG = "CATIACompanion"
+_SETTINGS_APP = "PlmConfig"
+
+
+def _load_plm_config() -> dict:
+    """从 QSettings 读取 PLM 连接配置，不存在则返回默认值。"""
+    s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+    return {
+        "base_url":  s.value("base_url",  _DEFAULT_PLM_BASE_URL),
+        "login":     s.value("login",     _DEFAULT_PLM_LOGIN),
+        "password":  s.value("password",  _DEFAULT_PLM_PASSWORD),
+        "workspace": s.value("workspace", _DEFAULT_PLM_WORKSPACE),
+    }
+
+
+def _save_plm_config(cfg: dict) -> None:
+    """将 PLM 连接配置写入 QSettings 持久化。"""
+    s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+    s.setValue("base_url",  cfg["base_url"])
+    s.setValue("login",     cfg["login"])
+    s.setValue("password",  cfg["password"])
+    s.setValue("workspace", cfg["workspace"])
+    s.sync()
 
 
 # ── 后台工作线程 ──────────────────────────────────────────────────────────────
@@ -44,12 +72,13 @@ class _SyncWorker(QThread):
     """
 
     # 进度日志信号（文本行）
-    log_line = Signal(str)
+    log_line    = Signal(str)
     finished_ok = Signal(str)
     finished_err = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, cfg: dict, parent=None):
         super().__init__(parent)
+        self._cfg      = cfg
         self._bom_root = None
 
     def prepare(self) -> bool:
@@ -77,12 +106,16 @@ class _SyncWorker(QThread):
         from catia_copilot.plm.api_client import PlmApiClient, PlmApiError
         from catia_copilot.plm.sync import sync_bom_to_plm
 
-        self.log_line.emit("正在连接 PLM 服务端……")
-        client = PlmApiClient(_PLM_BASE_URL)
+        cfg = self._cfg
+        self.log_line.emit(f"正在连接 PLM 服务端：{cfg['base_url']} …")
+        client = PlmApiClient(cfg["base_url"])
         try:
-            client.login(_PLM_LOGIN, _PLM_PASSWORD)
+            client.login(cfg["login"], cfg["password"])
         except PlmApiError as exc:
-            self.finished_err.emit(f"PLM 登录失败：{exc}\n\n请确认 DocdokuPLM 服务已启动。")
+            self.finished_err.emit(
+                f"PLM 登录失败：{exc}\n\n请确认 DocdokuPLM 服务已启动，"
+                f"并检查连接配置是否正确。"
+            )
             return
         self.log_line.emit("PLM 登录成功，开始同步……")
 
@@ -90,7 +123,7 @@ class _SyncWorker(QThread):
             result = sync_bom_to_plm(
                 bom_root=self._bom_root,
                 client=client,
-                workspace=_PLM_WORKSPACE,
+                workspace=cfg["workspace"],
                 upload_step=False,
                 progress_callback=lambda msg: self.log_line.emit(msg),
             )
@@ -113,29 +146,59 @@ class PlmSyncDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("同步 BOM 到 PLM")
-        self.setMinimumWidth(520)
-        self.setMinimumHeight(360)
+        self.setMinimumWidth(540)
+        self.setMinimumHeight(420)
         self._worker: _SyncWorker | None = None
+        self._cfg = _load_plm_config()
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
+        # ── 连接配置区域 ──────────────────────────────────────────────────────
+        cfg_group = QGroupBox("PLM 连接配置")
+        cfg_form  = QFormLayout(cfg_group)
+        cfg_form.setContentsMargins(8, 8, 8, 8)
+
+        self._edit_url       = QLineEdit(self._cfg["base_url"])
+        self._edit_login     = QLineEdit(self._cfg["login"])
+        self._edit_password  = QLineEdit(self._cfg["password"])
+        self._edit_workspace = QLineEdit(self._cfg["workspace"])
+
+        self._edit_password.setEchoMode(QLineEdit.Password)
+        self._edit_url.setPlaceholderText("http://127.0.0.1:8001/docdoku-plm-server-rest/api")
+        self._edit_workspace.setPlaceholderText("Workspace_0")
+
+        cfg_form.addRow("服务端地址：", self._edit_url)
+        cfg_form.addRow("用户名：",     self._edit_login)
+        cfg_form.addRow("密码：",       self._edit_password)
+        cfg_form.addRow("工作区：",     self._edit_workspace)
+
+        self._btn_save_cfg = QPushButton("保存配置")
+        self._btn_save_cfg.setFixedWidth(90)
+        self._btn_save_cfg.clicked.connect(self._save_config)
+        cfg_form.addRow("", self._btn_save_cfg)
+
+        layout.addWidget(cfg_group)
+
+        # ── 状态标签 ──────────────────────────────────────────────────────────
         self._status_label = QLabel('点击"开始同步"将当前 CATIA 产品结构同步到 DocdokuPLM。')
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
+        # ── 不定进度条 ────────────────────────────────────────────────────────
         self._progress = QProgressBar()
-        self._progress.setRange(0, 0)   # 不定进度
+        self._progress.setRange(0, 0)
         self._progress.setVisible(False)
         layout.addWidget(self._progress)
 
+        # ── 日志区域 ──────────────────────────────────────────────────────────
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(500)
         layout.addWidget(self._log)
 
-        # 按钮行
+        # ── 按钮行 ────────────────────────────────────────────────────────────
         self._btn_start = QPushButton("开始同步")
         self._btn_start.clicked.connect(self._start_sync)
 
@@ -144,9 +207,40 @@ class PlmSyncDialog(QDialog):
         btn_box.addButton(self._btn_start, QDialogButtonBox.ActionRole)
         layout.addWidget(btn_box)
 
-    # ── 槽函数 ────────────────────────────────────────────────────────────────
+    # ── 配置相关槽 ────────────────────────────────────────────────────────────
+
+    def _read_config_from_ui(self) -> dict:
+        """从 UI 控件读取当前配置值。"""
+        return {
+            "base_url":  self._edit_url.text().strip(),
+            "login":     self._edit_login.text().strip(),
+            "password":  self._edit_password.text(),
+            "workspace": self._edit_workspace.text().strip(),
+        }
+
+    def _save_config(self) -> None:
+        """保存配置到 QSettings，并更新内存中的 _cfg。"""
+        cfg = self._read_config_from_ui()
+        if not cfg["base_url"]:
+            QMessageBox.warning(self, "配置错误", "服务端地址不能为空。")
+            return
+        if not cfg["workspace"]:
+            QMessageBox.warning(self, "配置错误", "工作区不能为空。")
+            return
+        _save_plm_config(cfg)
+        self._cfg = cfg
+        self._status_label.setText("配置已保存。")
+        logger.info(f"PLM 配置已保存：url={cfg['base_url']}  workspace={cfg['workspace']}")
+
+    # ── 同步相关槽 ────────────────────────────────────────────────────────────
 
     def _start_sync(self) -> None:
+        # 同步前先用 UI 当前值（允许临时修改但未点保存的情况也能生效）
+        cfg = self._read_config_from_ui()
+        if not cfg["base_url"] or not cfg["workspace"]:
+            QMessageBox.warning(self, "配置不完整", "请填写服务端地址和工作区后再同步。")
+            return
+
         self._btn_start.setEnabled(False)
         self._log.clear()
         self._progress.setVisible(True)
@@ -154,7 +248,7 @@ class PlmSyncDialog(QDialog):
 
         # parent=None：不让 dialog 管理 worker 的生命周期，
         # 避免 dialog 关闭时 Qt 析构正在运行的 QThread 导致崩溃
-        self._worker = _SyncWorker(parent=None)
+        self._worker = _SyncWorker(cfg=cfg, parent=None)
         self._worker.log_line.connect(self._append_log)
         self._worker.finished_ok.connect(self._on_success)
         self._worker.finished_err.connect(self._on_error)
