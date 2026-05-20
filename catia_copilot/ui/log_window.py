@@ -38,9 +38,11 @@ class LogWindow(QWidget):
 
         self._log_view = QPlainTextEdit()
         self._log_view.setReadOnly(True)
+        self._log_view.setObjectName("logView")  # 字体跟随 QSS（LOG_FONT_FAMILY / LOG_FONT_SIZE）
         self._log_view.setStyleSheet(
-            "background-color: #1e1e1e; color: #d4d4d4;"
-            " font-family: Consolas, 'Courier New', monospace; font-size: 9pt;"
+            "QPlainTextEdit#logView {"
+            " background-color: #1e1e1e; color: #d4d4d4;"
+            "}"
         )
         layout.addWidget(self._log_view)
 

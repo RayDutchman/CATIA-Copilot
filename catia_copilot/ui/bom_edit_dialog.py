@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressDialog, QRadioButton, QButtonGroup,
     QMenu, QWidgetAction, QLineEdit,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut
+from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush
 from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
 
 from catia_copilot.constants import (
@@ -49,7 +49,9 @@ from catia_copilot.ui.ui_colors import (
     MODIFIED_FG          as _MODIFIED_FG,
     MODIFIED_COMBO_STYLE as _MODIFIED_COMBO_STYLE,
     ROW_LOCKED_FG, ROW_NOT_FOUND_BG, ROW_LIGHTWEIGHT_BG, ROW_UNSAVED_BG,
+    get_colors as _get_colors,
 )
+from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 
 logger = logging.getLogger(__name__)
 
@@ -403,6 +405,9 @@ class BomEditDialog(QDialog):
         saved_geom = self._edit_settings.value("geometry")
         if isinstance(saved_geom, QByteArray) and not saved_geom.isEmpty():
             self.restoreGeometry(saved_geom)
+
+        # ── 主题切换：重新着色所有行 ──────────────────────────────────────────
+        theme_signal.theme_changed.connect(self._on_theme_changed)
 
     # ── 文件/活动文档切换 ─────────────────────────────────────────────────────
 
@@ -909,8 +914,9 @@ class BomEditDialog(QDialog):
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
                 item.setData(0, _ITEM_LOCKED_ROLE, False)
             else:
-                grey = ROW_LOCKED_FG
-                bg   = ROW_NOT_FOUND_BG if not_found else ROW_LIGHTWEIGHT_BG
+                c    = _get_colors(theme_manager.current_mode())
+                grey = c.ROW_LOCKED_FG
+                bg   = c.ROW_NOT_FOUND_BG if not_found else c.ROW_LIGHTWEIGHT_BG
                 item.setData(0, _ITEM_LOCKED_ROLE, True)
                 for ci in range(len(self._columns)):
                     item.setForeground(ci, grey)
@@ -925,10 +931,10 @@ class BomEditDialog(QDialog):
 
             # _no_file 行（文件未保存到磁盘）：不锁定，但以淡黄背景和专属提示标识
             if no_file:
-                bg_unsaved = ROW_UNSAVED_BG
+                c = _get_colors(theme_manager.current_mode())
                 no_file_tip = "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。"
                 for ci in range(len(self._columns)):
-                    item.setBackground(ci, bg_unsaved)
+                    item.setBackground(ci, c.ROW_UNSAVED_BG)
                     item.setToolTip(ci, no_file_tip)
 
         self._table.expandAll()
@@ -957,6 +963,52 @@ class BomEditDialog(QDialog):
                 yield from _walk(parent.child(i))
         for i in range(self._table.topLevelItemCount()):
             yield from _walk(self._table.topLevelItem(i))
+
+    # ── 主题切换响应 ──────────────────────────────────────────────────────────
+
+    def _on_theme_changed(self, mode: str) -> None:
+        """主题切换时重新着色所有行，并刷新已修改字段的前景色。"""
+        if not self._bom_loaded:
+            return
+        self._recolor_all_items(mode)
+        if self._modified_keys:
+            self._refresh_pns_appearance(set(self._modified_keys.keys()))
+
+    def _recolor_all_items(self, mode: str) -> None:
+        """按当前主题颜色重新为所有树形行设置背景/前景色。
+
+        仅处理行状态色（locked/unsaved）；已修改字段的橙色前景由
+        _refresh_pns_appearance 单独处理。
+        """
+        c = _get_colors(mode)
+        col_count = len(self._columns)
+        self._is_updating = True
+        try:
+            for item in self._iter_all_items():
+                row_idx = item.data(0, Qt.ItemDataRole.UserRole)
+                if row_idx is None:
+                    continue
+                row_data   = self._rows[row_idx]
+                not_found  = bool(row_data.get("_not_found"))
+                unreadable = bool(row_data.get("_unreadable"))
+                no_file    = bool(row_data.get("_no_file"))
+                row_locked = not_found or unreadable
+                # 先清除现有行级颜色（保留列级修改色，由后续 _refresh_pns_appearance 处理）
+                default_brush = QBrush()
+                for ci in range(col_count):
+                    item.setBackground(ci, default_brush)
+                    # 前景只清锁定行颜色；已修改字段颜色由 _refresh_pns_appearance 负责
+                    if item.data(0, _ITEM_LOCKED_ROLE):
+                        item.setData(ci, Qt.ItemDataRole.ForegroundRole, None)
+                if row_locked:
+                    for ci in range(col_count):
+                        item.setForeground(ci, c.ROW_LOCKED_FG)
+                        item.setBackground(ci, c.ROW_NOT_FOUND_BG if not_found else c.ROW_LIGHTWEIGHT_BG)
+                elif no_file:
+                    for ci in range(col_count):
+                        item.setBackground(ci, c.ROW_UNSAVED_BG)
+        finally:
+            self._is_updating = False
 
     # ── "来源"下拉框变更 ──────────────────────────────────────────────────────
 
@@ -1293,6 +1345,7 @@ class BomEditDialog(QDialog):
         # 用 _is_updating 标志屏蔽这些信号，避免循环触发。
         self._is_updating = True
         try:
+            c = _get_colors(theme_manager.current_mode())
             for pn in pns:
                 items = self._pn_to_items.get(pn, [])
                 modified_cols = self._modified_keys.get(pn, set())
@@ -1306,14 +1359,14 @@ class BomEditDialog(QDialog):
                         widget = self._table.itemWidget(item, col_idx)
                         if isinstance(widget, QComboBox):
                             widget.setStyleSheet(
-                                _MODIFIED_COMBO_STYLE if is_modified else ""
+                                c.MODIFIED_COMBO_STYLE if is_modified else ""
                             )
                         else:
                             if is_modified:
                                 font = item.font(col_idx)
                                 font.setBold(True)
                                 item.setFont(col_idx, font)
-                                item.setForeground(col_idx, _MODIFIED_FG)
+                                item.setForeground(col_idx, c.MODIFIED_FG)
                             else:
                                 # 清除 ForegroundRole 和 FontRole 的自定义数据，
                                 # 让 Qt 回退到默认外观（普通字重、默认文本色）。
@@ -2157,14 +2210,22 @@ class BomEditDialog(QDialog):
             self._rename_selected_file()
 
     def _open_path(self, fp: str) -> None:
-        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。"""
+        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
+
+        使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
+        cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
+        """
+        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():
-                # 对路径加引号，以确保 Explorer 能正确处理含空格的目录名
-                subprocess.Popen(f'explorer /select,"{p}"', shell=True)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'/select,"{p}"', None, 1
+                )
             elif p.parent.exists():
-                subprocess.Popen(f'explorer "{p.parent}"', shell=True)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'"{p.parent}"', None, 1
+                )
         except Exception as exc:
             logger.warning(f"Failed to open path in Explorer: {exc}")
 

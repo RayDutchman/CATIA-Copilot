@@ -2,7 +2,7 @@
 CATIA Copilot - 应用程序入口点。
 
 所有应用逻辑都在 ``catia_copilot`` 包中实现。
-本文件仅负责启动 Qt 应用程序并显示主窗口。
+本文件负责启动 Qt 应用程序、初始化主题并显示主窗口。
 """
 
 import sys
@@ -13,32 +13,30 @@ import catia_copilot.logging_setup  # noqa: F401
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 from catia_copilot.utils import resource_path, ensure_clean_gencache
-from catia_copilot.constants import STYLESHEET_RELATIVE_PATH, APP_ICON_PATH
+from catia_copilot.constants import APP_ICON_PATH
 from catia_copilot.ui.main_window import MainWindow
 
 
 def main() -> None:
     """应用程序主入口函数。
 
-    初始化 Qt 应用程序，加载样式表和图标，显示主窗口。
+    初始化 Qt 应用程序，加载主题，显示主窗口。
     """
     # 清理 win32com 早绑定缓存，防止 gencache 污染 COM 连接
     ensure_clean_gencache()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("CATIA Copilot 1.6.0")
+    app.setApplicationName("CATIA Copilot")
 
-    # 应用统一的 QSS 样式表
-    qss_path = resource_path(STYLESHEET_RELATIVE_PATH)
-    if qss_path.exists():
-        app.setStyleSheet(qss_path.read_text(encoding="utf-8"))
-
-    # 设置应用程序图标（resources/icon.ico）；如果文件不存在则静默跳过
+    # 设置应用程序图标（resources/icon.ico）
     icon_path = resource_path(APP_ICON_PATH)
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
     window = MainWindow()
+    # 将应用图标同步到自定义标题栏
+    if not app.windowIcon().isNull():
+        window._title_bar.set_app_icon(app.windowIcon())
     window.show()
     sys.exit(app.exec())
 

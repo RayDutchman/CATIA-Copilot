@@ -12,6 +12,15 @@
 #   resources/icon.ico
 # Then uncomment the `icon=` line in the EXE block below.
 
+# 从 constants.py 自动读取版本号，避免手动维护多处硬编码。
+# 使用正则解析而非 import，防止 spec 执行时触发应用代码的副作用。
+import re as _re
+_ver = _re.search(
+    r'APP_VERSION\s*=\s*"([^"]+)"',
+    open('catia_copilot/constants.py', encoding='utf-8').read(),
+).group(1)
+_app_name = f"CATIA Copilot {_ver}"
+
 block_cipher = None
 
 a = Analysis(
@@ -44,8 +53,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='CATIA Copilot 1.7.0',
-    debug=False,
+    name=_app_name,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
@@ -66,5 +74,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='CATIA Copilot 1.7.0',
+    name=_app_name,
 )

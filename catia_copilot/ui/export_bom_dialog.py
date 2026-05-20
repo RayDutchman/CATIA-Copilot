@@ -207,7 +207,8 @@ class ExportBomDialog(QDialog):
         up_btn     = QPushButton("↑")
         down_btn   = QPushButton("↓")
         for btn in (add_btn, remove_btn, up_btn, down_btn):
-            btn.setFixedWidth(36)
+            btn.setFixedSize(36, 32)
+            btn.setStyleSheet("padding: 4px 2px;")
         add_btn.clicked.connect(self._add_column)
         remove_btn.clicked.connect(self._remove_column)
         up_btn.clicked.connect(self._move_up)
@@ -488,12 +489,21 @@ class ExportBomDialog(QDialog):
             self._open_path(str(dest_path))
 
     def _open_path(self, fp: str) -> None:
-        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。"""
+        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
+
+        使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
+        cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
+        """
+        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():
-                subprocess.Popen(f'explorer /select,"{p}"', shell=True)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'/select,"{p}"', None, 1
+                )
             elif p.parent.exists():
-                subprocess.Popen(f'explorer "{p.parent}"', shell=True)
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'"{p.parent}"', None, 1
+                )
         except Exception as exc:
             logger.warning(f"Failed to open path in Explorer: {exc}")

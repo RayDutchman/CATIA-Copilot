@@ -1,53 +1,102 @@
-"""集中定义 UI 行状态颜色令牌。
+"""集中定义 UI 行状态颜色令牌，支持深色 / 浅色双主题。
 
-所有颜色值均使用 ``"#rrggbb"`` 十六进制字符串，VS Code 内置调色板会在
-悬停时自动激活，方便直接在此文件中调色。修改此文件即可同步更新整个应用
-的配色，无需分别修改各 dialog 文件。
+颜色值均使用 ``"#rrggbb"`` 十六进制字符串，VS Code 内置调色板会在
+悬停时自动激活，方便直接在此文件中调色。
 
-配色语义 & 触发条件速查（背景色均为柔和色调，避免长时间阅读疲劳）：
+用法：
+  from catia_copilot.ui.ui_colors import get_colors
+  c = get_colors(theme_manager.current_mode())  # "dark" 或 "light"
+  item.setBackground(ci, c.ROW_NOT_FOUND_BG)
 
-  颜色         常量名               触发 flag / 条件
-  ──────────── ──────────────────── ─────────────────────────────────────────
-  深橙（前景） MODIFIED_FG          字段已在 UI 中修改但尚未写回 CATIA
-  中灰（前景） ROW_LOCKED_FG        行处于锁定状态（_not_found / _unreadable /
-                                   _meas_failed）时，叠加于行背景色之上
-  红           ROW_NOT_FOUND_BG     row_data["_not_found"] = True
-                                   （文件未被 CATIA 检索到）
-  灰           ROW_LIGHTWEIGHT_BG   row_data["_unreadable"] = True
-                                   （轻量化模式，无法读取属性）
-  黄           ROW_UNSAVED_BG       row_data["_no_file"] = True
-                                   （零件尚未保存到磁盘）
-  琥珀         ROW_MEAS_FAILED_BG   row_data["_meas_failed"] = True
-                                   （质量特性测量失败；仅 mass_props_dialog）
-  蓝灰         ROW_PRODUCT_BG       row_data["Type"] in ("产品", "部件")
-                                   （产品/部件汇总行；仅 mass_props_dialog）
-  薰衣草（背景）EXCL_BG             row_data["_excluded"] = True
-                                   （行已被手动排除，不参与汇总计算）
-  深紫（前景） EXCL_FG              同上，与 EXCL_BG 同时生效
-  蓝           MIRROR_BG            row_data["_is_mirror"] = True
-                                   （对称件虚拟镜像行；仅 mass_props_dialog）
+配色语义 & 触发条件速查：
+
+  常量名               触发 flag / 条件
+  ──────────────────── ─────────────────────────────────────────
+  MODIFIED_FG          字段已在 UI 中修改但尚未写回 CATIA
+  ROW_LOCKED_FG        行处于锁定状态，叠加于行背景色之上
+  ROW_NOT_FOUND_BG     row_data["_not_found"] = True
+  ROW_LIGHTWEIGHT_BG   row_data["_unreadable"] = True（轻量化模式）
+  ROW_UNSAVED_BG       row_data["_no_file"] = True（未保存到磁盘）
+  ROW_MEAS_FAILED_BG   row_data["_meas_failed"] = True（仅 mass_props_dialog）
+  ROW_PRODUCT_BG       row_data["Type"] in ("产品","部件")（仅 mass_props_dialog）
+  EXCL_BG              row_data["_excluded"] = True
+  EXCL_FG              同上，与 EXCL_BG 同时生效
+  MIRROR_BG            row_data["_is_mirror"] = True（仅 mass_props_dialog）
 """
 
+from __future__ import annotations
+from dataclasses import dataclass
 from PySide6.QtGui import QColor
 
-# ── BOM 编辑 dialog：已修改但未写回 CATIA 的字段视觉样式 ──────────────────────
-# 触发：字段值与原始 CATIA 属性不同（_modified_keys 中存在该字段）
-MODIFIED_FG          = QColor("#c05800")   # 深橙色：已修改字段的文字色
-MODIFIED_COMBO_STYLE = "QComboBox { font-weight: bold; color: #c05800; }"  # 下拉框样式
 
-# ── 共用行状态颜色（BOM 编辑 + 质量特性两个 dialog 均使用） ──────────────────
-# ROW_LOCKED_FG 总是与下方某一背景色同时叠加，不单独出现
-ROW_LOCKED_FG      = QColor("#909090")   # 中灰前景：行锁定时覆盖文字色
-ROW_NOT_FOUND_BG   = QColor("#ffcccc")   # 红背景：_not_found=True（文件未被检索到）
-ROW_LIGHTWEIGHT_BG = QColor("#ebebeb")   # 灰背景：_unreadable=True（轻量化模式）
-ROW_UNSAVED_BG     = QColor("#fff9c4")   # 黄背景：_no_file=True（未保存到磁盘）
+@dataclass(frozen=True)
+class RowColors:
+    """一套完整的行状态颜色 + 样式表字符串，深色/浅色各一个实例。"""
+    MODIFIED_FG:         QColor
+    MODIFIED_COMBO_STYLE: str
+    ROW_LOCKED_FG:       QColor
+    ROW_NOT_FOUND_BG:    QColor
+    ROW_LIGHTWEIGHT_BG:  QColor
+    ROW_UNSAVED_BG:      QColor
+    ROW_MEAS_FAILED_BG:  QColor
+    ROW_PRODUCT_BG:      QColor
+    EXCL_BG:             QColor
+    EXCL_FG:             QColor
+    MIRROR_BG:           QColor
 
-# ── 质量特性 dialog：额外行状态颜色 ───────────────────────────────────────────
-ROW_MEAS_FAILED_BG = QColor("#ffe0b3")   # 琥珀背景：_meas_failed=True（测量失败）
-ROW_PRODUCT_BG     = QColor("#dde8f5")   # 蓝灰背景：Type in ("产品","部件")（汇总行）
-EXCL_BG            = QColor("#d8d4f0")   # 薰衣草背景：_excluded=True（已排除行）
-EXCL_FG            = QColor("#5858a0")   # 深紫前景：_excluded=True，与 EXCL_BG 同时生效
-MIRROR_BG          = QColor("#c8e4ff")   # 蓝背景：_is_mirror=True（对称件虚拟行）
 
-# ── BOM 树控件：层级连接线颜色 ─────────────────────────────────────────────────
-WIDGET_LINE_COLOR  = QColor("#a0aab4")   # 树形控件层级连接线颜色
+# ── 浅色主题（默认）──────────────────────────────────────────────────────────
+_LIGHT = RowColors(
+    MODIFIED_FG          = QColor("#c05800"),   # 深橙：已修改字段文字
+    MODIFIED_COMBO_STYLE = "QComboBox { font-weight: bold; color: #c05800; }",
+    ROW_LOCKED_FG        = QColor("#909090"),   # 中灰：锁定行文字
+    ROW_NOT_FOUND_BG     = QColor("#ffcccc"),   # 粉红：_not_found
+    ROW_LIGHTWEIGHT_BG   = QColor("#ebebeb"),   # 浅灰：_unreadable（轻量化）
+    ROW_UNSAVED_BG       = QColor("#fff9c4"),   # 浅黄：_no_file（未保存）
+    ROW_MEAS_FAILED_BG   = QColor("#ffe0b3"),   # 浅橙：_meas_failed（测量失败）
+    ROW_PRODUCT_BG       = QColor("#dde8f5"),   # 浅蓝灰：产品/部件汇总行
+    EXCL_BG              = QColor("#d8d4f0"),   # 薰衣草：_excluded（已排除）
+    EXCL_FG              = QColor("#5858a0"),   # 深紫：_excluded 前景
+    MIRROR_BG            = QColor("#c8e4ff"),   # 浅蓝：_is_mirror（对称件）
+)
+
+# ── 深色主题（柔和暗色调，避免在深色背景上过于刺眼）────────────────────────
+_DARK = RowColors(
+    MODIFIED_FG          = QColor("#ff9040"),   # 亮橙：深色背景下可读
+    MODIFIED_COMBO_STYLE = "QComboBox { font-weight: bold; color: #ff9040; }",
+    ROW_LOCKED_FG        = QColor("#767676"),   # 中灰：锁定行文字
+    ROW_NOT_FOUND_BG     = QColor("#5a2020"),   # 暗红：_not_found
+    ROW_LIGHTWEIGHT_BG   = QColor("#383838"),   # 深灰：_unreadable（轻量化）
+    ROW_UNSAVED_BG       = QColor("#484510"),   # 暗黄：_no_file（未保存）
+    ROW_MEAS_FAILED_BG   = QColor("#4a3010"),   # 暗琥珀：_meas_failed（测量失败）
+    ROW_PRODUCT_BG       = QColor("#1e3050"),   # 深蓝：产品/部件汇总行
+    EXCL_BG              = QColor("#28254a"),   # 深薰衣草：_excluded（已排除）
+    EXCL_FG              = QColor("#a8a8e0"),   # 浅紫：_excluded 前景（深色背景可读）
+    MIRROR_BG            = QColor("#1a3550"),   # 深蓝：_is_mirror（对称件）
+)
+
+
+def get_colors(mode: str) -> RowColors:
+    """根据主题模式返回对应的行状态颜色集。
+
+    :param mode: "dark" 或 "light"（其他值等同于 "light"）
+    """
+    return _DARK if mode == "dark" else _LIGHT
+
+
+# ── 向后兼容：保留模块级常量（均为浅色主题值）────────────────────────────────
+# 旧代码可继续直接导入这些常量；新代码请改用 get_colors()。
+MODIFIED_FG          = _LIGHT.MODIFIED_FG
+MODIFIED_COMBO_STYLE = _LIGHT.MODIFIED_COMBO_STYLE
+ROW_LOCKED_FG        = _LIGHT.ROW_LOCKED_FG
+ROW_NOT_FOUND_BG     = _LIGHT.ROW_NOT_FOUND_BG
+ROW_LIGHTWEIGHT_BG   = _LIGHT.ROW_LIGHTWEIGHT_BG
+ROW_UNSAVED_BG       = _LIGHT.ROW_UNSAVED_BG
+ROW_MEAS_FAILED_BG   = _LIGHT.ROW_MEAS_FAILED_BG
+ROW_PRODUCT_BG       = _LIGHT.ROW_PRODUCT_BG
+EXCL_BG              = _LIGHT.EXCL_BG
+EXCL_FG              = _LIGHT.EXCL_FG
+MIRROR_BG            = _LIGHT.MIRROR_BG
+
+# ── 树控件层级连接线颜色（与主题无关，保持不变）──────────────────────────────
+WIDGET_LINE_COLOR = QColor("#a0aab4")

@@ -4,8 +4,7 @@ CATIA BOM → DocdokuPLM 同步逻辑。
 入口函数：sync_bom_to_plm()
   - 从当前活动 CATIA 文档读取完整产品结构（BOM）
   - 后序深度优先遍历（子节点先于父节点同步）
-  - 每个节点：create_part → update_iteration（属性 + 子组件列表）→ checkin
-  - 可选：导出 STEP 并上传几何文件
+  - 每个节点按 SyncOptions 指定的策略处理 checkout / update / checkin
   - 返回 SyncResult（汇总创建数、跳过数、失败数）
 
 注意：所有 CATIA COM 调用必须在主线程中完成，BOM 数据提取后
@@ -16,9 +15,57 @@ BOM 提取，调用方负责线程调度。
 import logging
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
+from catia_copilot.constants import PRESET_USER_REF_PROPERTIES, PLM_BUILTIN_ATTR_COLS
+
 logger = logging.getLogger(__name__)
+
+
+# ── 同步选项 ──────────────────────────────────────────────────────────────────
+
+class ExistingPartPolicy(Enum):
+    """已存在零件（Checked In 状态）的处理策略。"""
+    SKIP          = "skip"           # 跳过，不做任何更新
+    CHECKOUT_UPDATE = "checkout_update"  # Checkout 后更新属性（推荐）
+
+
+class CheckedOutByOtherPolicy(Enum):
+    """零件已被他人 Checkout 时的处理策略。"""
+    SKIP          = "skip"           # 跳过并记录警告（不计入 failed）
+    FORCE_UNDO    = "force_undo"     # 尝试撤销他人签出（PLM-07：当前版本实际无效，会降级为 SKIP）
+
+
+class OwnCheckedOutPolicy(Enum):
+    """零件已由当前用户 Checkout（未签入）时的处理策略。"""
+    UPDATE        = "update"         # 直接更新（利用现有签出）
+    SKIP          = "skip"           # 跳过并计入失败统计
+
+
+class AfterUpdatePolicy(Enum):
+    """更新属性后的处理策略。"""
+    CHECKIN       = "checkin"        # 自动 Check In（推荐）
+    KEEP_CHECKOUT = "keep_checkout"  # 保留 Checked Out 状态
+
+
+@dataclass
+class SyncOptions:
+    """同步策略选项，由 UI 对话框收集后传入 sync_bom_to_plm()。"""
+    # 已存在零件（Checked In）的处理方式
+    existing_part_policy: ExistingPartPolicy = ExistingPartPolicy.CHECKOUT_UPDATE
+
+    # Workspace 中不存在的零件是否新建
+    create_new_parts: bool = True
+
+    # 我自己已 Checkout 但未 Checkin 的零件：是否继续更新？
+    own_checked_out_policy: OwnCheckedOutPolicy = OwnCheckedOutPolicy.UPDATE
+
+    # 他人已 Checkout 的零件：强制撤销还是跳过？
+    other_checked_out_policy: CheckedOutByOtherPolicy = CheckedOutByOtherPolicy.SKIP
+
+    # 更新完成后是否自动 Check In
+    after_update_policy: AfterUpdatePolicy = AfterUpdatePolicy.CHECKIN
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
@@ -26,25 +73,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BomNode:
     """BOM 树中的一个节点（对应 CATIA 零件或组件）。"""
-    part_number: str          # CATIA Part Number
-    name: str                 # 显示名称
-    description: str = ""     # 描述
-    # ── CATIA 内置属性 ────────────────────────────────────────────────────────
-    nomenclature: str = ""    # 术语（中文名称）
-    revision: str = ""        # 版本
-    definition: str = ""      # 定义
-    source: str = ""          # 来源（未知 / 自制 / 外购）
-    # ── 用户自定义属性 ────────────────────────────────────────────────────────
-    material: str = ""        # 材料
-    weight: str = ""          # 重量（字符串，单位 kg）
-    part_type: str = ""       # 零件类型
-    design_status: str = ""   # 设计状态
-    material_code: str = ""   # 物料编码
-    stock_category: str = ""  # 存货类别
-    spec: str = ""            # 规格型号
-    remark: str = ""          # 备注
+    part_number: str
+    # 所有属性统一存入 attrs，键名与 CATIA 列名一致：
+    #   内置属性使用英文列名（Nomenclature / Definition / Revision / Source / Description）
+    #   自定义属性使用 UserRefProperty 键名（中文，如"材料"/"重量"等）
+    attrs: dict[str, str] = field(default_factory=dict)
     children: list["BomNode"] = field(default_factory=list)
-    # 叶子节点（零件）保存 pycatia Part 对象引用，用于导出 STEP（预留）
     _catia_ref: Any = field(default=None, repr=False)
 
 
@@ -52,76 +86,54 @@ class BomNode:
 class SyncResult:
     """同步操作汇总结果。"""
     created: int = 0
-    skipped: int = 0
+    updated: int = 0   # 已存在，成功更新
+    skipped: int = 0   # 按策略跳过（不计入失败）
     failed: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
     def total(self) -> int:
-        return self.created + self.skipped + self.failed
+        return self.created + self.updated + self.skipped + self.failed
 
     def summary(self) -> str:
         lines = [
             f"同步完成：共 {self.total} 个节点",
             f"  ✓ 新建：{self.created}",
-            f"  → 已存在（更新）：{self.skipped}",
+            f"  ✓ 已更新：{self.updated}",
+            f"  → 已跳过：{self.skipped}",
             f"  ✗ 失败：{self.failed}",
         ]
         if self.errors:
-            lines.append("\n失败详情：")
+            lines.append("\n失败 / 警告详情：")
             for e in self.errors[:10]:
                 lines.append(f"  · {e}")
             if len(self.errors) > 10:
-                lines.append(f"  … 共 {len(self.errors)} 条错误")
+                lines.append(f"  … 共 {len(self.errors)} 条")
         return "\n".join(lines)
 
 
 # ── BOM 提取（CATIA COM，须在主线程调用） ──────────────────────────────────────
 
-# 需要从 CATIA 读取的自定义属性列（与 UserRefProperties 键名一致）
-_CUSTOM_COLS = ["零件类型", "设计状态", "材料", "重量", "物料编码", "存货类别", "规格型号", "备注"]
+# 从 constants 引入，避免重复定义：
+#   PLM_BUILTIN_ATTR_COLS  — DocdokuPLM 内置属性列（Nomenclature/Definition/Revision/Source/Description）
+#   PRESET_USER_REF_PROPERTIES — 用户自定义属性列（零件类型/设计状态/材料/重量…）
+_BUILTIN_ATTR_COLS = PLM_BUILTIN_ATTR_COLS
+_CUSTOM_COLS       = PRESET_USER_REF_PROPERTIES
+_ALL_ATTR_COLS: list[str] = _BUILTIN_ATTR_COLS + _CUSTOM_COLS
 
-# 列名 → BomNode 字段名映射（自定义属性；PLM 属性名 = CATIA 列名）
-_COL_TO_FIELD = {
-    "零件类型":  "part_type",
-    "设计状态":  "design_status",
-    "材料":      "material",
-    "重量":      "weight",
-    "物料编码":  "material_code",
-    "存货类别":  "stock_category",
-    "规格型号":  "spec",
-    "备注":      "remark",
-}
+# PLM instanceAttributes 时跳过的列
+_STRUCTURAL_COLS: frozenset[str] = frozenset({
+    "Level", "Type", "Filename", "Filepath", "Part Number", "Quantity",
+    "Nomenclature",   # 已作为零件名称（name 字段）写入
+})
 
-# CATIA 内置属性：CATIA 列名 → (BomNode 字段名, PLM 属性显示名)
-# Source 原始值为 "0"/"1"/"2"，在读取时转换为 "未知"/"自制"/"外购"
-_BUILTIN_COL_TO_FIELD_AND_PLM = {
-    "Nomenclature": ("nomenclature", "中文名称"),
-    "Revision":     ("revision",     "版本"),
-    "Definition":   ("definition",   "定义"),
-    "Source":       ("source",       "来源"),
-}
-
-# 网络错误（URLError，status_code==0）时的重试参数
-_RETRY_MAX:        int   = 2       # 最多重试次数
-_RETRY_DELAYS:     list  = [1, 3]  # 每次重试前的等待秒数（指数退避）
+# 网络错误重试参数
+_RETRY_MAX:    int  = 2
+_RETRY_DELAYS: list = [1, 3]
 
 
 def extract_bom(progress_callback=None) -> BomNode | None:
-    """从当前活动 CATIA 文档提取 BOM 树。
-
-    须在主线程中调用（COM 线程亲和性）。
-
-    委托 bom_collect.collect_bom_rows() 完成实际产品树遍历（包含
-    reference_product.part_number 处理、design_mode 切换、属性缓存等），
-    再通过 _rows_to_bom_tree() 将平面行列表还原为 BomNode 树。
-
-    参数：
-        progress_callback: 可选回调 (message: str)，用于更新进度提示
-
-    返回：
-        BomNode 根节点，或 None（无活动文档或出错时）
-    """
+    """从当前活动 CATIA 文档提取 BOM 树（须在主线程调用）。"""
     from catia_copilot.catia.bom_collect import collect_bom_rows
 
     def _cb(msg: str) -> None:
@@ -131,21 +143,12 @@ def extract_bom(progress_callback=None) -> BomNode | None:
 
     _cb("正在读取 BOM……")
 
-    def _row_cb(count: int) -> None:
-        _cb(f"  已读取 {count} 个节点……")
-
     try:
         rows = collect_bom_rows(
-<<<<<<< Updated upstream
-            file_path=None,           # 使用当前活动文档
-            columns=list(_BUILTIN_COL_TO_FIELD_AND_PLM.keys()) + _CUSTOM_COLS,  # 内置 + 自定义
-            custom_columns=_CUSTOM_COLS,                                         # 仅自定义
-=======
             file_path=None,
             columns=_ALL_ATTR_COLS,
             custom_columns=_CUSTOM_COLS,
->>>>>>> Stashed changes
-            progress_callback=_row_cb,
+            progress_callback=lambda count: _cb(f"  已读取 {count} 个节点……"),
         )
     except Exception as exc:
         logger.error(f"BOM 提取失败：{exc}")
@@ -161,52 +164,33 @@ def extract_bom(progress_callback=None) -> BomNode | None:
 
 
 def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
-    """将 collect_bom_rows() 返回的平面层级行列表转换为 BomNode 树。
-
-    行按前序（父先于子）排列，Level 字段表示深度（根节点为 0）。
-    使用栈恢复父子关系。
-    """
+    """将平面层级行列表转换为 BomNode 树。"""
     if not rows:
         return None
 
     from catia_copilot.constants import SOURCE_TO_DISPLAY
 
     root: BomNode | None = None
-    # stack[i] 存储当前路径上深度为 i 的节点
     stack: list[BomNode] = []
 
     for row in rows:
         level = int(row.get("Level", 0))
-        pn = str(row.get("Part Number") or "").strip()
-        name = str(row.get("Filename") or pn or "UNKNOWN")
+        pn    = str(row.get("Part Number") or "").strip()
         if not pn:
-            pn = name
+            pn = str(row.get("Filename") or "UNKNOWN").strip()
 
-        node = BomNode(part_number=pn, name=name)
-
-<<<<<<< Updated upstream
-        # 读取自定义属性
-        for col, field_name in _COL_TO_FIELD.items():
-=======
+        node = BomNode(part_number=pn)
         for col in _ALL_ATTR_COLS:
->>>>>>> Stashed changes
             val = str(row.get(col) or "").strip()
-            if val:
-                setattr(node, field_name, val)
-
-        # 读取 CATIA 内置属性（Source 数值转中文显示名）
-        for catia_col, (field_name, _plm_name) in _BUILTIN_COL_TO_FIELD_AND_PLM.items():
-            val = str(row.get(catia_col) or "").strip()
-            if catia_col == "Source":
+            if col == "Source":
                 val = SOURCE_TO_DISPLAY.get(val, val)
             if val:
-                setattr(node, field_name, val)
+                node.attrs[col] = val
 
         if level == 0:
-            root = node
+            root  = node
             stack = [node]
         else:
-            # 弹出栈中层级 >= 当前层级的节点，找到直接父节点
             while len(stack) > level:
                 stack.pop()
             if stack:
@@ -216,30 +200,90 @@ def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
     return root
 
 
+# ── 日志辅助 ──────────────────────────────────────────────────────────────────
+
+
+def _dw(s: str) -> int:
+    """返回字符串的终端显示宽度（ASCII=1，CJK=2）。"""
+    w = 0
+    for ch in s:
+        cp = ord(ch)
+        if (0x1100 <= cp <= 0x115F or 0x2E80 <= cp <= 0x303E or
+                0x3040 <= cp <= 0x33FF or 0x3400 <= cp <= 0x4DBF or
+                0x4E00 <= cp <= 0xA4CF or 0xAC00 <= cp <= 0xD7FF or
+                0xF900 <= cp <= 0xFAFF or 0xFE30 <= cp <= 0xFE6F or
+                0xFF01 <= cp <= 0xFF60 or 0xFFE0 <= cp <= 0xFFE6):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _ljust(s: str, width: int) -> str:
+    """按显示宽度右填充空格（正确处理中文）。"""
+    return s + " " * max(width - _dw(s), 0)
+
+
+# 各列显示宽度（= 最宽内容显示宽 + 1 间距）
+_W1 = 13   # 列1：最宽"覆盖他人签出"dw=12，+1
+_W2 = 11   # 列2：最宽"属性已写入"dw=10，+1
+_W3 = 9    # 列3：最宽"保留签出"dw=8，+1
+
+
+def _lbl(part_number: str, name: str | None) -> str:
+    """有名称时返回 '编号<名称>'，无名称时只返回编号。"""
+    n = (name or "").strip()
+    if n:
+        return f"{part_number}<{n}>"
+    return part_number
+
+
+def _log_row(col1: str, col2: str, col3: str, lbl: str) -> str:
+    """三列 + 零件标识，列间用 ' | ' 分隔，按显示宽度对齐。"""
+    return f"  {_ljust(col1,_W1)} | {_ljust(col2,_W2)} | {_ljust(col3,_W3)} | {lbl}"
+
+
+# 跳过/失败行前缀均为 4 个 ASCII 字符（">>  " / "[X] "）
+# 普通行 lbl 前显示宽 = 2 + W1 + 3 + W2 + 3 + W3 + 3 = W1+W2+W3+11
+# 跳过行 lbl 前显示宽 = 2 + 4(">>  ") + reason_dw + 3(" | ") = reason_dw + 9
+# => reason_dw = W1+W2+W3+2
+_W_REASON = _W1 + _W2 + _W3 + 2
+
+
+def _log_skip(reason: str, lbl: str) -> str:
+    """跳过行。"""
+    return f"  >>  {_ljust(reason, _W_REASON)} | {lbl}"
+
+
+def _log_fail(reason: str, lbl: str) -> str:
+    """失败行。"""
+    return f"  [X] {_ljust(reason, _W_REASON)} | {lbl}"
+
+
+def _log_header() -> str:
+    """返回日志表头和分隔线（两行，用 \\n 连接）。"""
+    h1, h2, h3, h4 = "签出来源", "更新结果", "签入状态", "零件标识"
+    header = f"  {_ljust(h1,_W1)} | {_ljust(h2,_W2)} | {_ljust(h3,_W3)} | {h4}"
+    sep_w  = 2 + _W1 + 3 + _W2 + 3 + _W3 + 3 + 4
+    sep    = "  " + "-" * (sep_w - 2)
+    return f"{header}\n{sep}"
+
+
 # ── PLM 同步（可在后台线程调用） ──────────────────────────────────────────────
 
 def sync_bom_to_plm(
     bom_root: BomNode,
     client,
     workspace: str,
+    options: SyncOptions | None = None,
     upload_step: bool = False,
     progress_callback=None,
 ) -> SyncResult:
-    """将 BOM 树同步到 DocdokuPLM。
-
-    本函数不涉及 CATIA COM 调用，可在后台线程中安全执行。
-
-    参数：
-        bom_root:          extract_bom() 返回的根节点
-        client:            已登录的 PlmApiClient 实例
-        workspace:         PLM 工作区名称
-        upload_step:       是否导出并上传 STEP 几何文件（暂未实现，预留接口）
-        progress_callback: 可选回调 (message: str)
-
-    返回：
-        SyncResult 汇总
-    """
+    """将 BOM 树同步到 DocdokuPLM（不涉及 CATIA COM，可在后台线程执行）。"""
     from catia_copilot.plm.api_client import PlmApiError
+
+    if options is None:
+        options = SyncOptions()
 
     result = SyncResult()
 
@@ -248,7 +292,7 @@ def sync_bom_to_plm(
             progress_callback(msg)
         logger.debug(msg)
 
-    # 确保模板存在（失败不阻断同步，改为警告并以 tpl_id=None 继续）
+    # 确保模板存在（失败不阻断同步）
     tpl_id: str | None = None
     try:
         tpl_id = client.ensure_part_template(workspace)
@@ -256,22 +300,13 @@ def sync_bom_to_plm(
         logger.warning(f"模板初始化失败（将以无模板方式继续）：{exc}")
         _cb(f"警告：模板初始化失败，将以无模板方式继续 — {exc}")
 
-    # 后序遍历：子节点先于父节点处理
-    _sync_node(bom_root, client, workspace, tpl_id, result, _cb)
+    _cb(_log_header())
+    _sync_node(bom_root, client, workspace, tpl_id, options, result, _cb)
     return result
 
 
 def _plm_call_with_retry(fn, *args, max_retries: int = _RETRY_MAX, **kwargs):
-    """包装一次 PLM API 调用，对网络层错误（status_code==0）自动重试。
-
-    其他 HTTP 错误（4xx / 5xx）不重试，直接抛出。
-
-    参数：
-        fn:          可调用对象（PlmApiClient 的某个方法）
-        *args:       位置参数
-        max_retries: 最大重试次数（默认 _RETRY_MAX）
-        **kwargs:    关键字参数
-    """
+    """对网络层错误（status_code==0）自动重试，HTTP 4xx/5xx 不重试。"""
     from catia_copilot.plm.api_client import PlmApiError
 
     last_exc: Exception | None = None
@@ -279,17 +314,35 @@ def _plm_call_with_retry(fn, *args, max_retries: int = _RETRY_MAX, **kwargs):
         try:
             return fn(*args, **kwargs)
         except PlmApiError as exc:
-            # 仅对纯网络错误（URLError，status_code==0）重试
             if exc.status_code != 0:
                 raise
             last_exc = exc
             if attempt < max_retries:
                 delay = _RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)]
-                logger.warning(
-                    f"网络错误，{delay}s 后重试（{attempt + 1}/{max_retries}）：{exc}"
-                )
+                logger.warning(f"网络错误，{delay}s 后重试（{attempt + 1}/{max_retries}）：{exc}")
                 time.sleep(delay)
     raise last_exc  # type: ignore[misc]
+
+
+def _get_checkout_owner(client, workspace: str, part_number: str, version: str) -> str | None:
+    """查询零件当前的 checkout 持有者用户名，未签出时返回 None。
+
+    通过 GET /parts/{pn}-{ver} 响应体中的 checkOutUser 字段判断。
+    若服务端不返回该字段，则返回 None（按未签出处理）。
+    """
+    ws = urllib.parse.quote(workspace) if False else workspace  # 已在调用前 quote，此处直接用
+    try:
+        from catia_copilot.plm.api_client import PlmApiError
+        import urllib.parse as _up
+        ws_q  = _up.quote(workspace)
+        pn_q  = _up.quote(part_number)
+        result = client._request("GET", f"/workspaces/{ws_q}/parts/{pn_q}-{version}") or {}
+        # checkOutUser 是嵌套对象 {"login": ..., ...}，未签出时为 null
+        # 文档确认无顶级 checkOutLogin 字段
+        user = (result.get("checkOutUser") or {}).get("login")
+        return str(user).strip() if user else None
+    except Exception:
+        return None
 
 
 def _sync_node(
@@ -297,155 +350,228 @@ def _sync_node(
     client,
     workspace: str,
     tpl_id: str | None,
+    options: SyncOptions,
     result: SyncResult,
     cb,
 ) -> tuple[str, str] | None:
-    """递归同步单个 BOM 节点，返回 (part_number, 最新版本) 或 None（失败时）。
+    """递归同步单个 BOM 节点，返回 (part_number, version) 或 None（失败时）。
 
-    子组件版本：子节点同步完成后，调用 _get_latest_version 取 PLM 当前最新版本，
-    确保父级 child_components 中引用的永远是子节点在 PLM 里的实际最新版本，
-    而非首次创建时返回的初始版本。
+    零件状态机：
+        新建  → 服务端自动处于 WIP（已由创建者 checkout）→ update → [checkin]
+        已存在 Checked In    → 按 existing_part_policy 决定是否 checkout
+        已存在 Checked Out by me    → 按 own_checked_out_policy 决定是否 update
+        已存在 Checked Out by other → 按 other_checked_out_policy 决定是否强制撤销
     """
     from catia_copilot.plm.api_client import PlmApiError
 
-    # 1. 递归处理子节点（后序），收集子组件引用（含最新版本）
+    # 1. 递归处理子节点（后序），并取各子节点 PLM 最新版本
     child_components = []
     for child in node.children:
-        ref = _sync_node(child, client, workspace, tpl_id, result, cb)
+        ref = _sync_node(child, client, workspace, tpl_id, options, result, cb)
         if ref:
             child_pn, _ver = ref
-            # 取 PLM 当前最新版本，确保父级引用始终是最新版本
-            # （多次同步后零件可能已升版，_ver 可能已过时）
             try:
                 _, latest_ver, _ = _plm_call_with_retry(
                     client._get_latest_version, workspace, child_pn
                 )
             except PlmApiError:
-                # 查询最新版本失败时回退到本次同步返回的版本
                 latest_ver = _ver
-            child_components.append(
-                {"component": {"number": child_pn, "version": latest_ver}}
-            )
+            child_components.append({"component": {"number": child_pn, "version": latest_ver}})
 
-    pn = node.part_number
-    cb(f"同步：{pn}")
+    pn        = node.part_number
+    nom       = (node.attrs.get("Nomenclature") or "").strip()   # 为空则不显示
+    plm_name  = nom or pn                                         # create_part 的 name 字段兜底用编号
+    lbl       = _lbl(pn, nom)                                     # 日志标识：只在有 Nomenclature 时显示 <名称>
 
-<<<<<<< Updated upstream
-    # 2. 创建零件
+    # 2. 用 POST /parts 探测零件是否存在，同时完成新建
+    #    GET /parts/{pn}-{ver} 在服务端存在全局 NPE bug（PLM-06），无法可靠判断零件是否存在；
+    #    POST /parts：成功(200) → 零件不存在已新建；400"不唯一" → 零件已存在；其他 → 失败
     try:
-        part_number, version = client.create_part(workspace, pn, node.description, tpl_id)
-=======
-    # PLM 零件名称 = Nomenclature；若为空则回退到零件编号
-    plm_name = node.attrs.get("Nomenclature") or pn
-
-    # 2. 创建或获取零件；同时确定当前可写迭代号
-    iteration      = 1
-    needs_checkout = False
-    try:
-        part_number, version = _plm_call_with_retry(
+        part_number, version, iteration = _plm_call_with_retry(
             client.create_part,
             workspace, pn, plm_name,
             node.attrs.get("Description", ""),
             tpl_id,
         )
->>>>>>> Stashed changes
-        result.created += 1
-    except PlmApiError as exc:
-        if exc.status_code == 409:
-            # 已存在，获取当前版本
+        # 新建成功，服务端自动 checkout
+        if not options.create_new_parts:
+            # 不新建模式：立即 checkin 再删除，然后跳过
             try:
-<<<<<<< Updated upstream
-                part_number, version = client._get_latest_version(workspace, pn)
-=======
-                part_number, version, iteration = _plm_call_with_retry(
-                    client._get_latest_version, workspace, pn
-                )
->>>>>>> Stashed changes
-                result.skipped += 1
-            except PlmApiError as exc2:
-                result.failed += 1
-                result.errors.append(f"{pn}: 查询现有版本失败 — {exc2}")
-                cb(f"  ✗ {pn}: 查询现有版本失败 — {exc2}")
-                return None
-        else:
-            result.failed += 1
-            result.errors.append(f"{pn}: 创建失败 — {exc}")
-            cb(f"  ✗ {pn}: 创建失败 — {exc}")
+                _plm_call_with_retry(client.checkin_part, workspace, part_number, version)
+                _plm_call_with_retry(client.delete_part, workspace, part_number, version)
+            except PlmApiError:
+                pass  # 清理失败不影响跳过逻辑
+            result.skipped += 1
+            cb(_log_skip("跳过-不新建", lbl))
             return None
-
-<<<<<<< Updated upstream
-    # 3. 更新属性
-    attr_values = {}
-    # 自定义属性（PLM 属性名 = CATIA 列名）
-    for attr_name, field_name in _COL_TO_FIELD.items():
-        val = getattr(node, field_name, "")
-        if val:
-            attr_values[attr_name] = val
-    # CATIA 内置属性（PLM 属性名 = 中文显示名）
-    for _catia_col, (field_name, plm_name) in _BUILTIN_COL_TO_FIELD_AND_PLM.items():
-        val = getattr(node, field_name, "")
-        if val:
-            attr_values[plm_name] = val
-
-    try:
-        client.update_iteration(
-            workspace, part_number, version, 1,
-            attr_values, child_components,
+        result.created += 1
+        return _do_update_and_checkin(
+            node, lbl, "新建", client, workspace, part_number, version, iteration,
+            child_components, options, result, cb,
         )
     except PlmApiError as exc:
-        logger.warning(f"属性更新失败（{pn}）：{exc}")
-        # 属性更新失败不阻断后续步骤
-=======
-    # 3. 已存在零件：checkout 产生新迭代后才能写属性
-    if needs_checkout:
+        if exc.status_code == 400 and "不唯一" in str(exc):
+            # 零件已存在，继续走已存在流程
+            part_number, version = pn, "A"
+        else:
+            result.failed += 1
+            msg = f"创建失败({exc.status_code})"
+            result.errors.append(f"{lbl}: {msg} — {exc}")
+            cb(_log_fail(msg, lbl))
+            return None
+
+    # 3. 零件已存在
+
+    # ── 已存在零件：查询 checkout 状态 ──────────────────────────────────────
+    checkout_owner = _get_checkout_owner(client, workspace, part_number, version)
+
+    if checkout_owner is None:
+        # 状态：Checked In（无人签出）
+        if options.existing_part_policy == ExistingPartPolicy.SKIP:
+            result.skipped += 1
+            result.errors.append(f"{lbl}: 跳过（策略：不更新已签入零件）")
+            cb(_log_skip("跳过-已签入", lbl))
+            return part_number, version
+
+        # CHECKOUT_UPDATE：尝试签出
         try:
             iteration = _plm_call_with_retry(
                 client.checkout_part, workspace, part_number, version
             )
         except PlmApiError as exc:
-            # 区分「被他人锁定（403）」与其他错误，给用户明确提示
-            if exc.status_code == 403:
-                msg = (
-                    f"{pn}: 零件已被其他用户锁定（checkout），"
-                    f"属性未更新 — {exc}"
-                )
-            else:
-                msg = f"{pn}: checkout 失败（{exc.status_code}），属性未更新 — {exc}"
             result.failed += 1
-            result.errors.append(msg)
-            cb(f"  ✗ {msg}")
-            # checkout 失败时仍返回 (pn, version)，使父级可以引用该零件，
-            # 但本节点计入 failed
+            msg = f"签出失败({exc.status_code})"
+            result.errors.append(f"{lbl}: {msg} — {exc}")
+            cb(_log_fail(msg, lbl))
             return part_number, version
 
-    # 4. 更新属性：直接使用 node.attrs，跳过结构性列
+        return _do_update_and_checkin(
+            node, lbl, "签出", client, workspace, part_number, version, iteration,
+            child_components, options, result, cb,
+        )
+
+    # 判断是否为当前登录用户
+    current_login = getattr(client, "_login", None)
+    is_mine = (current_login is not None and checkout_owner.lower() == current_login.lower())
+
+    if is_mine:
+        # 状态：Checked Out by me — 始终直接更新
+        try:
+            _, _, iteration = _plm_call_with_retry(
+                client._get_latest_version, workspace, part_number
+            )
+        except PlmApiError:
+            iteration = 1
+        return _do_update_and_checkin(
+            node, lbl, "已签出-本人", client, workspace, part_number, version, iteration,
+            child_components, options, result, cb,
+        )
+
+    else:
+        # 状态：Checked Out by other
+        if options.other_checked_out_policy == CheckedOutByOtherPolicy.SKIP:
+            result.skipped += 1
+            result.errors.append(f"{lbl}: 已被 {checkout_owner} 签出，已跳过")
+            cb(_log_skip(f"跳过-被@{checkout_owner}", lbl))
+            return part_number, version
+
+        # FORCE_UNDO：尝试强制撤销他人签出
+        try:
+            _plm_call_with_retry(
+                client.force_undo_checkout, workspace, part_number, version
+            )
+        except PlmApiError as exc:
+            result.skipped += 1
+            msg = f"撤销失败({exc.status_code})"
+            result.errors.append(f"{lbl}: {msg}（权限不足，锁定者：{checkout_owner}）— {exc}")
+            cb(_log_skip(f"撤销失败-@{checkout_owner}", lbl))
+            return part_number, version
+
+        # 撤销成功后重新签出
+        try:
+            iteration = _plm_call_with_retry(
+                client.checkout_part, workspace, part_number, version
+            )
+        except PlmApiError as exc:
+            result.failed += 1
+            msg = f"撤销后签出失败({exc.status_code})"
+            result.errors.append(f"{lbl}: {msg} — {exc}")
+            cb(_log_fail(msg, lbl))
+            return part_number, version
+
+        return _do_update_and_checkin(
+            node, lbl, "覆盖他人签出", client, workspace, part_number, version, iteration,
+            child_components, options, result, cb,
+        )
+
+
+def _do_update_and_checkin(
+    node: BomNode,
+    lbl: str,
+    source: str,      # 列1文本：签出来源，如 "新建"/"签出"/"已签出-本人"/"撤销后签出"
+    client,
+    workspace: str,
+    part_number: str,
+    version: str,
+    iteration: int,
+    child_components: list,
+    options: SyncOptions,
+    result: SyncResult,
+    cb,
+) -> tuple[str, str]:
+    """执行属性更新，并按策略决定是否签入，最终输出 1 条对齐日志。
+
+    日志格式（三列 + 零件标识）：
+        [签出来源]  [更新结果]  [签入状态]  零件编号<零件名>
+    """
+    from catia_copilot.plm.api_client import PlmApiError
+
+    # 属性：跳过结构性列
     attr_values = {
         k: v for k, v in node.attrs.items()
         if k not in _STRUCTURAL_COLS and v
     }
 
+    # 列2：更新结果
+    update_ok = True
     try:
         _plm_call_with_retry(
             client.update_iteration,
             workspace, part_number, version, iteration,
             attr_values, child_components,
         )
+        # 新建零件的属性写入不计入 updated（created 已在 _sync_node 统计）
+        if source != "新建":
+            result.updated += 1
+        col2 = "属性已写入"
     except PlmApiError as exc:
-        msg = f"{pn}: 属性更新失败 — {exc}"
-        logger.warning(msg)
-        result.errors.append(msg)
-        cb(f"  ⚠ {msg}")
->>>>>>> Stashed changes
+        update_ok = False
+        col2 = "✗ 更新失败"
+        msg = f"属性更新失败({exc.status_code}) — {exc}"
+        logger.warning(f"{lbl}: {msg}")
+        result.errors.append(f"{lbl}: {msg}")
 
-    # 4. Check In
-    try:
-        _plm_call_with_retry(
-            client.checkin_part, workspace, part_number, version
-        )
-    except PlmApiError as exc:
-        msg = f"{pn}: check in 失败 — {exc}"
-        logger.warning(msg)
-        result.errors.append(msg)
-        cb(f"  ⚠ {msg}")
+    # 列3：签入状态
+    if options.after_update_policy == AfterUpdatePolicy.CHECKIN:
+        try:
+            _plm_call_with_retry(
+                client.checkin_part, workspace, part_number, version
+            )
+            col3 = "已签入"
+        except PlmApiError as exc:
+            col3 = "✗ 签入失败"
+            msg = f"签入失败({exc.status_code}) — {exc}"
+            logger.warning(f"{lbl}: {msg}")
+            result.errors.append(f"{lbl}: {msg}")
+    else:
+        col3 = "保留签出"
+
+    cb(_log_row(source, col2, col3, lbl))
+
+    # 统计修正：update 失败时计入 failed
+    if not update_ok:
+        if source != "新建" and result.updated > 0:
+            result.updated -= 1
+        result.failed += 1
 
     return part_number, version
