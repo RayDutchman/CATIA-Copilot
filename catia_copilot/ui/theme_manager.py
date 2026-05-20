@@ -33,6 +33,11 @@ theme_signal = _ThemeSignalEmitter()
 # 文件缺失时回退空字符串，样式降级为系统原生，程序仍可正常启动
 _UI_DIR = Path(__file__).parent
 
+# ── 控件尺寸常量（调整这里即可全局生效）────────────────────────────
+INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px）
+CONTROL_SPACING = 8    # indicator 与文字之间的间距（px）
+CHECKBOX_RADIUS = 2    # checkbox indicator 圆角（px）
+
 
 def _load_qss(name: str) -> str:
     try:
@@ -171,6 +176,9 @@ class ThemeManager:
         _radio_unchecked_icon = str(_UI_DIR / f"radio_unchecked_{mode}.svg").replace("\\", "/")
         _chevron_down_icon    = str(_UI_DIR / f"chevron_down_{mode}.svg").replace("\\", "/")
         qss = (DARK_QSS if mode == "dark" else LIGHT_QSS) \
+            .replace("@indicator_sizepx",  f"{INDICATOR_SIZE}px") \
+            .replace("@control_spacingpx", f"{CONTROL_SPACING}px") \
+            .replace("@checkbox_radiuspx", f"{CHECKBOX_RADIUS}px") \
             .replace("@check_icon", _check_icon) \
             .replace("@radio_checked_icon", _radio_checked_icon) \
             .replace("@radio_unchecked_icon", _radio_unchecked_icon) \

@@ -211,13 +211,13 @@ QComboBox QAbstractItemView {
 }
 /* ── 单选框 ────────────────────────────────────────────────────────── */
 QRadioButton {
-    spacing: 8px;
+    spacing: @control_spacingpx;
     color: #1a1a1a;
     background: transparent;
 }
 QRadioButton::indicator {
-    width: 16px;
-    height: 16px;
+    width: @indicator_sizepx;
+    height: @indicator_sizepx;
     border: none;
     background-color: transparent;
     image: url(@radio_unchecked_icon);
@@ -232,14 +232,14 @@ QRadioButton::indicator:disabled { background-color: transparent; }
 
 /* ── 复选框 ────────────────────────────────────────────────────────── */
 QCheckBox {
-    spacing: 8px;
+    spacing: @control_spacingpx;
     color: #1a1a1a;
     background: transparent;
 }
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border-radius: 2px;
+    width: @indicator_sizepx;
+    height: @indicator_sizepx;
+    border-radius: @checkbox_radiuspx;
     border: 1px solid #aaaaaa;
     background-color: #ffffff;
 }
