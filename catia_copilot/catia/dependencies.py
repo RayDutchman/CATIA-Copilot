@@ -31,16 +31,15 @@ def find_dependencies(
     from catia_copilot.catia.connection import get_catia_v5_application
 
     target      = Path(target_path).resolve()
-    caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents   = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents   = application.Documents
 
     # 在我们执行任何操作之前，已打开文档的快照
     already_open: set[Path] = set()
-    for i in range(1, documents.count + 1):
+    for i in range(1, documents.Count + 1):
         try:
-            already_open.add(Path(documents.item(i).full_name).resolve())
+            already_open.add(Path(documents.Item(i).FullName).resolve())
         except Exception:
             pass
 
@@ -48,15 +47,15 @@ def find_dependencies(
     if progress_callback:
         progress_callback("正在打开文件，请稍候…")
 
-    documents.open(str(target))
+    documents.Open(str(target))
 
     results:      list[str]  = []
     newly_opened: set[Path]  = set()
 
-    for i in range(1, documents.count + 1):
+    for i in range(1, documents.Count + 1):
         try:
-            doc      = documents.item(i)
-            doc_path = Path(doc.full_name).resolve()
+            doc      = documents.Item(i)
+            doc_path = Path(doc.FullName).resolve()
             if doc_path == target or doc_path in already_open:
                 continue
             newly_opened.add(doc_path)
@@ -66,12 +65,12 @@ def find_dependencies(
             logger.debug(f"  Could not read document {i}: {e}")
 
     # 关闭我们打开的所有文档（目标文件最后关闭）
-    for i in range(documents.count, 0, -1):
+    for i in range(documents.Count, 0, -1):
         try:
-            doc      = documents.item(i)
-            doc_path = Path(doc.full_name).resolve()
+            doc      = documents.Item(i)
+            doc_path = Path(doc.FullName).resolve()
             if doc_path in newly_opened or doc_path == target:
-                doc.close()
+                doc.Close()
         except Exception:
             pass
 

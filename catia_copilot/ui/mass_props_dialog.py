@@ -2776,12 +2776,12 @@ class MassPropsDialog(QDialog):
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _pycatia  # noqa: PLC0415
             caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            application = caa
+            application.Visible = True
+            documents   = application.Documents
 
             fp_resolved = Path(fp).resolve()
-            documents.open(str(fp_resolved))
+            documents.Open(str(fp_resolved))
 
             try:
                 import win32gui  # noqa: PLC0415

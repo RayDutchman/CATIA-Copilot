@@ -101,10 +101,10 @@ def _launch_catia_v5() -> bool:
 # ---------------------------------------------------------------------------
 
 def get_catia_v5_application():
-    """获取连接到 CATIA V5 R28 的 pycatia Application 对象。
+    """获取连接到 CATIA V5 R28 的 win32com dispatch 对象（CATIA.Application）。
 
-    本函数替代 ``pycatia.catia()``，以确保在同时安装了 3DEXPERIENCE 的环境中
-    只连接到 CATIA V5，而不会误启动 3DEXPERIENCE 或新建 CATIA 实例。
+    本函数确保在同时安装了 3DEXPERIENCE 的环境中只连接到 CATIA V5，
+    而不会误启动 3DEXPERIENCE 或新建 CATIA 实例。
 
     行为：
     1. 若 CATIA V5 已在运行，直接连接并返回（不新建实例）。
@@ -114,12 +114,11 @@ def get_catia_v5_application():
        不尝试启动新实例。
 
     返回：
-        pycatia Application 对象（已连接到 CATIA V5）。
+        win32com dispatch 对象（CATIA.Application），可直接调用 CATIA V5 COM API。
 
     抛出：
         RuntimeError：无法连接到 CATIA V5（未安装、启动失败或 COM 连接被拒绝）时。
     """
-    from pycatia.in_interfaces.application import Application
     from catia_copilot.utils import _is_catia_process_running
 
     com_obj = _get_v5_com_object()
@@ -146,5 +145,5 @@ def get_catia_v5_application():
                 "请手动启动 CATIA V5 R28 后重试。"
             )
 
-    return Application(com_obj)
+    return com_obj
 

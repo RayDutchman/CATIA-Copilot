@@ -27,7 +27,7 @@ QLabel#titleBarTitle {
     background: transparent;
 }
 
-/* ── Tab 按钮 ────────────────────────────────────────────────────── */
+/* ── Tab 按钮（旧自定义标题栏，保留兼容）────────────────────────── */
 QPushButton#titleTabButton {
     background: transparent;
     border: none;
@@ -49,6 +49,42 @@ QPushButton#titleTabButton:checked {
     color: #e0e0e0;
     background-color: #323232;
     font-weight: 600;
+}
+
+/* ── QTabWidget / QTabBar ─────────────────────────────────────────── */
+QTabWidget::pane {
+    border: none;
+    border-top: 1px solid #383838;
+    background-color: #1c1c1c;
+}
+QTabBar {
+    background-color: #2b2b2b;
+}
+QTabBar::tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    color: #909090;
+    font-size: 9pt;
+    padding: 0 16px;
+    margin: 4px 0 0 0;
+    min-height: 32px;
+    min-width: 0;
+}
+QTabBar::tab:hover {
+    background-color: #363636;
+    color: #e0e0e0;
+}
+QTabBar::tab:selected {
+    border-bottom: 2px solid #0078d4;
+    color: #e0e0e0;
+    background-color: #323232;
+    font-weight: 600;
+}
+QTabBar::tab:last {
+    /* "≡" 菜单 tab：永不高亮为选中态 */
+    font-weight: 400;
 }
 
 /* ── 标题栏 caption 按钮（≡ / 最小化 / 最大化）Win11 原生规格 ───── */

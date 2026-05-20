@@ -108,13 +108,11 @@ def convert_drawing_to_pdf(
     返回：
         成功导出的文件数量
     """
-    from pycatia.drafting_interfaces.drawing_document import DrawingDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    caa = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents = application.Documents
 
     bulk_action: str | None = None  # "skip_all", "overwrite_all", or "cancel"
     success_count = 0
@@ -148,22 +146,22 @@ def convert_drawing_to_pdf(
                 continue
 
         try:
-            documents.open(str(src))
-            drawing_doc = DrawingDocument(application.active_document.com_object)
-            sheet_count = drawing_doc.drawing_root.sheets.count
+            documents.Open(str(src))
+            drawing_doc = application.ActiveDocument
+            sheet_count = drawing_doc.DrawingRoot.Sheets.Count
 
             if update_before_export:
                 logger.info(f"  Updating drawing ({sheet_count} sheet(s))…")
-                drawing_doc.com_object.Update()
+                drawing_doc.Update()
 
-            drawing_doc.export_data(str(dest), "pdf")
+            drawing_doc.ExportData(str(dest), "pdf")
 
             if not dest.exists():
-                logger.warning(f"  WARNING: export_data did not create {dest}")
+                logger.warning(f"  WARNING: ExportData did not create {dest}")
             else:
                 logger.info(f"  Exported {sheet_count} sheet(s) -> {dest}")
 
-            drawing_doc.close()
+            drawing_doc.Close()
             logger.info(f"Done: {src.name}\n")
             if dest.exists():
                 success_count += 1
@@ -198,10 +196,9 @@ def convert_part_to_step(
     """
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    caa = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents = application.Documents
 
     bulk_action: str | None = None
     success_count = 0
@@ -235,11 +232,11 @@ def convert_part_to_step(
                 continue
 
         try:
-            documents.open(str(src))
-            doc = application.active_document
-            doc.export_data(str(dest), "stp")
+            documents.Open(str(src))
+            doc = application.ActiveDocument
+            doc.ExportData(str(dest), "stp")
             logger.info(f"  Exported -> {dest}")
-            doc.close()
+            doc.Close()
             logger.info(f"Done: {src.name}\n")
             success_count += 1
         except Exception as e:

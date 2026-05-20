@@ -1525,16 +1525,16 @@ class BomEditDialog(QDialog):
         # 性能优化：一次性构建文档缓存，避免重复扫描
         from catia_copilot.catia.connection import get_catia_v5_application as _pycatia
         caa         = _pycatia()
-        application = caa.application
-        application.visible = True
-        documents   = application.documents
+        application = caa
+        application.Visible = True
+        documents   = application.Documents
 
         # 缓存：文件路径 → 文档对象
         doc_cache: dict[Path, object] = {}
-        for i in range(1, documents.count + 1):
+        for i in range(1, documents.Count + 1):
             try:
-                doc = documents.item(i)
-                doc_path = Path(doc.full_name).resolve()
+                doc = documents.Item(i)
+                doc_path = Path(doc.FullName).resolve()
                 doc_cache[doc_path] = doc
             except Exception:
                 pass
@@ -1562,11 +1562,11 @@ class BomEditDialog(QDialog):
                 # 使用缓存快速查找
                 target_doc = doc_cache.get(src)
                 if target_doc is None:
-                    documents.open(str(src))
-                    candidate = documents.item(documents.count)
+                    documents.Open(str(src))
+                    candidate = documents.Item(documents.Count)
                     target_doc = (
                         candidate
-                        if Path(candidate.full_name).resolve() == src
+                        if Path(candidate.FullName).resolve() == src
                         else _find_catia_doc_by_path(documents, src)
                     )
                     if target_doc:
@@ -1579,7 +1579,7 @@ class BomEditDialog(QDialog):
                     )
                     continue
 
-                target_doc.com_object.SaveAs(new_fp)
+                target_doc.SaveAs(new_fp)
 
                 if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
                     try:
@@ -1695,20 +1695,18 @@ class BomEditDialog(QDialog):
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _pycatia
             caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            application = caa
+            application.Visible = True
+            documents   = application.Documents
             src         = Path(fp).resolve()
 
             target_doc = _find_catia_doc_by_path(documents, src)
-            # 仅当文件在磁盘上存在时才尝试打开；
-            # 未保存过的零件只能通过已打开的文档缓存找到。
             if target_doc is None and file_on_disk:
-                documents.open(str(src))
-                candidate  = documents.item(documents.count)
+                documents.Open(str(src))
+                candidate  = documents.Item(documents.Count)
                 target_doc = (
                     candidate
-                    if Path(candidate.full_name).resolve() == src
+                    if Path(candidate.FullName).resolve() == src
                     else _find_catia_doc_by_path(documents, src)
                 )
 
@@ -1720,7 +1718,7 @@ class BomEditDialog(QDialog):
                 )
                 return
 
-            target_doc.com_object.SaveAs(new_fp)
+            target_doc.SaveAs(new_fp)
 
             if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
                 try:
@@ -2203,7 +2201,7 @@ class BomEditDialog(QDialog):
         if action == act_open_path:
             self._open_path(fp)
         elif action == act_copy_path:
-            QApplication.clipboard().setText(fp)
+            QApplication.clipboard().setText(str(Path(fp).parent))
         elif action == act_copy_cell:
             QApplication.clipboard().setText(cell_text)
         elif action == act_open_catia:
@@ -2239,12 +2237,12 @@ class BomEditDialog(QDialog):
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _pycatia  # noqa: PLC0415
             caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            application = caa
+            application.Visible = True
+            documents   = application.Documents
 
             fp_resolved = Path(fp).resolve()
-            documents.open(str(fp_resolved))
+            documents.Open(str(fp_resolved))
 
             # ── 将CATIA V5主窗口置于Windows前台 ──────────────────────────────
             try:

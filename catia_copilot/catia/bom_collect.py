@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 def get_product_filepath(product) -> str:
     """返回支持 CATIA 产品 *product* 的文档完整路径。
 
-    使用 ``com_object.ReferenceProduct.Parent.FullName`` – 纯 COM 路径，
+    使用 ``product.ReferenceProduct.Parent.FullName`` – 纯 COM 路径，
     适用于独立产品/零件和嵌入式部件（无自己的文件，返回父级路径）。
     失败时返回空字符串。
 
     参数：
-        product: CATIA 产品对象
+        product: win32com CATIA 产品对象（直接 dispatch，非 pycatia 包装）
 
     返回：
         文档完整路径，或空字符串（失败时）
     """
     try:
-        return product.com_object.ReferenceProduct.Parent.FullName
+        return product.ReferenceProduct.Parent.FullName
     except Exception as e:
         logger.debug(f"无法获取产品文件路径: {e}")
         return ""
@@ -60,18 +60,20 @@ def collect_bom_rows(
         is appended to the result list.  May raise an exception to abort the
         traversal (e.g. when the user cancels).
     """
-    from pycatia import CatWorkModeType
-    from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    # pycatia Product 对象直接封装的内置属性（getattr 路径）
-    # description_reference → product.DescriptionRef（引用产品的描述，属性对话框里填写的值）
+    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
+    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
+    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
+
+    # win32com Product 对象的内置属性（CamelCase COM 属性名）
+    # Description → DescriptionRef（引用产品的描述，属性对话框里填写的值）
     DIRECT_ATTR_MAP: dict[str, str] = {
-        "Nomenclature": "nomenclature",
-        "Revision":     "revision",
-        "Definition":   "definition",
-        "Source":       "source",
-        "Description":  "description_reference",
+        "Nomenclature": "Nomenclature",
+        "Revision":     "Revision",
+        "Definition":   "Definition",
+        "Source":       "Source",
+        "Description":  "DescriptionRef",
     }
 
     def _get_prop(product, name: str) -> str:
@@ -80,7 +82,7 @@ def collect_bom_rows(
             return ""
         targets = [product]
         try:
-            targets.insert(0, product.reference_product)
+            targets.insert(0, product.ReferenceProduct)
         except Exception:
             pass
         for target in targets:
@@ -95,17 +97,17 @@ def collect_bom_rows(
     def _get_user_prop(product, name: str) -> str:
         targets = [product]
         try:
-            targets.insert(0, product.reference_product)
+            targets.insert(0, product.ReferenceProduct)
         except Exception:
             pass
         for target in targets:
             try:
-                prop  = target.user_ref_properties.item(name)
-                value = prop.value
+                prop  = target.UserRefProperties.Item(name)
+                value = prop.Value
                 if value is not None and str(value).strip():
                     return str(value)
-            except Exception: # as e:
-                pass # logger.debug(f"无法从 {target} 获取用户属性 {name}: {e}")
+            except Exception:
+                pass
         return ""
 
     _total_count: int = 0
@@ -120,9 +122,9 @@ def collect_bom_rows(
     def _traverse(product, rows: list, level: int, parent_filepath: str = "") -> None:
         nonlocal _total_count
         try:
-            pn = product.part_number
+            pn = product.PartNumber
         except Exception:
-            name = product.name
+            name = product.Name
             pn   = name.rsplit(".", 1)[0] if "." in name else name
 
         filepath  = get_product_filepath(product)
@@ -154,13 +156,13 @@ def collect_bom_rows(
             # Performance optimization: Check current work mode before switching
             # to avoid unnecessary DESIGN_MODE transitions (costly COM calls)
             try:
-                current_mode = product.get_work_mode()
-                if current_mode != CatWorkModeType.DESIGN_MODE:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                current_mode = product.GetWorkMode()
+                if current_mode != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
             except Exception:
-                # If get_work_mode fails, try apply_work_mode anyway
+                # If GetWorkMode fails, try ApplyWorkMode anyway
                 try:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
                 except Exception:
                     is_readable = False
 
@@ -190,7 +192,7 @@ def collect_bom_rows(
         }
 
         try:
-            child_count = product.products.count
+            child_count = product.Products.Count
             if filepath and filepath == parent_filepath:
                 # The child shares the same backing file as its parent, which
                 # means it is an embedded sub-assembly (部件) rather than a
@@ -220,21 +222,21 @@ def collect_bom_rows(
             progress_callback(_total_count)
 
         try:
-            products  = product.products
-            count     = products.count
+            products  = product.Products
+            count     = products.Count
             if count == 0:
                 return
             children: dict = {}
             for i in range(1, count + 1):
                 try:
-                    child = products.item(i)
+                    child = products.Item(i)
                     try:
-                        cpn = child.part_number
+                        cpn = child.PartNumber
                     except Exception:
                         try:
-                            cpn = child.reference_product.part_number
+                            cpn = child.ReferenceProduct.PartNumber
                         except Exception:
-                            n   = child.name
+                            n   = child.Name
                             cpn = n.rsplit(".", 1)[0] if "." in n else n
                 except Exception:
                     continue
@@ -253,34 +255,32 @@ def collect_bom_rows(
             pass
 
     # ── CATIA connection ────────────────────────────────────────────────────
-    caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents   = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents   = application.Documents
 
     if file_path is None:
-        product_doc  = ProductDocument(application.active_document.com_object)
-        root_product = product_doc.product
+        root_product = application.ActiveDocument.Product
         rows: list[dict] = []
         _traverse(root_product, rows, level=0)
         return rows
 
     src = Path(file_path).resolve()
     already_open: set[Path] = set()
-    for i in range(1, documents.count + 1):
+    for i in range(1, documents.Count + 1):
         try:
-            already_open.add(Path(documents.item(i).full_name).resolve())
+            already_open.add(Path(documents.Item(i).FullName).resolve())
         except Exception:
             pass
 
     if src not in already_open:
-        documents.open(str(src))
+        documents.Open(str(src))
 
     target_doc = None
-    for i in range(1, documents.count + 1):
+    for i in range(1, documents.Count + 1):
         try:
-            doc = documents.item(i)
-            if Path(doc.full_name).resolve() == src:
+            doc = documents.Item(i)
+            if Path(doc.FullName).resolve() == src:
                 target_doc = doc
                 break
         except Exception:
@@ -288,8 +288,7 @@ def collect_bom_rows(
     if target_doc is None:
         raise RuntimeError(f"无法在CATIA中找到文档：{src}")
 
-    product_doc  = ProductDocument(target_doc.com_object)
-    root_product = product_doc.product
+    root_product = target_doc.Product
     rows = []
     _traverse(root_product, rows, level=0)
     return rows

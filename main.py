@@ -44,9 +44,6 @@ def main() -> None:
         app.setWindowIcon(QIcon(str(icon_path)))
 
     window = MainWindow()
-    # 将应用图标同步到自定义标题栏
-    if not app.windowIcon().isNull():
-        window._title_bar.set_app_icon(app.windowIcon())
     window.show()
     sys.exit(app.exec())
 

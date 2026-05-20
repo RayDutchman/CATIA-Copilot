@@ -338,7 +338,7 @@ class FileConvertDialog(QDialog):
             try:
                 from catia_copilot.catia.connection import get_catia_v5_application as _catia
                 _caa = _catia()
-                active_path = _caa.application.active_document.full_name
+                active_path = _caa.ActiveDocument.FullName
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",

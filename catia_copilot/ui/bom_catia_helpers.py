@@ -30,10 +30,10 @@ def _find_catia_doc_by_path(docs, path: Path) -> object | None:
     返回：
         匹配的 CATIA 文档对象，或 None
     """
-    for i in range(1, docs.count + 1):
+    for i in range(1, docs.Count + 1):
         try:
-            d = docs.item(i)
-            if Path(d.full_name).resolve() == path:
+            d = docs.Item(i)
+            if Path(d.FullName).resolve() == path:
                 return d
         except Exception:
             pass

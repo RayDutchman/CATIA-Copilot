@@ -17,14 +17,12 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
-    QDialog, QStackedWidget, QScrollArea, QSizeGrip, QMenu, QPlainTextEdit,
+    QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
     QSizePolicy,
 )
-from PySide6.QtGui import QAction, QIcon, QCursor, QFont, QFontMetrics
-from PySide6.QtCore import Qt, QTimer, QPoint, QRect
-import ctypes
+from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
+from PySide6.QtCore import Qt, QTimer, QRect
 
-from catia_copilot.ui.title_bar import TitleBar
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
     APP_NAME,
@@ -59,15 +57,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        # 无边框窗口：去掉系统标题栏，使用自定义标题栏
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
         self.setMinimumSize(540, 420)
 
-        # 无边框窗口 resize 边缘热区宽度（像素），供 nativeEvent 使用
-        self._resize_margin = 8
-
-        self._build_frameless_ui()
+        self._build_ui()
         self._build_connection_indicator()
         self.statusBar().showMessage("就绪")
 
@@ -294,43 +287,29 @@ class MainWindow(QMainWindow):
 
     # ── 无边框 UI 构建入口 ─────────────────────────────────────────────
 
-    def _build_frameless_ui(self) -> None:
-        """构建无边框窗口的完整 UI 结构（标题栏 + 分页内容 + 状态栏）。"""
-        # ── 标题栏 ──────────────────────────────────────────────────────
-        self._title_bar = TitleBar(self)
-        self._title_bar.tab_changed.connect(self._on_tab_changed)
-        self._title_bar.more_requested.connect(self._show_more_menu)
+    def _build_ui(self) -> None:
+        """构建主窗口 UI 结构（TabWidget 分页 + 状态栏）。"""
+        # ── Tab 分页内容区 ──────────────────────────────────────────────────
+        self._tab_widget = QTabWidget()
+        self._tab_widget.addTab(self._build_export_page(), "导出")   # 0
+        self._tab_widget.addTab(self._build_bom_page(),    "BOM")    # 1
+        self._tab_widget.addTab(self._build_drawing_page(), "图纸")  # 2
+        self._tab_widget.addTab(self._build_tools_page(),  "工具")   # 3
+        self._tab_widget.addTab(self._build_more_page(),   "≡")      # 4
 
-        # 设置标题栏图标（若 icon 已通过 QApplication 设置则复用）
-        app_icon = self.windowIcon()
-        if not app_icon.isNull():
-            self._title_bar.set_app_icon(app_icon)
+        # ── 嵌入式日志面板（位于 Tab 下方、状态栏上方）─────────────────────
+        self._log_panel = self._build_log_panel()
 
-        # ── 分页内容区域 ────────────────────────────────────────────────
-        self._content_stack = QStackedWidget()
-        self._content_stack.addWidget(self._build_export_page())   # 0
-        self._content_stack.addWidget(self._build_bom_page())      # 1
-        self._content_stack.addWidget(self._build_drawing_page())  # 2
-        self._content_stack.addWidget(self._build_tools_page())    # 3
-
-        # ── 组装中央控件 ────────────────────────────────────────────────
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._title_bar)
-        layout.addWidget(self._content_stack, stretch=1)
-        # 嵌入式日志面板（默认隐藏，位于内容区下方、状态栏上方）
-        self._log_panel = self._build_log_panel()
+        layout.addWidget(self._tab_widget, stretch=1)
         layout.addWidget(self._log_panel)
         self.setCentralWidget(central)
 
-        # ── 隐藏系统菜单栏（功能迁移到更多菜单）──────────────────────
+        # 隐藏默认菜单栏
         self.menuBar().hide()
-
-        # ── resize 把手（右下角）────────────────────────────────────────
-        grip = QSizeGrip(self)
-        self.statusBar().addPermanentWidget(grip)
 
     def _build_log_panel(self) -> QWidget:
         """构建嵌入在主窗口底部的日志面板（默认隐藏）。
@@ -407,114 +386,7 @@ class MainWindow(QMainWindow):
                 f"无法打开日志文件：\n{LOG_FILE}\n\n{e}",
             )
 
-    # ── 无边框 WM_NCHITTEST resize 支持 ───────────────────────────────────
-
-    def nativeEvent(self, event_type: bytes, message) -> tuple[bool, int]:  # noqa: N802
-        """拦截 Windows WM_NCHITTEST 消息，实现无边框窗口八方向 resize。
-
-        使用 QCursor.pos() + mapFromGlobal() 获取逻辑坐标，避免高 DPI 下
-        lParam 物理像素与 Qt 逻辑像素不一致导致边缘热区失效的问题。
-        """
-        if event_type == b"windows_generic_MSG":
-            import ctypes.wintypes
-            from PySide6.QtGui import QCursor
-            msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.wintypes.MSG)).contents
-            if msg.message == 0x0084:  # WM_NCHITTEST
-                pos = self.mapFromGlobal(QCursor.pos())
-                x = pos.x()
-                y = pos.y()
-                w = self.width()
-                h = self.height()
-                m = self._resize_margin
-
-                left   = x < m
-                right  = x > w - m
-                top    = y < m
-                bottom = y > h - m
-
-                if top and left:
-                    return True, 13   # HTTOPLEFT
-                if top and right:
-                    return True, 14   # HTTOPRIGHT
-                if bottom and left:
-                    return True, 16   # HTBOTTOMLEFT
-                if bottom and right:
-                    return True, 17   # HTBOTTOMRIGHT
-                if left:
-                    return True, 10   # HTLEFT
-                if right:
-                    return True, 11   # HTRIGHT
-                if top:
-                    return True, 12   # HTTOP
-                if bottom:
-                    return True, 15   # HTBOTTOM
-
-        return super().nativeEvent(event_type, message)
-
-
-    def _on_tab_changed(self, index: int) -> None:
-        """响应标题栏 Tab 切换，同步更新内容区页面。"""
-        self._content_stack.setCurrentIndex(index)
-
     # ── 更多功能菜单 ───────────────────────────────────────────────────────
-
-    def _show_more_menu(self, pos: QPoint) -> None:
-        """在指定全局坐标处弹出更多功能菜单（宏、日志、帮助、关于等）。"""
-        menu = QMenu(self)
-
-        # 宏子菜单（动态扫描 macros 目录）
-        macro_sub = menu.addMenu("宏")
-        self._populate_macro_submenu(macro_sub)
-
-        menu.addSeparator()
-
-        log_label = "隐藏日志" if self._log_panel.isVisible() else "显示日志"
-        menu.addAction(QAction(log_label, self, triggered=self._toggle_log_from_menu))
-
-        menu.addAction(QAction(
-            "CATIA 连接诊断", self,
-            triggered=self._show_catia_diagnostics,
-        ))
-        menu.addSeparator()
-
-        # 主题切换
-        theme_label = "切换到浅色" if theme_manager.current_mode() == "dark" else "切换到深色"
-        menu.addAction(QAction(theme_label, self, triggered=theme_manager.toggle))
-
-        menu.addSeparator()
-        menu.addAction(QAction("文档", self, triggered=self._show_help))
-        menu.addAction(QAction(
-            f"关于 {APP_NAME}", self, triggered=self._show_about,
-        ))
-
-        menu.exec(pos)
-
-    def _populate_macro_submenu(self, menu: QMenu) -> None:
-        """填充宏子菜单（扫描 macros 目录，每次打开时动态构建）。"""
-        macros_dir = self._macros_dir()
-        macro_files: list[Path] = []
-        if macros_dir.is_dir():
-            macro_files = sorted(
-                f for f in macros_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in self._MACRO_EXTENSIONS
-            )
-
-        if macro_files:
-            for mp in macro_files:
-                menu.addAction(QAction(
-                    mp.name, self,
-                    triggered=lambda checked=False, p=mp: self._run_macro(p),
-                ))
-            menu.addSeparator()
-        else:
-            placeholder = QAction("（未找到宏文件）", self)
-            placeholder.setEnabled(False)
-            menu.addAction(placeholder)
-            menu.addSeparator()
-
-        menu.addAction(QAction(
-            "打开宏文件夹", self, triggered=self._open_macros_folder,
-        ))
 
     def _toggle_log_from_menu(self) -> None:
         """切换嵌入式日志面板的显示 / 隐藏状态。"""
@@ -698,7 +570,98 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return self._make_page(body)
 
-    # ── 日志窗口 ──────────────────────────────────────────────────────────
+    # ── 更多页面 ───────────────────────────────────────────────────────────
+
+    def _build_more_page(self) -> QWidget:
+        """构建"≡"功能页（宏、日志、诊断、主题、帮助）。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+
+        # ── 宏 ────────────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("宏"))
+
+        self._btn_macro_open_folder = QPushButton("打开宏文件夹")
+        self._btn_macro_open_folder.setToolTip("在资源管理器中打开 macros 目录")
+        self._btn_macro_open_folder.clicked.connect(self._open_macros_folder)
+        layout.addWidget(self._btn_macro_open_folder)
+
+        # 宏文件列表（动态，每次显示时刷新）
+        self._macro_btn_container = QWidget()
+        self._macro_btn_layout = QVBoxLayout(self._macro_btn_container)
+        self._macro_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self._macro_btn_layout.setSpacing(6)
+        layout.addWidget(self._macro_btn_container)
+
+        layout.addSpacing(4)
+
+        # ── 视图 ──────────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("视图"))
+
+        btn_log = QPushButton("显示 / 隐藏日志")
+        btn_log.setToolTip("切换底部嵌入式日志面板")
+        btn_log.clicked.connect(self._toggle_log_from_menu)
+        layout.addWidget(btn_log)
+
+        btn_diag = QPushButton("CATIA 连接诊断")
+        btn_diag.setToolTip("显示 CATIA COM 连接的详细诊断信息")
+        btn_diag.clicked.connect(self._show_catia_diagnostics)
+        layout.addWidget(btn_diag)
+
+        btn_theme = QPushButton("切换主题")
+        btn_theme.setToolTip("在深色 / 浅色主题之间切换")
+        btn_theme.clicked.connect(theme_manager.toggle)
+        layout.addWidget(btn_theme)
+
+        layout.addSpacing(4)
+
+        # ── 帮助 ──────────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("帮助"))
+
+        btn_help = QPushButton("文档")
+        btn_help.clicked.connect(self._show_help)
+        layout.addWidget(btn_help)
+
+        btn_about = QPushButton(f"关于 {APP_NAME}")
+        btn_about.clicked.connect(self._show_about)
+        layout.addWidget(btn_about)
+
+        layout.addStretch()
+        page = self._make_page(body)
+
+        # 每次切换到此 Tab 时刷新宏按钮列表
+        self._tab_widget.currentChanged.connect(
+            lambda idx: self._refresh_macro_buttons() if idx == 4 else None
+        )
+        return page
+
+    def _refresh_macro_buttons(self) -> None:
+        """动态刷新宏文件按钮列表。"""
+        # 清空旧按钮
+        while self._macro_btn_layout.count():
+            item = self._macro_btn_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        macros_dir = self._macros_dir()
+        macro_files: list[Path] = []
+        if macros_dir.is_dir():
+            macro_files = sorted(
+                f for f in macros_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in self._MACRO_EXTENSIONS
+            )
+
+        if macro_files:
+            for mp in macro_files:
+                btn = QPushButton(mp.name)
+                btn.setToolTip(str(mp))
+                btn.clicked.connect(lambda checked=False, p=mp: self._run_macro(p))
+                self._macro_btn_layout.addWidget(btn)
+        else:
+            lbl = QLabel("（未找到宏文件）")
+            lbl.setEnabled(False)
+            self._macro_btn_layout.addWidget(lbl)
 
     def _toggle_log_window(self, checked: bool) -> None:
         """切换日志窗口的显示/隐藏状态（保留，供外部调用）。"""
@@ -799,7 +762,7 @@ class MainWindow(QMainWindow):
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _catia
             caa = _catia()
-            app = caa.application
+            app = caa
             if macro_path.suffix.lower() == ".catvba":
                 self._execute_catvba(app, macro_path, "CATMain", [])
             else:
@@ -984,7 +947,7 @@ class MainWindow(QMainWindow):
           - iParameters：传递给宏的参数列表
         """
         lib_dir = str(macro_path.parent)
-        app.com_object.SystemService.ExecuteScript(
+        app.SystemService.ExecuteScript(
             lib_dir, 1, macro_path.name, func_name, params
         )
 
@@ -1009,7 +972,7 @@ class MainWindow(QMainWindow):
         last_exc: Exception | None = None
         for module_name in ("模块1", "Module1"):
             try:
-                app.com_object.SystemService.ExecuteScript(
+                app.SystemService.ExecuteScript(
                     str(macro_path), 2, module_name, func_name, params
                 )
                 return
@@ -1028,7 +991,7 @@ class MainWindow(QMainWindow):
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _catia
             caa = _catia()
-            app = caa.application
+            app = caa
             # 将模板路径作为单一字符串参数传递给宏的 CATMain 函数
             self._execute_catscript(app, macro_path, "CATMain", [template_path])
             logger.info(f"宏执行成功：{macro_path.name} | 模板路径={template_path}")
