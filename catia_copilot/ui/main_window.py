@@ -17,10 +17,13 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
-    QDialog,
+    QDialog, QStackedWidget, QScrollArea, QSizeGrip, QMenu,
 )
-from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import Qt, QTimer, QPoint
+
+from catia_copilot.ui.title_bar import TitleBar
+from catia_copilot.ui.theme_manager import theme_manager
 
 from catia_copilot.constants import (
     APP_NAME,
@@ -56,13 +59,15 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
+        # 无边框窗口：去掉系统标题栏，使用自定义标题栏
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
+        self.setMinimumSize(400, 420)
 
         self._log_window = LogWindow(self)
         log_signal_emitter.message_logged.connect(self._log_window.append_log)
 
-        self._build_menu_bar()
-        self._build_central_widget()
+        self._build_frameless_ui()
         self._build_connection_indicator()
         self.statusBar().showMessage("就绪")
 
@@ -284,43 +289,181 @@ class MainWindow(QMainWindow):
 
         return accepted
 
-    # ── 中央控件区域 ──────────────────────────────────────────────────────
+    # ── 无边框 UI 构建入口 ─────────────────────────────────────────────
 
-    def _build_central_widget(self) -> None:
-        """构建主窗口的中央控件区域。"""
+    def _build_frameless_ui(self) -> None:
+        """构建无边框窗口的完整 UI 结构（标题栏 + 分页内容 + 状态栏）。"""
+        # ── 标题栏 ──────────────────────────────────────────────────────
+        self._title_bar = TitleBar(self)
+        self._title_bar.tab_changed.connect(self._on_tab_changed)
+        self._title_bar.theme_toggle_requested.connect(self._on_theme_toggle)
+        self._title_bar.more_requested.connect(self._show_more_menu)
+
+        # 设置标题栏图标（若 icon 已通过 QApplication 设置则复用）
+        app_icon = self.windowIcon()
+        if not app_icon.isNull():
+            self._title_bar.set_app_icon(app_icon)
+        # 同步主题按钮图标
+        self._title_bar.set_theme_icon(theme_manager.is_dark)
+
+        # ── 分页内容区域 ────────────────────────────────────────────────
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(self._build_export_page())   # 0
+        self._content_stack.addWidget(self._build_bom_page())      # 1
+        self._content_stack.addWidget(self._build_drawing_page())  # 2
+        self._content_stack.addWidget(self._build_tools_page())    # 3
+
+        # ── 组装中央控件 ────────────────────────────────────────────────
         central = QWidget()
-        self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._title_bar)
+        layout.addWidget(self._content_stack)
+        self.setCentralWidget(central)
 
-        # 欢迎标签
-        welcome = QLabel(f"欢迎使用 {APP_NAME}")
-        welcome.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        welcome.setStyleSheet("font-size: 11pt; font-weight: bold; color: #333;")
-        layout.addWidget(welcome)
+        # ── 隐藏系统菜单栏（功能迁移到更多菜单）──────────────────────
+        self.menuBar().hide()
 
-        # ── 导出功能组 ────────────────────────────────────────────────────
-        export_group  = QGroupBox("导出")
-        export_layout = QVBoxLayout(export_group)
-        export_layout.setSpacing(6)
+        # ── resize 把手（右下角）────────────────────────────────────────
+        grip = QSizeGrip(self)
+        self.statusBar().addPermanentWidget(grip)
 
-        btn_drawing = QPushButton("CATDrawing → PDF")
+    # ── Tab 切换 ───────────────────────────────────────────────────────────
+
+    def _on_tab_changed(self, index: int) -> None:
+        """响应标题栏 Tab 切换，同步更新内容区页面。"""
+        self._content_stack.setCurrentIndex(index)
+
+    # ── 主题切换 ───────────────────────────────────────────────────────────
+
+    def _on_theme_toggle(self) -> None:
+        """切换深色 / 浅色主题并更新标题栏图标。"""
+        is_dark = theme_manager.toggle()
+        self._title_bar.set_theme_icon(is_dark)
+
+    # ── 更多功能菜单 ───────────────────────────────────────────────────────
+
+    def _show_more_menu(self, pos: QPoint) -> None:
+        """在指定全局坐标处弹出更多功能菜单（宏、日志、帮助、关于等）。"""
+        menu = QMenu(self)
+
+        # 宏子菜单（动态扫描 macros 目录）
+        macro_sub = menu.addMenu("宏")
+        self._populate_macro_submenu(macro_sub)
+
+        menu.addSeparator()
+
+        menu.addAction(QAction(
+            "显示 / 隐藏日志", self,
+            triggered=self._toggle_log_from_menu,
+        ))
+        menu.addAction(QAction(
+            "CATIA 连接诊断", self,
+            triggered=self._show_catia_diagnostics,
+        ))
+        menu.addSeparator()
+        menu.addAction(QAction("文档", self, triggered=self._show_help))
+        menu.addAction(QAction(
+            f"关于 {APP_NAME}", self, triggered=self._show_about,
+        ))
+
+        menu.exec(pos)
+
+    def _populate_macro_submenu(self, menu: QMenu) -> None:
+        """填充宏子菜单（扫描 macros 目录，每次打开时动态构建）。"""
+        macros_dir = self._macros_dir()
+        macro_files: list[Path] = []
+        if macros_dir.is_dir():
+            macro_files = sorted(
+                f for f in macros_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in self._MACRO_EXTENSIONS
+            )
+
+        if macro_files:
+            for mp in macro_files:
+                menu.addAction(QAction(
+                    mp.name, self,
+                    triggered=lambda checked=False, p=mp: self._run_macro(p),
+                ))
+            menu.addSeparator()
+        else:
+            placeholder = QAction("（未找到宏文件）", self)
+            placeholder.setEnabled(False)
+            menu.addAction(placeholder)
+            menu.addSeparator()
+
+        menu.addAction(QAction(
+            "打开宏文件夹", self, triggered=self._open_macros_folder,
+        ))
+
+    def _toggle_log_from_menu(self) -> None:
+        """切换日志窗口的显示 / 隐藏状态。"""
+        if self._log_window.isVisible():
+            self._log_window.hide()
+        else:
+            self._log_window.show()
+            self._log_window.raise_()
+
+    # ── 分页构建辅助 ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_page(content_widget: QWidget) -> QWidget:
+        """将内容控件包裹在带内边距的滚动区域中，返回页面 QWidget。"""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content_widget)
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(scroll)
+        return page
+
+    @staticmethod
+    def _make_section_label(text: str) -> QLabel:
+        """创建带样式的节标题标签（用于页面内分区）。"""
+        label = QLabel(text.upper())
+        label.setObjectName("sectionLabel")
+        return label
+
+    # ── 导出页面 ───────────────────────────────────────────────────────────
+
+    def _build_export_page(self) -> QWidget:
+        """构建"导出"功能页。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+
+        layout.addWidget(self._make_section_label("文件导出"))
+
+        btn_drawing = QPushButton("CATDrawing  →  PDF")
         btn_drawing.setToolTip("将 CATDrawing 文件批量导出为 PDF")
         btn_drawing.clicked.connect(self._open_convert_drawing_dialog)
 
-        btn_part = QPushButton("CATPart / CATProduct → STP")
+        btn_part = QPushButton("CATPart / CATProduct  →  STP")
         btn_part.setToolTip("将 CATPart 或 CATProduct 文件批量导出为 STEP")
         btn_part.clicked.connect(self._open_convert_part_dialog)
 
         for btn in (btn_drawing, btn_part):
-            export_layout.addWidget(btn)
-        layout.addWidget(export_group)
+            layout.addWidget(btn)
 
-        # ── BOM 功能组 ────────────────────────────────────────────────────
-        bom_group  = QGroupBox("BOM")
-        bom_layout = QVBoxLayout(bom_group)
-        bom_layout.setSpacing(6)
+        layout.addStretch()
+        return self._make_page(body)
+
+    # ── BOM 页面 ───────────────────────────────────────────────────────────
+
+    def _build_bom_page(self) -> QWidget:
+        """构建"BOM"功能页。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+
+        layout.addWidget(self._make_section_label("物料清单"))
 
         btn_bom_export = QPushButton("从 CATProduct 导出 BOM")
         btn_bom_export.setToolTip("从 CATProduct 导出 BOM 到 Excel 文件")
@@ -344,34 +487,47 @@ class MainWindow(QMainWindow):
         btn_plm_sync.clicked.connect(self._open_plm_sync_dialog)
 
         for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_sync):
-            bom_layout.addWidget(btn)
-        layout.addWidget(bom_group)
+            layout.addWidget(btn)
 
-        # ── 图纸功能组 ────────────────────────────────────────────────────
-        drawing_group  = QGroupBox("图纸")
-        drawing_layout = QVBoxLayout(drawing_group)
-        drawing_layout.setSpacing(6)
+        layout.addStretch()
+        return self._make_page(body)
 
-        drawing_row = QHBoxLayout()
-        drawing_row.setSpacing(6)
+    # ── 图纸页面 ───────────────────────────────────────────────────────────
 
-        btn_new_drawing = QPushButton("新建图纸")
-        btn_new_drawing.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸")
-        btn_new_drawing.clicked.connect(self._open_generate_drawing_dialog)
+    def _build_drawing_page(self) -> QWidget:
+        """构建"图纸"功能页。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
 
-        btn_refresh_drawing = QPushButton("刷新图纸")
-        btn_refresh_drawing.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）")
-        btn_refresh_drawing.clicked.connect(self._open_refresh_drawing_dialog)
+        layout.addWidget(self._make_section_label("工程图纸"))
 
-        drawing_row.addWidget(btn_new_drawing)
-        drawing_row.addWidget(btn_refresh_drawing)
-        drawing_layout.addLayout(drawing_row)
-        layout.addWidget(drawing_group)
+        btn_new = QPushButton("新建图纸")
+        btn_new.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸")
+        btn_new.clicked.connect(self._open_generate_drawing_dialog)
 
-        # ── 工具功能组 ────────────────────────────────────────────────────
-        tools_group  = QGroupBox("工具")
-        tools_layout = QVBoxLayout(tools_group)
-        tools_layout.setSpacing(6)
+        btn_refresh = QPushButton("刷新图纸")
+        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）")
+        btn_refresh.clicked.connect(self._open_refresh_drawing_dialog)
+
+        for btn in (btn_new, btn_refresh):
+            layout.addWidget(btn)
+
+        layout.addStretch()
+        return self._make_page(body)
+
+    # ── 工具页面 ───────────────────────────────────────────────────────────
+
+    def _build_tools_page(self) -> QWidget:
+        """构建"工具"功能页。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+
+        # ── CATIA 资源 ────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("CATIA 资源"))
 
         btn_font = QPushButton("复制字体文件到 CATIA 目录")
         btn_font.setToolTip("将 Changfangsong.ttf 复制到 CATIA 字体目录")
@@ -385,145 +541,52 @@ class MainWindow(QMainWindow):
         btn_crack.setToolTip("将 crack 文件夹中的文件复制到 CATIA bin 目录")
         btn_crack.clicked.connect(self._crack)
 
+        for btn in (btn_font, btn_iso, btn_crack):
+            layout.addWidget(btn)
+
+        layout.addSpacing(4)
+
+        # ── 零件与装配 ────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("零件与装配"))
+
         btn_stamp = QPushButton("刷写零件模板")
         btn_stamp.setToolTip("为选中的 CATPart 添加标准用户自定义属性")
         btn_stamp.clicked.connect(self._open_stamp_part_template_dialog)
+
+        layout.addWidget(btn_stamp)
+
+        # 快速装配：两个按钮并排
+        asm_row = QHBoxLayout()
+        asm_row.setSpacing(6)
+        btn_fastener = QPushButton("快速装配紧固件")
+        btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
+        btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
+
+        btn_nut = QPushButton("快速装配托板螺母")
+        btn_nut.setToolTip("在装配体中连续放置托板螺母实例")
+        btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
+
+        asm_row.addWidget(btn_fastener)
+        asm_row.addWidget(btn_nut)
+        layout.addLayout(asm_row)
+
+        layout.addSpacing(4)
+
+        # ── 分析工具 ──────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("分析"))
 
         btn_deps = QPushButton("查找所有依赖项（未实现）")
         btn_deps.setToolTip("通过 CATIA COM 查找文件的所有引用文档")
         btn_deps.clicked.connect(self._open_find_dependencies_dialog)
 
-        for btn in (btn_font, btn_iso, btn_crack, btn_stamp, btn_deps):
-            tools_layout.addWidget(btn)
-
-        # 快速装配：紧固件 + 托板螺母 并列一行
-        assembly_row = QHBoxLayout()
-        assembly_row.setSpacing(6)
-
-        btn_fastener = QPushButton("快速装配紧固件")
-        btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
-        btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
-
-        btn_nut_plate = QPushButton("快速装配托板螺母")
-        btn_nut_plate.setToolTip("在装配体中连续放置托板螺母实例")
-        btn_nut_plate.clicked.connect(self._open_nut_plate_assembly_dialog)
-
-        assembly_row.addWidget(btn_fastener)
-        assembly_row.addWidget(btn_nut_plate)
-        tools_layout.addLayout(assembly_row)
-        layout.addWidget(tools_group)
-
+        layout.addWidget(btn_deps)
         layout.addStretch()
-
-    # ── 菜单栏 ────────────────────────────────────────────────────────────
-
-    def _show_not_implemented(self) -> None:
-        """显示"功能尚未实现"提示对话框。"""
-        QMessageBox.information(self, "提示", "功能尚未实现")
-
-    def _build_menu_bar(self) -> None:
-        """构建应用程序菜单栏。"""
-        bar = self.menuBar()
-
-        # 文件菜单
-        file_menu  = bar.addMenu("文件")
-        for label, slot in (("新建", self._show_not_implemented), ("打开...", self._show_not_implemented),
-                             ("保存", self._show_not_implemented), ("另存为...", self._show_not_implemented)):
-            file_menu.addAction(QAction(label, self, triggered=slot))
-        file_menu.addSeparator()
-        file_menu.addAction(QAction("退出", self, triggered=self.close))
-
-        # 导出菜单
-        export_menu = bar.addMenu("导出")
-        export_menu.addAction(QAction(
-            "从CATDrawing导出pdf", self,
-            triggered=self._open_convert_drawing_dialog,
-        ))
-        export_menu.addAction(QAction(
-            "从CATPart/CATProduct导出stp", self,
-            triggered=self._open_convert_part_dialog,
-        ))
-
-        # BOM 菜单
-        bom_menu = bar.addMenu("BOM")
-        bom_menu.addAction(QAction(
-            "从CATProduct导出BOM", self,
-            triggered=self._open_export_bom_dialog,
-        ))
-        bom_menu.addAction(QAction(
-            "BOM属性补全", self, triggered=self._open_bom_edit_dialog
-        ))
-        bom_menu.addAction(QAction(
-            "同步BOM到PLM", self, triggered=self._open_plm_sync_dialog
-        ))
-
-        # 图纸菜单
-        drawing_menu = bar.addMenu("图纸")
-        drawing_menu.addAction(QAction(
-            "从CATPart/CATProduct生成图纸", self,
-            triggered=self._open_generate_drawing_dialog,
-        ))
-        drawing_menu.addAction(QAction(
-            "刷新图纸信息", self,
-            triggered=self._open_refresh_drawing_dialog,
-        ))
-
-        # 宏菜单
-        self._macro_menu = bar.addMenu("宏")
-        self._rebuild_macro_menu()
-
-        # 工具菜单
-        tools_menu = bar.addMenu("工具")
-        for label, slot in (
-            ("复制字体文件到CATIA目录",  self._copy_font_to_catia),
-            ("复制ISO.xml到CATIA目录",    self._copy_iso_to_catia),
-            ("Crack",                     self._crack),
-            ("刷写零件模板",              self._open_stamp_part_template_dialog),
-            ("查找所有依赖项（未实现）",     self._open_find_dependencies_dialog),
-            ("快速装配紧固件",              self._open_fastener_assembly_dialog),
-            ("快速装配托板螺母",            self._open_nut_plate_assembly_dialog),
-        ):
-            tools_menu.addAction(QAction(label, self, triggered=slot))
-
-        # 视图菜单
-        view_menu = bar.addMenu("视图")
-        view_menu.addAction(QAction(
-            "放大", self,
-            triggered=self._show_not_implemented,
-        ))
-        view_menu.addAction(QAction(
-            "缩小", self,
-            triggered=self._show_not_implemented,
-        ))
-        view_menu.addAction(QAction(
-            "重置缩放", self,
-            triggered=lambda: self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT),
-        ))
-        view_menu.addSeparator()
-        self._show_log_action = QAction("显示Log", self)
-        self._show_log_action.setCheckable(True)
-        self._show_log_action.toggled.connect(self._toggle_log_window)
-        view_menu.addAction(self._show_log_action)
-
-        # 帮助菜单
-        help_menu = bar.addMenu("帮助")
-        help_menu.addAction(QAction(
-            "文档", self,
-            triggered=self._show_help,
-        ))
-        help_menu.addAction(QAction(
-            "CATIA 连接诊断", self,
-            triggered=self._show_catia_diagnostics,
-        ))
-        help_menu.addAction(QAction(
-            f"关于 {APP_NAME}", self,
-            triggered=self._show_about,
-        ))
+        return self._make_page(body)
 
     # ── 日志窗口 ──────────────────────────────────────────────────────────
 
     def _toggle_log_window(self, checked: bool) -> None:
-        """切换日志窗口的显示/隐藏状态。"""
+        """切换日志窗口的显示/隐藏状态（保留，供外部调用）。"""
         if checked:
             self._log_window.show()
             self._log_window.raise_()
@@ -591,42 +654,11 @@ class MainWindow(QMainWindow):
                 value.close()
         super().closeEvent(event)
 
-    # ── 宏菜单辅助方法 ────────────────────────────────────────────────────
+    # ── 宏辅助方法 ────────────────────────────────────────────────────────
 
     def _macros_dir(self) -> Path:
         """返回宏文件夹路径。"""
         return resource_path("macros")
-
-    def _rebuild_macro_menu(self) -> None:
-        """重建宏菜单，扫描 macros 文件夹并添加菜单项。"""
-        self._macro_menu.clear()
-        macros_dir   = self._macros_dir()
-        macro_files: list[Path] = []
-        if macros_dir.is_dir():
-            macro_files = sorted(
-                f for f in macros_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in self._MACRO_EXTENSIONS
-            )
-
-        if macro_files:
-            for macro_path in macro_files:
-                self._macro_menu.addAction(QAction(
-                    macro_path.name, self,
-                    triggered=lambda checked=False, p=macro_path: self._run_macro(p),
-                ))
-            self._macro_menu.addSeparator()
-        else:
-            placeholder = QAction("（未找到宏文件）", self)
-            placeholder.setEnabled(False)
-            self._macro_menu.addAction(placeholder)
-            self._macro_menu.addSeparator()
-
-        self._macro_menu.addAction(QAction(
-            "打开宏文件夹", self, triggered=self._open_macros_folder
-        ))
-        self._macro_menu.addAction(QAction(
-            "刷新宏列表", self, triggered=self._rebuild_macro_menu
-        ))
 
     def _open_macros_folder(self) -> None:
         macros_dir = self._macros_dir()
