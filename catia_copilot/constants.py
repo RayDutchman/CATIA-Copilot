@@ -12,8 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 APP_NAME    = "CATIA Copilot"
-APP_VERSION = "1.7.0"
-APP_DATE    = "2026-05-11"
+APP_VERSION = "1.8.0"
+APP_DATE    = "2026-05-21"
 APP_AUTHOR  = "CHEN Weibo"
 APP_CONTACT = "thucwb@gmail.com"
 
@@ -98,12 +98,12 @@ PRESET_USER_REF_PROPERTY_OPTIONS: dict[str, list[str]] = {
 
 BOM_ALL_COLUMNS: list[str] = [
     "Level", "Type", "Part Number", "Nomenclature",
-    "Definition", "Revision", "Source", "Quantity",
+    "Definition", "Revision", "Source", "Description", "Quantity",
 ]
 
 BOM_DEFAULT_COLUMNS: list[str] = [
     "Level", "Type", "Part Number", "Nomenclature",
-    "Definition", "Revision", "Source", "Quantity",
+    "Definition", "Revision", "Source", "Description", "Quantity",
 ]
 
 # ---------------------------------------------------------------------------
@@ -126,12 +126,12 @@ BOM_READONLY_COLUMNS: frozenset[str] = frozenset({"#", "Level", "Type", "Filenam
 
 # Standard BOM columns that can be hidden in the edit dialog
 # These are properties that users might not need to see/edit
-BOM_HIDEABLE_COLUMNS: list[str] = ["Nomenclature", "Revision", "Definition", "Source"]
+BOM_HIDEABLE_COLUMNS: list[str] = ["Nomenclature", "Revision", "Definition", "Source", "Description"]
 
 # Column order used in the BOM edit dialog (internal names)
 BOM_EDIT_COLUMN_ORDER: list[str] = [
     "Level", "Type", "Filename", "Part Number", "Quantity",
-    "Nomenclature", "Revision", "Definition", "Source",
+    "Nomenclature", "Revision", "Definition", "Source", "Description",
 ]
 
 # Internal column name → Chinese display name
@@ -146,6 +146,7 @@ BOM_COLUMN_DISPLAY_NAMES: dict[str, str] = {
     "Definition":   "定义",
     "Revision":     "版本",
     "Source":       "源",
+    "Description":  "描述",
     "Quantity":     "数量",
 }
 
@@ -159,6 +160,7 @@ BOM_COLUMN_MIN_WIDTHS: dict[str, int] = {
     "Definition":   20,
     "Revision":     10,
     "Source":       8,
+    "Description":  20,
     "Quantity":     8,
 }
 
@@ -233,6 +235,14 @@ MASS_PROPS_HIDEABLE_COLUMNS: tuple[str, ...] = (
 PART_NUMBER_VALID_PATTERN: re.Pattern = re.compile(
     r'^[^\x00-\x1f\x7f-\U0010ffff\\/:*?"<>|]*$'
 )
+
+# ---------------------------------------------------------------------------
+# PLM 同步相关列定义
+# ---------------------------------------------------------------------------
+
+# DocdokuPLM 内置属性列（对应 PartRevision 的标准字段，作为 instanceAttributes 上传）
+# "Description" 是 PLM 创建零件时的描述字段，其余四项与 BOM_HIDEABLE_COLUMNS 一致
+PLM_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
 
 # ---------------------------------------------------------------------------
 # 可调参数：惯量包络体编号上限

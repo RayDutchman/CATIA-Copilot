@@ -64,11 +64,14 @@ def collect_bom_rows(
     from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
+    # pycatia Product 对象直接封装的内置属性（getattr 路径）
+    # description_reference → product.DescriptionRef（引用产品的描述，属性对话框里填写的值）
     DIRECT_ATTR_MAP: dict[str, str] = {
         "Nomenclature": "nomenclature",
         "Revision":     "revision",
         "Definition":   "definition",
         "Source":       "source",
+        "Description":  "description_reference",
     }
 
     def _get_prop(product, name: str) -> str:

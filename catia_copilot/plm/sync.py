@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from catia_copilot.constants import PRESET_USER_REF_PROPERTIES, PLM_BUILTIN_ATTR_COLS
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class ExistingPartPolicy(Enum):
 class CheckedOutByOtherPolicy(Enum):
     """零件已被他人 Checkout 时的处理策略。"""
     SKIP          = "skip"           # 跳过并记录警告（不计入 failed）
-    FORCE_UNDO    = "force_undo"     # 强制撤销他人签出后更新（需管理员权限）
+    FORCE_UNDO    = "force_undo"     # 尝试撤销他人签出（PLM-07：当前版本实际无效，会降级为 SKIP）
 
 
 class OwnCheckedOutPolicy(Enum):
@@ -112,9 +114,12 @@ class SyncResult:
 
 # ── BOM 提取（CATIA COM，须在主线程调用） ──────────────────────────────────────
 
-_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
-_CUSTOM_COLS:       list[str] = ["零件类型", "设计状态", "材料", "重量", "物料编码", "存货类别", "规格型号", "备注"]
-_ALL_ATTR_COLS:     list[str] = _BUILTIN_ATTR_COLS + _CUSTOM_COLS
+# 从 constants 引入，避免重复定义：
+#   PLM_BUILTIN_ATTR_COLS  — DocdokuPLM 内置属性列（Nomenclature/Definition/Revision/Source/Description）
+#   PRESET_USER_REF_PROPERTIES — 用户自定义属性列（零件类型/设计状态/材料/重量…）
+_BUILTIN_ATTR_COLS = PLM_BUILTIN_ATTR_COLS
+_CUSTOM_COLS       = PRESET_USER_REF_PROPERTIES
+_ALL_ATTR_COLS: list[str] = _BUILTIN_ATTR_COLS + _CUSTOM_COLS
 
 # PLM instanceAttributes 时跳过的列
 _STRUCTURAL_COLS: frozenset[str] = frozenset({
@@ -373,66 +378,49 @@ def _sync_node(
                 latest_ver = _ver
             child_components.append({"component": {"number": child_pn, "version": latest_ver}})
 
-    pn       = node.part_number
-    plm_name = node.attrs.get("Nomenclature") or pn
-    lbl      = _lbl(pn, plm_name)
+    pn        = node.part_number
+    nom       = (node.attrs.get("Nomenclature") or "").strip()   # 为空则不显示
+    plm_name  = nom or pn                                         # create_part 的 name 字段兜底用编号
+    lbl       = _lbl(pn, nom)                                     # 日志标识：只在有 Nomenclature 时显示 <名称>
 
-    # 2. 判断零件是否已存在
-    existing: tuple | None = None   # (part_number, version, iteration) 或 None
+    # 2. 用 POST /parts 探测零件是否存在，同时完成新建
+    #    GET /parts/{pn}-{ver} 在服务端存在全局 NPE bug（PLM-06），无法可靠判断零件是否存在；
+    #    POST /parts：成功(200) → 零件不存在已新建；400"不唯一" → 零件已存在；其他 → 失败
     try:
-        pn_r, ver_r, iter_r = _plm_call_with_retry(
-            client._get_latest_version, workspace, pn
+        part_number, version, iteration = _plm_call_with_retry(
+            client.create_part,
+            workspace, pn, plm_name,
+            node.attrs.get("Description", ""),
+            tpl_id,
         )
-        existing = (pn_r, ver_r, iter_r)
-    except PlmApiError as exc:
-        if exc.status_code not in (404, 400, 0):
-            result.failed += 1
-            if exc.status_code == 500:
-                # 服务端已知 bug：checkOutUser 为 null 时 isCheckoutByAnotherUser 抛 NPE
-                msg = "PLM 服务端内部错误(500)，跳过此零件"
-            else:
-                msg = f"查询版本失败({exc.status_code})"
-            result.errors.append(f"{lbl}: {msg} — {exc}")
-            cb(_log_fail(msg, lbl))
-            return None
-        # 404/400 → 零件不存在，existing 保持 None
-
-    # 3. 不存在时：按策略决定是否新建
-    is_new = False
-    if existing is None:
+        # 新建成功，服务端自动 checkout
         if not options.create_new_parts:
+            # 不新建模式：立即 checkin 再删除，然后跳过
+            try:
+                _plm_call_with_retry(client.checkin_part, workspace, part_number, version)
+                _plm_call_with_retry(client.delete_part, workspace, part_number, version)
+            except PlmApiError:
+                pass  # 清理失败不影响跳过逻辑
             result.skipped += 1
             cb(_log_skip("跳过-不新建", lbl))
             return None
-        # 新建
-        try:
-            part_number, version = _plm_call_with_retry(
-                client.create_part,
-                workspace, pn, plm_name,
-                node.attrs.get("Description", ""),
-                tpl_id,
-            )
-            is_new = True
-            result.created += 1
-        except PlmApiError as exc:
+        result.created += 1
+        return _do_update_and_checkin(
+            node, lbl, "新建", client, workspace, part_number, version, iteration,
+            child_components, options, result, cb,
+        )
+    except PlmApiError as exc:
+        if exc.status_code == 400 and "不唯一" in str(exc):
+            # 零件已存在，继续走已存在流程
+            part_number, version = pn, "A"
+        else:
             result.failed += 1
             msg = f"创建失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg} — {exc}")
             cb(_log_fail(msg, lbl))
             return None
-        try:
-            _, _, iteration = _plm_call_with_retry(
-                client._get_latest_version, workspace, part_number
-            )
-        except PlmApiError:
-            iteration = 1
-        return _do_update_and_checkin(
-            node, lbl, "新建", client, workspace, part_number, version, iteration,
-            child_components, options, result, cb,
-        )
 
-    # 4. 零件已存在
-    part_number, version, _ = existing
+    # 3. 零件已存在
 
     # ── 已存在零件：查询 checkout 状态 ──────────────────────────────────────
     checkout_owner = _get_checkout_owner(client, workspace, part_number, version)
@@ -552,7 +540,9 @@ def _do_update_and_checkin(
             workspace, part_number, version, iteration,
             attr_values, child_components,
         )
-        result.updated += 1
+        # 新建零件的属性写入不计入 updated（created 已在 _sync_node 统计）
+        if source != "新建":
+            result.updated += 1
         col2 = "属性已写入"
     except PlmApiError as exc:
         update_ok = False
@@ -578,9 +568,10 @@ def _do_update_and_checkin(
 
     cb(_log_row(source, col2, col3, lbl))
 
-    # 统计修正：update 失败时回滚 updated +1
-    if not update_ok and result.updated > 0:
-        result.updated -= 1
+    # 统计修正：update 失败时计入 failed
+    if not update_ok:
+        if source != "新建" and result.updated > 0:
+            result.updated -= 1
         result.failed += 1
 
     return part_number, version

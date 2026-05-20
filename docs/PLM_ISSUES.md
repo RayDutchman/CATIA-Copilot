@@ -108,7 +108,7 @@ threw java.lang.NullPointerException in PartTemplateResource.java at line 166
 
 ### PLM-06：`GET /parts/{pn}-{ver}` 在数据异常时抛 500 NullPointerException
 
-**状态**：服务端 bug，客户端已做防御处理  
+**状态**：✅ 服务端已修复（2026-05-20），客户端防御性读取保留  
 **发现时间**：2026-05  
 **端点**：`GET /workspaces/{ws}/parts/{partNumber}-{version}`
 
@@ -144,11 +144,11 @@ return partRevision.isCheckedOut()
 
 **客户端处理**（已实施）
 - `_sync_node`：HTTP 500 单独提示，与其他查询失败区分
-- `_get_checkout_owner`：`(result.get("checkOutUser") or {}).get("login")` 防御性读取，避免客户端自身因 null 崩溃
+- `_get_checkout_owner`：`(result.get("checkOutUser") or {}).get("login")` 防御性读取（保留，参见 REST-API-Notes.md 建议）
+- `_get_latest_version`：服务端修复前曾对 500+NPE 执行 `continue`（视为不存在），已于修复后移除，现 500 直接 raise
 
 **待跟进**  
-PLM 管理员需修复 `ProductManagerBean.java:3508` 添加 null guard，
-并清理数据库中 `checkOutUser=null` 且 `checkOutState=CHECKED_OUT` 的脏数据记录。
+~~PLM 管理员需修复 `ProductManagerBean.java:3508` 添加 null guard~~（已修复）
 
 ---
 

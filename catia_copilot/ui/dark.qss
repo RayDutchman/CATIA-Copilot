@@ -356,8 +356,8 @@ QPlainTextEdit#logView {
     color: #d4d4d4;
     border: none;
     border-radius: 0px;
-    font-family: "Consolas", "Cascadia Code", monospace;
-    font-size: 9pt;
+    font-family: @log_font_family;
+    font-size: @log_font_size;
 }
 QLabel#logPathLabel {
     color: #555555;

@@ -4,6 +4,50 @@
 
 ---
 
+## [1.8.0] — 2026-05-21
+
+### 新增 — BOM
+
+- **Description（描述）列**：新增 CATIA 内置属性 `Description` 支持，与 `Nomenclature`/`Definition`/`Revision`/`Source` 并列；`bom_collect.py` 通过 `description_reference` 属性采集，`constants.py` 同步补全列定义、显示名、宽度、可隐藏列、编辑列顺序。
+
+### 新增 — PLM 同步
+
+- **同步策略枚举**：新增 `SyncOptions`/`ExistingPartPolicy` 策略枚举，`_sync_node` 重构为先查询再按策略处理；日志改为四列等宽对齐表格。
+- **预设选项对话框**：同步前新增 `_SyncOptionsDialog`（预设 + 4 个选项组）。
+- **属性写入流程**：已存在零件同步时加入 `checkout → update → checkin` 完整流程，修复属性写入失败问题。
+- **存在性判断改为 POST 探测**：绕开 PLM 服务端 `GET /parts/{pn}-{ver}` 全局 NPE bug（PLM-06），改用 `POST /parts` 探测：成功=新建，`400"不唯一"`=已存在。
+- **FORCE_UNDO 策略灰显**：`undocheckout` 不支持撤销他人签出且 `iter=1` 时无法撤销（PLM-07），UI 灰显该选项，退化为 SKIP；旧配置强制忽略。
+- **PLM API 集成测试**：新增 33 个用例覆盖连通性、创建幂等性、空格编码、404/500 行为、属性更新、嵌套 BOM、撤销签出、并发等场景。
+
+### 新增 — 主题与 UI
+
+- **Fluent Design 无边框窗口**：主窗口改为无边框，新增自定义标题栏（Tab 切换、主题按钮、更多菜单、拖拽移动、双击最大化）。
+- **深色/浅色主题**：新增完整双套 QSS，`QSettings` 持久化偏好，运行时动态切换；所有对话框订阅主题信号自动跟随。
+- **DWM 标题栏着色**：通过 Win32 API 同步着色系统标题栏（如有）。
+- **SVG 图标单选/复选框**：单选框、复选框改用 SVG 图标渲染，深/浅主题各一套。
+- **QSS 常量化**：控件圆角、按钮高度、输入框高度、指示器尺寸、日志字体等提取为 `theme_manager.py` 常量，双主题统一占位符注入。
+- **行着色动态切换**：`bom_edit_dialog`/`mass_props_dialog` 订阅主题信号，切换主题时遍历现有行重设背景/前景色，不重建树。
+
+### 修复 — UI
+
+- 修复中文路径下"打开路径"异常：改用 `ShellExecuteW`（Unicode 宽字符 API），彻底解决 OEM 代码页乱码及 PowerShell 环境 `Explorer.ps1` 误解析问题。
+- 修复 HiDPI 下无边框窗口八方向 resize 区域检测偏移：改用 `QCursor.pos() + mapFromGlobal()` 精确命中测试。
+- 修复箭头按钮图标被裁剪：`setFixedSize(36,32)` + 内边距。
+- 修复 CATIA 已可见时仍调用 `application.visible = True` 导致窗口位置跳回的问题：改为 `if not application.visible` 条件赋值。
+
+### 修复 — PLM
+
+- 修复 `checkOutUser` 读取方式：改用 `(checkOutUser or {}).get('login')` 防御性读取，删除不存在的 `checkOutLogin` fallback。
+- 修复 `_get_latest_version` 对 500+NPE 响应体的处理：改为 `continue` 跳过而非 raise，保证已存在零件的迭代号查询不中断。
+- 修复新建零件时 `updated` 计数被多计的问题：`source=="新建"` 时不再重复计入 `updated`。
+- 修复 COM 连接检测被安全软件拦截 `tasklist` 时指示器持续显示未连接的问题。
+
+### 工程 — 构建
+
+- **`build.spec` 版本号自动同步**：不再硬编码版本字符串，改为正则解析 `constants.py` 中的 `APP_VERSION`，打包输出目录名自动跟随版本更新。
+
+---
+
 ## [1.7.0] — 2026-05-11
 
 ### 新增 — BOM 属性补全

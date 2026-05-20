@@ -248,10 +248,13 @@ class PlmApiClient:
         name: str,
         description: str,
         template_id: str | None = None,
-    ) -> tuple[str, str]:
-        """创建零件，返回 (零件号, 版本)。
+    ) -> tuple[str, str, int]:
+        """创建零件，返回 (零件号, 版本, 迭代号)。
 
-        若零件已存在（HTTP 409 或 400-不唯一），直接重新抛出 PlmApiError，
+        新建后服务端自动将零件置于 checkout 状态（创建者持有），
+        响应体含 lastIterationNumber（通常为 1）。
+
+        若零件已存在（HTTP 400-不唯一），直接重新抛出 PlmApiError，
         由调用方（sync.py）按策略决定如何处理已存在零件，不在此处吞掉。
 
         参数：
@@ -268,10 +271,11 @@ class PlmApiClient:
         }
         if template_id is not None:
             payload["templateId"] = template_id
-        result = self._request("POST", path, payload)
-        version = (result or {}).get("version", "A")
-        logger.info(f"PLM 零件已创建：{part_number}-{version}")
-        return part_number, version
+        result = self._request("POST", path, payload) or {}
+        version   = result.get("version", "A")
+        iteration = int(result.get("lastIterationNumber", 1))
+        logger.info(f"PLM 零件已创建：{part_number}-{version} iter{iteration}")
+        return part_number, version, iteration
 
     def _get_latest_version(
         self, workspace: str, part_number: str
@@ -294,16 +298,16 @@ class PlmApiClient:
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
-                # PLM-06 bug：服务端 isCheckoutByAnotherUser NPE 导致零件不存在时
-                # 返回 500 而非 404；对 500+NPE 响应体按"不存在"处理
+                # PLM-06 bug：服务端 isCheckoutByAnotherUser NPE，对所有零件（含不存在的）
+                # 返回 500；此 bug 在服务端未完全修复前继续对 500+NPE 按"不存在"处理。
+                # 注意：此路径现在仅用于"已存在零件的 checkout 后迭代号刷新"场景，
+                # 存在性判断已改由 POST /parts 完成（见 sync._sync_node），不再依赖本方法。
                 if exc.status_code == 500 and (
                     "NullPointerException" in str(exc)
                     or "isCheckoutByAnotherUser" in str(exc)
                 ):
                     continue
                 raise
-        # 全部版本均为 404/500-NPE → 零件不存在
-        # 抛出 404 让上层按"不存在"逻辑处理
         raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
 
     def update_iteration(
@@ -365,14 +369,33 @@ class PlmApiClient:
         )
         logger.debug(f"PLM Check In：{part_number}-{version}")
 
+    def delete_part(self, workspace: str, part_number: str, version: str) -> None:
+        """删除零件（需先 checkin，零件必须处于未签出状态）。
+
+        DocdokuPLM 端点：DELETE /workspaces/{ws}/parts/{pn}-{ver}
+        主要用于"不新建模式"下探测创建后的清理回滚。
+        """
+        ws = urllib.parse.quote(workspace)
+        pn = urllib.parse.quote(part_number)
+        self._request(
+            "DELETE",
+            f"/workspaces/{ws}/parts/{pn}-{version}",
+            expect_json=False,
+        )
+        logger.info(f"PLM 零件已删除：{part_number}-{version}")
+
     def force_undo_checkout(
         self, workspace: str, part_number: str, version: str
     ) -> None:
-        """强制撤销他人的 Checkout（需管理员权限）。
+        """尝试撤销他人的 Checkout。
 
         DocdokuPLM 端点：PUT /workspaces/{ws}/parts/{pn}-{ver}/undocheckout
-        普通用户只能撤销自己的签出；撤销他人签出需要 ADMIN 角色，
-        否则服务端返回 403。
+
+        已知限制（PLM-07）：
+        - 此端点只能撤销当前用户自己的签出，admin 也无法撤销他人签出（返回 400）
+        - iter=1（从未 checkin 过）时同样无法 undocheckout（返回 400）
+        因此 FORCE_UNDO 策略在当前 DocdokuPLM 版本下实际无效，
+        调用此方法几乎总会抛出 PlmApiError(400)，由 sync.py 捕获后降级为 SKIP。
         """
         ws = urllib.parse.quote(workspace)
         pn = urllib.parse.quote(part_number)

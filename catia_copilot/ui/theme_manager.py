@@ -41,6 +41,8 @@ CONTROL_RADIUS  = 4    # 普通控件圆角（px）：按钮、输入框、下�
 GROUPBOX_RADIUS = 6    # 分组框 / 菜单整体圆角（px）
 BUTTON_HEIGHT   = 26   # QPushButton min-height（px）
 INPUT_HEIGHT    = 22   # QLineEdit / QComboBox min-height（px）
+LOG_FONT_FAMILY = '"Consolas", "Cascadia Code", "NSimSun", monospace'  # 信息/日志文本框等宽字体族（NSimSun 保证汉字宽度=2×英文）
+LOG_FONT_SIZE   = "9pt"                                     # 信息/日志文本框字号
 
 
 def _load_qss(name: str) -> str:
@@ -187,6 +189,8 @@ class ThemeManager:
             .replace("@groupbox_radiuspx", f"{GROUPBOX_RADIUS}px") \
             .replace("@button_heightpx",   f"{BUTTON_HEIGHT}px") \
             .replace("@input_heightpx",    f"{INPUT_HEIGHT}px") \
+            .replace("@log_font_family",   LOG_FONT_FAMILY) \
+            .replace("@log_font_size",     LOG_FONT_SIZE) \
             .replace("@check_icon", _check_icon) \
             .replace("@radio_checked_icon", _radio_checked_icon) \
             .replace("@radio_unchecked_icon", _radio_unchecked_icon) \

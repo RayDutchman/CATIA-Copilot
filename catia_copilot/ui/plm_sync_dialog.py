@@ -108,7 +108,8 @@ class _SyncOptionsDialog(QDialog):
         g3 = QGroupBox("他人已签出（Checked Out）的零件")
         v3 = QVBoxLayout(g3)
         self._rb_other_skip  = QRadioButton("跳过并记录警告（推荐）")
-        self._rb_other_force = QRadioButton("强制覆盖他人签出（需管理员权限）")
+        self._rb_other_force = QRadioButton("强制覆盖他人签出（当前 PLM 版本不支持，效果等同跳过）")
+        self._rb_other_force.setEnabled(False)   # PLM-07：undocheckout 无法撤销他人签出
         bg3 = QButtonGroup(self)
         bg3.addButton(self._rb_other_skip)
         bg3.addButton(self._rb_other_force)
@@ -162,8 +163,9 @@ class _SyncOptionsDialog(QDialog):
         self._rb_skip_existing.setChecked(ep == "skip")
         self._rb_checkout_update.setChecked(ep != "skip")
 
-        self._rb_other_skip.setChecked(op != "force_undo")
-        self._rb_other_force.setChecked(op == "force_undo")
+        # PLM-07：force_undo 在当前 PLM 版本无效，旧配置强制回退为 skip
+        self._rb_other_skip.setChecked(True)
+        self._rb_other_force.setChecked(False)
 
         self._rb_checkin.setChecked(au != "keep_checkout")
         self._rb_keep_checkout.setChecked(au == "keep_checkout")
