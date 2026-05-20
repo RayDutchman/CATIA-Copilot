@@ -368,10 +368,7 @@ class PlmSyncDialog(QDialog):
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(500)
-        self._log.setStyleSheet(
-            "background-color: #1e1e1e; color: #d4d4d4;"
-            " font-family: Consolas, 'Courier New', monospace; font-size: 9pt;"
-        )
+        self._log.setObjectName("logView")  # 通过 QSS 跟随主题，与主窗口日志框统一
         layout.addWidget(self._log)
 
         # ── 按钮行 ────────────────────────────────────────────────────────────
