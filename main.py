@@ -14,7 +14,6 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 from catia_copilot.utils import resource_path, ensure_clean_gencache
 from catia_copilot.constants import APP_ICON_PATH
-from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.ui.main_window import MainWindow
 
 
@@ -33,9 +32,6 @@ def main() -> None:
     icon_path = resource_path(APP_ICON_PATH)
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
-
-    # 加载并应用上次保存的主题（深色 / 浅色）
-    theme_manager.load_saved_theme()
 
     window = MainWindow()
     # 将应用图标同步到自定义标题栏

@@ -48,7 +48,7 @@ ABOUT_TEXT = f"""{APP_NAME} v{APP_VERSION}
 # Default window geometry
 # ---------------------------------------------------------------------------
 
-MAIN_WINDOW_DEFAULT_WIDTH  = 480
+MAIN_WINDOW_DEFAULT_WIDTH  = 560
 MAIN_WINDOW_DEFAULT_HEIGHT = 520
 
 # Relative path to the QSS stylesheet (used by main.py entry point)

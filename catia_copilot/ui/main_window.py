@@ -17,14 +17,15 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
-    QDialog, QStackedWidget, QScrollArea, QSizeGrip, QMenu,
+    QDialog, QStackedWidget, QScrollArea, QSizeGrip, QMenu, QPlainTextEdit,
+    QSizePolicy,
 )
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtGui import QAction, QIcon, QCursor, QFont, QFontMetrics
+from PySide6.QtCore import Qt, QTimer, QPoint, QRect
+import ctypes
 
 from catia_copilot.ui.title_bar import TitleBar
 from catia_copilot.ui.theme_manager import theme_manager
-
 from catia_copilot.constants import (
     APP_NAME,
     ABOUT_TEXT,
@@ -35,10 +36,9 @@ from catia_copilot.constants import (
     CRACK_DIR_PATH,
 )
 from catia_copilot.utils import resource_path, detect_catia_root, check_catia_connection, diagnose_catia_connection
-from catia_copilot.logging_setup import log_signal_emitter
+from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
 from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
 from catia_copilot.catia.template import apply_part_template
-from catia_copilot.ui.log_window import LogWindow
 from catia_copilot.ui.convert_dialog import FileConvertDialog
 from catia_copilot.ui.export_bom_dialog import ExportBomDialog
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
@@ -62,14 +62,17 @@ class MainWindow(QMainWindow):
         # 无边框窗口：去掉系统标题栏，使用自定义标题栏
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
-        self.setMinimumSize(400, 420)
+        self.setMinimumSize(540, 420)
 
-        self._log_window = LogWindow(self)
-        log_signal_emitter.message_logged.connect(self._log_window.append_log)
+        # 无边框窗口 resize 边缘热区宽度（像素），供 nativeEvent 使用
+        self._resize_margin = 6
 
         self._build_frameless_ui()
         self._build_connection_indicator()
         self.statusBar().showMessage("就绪")
+
+        # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
+        theme_manager.register(self)
 
     # ── CATIA 连接状态指示器 ──────────────────────────────────────────────
 
@@ -296,15 +299,12 @@ class MainWindow(QMainWindow):
         # ── 标题栏 ──────────────────────────────────────────────────────
         self._title_bar = TitleBar(self)
         self._title_bar.tab_changed.connect(self._on_tab_changed)
-        self._title_bar.theme_toggle_requested.connect(self._on_theme_toggle)
         self._title_bar.more_requested.connect(self._show_more_menu)
 
         # 设置标题栏图标（若 icon 已通过 QApplication 设置则复用）
         app_icon = self.windowIcon()
         if not app_icon.isNull():
             self._title_bar.set_app_icon(app_icon)
-        # 同步主题按钮图标
-        self._title_bar.set_theme_icon(theme_manager.is_dark)
 
         # ── 分页内容区域 ────────────────────────────────────────────────
         self._content_stack = QStackedWidget()
@@ -319,7 +319,10 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._title_bar)
-        layout.addWidget(self._content_stack)
+        layout.addWidget(self._content_stack, stretch=1)
+        # 嵌入式日志面板（默认隐藏，位于内容区下方、状态栏上方）
+        self._log_panel = self._build_log_panel()
+        layout.addWidget(self._log_panel)
         self.setCentralWidget(central)
 
         # ── 隐藏系统菜单栏（功能迁移到更多菜单）──────────────────────
@@ -329,18 +332,138 @@ class MainWindow(QMainWindow):
         grip = QSizeGrip(self)
         self.statusBar().addPermanentWidget(grip)
 
-    # ── Tab 切换 ───────────────────────────────────────────────────────────
+    def _build_log_panel(self) -> QWidget:
+        """构建嵌入在主窗口底部的日志面板（默认隐藏）。
+        
+        布局策略：
+        - panel 无固定高度，由 logView 的 maximumHeight 控制上限（≈10行）
+        - content_stack 有 stretch=1，窗口空间不足时优先压缩 logView
+        """
+        panel = QWidget()
+        panel.setObjectName("logPanel")
+        panel.setVisible(False)
+        # 面板最小高度：底部工具栏 + 至少1行日志
+        panel.setMinimumHeight(60)
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        self._log_text = QPlainTextEdit()
+        self._log_text.setReadOnly(True)
+        self._log_text.setObjectName("logView")
+        # 用 QSS 中指定的字体（9pt Consolas）直接计算行高，
+        # 避免在 QSS 应用前调用 widget.fontMetrics() 拿到错误的默认字体。
+        fm = QFontMetrics(QFont("Consolas", 9))
+        line_h = fm.lineSpacing()
+        # 最多显示 10 行 + 少量内边距；最小保证 3 行可见
+        self._log_text.setMaximumHeight(line_h * 10 + 12)
+        self._log_text.setMinimumHeight(line_h * 3 + 8)
+        layout.addWidget(self._log_text)
+
+        # 底部工具栏：打开日志文件按钮 + 路径标签
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(8)
+        open_btn = QPushButton("打开日志文件")
+        # Fixed 策略：按钮只占 sizeHint 宽度，不会因布局拉伸而变大
+        open_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        open_btn.clicked.connect(self._open_log_file)
+        path_label = QLabel(f"Log: {LOG_FILE}")
+        path_label.setObjectName("logPathLabel")
+        path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        bottom.addWidget(open_btn)
+        bottom.addWidget(path_label, stretch=1)
+        layout.addLayout(bottom)
+
+        # 连接日志信号
+        log_signal_emitter.message_logged.connect(self._append_log)
+
+        return panel
+
+    def _append_log(self, message: str) -> None:
+        """将日志消息追加到嵌入式日志面板并滚动到底部。"""
+        self._log_text.appendPlainText(message)
+        self._log_text.verticalScrollBar().setValue(
+            self._log_text.verticalScrollBar().maximum()
+        )
+
+    def _open_log_file(self) -> None:
+        """在系统默认编辑器中打开日志文件。"""
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(LOG_FILE))
+            else:
+                subprocess.Popen(
+                    ["xdg-open", str(LOG_FILE)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            QMessageBox.warning(
+                self, "无法打开日志文件",
+                f"无法打开日志文件：\n{LOG_FILE}\n\n{e}",
+            )
+
+    # ── 无边框 WM_NCHITTEST resize 支持 ───────────────────────────────────
+
+    def nativeEvent(self, event_type: bytes, message) -> tuple[bool, int]:  # noqa: N802
+        """拦截 Windows WM_NCHITTEST 消息，实现无边框窗口八方向 resize。
+
+        lParam 低 16 位为屏幕 X，高 16 位为屏幕 Y；均为有符号短整型，
+        超过 0x7FFF 时需减去 0x10000 转换为负值。
+        """
+        if event_type == b"windows_generic_MSG":
+            import ctypes.wintypes
+            msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.wintypes.MSG)).contents
+            if msg.message == 0x0084:  # WM_NCHITTEST
+                # 解析屏幕坐标（有符号）
+                lp = msg.lParam
+                sx = lp & 0xFFFF
+                sy = (lp >> 16) & 0xFFFF
+                if sx >= 0x8000:
+                    sx -= 0x10000
+                if sy >= 0x8000:
+                    sy -= 0x10000
+
+                # 转为窗口本地坐标
+                geo = self.geometry()
+                x = sx - geo.x()
+                y = sy - geo.y()
+                w = geo.width()
+                h = geo.height()
+                m = self._resize_margin
+
+                left   = x < m
+                right  = x > w - m
+                top    = y < m
+                bottom = y > h - m
+
+                if top and left:
+                    return True, 13   # HTTOPLEFT
+                if top and right:
+                    return True, 14   # HTTOPRIGHT
+                if bottom and left:
+                    return True, 16   # HTBOTTOMLEFT
+                if bottom and right:
+                    return True, 17   # HTBOTTOMRIGHT
+                if left:
+                    return True, 10   # HTLEFT
+                if right:
+                    return True, 11   # HTRIGHT
+                if top:
+                    return True, 12   # HTTOP
+                if bottom:
+                    return True, 15   # HTBOTTOM
+
+        return super().nativeEvent(event_type, message)
+
 
     def _on_tab_changed(self, index: int) -> None:
         """响应标题栏 Tab 切换，同步更新内容区页面。"""
         self._content_stack.setCurrentIndex(index)
-
-    # ── 主题切换 ───────────────────────────────────────────────────────────
-
-    def _on_theme_toggle(self) -> None:
-        """切换深色 / 浅色主题并更新标题栏图标。"""
-        is_dark = theme_manager.toggle()
-        self._title_bar.set_theme_icon(is_dark)
 
     # ── 更多功能菜单 ───────────────────────────────────────────────────────
 
@@ -354,14 +477,19 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
-        menu.addAction(QAction(
-            "显示 / 隐藏日志", self,
-            triggered=self._toggle_log_from_menu,
-        ))
+        log_label = "隐藏日志" if self._log_panel.isVisible() else "显示日志"
+        menu.addAction(QAction(log_label, self, triggered=self._toggle_log_from_menu))
+
         menu.addAction(QAction(
             "CATIA 连接诊断", self,
             triggered=self._show_catia_diagnostics,
         ))
+        menu.addSeparator()
+
+        # 主题切换
+        theme_label = "切换到浅色" if theme_manager.current_mode() == "dark" else "切换到深色"
+        menu.addAction(QAction(theme_label, self, triggered=theme_manager.toggle))
+
         menu.addSeparator()
         menu.addAction(QAction("文档", self, triggered=self._show_help))
         menu.addAction(QAction(
@@ -398,12 +526,8 @@ class MainWindow(QMainWindow):
         ))
 
     def _toggle_log_from_menu(self) -> None:
-        """切换日志窗口的显示 / 隐藏状态。"""
-        if self._log_window.isVisible():
-            self._log_window.hide()
-        else:
-            self._log_window.show()
-            self._log_window.raise_()
+        """切换嵌入式日志面板的显示 / 隐藏状态。"""
+        self._log_panel.setVisible(not self._log_panel.isVisible())
 
     # ── 分页构建辅助 ───────────────────────────────────────────────────────
 

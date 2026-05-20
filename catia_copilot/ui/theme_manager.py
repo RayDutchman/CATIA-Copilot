@@ -1,20 +1,29 @@
 """
-主题管理器：Fluent Design 深色 / 浅色主题切换与持久化。
+主题管理器：支持手动切换深色 / 浅色主题，偏好持久化到 QSettings。
 
-使用 QSettings 存储用户偏好，运行时动态更新 QApplication 全局样式表。
-无需第三方依赖，全部通过自定义 QSS 实现 Windows 11 Fluent Design 风格。
+- 启动时读取 QSettings 中保存的手动偏好；若无则跟随系统主题
+- toggle() 在深/浅色之间切换并写入 QSettings，下次启动自动恢复
+- 系统主题变化时，仅在无手动偏好的情况下自动跟随
+- QSS 通过 QApplication.setStyleSheet() 全局应用，对话框等顶层窗口均生效
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import Qt, QSettings, QObject, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
-# ── QSettings 标识 ─────────────────────────────────────────────────────────
-_ORG     = "ChenWeibo"
-_APP     = "CATIACopilot"
-_KEY     = "ui/theme"
-_DEFAULT = "dark"
+
+class _ThemeSignalEmitter(QObject):
+    """向外广播主题切换事件的轻量信号发射器。"""
+    #: 切换完成后发出，携带新主题名称 "dark" 或 "light"
+    theme_changed = Signal(str)
+
+
+#: 全局单例，供 dialog 等订阅主题切换：
+#:   from catia_copilot.ui.theme_manager import theme_signal
+#:   theme_signal.theme_changed.connect(my_slot)
+theme_signal = _ThemeSignalEmitter()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  深色主题 QSS
@@ -27,7 +36,6 @@ DARK_QSS = """
 * { outline: none; }
 
 QWidget {
-    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", sans-serif;
     font-size: 9pt;
     color: #e8e8e8;
     background-color: transparent;
@@ -58,8 +66,9 @@ QPushButton#titleTabButton {
     color: #909090;
     font-size: 9pt;
     padding: 0 16px;
-    margin: 4px 1px 0 1px;
+    margin: 4px 0 0 0;
     min-height: 32px;
+    min-width: 0;
 }
 QPushButton#titleTabButton:hover {
     background-color: #363636;
@@ -72,52 +81,49 @@ QPushButton#titleTabButton:checked {
     font-weight: 600;
 }
 
-/* ── 标题栏控制按钮（最小化 / 最大化）────────────────────────────── */
+/* ── 标题栏 caption 按钮（≡ / 最小化 / 最大化）Win11 原生规格 ───── */
+QPushButton#titleBarMoreBtn,
 QPushButton#titleBarMinBtn,
 QPushButton#titleBarMaxBtn {
     background: transparent;
     border: none;
+    border-radius: 0px;
     color: #c0c0c0;
     font-size: 10pt;
-    border-radius: 0px;
-    min-width: 46px;
+    padding: 0;
+    min-width: 46px;  max-width: 46px;
+    min-height: 40px; max-height: 40px;
 }
+QPushButton#titleBarMoreBtn:hover,
 QPushButton#titleBarMinBtn:hover,
 QPushButton#titleBarMaxBtn:hover {
-    background-color: #444444;
+    background-color: rgba(255, 255, 255, 26);
     color: #ffffff;
 }
+QPushButton#titleBarMoreBtn:pressed,
 QPushButton#titleBarMinBtn:pressed,
-QPushButton#titleBarMaxBtn:pressed { background-color: #555555; }
+QPushButton#titleBarMaxBtn:pressed {
+    background-color: rgba(255, 255, 255, 18);
+    color: #d0d0d0;
+}
 
 /* ── 关闭按钮（红色 hover）───────────────────────────────────────── */
 QPushButton#titleBarCloseBtn {
     background: transparent;
     border: none;
+    border-radius: 0px;
     color: #c0c0c0;
     font-size: 10pt;
-    border-radius: 0px;
-    min-width: 46px;
+    padding: 0;
+    min-width: 46px;  max-width: 46px;
+    min-height: 40px; max-height: 40px;
 }
 QPushButton#titleBarCloseBtn:hover {
     background-color: #c42b1c;
     color: #ffffff;
 }
-QPushButton#titleBarCloseBtn:pressed { background-color: #b52015; }
-
-/* ── 更多菜单 / 主题按钮 ─────────────────────────────────────────── */
-QPushButton#titleBarMoreBtn,
-QPushButton#titleBarThemeBtn {
-    background: transparent;
-    border: none;
-    color: #c0c0c0;
-    font-size: 11pt;
-    border-radius: 4px;
-    min-width: 32px;
-}
-QPushButton#titleBarMoreBtn:hover,
-QPushButton#titleBarThemeBtn:hover {
-    background-color: #444444;
+QPushButton#titleBarCloseBtn:pressed {
+    background-color: #a82315;
     color: #ffffff;
 }
 
@@ -151,8 +157,6 @@ QPushButton {
     padding: 5px 14px;
     min-height: 26px;
     font-size: 9pt;
-    text-align: left;
-    padding-left: 10px;
 }
 QPushButton:hover {
     background-color: #484848;
@@ -251,17 +255,6 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
-/* ── 复选框 ────────────────────────────────────────────────────────── */
-QCheckBox { color: #e8e8e8; spacing: 6px; }
-QCheckBox::indicator {
-    width: 16px; height: 16px;
-    border: 1px solid #505050;
-    border-radius: 3px;
-    background-color: #2a2a2a;
-}
-QCheckBox::indicator:hover   { border-color: #0078d4; }
-QCheckBox::indicator:checked { background-color: #0078d4; border-color: #0078d4; }
-
 /* ── 状态栏 ────────────────────────────────────────────────────────── */
 QStatusBar {
     background-color: #202020;
@@ -338,6 +331,25 @@ QTreeWidget::item:hover    { background-color: #2a2a2a; }
 
 /* ── 对话框内部 ────────────────────────────────────────────────────── */
 QDialog QGroupBox { background-color: #242424; }
+
+/* ── 日志面板（深色主题）──────────────────────────────────────────── */
+QWidget#logPanel {
+    background-color: #141414;
+    border-top: 1px solid #333333;
+}
+QPlainTextEdit#logView {
+    background-color: #141414;
+    color: #d4d4d4;
+    border: none;
+    border-radius: 0px;
+    font-family: "Consolas", "Cascadia Code", monospace;
+    font-size: 9pt;
+}
+QLabel#logPathLabel {
+    color: #555555;
+    font-size: 8.5pt;
+    background: transparent;
+}
 """
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -351,7 +363,6 @@ LIGHT_QSS = """
 * { outline: none; }
 
 QWidget {
-    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", sans-serif;
     font-size: 9pt;
     color: #1a1a1a;
     background-color: transparent;
@@ -382,8 +393,9 @@ QPushButton#titleTabButton {
     color: #606060;
     font-size: 9pt;
     padding: 0 16px;
-    margin: 4px 1px 0 1px;
+    margin: 4px 0 0 0;
     min-height: 32px;
+    min-width: 0;
 }
 QPushButton#titleTabButton:hover {
     background-color: #f0f0f0;
@@ -396,41 +408,51 @@ QPushButton#titleTabButton:checked {
     font-weight: 600;
 }
 
-/* ── 标题栏控制按钮 ───────────────────────────────────────────────── */
+/* ── 标题栏 caption 按钮（≡ / 最小化 / 最大化）Win11 原生规格 ───── */
+QPushButton#titleBarMoreBtn,
 QPushButton#titleBarMinBtn,
 QPushButton#titleBarMaxBtn {
     background: transparent;
     border: none;
+    border-radius: 0px;
     color: #505050;
     font-size: 10pt;
-    border-radius: 0px;
-    min-width: 46px;
+    padding: 0;
+    min-width: 46px;  max-width: 46px;
+    min-height: 40px; max-height: 40px;
 }
+QPushButton#titleBarMoreBtn:hover,
 QPushButton#titleBarMinBtn:hover,
-QPushButton#titleBarMaxBtn:hover { background-color: #e0e0e0; color: #1a1a1a; }
+QPushButton#titleBarMaxBtn:hover {
+    background-color: rgba(0, 0, 0, 26);
+    color: #191919;
+}
+QPushButton#titleBarMoreBtn:pressed,
+QPushButton#titleBarMinBtn:pressed,
+QPushButton#titleBarMaxBtn:pressed {
+    background-color: rgba(0, 0, 0, 18);
+    color: #191919;
+}
 
+/* ── 关闭按钮（红色 hover）───────────────────────────────────────── */
 QPushButton#titleBarCloseBtn {
     background: transparent;
     border: none;
+    border-radius: 0px;
     color: #505050;
     font-size: 10pt;
-    border-radius: 0px;
-    min-width: 46px;
+    padding: 0;
+    min-width: 46px;  max-width: 46px;
+    min-height: 40px; max-height: 40px;
 }
-QPushButton#titleBarCloseBtn:hover { background-color: #c42b1c; color: #ffffff; }
-QPushButton#titleBarCloseBtn:pressed { background-color: #b52015; }
-
-QPushButton#titleBarMoreBtn,
-QPushButton#titleBarThemeBtn {
-    background: transparent;
-    border: none;
-    color: #505050;
-    font-size: 11pt;
-    border-radius: 4px;
-    min-width: 32px;
+QPushButton#titleBarCloseBtn:hover {
+    background-color: #c42b1c;
+    color: #ffffff;
 }
-QPushButton#titleBarMoreBtn:hover,
-QPushButton#titleBarThemeBtn:hover { background-color: #e0e0e0; color: #1a1a1a; }
+QPushButton#titleBarCloseBtn:pressed {
+    background-color: #a82315;
+    color: #ffffff;
+}
 
 /* ── 分组框（卡片）────────────────────────────────────────────────── */
 QGroupBox {
@@ -462,8 +484,6 @@ QPushButton {
     padding: 5px 14px;
     min-height: 26px;
     font-size: 9pt;
-    text-align: left;
-    padding-left: 10px;
 }
 QPushButton:hover   { background-color: #e8e8e8; border-color: #b8b8b8; }
 QPushButton:pressed { background-color: #d8d8d8; border-color: #aaaaaa; }
@@ -548,17 +568,6 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
-/* ── 复选框 ────────────────────────────────────────────────────────── */
-QCheckBox { color: #1a1a1a; spacing: 6px; }
-QCheckBox::indicator {
-    width: 16px; height: 16px;
-    border: 1px solid #cccccc;
-    border-radius: 3px;
-    background-color: #ffffff;
-}
-QCheckBox::indicator:hover   { border-color: #0078d4; }
-QCheckBox::indicator:checked { background-color: #0078d4; border-color: #0078d4; }
-
 /* ── 状态栏 ────────────────────────────────────────────────────────── */
 QStatusBar {
     background-color: #f3f3f3;
@@ -635,51 +644,96 @@ QTreeWidget::item:hover    { background-color: #f0f0f0; }
 
 /* ── 对话框内部 ────────────────────────────────────────────────────── */
 QDialog QGroupBox { background-color: #f8f8f8; }
+
+/* ── 日志面板（浅色主题）──────────────────────────────────────────── */
+QWidget#logPanel {
+    background-color: #f3f3f3;
+    border-top: 1px solid #e0e0e0;
+}
+QPlainTextEdit#logView {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    font-family: "Consolas", "Cascadia Code", monospace;
+    font-size: 9pt;
+}
+QLabel#logPathLabel {
+    color: #888888;
+    font-size: 8.5pt;
+    background: transparent;
+}
 """
 
 
 class ThemeManager:
-    """全局主题管理器（单例）。
+    """跟随系统主题 / 手动切换的主窗口 QSS 管理器（单例）。
 
-    职责：
-    - 从 QSettings 读取上次保存的主题
-    - 调用 QApplication.setStyleSheet() 应用对应 QSS
-    - 提供 toggle() 方法在深色/浅色之间切换
+    - 启动时读取 QSettings 中保存的手动偏好；若无则读取系统主题
+    - toggle() 在深/浅色之间切换并持久化到 QSettings
+    - 系统主题变化时：仅在无手动偏好时自动跟随
     """
 
+    _SETTINGS_ORG  = "CATIACopilot"
+    _SETTINGS_APP  = "theme"
+    _SETTINGS_KEY  = "mode"
+
     _instance: "ThemeManager | None" = None
-    _is_dark: bool = True
+    _window = None
+    _manual: str | None = None   # None=跟随系统; "dark"/"light"=手动覆盖
 
     def __new__(cls) -> "ThemeManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def load_saved_theme(self) -> None:
-        """从 QSettings 读取上次保存的主题偏好并立即应用。"""
-        settings = QSettings(_ORG, _APP)
-        theme = settings.value(_KEY, _DEFAULT)
-        self._is_dark = (theme == "dark")
+    def register(self, window) -> None:
+        """注册主窗口，立即应用主题，并监听后续系统主题变化。"""
+        self._window = window
+        # 读取上次保存的手动偏好
+        saved = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP).value(
+            self._SETTINGS_KEY, None
+        )
+        if saved in ("dark", "light"):
+            self._manual = saved
+        self._apply()
+        # 系统主题变化时重新应用（_apply 内部会判断是否有手动覆盖）
+        QGuiApplication.styleHints().colorSchemeChanged.connect(
+            lambda _: self._apply()
+        )
+
+    def toggle(self) -> None:
+        """在深色 / 浅色之间切换并持久化。"""
+        new_mode = "light" if self._current_mode() == "dark" else "dark"
+        self._manual = new_mode
+        QSettings(self._SETTINGS_ORG, self._SETTINGS_APP).setValue(
+            self._SETTINGS_KEY, new_mode
+        )
         self._apply()
 
-    def toggle(self) -> bool:
-        """切换深色 / 浅色主题，持久化偏好，返回切换后是否为深色。"""
-        self._is_dark = not self._is_dark
-        settings = QSettings(_ORG, _APP)
-        settings.setValue(_KEY, "dark" if self._is_dark else "light")
-        self._apply()
-        return self._is_dark
+    def current_mode(self) -> str:
+        """返回当前生效的主题名称：'dark' 或 'light'。"""
+        return self._current_mode()
 
-    @property
-    def is_dark(self) -> bool:
-        """当前是否为深色主题。"""
-        return self._is_dark
+    def _current_mode(self) -> str:
+        if self._manual:
+            return self._manual
+        scheme = QGuiApplication.styleHints().colorScheme()
+        return "dark" if scheme == Qt.ColorScheme.Dark else "light"
 
     def _apply(self) -> None:
-        """将对应主题的 QSS 设置到 QApplication 全局样式表。"""
+        """根据当前主题选择 QSS 并通过 QApplication 全局应用（所有窗口均生效）。"""
+        if self._window is None:
+            # 尚未调用 register()，暂不应用
+            return
+        mode = self._current_mode()
+        qss = DARK_QSS if mode == "dark" else LIGHT_QSS
+        # 应用到整个 application，所有顶层窗口（包括 QDialog）均生效
         app = QApplication.instance()
-        if app is not None:
-            app.setStyleSheet(DARK_QSS if self._is_dark else LIGHT_QSS)
+        if app:
+            app.setStyleSheet(qss)
+        # 通知订阅者（如 dialog 中的行着色逻辑）主题已切换
+        theme_signal.theme_changed.emit(mode)
 
 
 # 全局单例，供整个应用直接导入使用

@@ -52,7 +52,9 @@ from catia_copilot.ui.ui_colors import (
     MIRROR_BG as _MIRROR_BG_COLOR,
     ROW_LOCKED_FG, ROW_NOT_FOUND_BG, ROW_MEAS_FAILED_BG,
     ROW_LIGHTWEIGHT_BG, ROW_UNSAVED_BG, ROW_PRODUCT_BG,
+    get_colors as _get_colors,
 )
+from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
 
 logger = logging.getLogger(__name__)
@@ -226,10 +228,73 @@ class MassPropsDialog(QDialog):
         if isinstance(saved_geom, QByteArray) and not saved_geom.isEmpty():
             self.restoreGeometry(saved_geom)
 
+        # ── 主题切换：重新着色所有行及提示标签 ───────────────────────────────
+        theme_signal.theme_changed.connect(self._on_theme_changed)
+
     def done(self, result: int) -> None:
         """保存窗口几何后执行标准关闭流程。"""
         self._settings.setValue("geometry", self.saveGeometry())
         super().done(result)
+
+    # ── 主题切换响应 ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _prereq_label_style(mode: str) -> str:
+        """惯量前置条件说明标签的主题样式。"""
+        if mode == "dark":
+            return (
+                "QLabel { background-color: #3a2e00; border: 1px solid #8a6800;"
+                " border-radius: 4px; padding: 4px 8px; color: #e0b840; font-size: 11px; }"
+            )
+        return (
+            "QLabel { background-color: #FFF8E1; border: 1px solid #F9A825;"
+            " border-radius: 4px; padding: 4px 8px; color: #5D4037; font-size: 11px; }"
+        )
+
+    @staticmethod
+    def _bom_desc_label_style(mode: str) -> str:
+        """BOM 描述说明标签的主题样式。"""
+        if mode == "dark":
+            return (
+                "QLabel { background-color: #102040; border: 1px solid #204878;"
+                " border-radius: 4px; padding: 4px 8px; color: #80b0e0; font-size: 11px; }"
+            )
+        return (
+            "QLabel { background-color: #EEF4FC; border: 1px solid #B8D0F0;"
+            " border-radius: 4px; padding: 4px 8px; color: #2B4C7E; font-size: 11px; }"
+        )
+
+    def _on_theme_changed(self, mode: str) -> None:
+        """主题切换时刷新提示标签样式并重新着色所有树形行。"""
+        # 更新提示标签
+        if hasattr(self, "_prereq_lbl"):
+            self._prereq_lbl.setStyleSheet(self._prereq_label_style(mode))
+        if hasattr(self, "_bom_desc_lbl"):
+            self._bom_desc_lbl.setStyleSheet(self._bom_desc_label_style(mode))
+        # 重新着色树形行
+        if self._item_by_row:
+            self._recolor_all_items(mode)
+
+    def _recolor_all_items(self, mode: str) -> None:
+        """按当前主题颜色重新为所有树形行设置背景/前景色。"""
+        for item in self._item_by_row:
+            r_idx = item.data(0, _ROW_IDX_ROLE)
+            if r_idx is None:
+                continue
+            row_data = self._rows[r_idx]
+            # 排除行优先级最高
+            if item.data(0, _EXCLUDED_ROLE):
+                c = _get_colors(mode)
+                for ci in range(len(self._columns)):
+                    item.setBackground(ci, c.EXCL_BG)
+                    item.setForeground(ci, c.EXCL_FG)
+            else:
+                # 先清除，再按行状态重新应用
+                default_brush = QBrush()
+                for ci in range(len(self._columns)):
+                    item.setBackground(ci, default_brush)
+                    item.setForeground(ci, default_brush)
+                self._apply_row_state_style(item, row_data)
 
     # ── 列管理 ──────────────────────────────────────────────────────────────
 
@@ -344,10 +409,8 @@ class MassPropsDialog(QDialog):
             "支持一个零件具有多个惯量包络体，产品的惯量包络体将不被读取。"
         )
         prereq_lbl.setWordWrap(True)
-        prereq_lbl.setStyleSheet(
-            "QLabel { background-color: #FFF8E1; border: 1px solid #F9A825;"
-            " border-radius: 4px; padding: 4px 8px; color: #5D4037; font-size: 11px; }"
-        )
+        self._prereq_lbl = prereq_lbl
+        prereq_lbl.setStyleSheet(self._prereq_label_style(theme_manager.current_mode()))
         layout.addWidget(prereq_lbl)
 
         # ── 数据来源选择 ────────────────────────────────────────────────────
@@ -542,10 +605,7 @@ class MassPropsDialog(QDialog):
         # ── BOM说明标签 ─────────────────────────────────────────────────────
         self._bom_desc_lbl = QLabel(self._bom_desc_text())
         self._bom_desc_lbl.setWordWrap(True)
-        self._bom_desc_lbl.setStyleSheet(
-            "QLabel { background-color: #EEF4FC; border: 1px solid #B8D0F0;"
-            " border-radius: 4px; padding: 4px 8px; color: #2B4C7E; font-size: 11px; }"
-        )
+        self._bom_desc_lbl.setStyleSheet(self._bom_desc_label_style(theme_manager.current_mode()))
         layout.addWidget(self._bom_desc_lbl)
 
         # ── 搜索筛选框（Ctrl+F） ──────────────────────────────────────────────
@@ -1421,10 +1481,11 @@ class MassPropsDialog(QDialog):
         is_excluded = bool(row_data.get("_excluded", False))
         item.setData(0, _EXCLUDED_ROLE, is_excluded)
         if is_excluded:
+            c = _get_colors(theme_manager.current_mode())
             excl_tip = "该行已被排除，不参与计算。"
             for ci in range(len(self._columns)):
-                item.setBackground(ci, _EXCL_BG_COLOR)
-                item.setForeground(ci, _EXCL_FG_COLOR)
+                item.setBackground(ci, c.EXCL_BG)
+                item.setForeground(ci, c.EXCL_FG)
                 item.setFont(ci, _EXCL_FONT)
                 item.setToolTip(ci, excl_tip)
 
@@ -2464,9 +2525,7 @@ class MassPropsDialog(QDialog):
         indices: set[int],
         excluded: bool,
     ) -> None:
-        excl_bg   = _EXCL_BG_COLOR
-        excl_fg   = _EXCL_FG_COLOR
-        excl_font = _EXCL_FONT
+        c             = _get_colors(theme_manager.current_mode())
         default_brush = QBrush()
         default_font  = QFont()
 
@@ -2477,9 +2536,9 @@ class MassPropsDialog(QDialog):
             item.setData(0, _EXCLUDED_ROLE, excluded)
             for ci in range(len(self._columns)):
                 if excluded:
-                    item.setBackground(ci, excl_bg)
-                    item.setForeground(ci, excl_fg)
-                    item.setFont(ci, excl_font)
+                    item.setBackground(ci, c.EXCL_BG)
+                    item.setForeground(ci, c.EXCL_FG)
+                    item.setFont(ci, _EXCL_FONT)
                     item.setToolTip(ci, "该行已被排除，不参与计算。")
                 else:
                     item.setBackground(ci, default_brush)
@@ -2506,35 +2565,33 @@ class MassPropsDialog(QDialog):
         is_mirror   = bool(row_data.get("_is_mirror"))
         row_locked  = unreadable or not_found or meas_failed or is_mirror
         col_count   = len(self._columns)
+        c = _get_colors(theme_manager.current_mode())
         if is_mirror:
             for ci in range(col_count):
-                item.setBackground(ci, _MIRROR_BG_COLOR)
+                item.setBackground(ci, c.MIRROR_BG)
                 item.setToolTip(ci, _MIRROR_TOOLTIP)
         elif row_locked:
-            grey = ROW_LOCKED_FG
             if not_found:
-                bg  = ROW_NOT_FOUND_BG
+                bg  = c.ROW_NOT_FOUND_BG
                 tip = "该零件/装配体的文件未被CATIA检索到，行内容不可编辑。"
             elif meas_failed:
-                bg  = ROW_MEAS_FAILED_BG
+                bg  = c.ROW_MEAS_FAILED_BG
                 tip = "该零件的质量特性测量失败，行内容不可编辑。"
             else:
-                bg  = ROW_LIGHTWEIGHT_BG
+                bg  = c.ROW_LIGHTWEIGHT_BG
                 tip = "该零件/装配体处于轻量化模式，无法读取属性。"
             for ci in range(col_count):
-                item.setForeground(ci, grey)
+                item.setForeground(ci, c.ROW_LOCKED_FG)
                 item.setBackground(ci, bg)
                 item.setToolTip(ci, tip)
         elif no_file:
-            bg_unsaved = ROW_UNSAVED_BG
             no_file_tip = "该零件尚未保存到磁盘，质量特性数据可能不完整。"
             for ci in range(col_count):
-                item.setBackground(ci, bg_unsaved)
+                item.setBackground(ci, c.ROW_UNSAVED_BG)
                 item.setToolTip(ci, no_file_tip)
         elif node_type in ("产品", "部件"):
-            bg = ROW_PRODUCT_BG
             for ci in range(col_count):
-                item.setBackground(ci, bg)
+                item.setBackground(ci, c.ROW_PRODUCT_BG)
 
     # ── 右键上下文菜单 ─────────────────────────────────────────────────────
 
@@ -2692,13 +2749,19 @@ class MassPropsDialog(QDialog):
             self._add_mirror_row(clicked_row_idx)
 
     def _open_path(self, fp: str) -> None:
-        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。"""
+        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
+
+        不使用 shell=True，以避免在默认 Shell 为 PowerShell 的环境下
+        explorer 被解析到 OEM 目录下的 Explorer.ps1。
+        """
+        import os
+        explorer = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "explorer.exe")
         p = Path(fp).resolve()
         try:
             if p.exists():
-                subprocess.Popen(f'explorer /select,"{p}"', shell=True)
+                subprocess.Popen([explorer, f"/select,{p}"])
             elif p.parent.exists():
-                subprocess.Popen(f'explorer "{p.parent}"', shell=True)
+                subprocess.Popen([explorer, str(p.parent)])
         except Exception as exc:
             logger.warning(f"无法在资源管理器中打开路径: {exc}")
 
