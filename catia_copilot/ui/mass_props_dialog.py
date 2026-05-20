@@ -2751,17 +2751,20 @@ class MassPropsDialog(QDialog):
     def _open_path(self, fp: str) -> None:
         """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
 
-        不使用 shell=True，以避免在默认 Shell 为 PowerShell 的环境下
-        explorer 被解析到 OEM 目录下的 Explorer.ps1。
+        使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
+        cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
         """
-        import os
-        explorer = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "explorer.exe")
+        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():
-                subprocess.Popen([explorer, f"/select,{p}"])
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'/select,"{p}"', None, 1
+                )
             elif p.parent.exists():
-                subprocess.Popen([explorer, str(p.parent)])
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "open", "explorer.exe", f'"{p.parent}"', None, 1
+                )
         except Exception as exc:
             logger.warning(f"无法在资源管理器中打开路径: {exc}")
 
