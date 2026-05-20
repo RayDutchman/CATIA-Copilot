@@ -113,10 +113,14 @@ threw java.lang.NullPointerException in PartTemplateResource.java at line 166
 **端点**：`GET /workspaces/{ws}/parts/{partNumber}-{version}`
 
 **现象**  
-对含空格的零件编号（如 `front wing final`）执行查询时，服务端报：
+~~请求含空格零件编号（如 `front wing final`）时~~（已更新，见下）  
+集成测试发现：**所有** `GET /parts/{pn}-{ver}` 请求（包括零件/版本完全不存在的情况）
+均触发此 NPE，返回 500。零件是否含空格不是必要条件。
+
+服务端日志报：
 ```
-NullPointerException at ProductManagerBean.java:3509
-isCheckedOutByAnotherUser threw NullPointerException
+NullPointerException at ProductManagerBean.java:3509/3511
+isCheckoutByAnotherUser threw NullPointerException
 ```
 
 **根因分析**（源码）  
@@ -145,6 +149,35 @@ return partRevision.isCheckedOut()
 **待跟进**  
 PLM 管理员需修复 `ProductManagerBean.java:3508` 添加 null guard，
 并清理数据库中 `checkOutUser=null` 且 `checkOutState=CHECKED_OUT` 的脏数据记录。
+
+---
+
+### PLM-07：undocheckout 存在两个限制
+
+**状态**：已确认，客户端已适配  
+**发现时间**：2026-05  
+**端点**：`PUT /workspaces/{ws}/parts/{pn}-{ver}/undocheckout`
+
+**限制 1：不支持撤销他人签出**  
+Admin 账号对他人已 checkout 的零件调用 undocheckout，服务端返回：
+```
+HTTP 400: 无法撤销……非自己签出的目录
+```
+即使是 admin 也无法强制撤销，`FORCE_UNDO` 策略在当前配置下无效。
+
+**限制 2：第一次迭代（iter=1）无法 undocheckout**  
+新建零件（iter=1，从未 checkin 过）调用 undocheckout 返回：
+```
+HTTP 400: 该操作已经一被执行
+```
+必须使用 **checkin** 来释放 checkout 状态。
+
+**影响**  
+- `FORCE_UNDO` 策略退化为 SKIP（他人 checkout 的零件只能跳过）
+- 客户端 cleanup 逻辑必须用 checkin 而非 undocheckout 来释放锁
+
+**待跟进**  
+需 PLM 管理员确认是否有专用的"管理员强制撤销"端点或角色配置。
 
 ---
 

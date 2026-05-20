@@ -294,9 +294,17 @@ class PlmApiClient:
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
+                # PLM-06 bug：服务端 isCheckoutByAnotherUser NPE 导致零件不存在时
+                # 返回 500 而非 404；对 500+NPE 响应体按"不存在"处理
+                if exc.status_code == 500 and (
+                    "NullPointerException" in str(exc)
+                    or "isCheckoutByAnotherUser" in str(exc)
+                ):
+                    continue
                 raise
-        # 兜底：返回 A iter 1（后续操作失败时会有对应错误）
-        return part_number, "A", 1
+        # 全部版本均为 404/500-NPE → 零件不存在
+        # 抛出 404 让上层按"不存在"逻辑处理
+        raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
 
     def update_iteration(
         self,
