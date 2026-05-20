@@ -34,9 +34,9 @@ theme_signal = _ThemeSignalEmitter()
 _UI_DIR = Path(__file__).parent
 
 # ── 控件尺寸常量（调整这里即可全局生效）────────────────────────────
-INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px）
+INDICATOR_SIZE  = 20   # radio / checkbox indicator 边长（px），Windows 11 原生值
 CONTROL_SPACING = 8    # indicator 与文字之间的间距（px）
-CHECKBOX_RADIUS = 2    # checkbox indicator 圆角（px）
+CHECKBOX_RADIUS = 4    # checkbox indicator 圆角（px），Windows 11 ControlCornerRadius
 
 
 def _load_qss(name: str) -> str:
