@@ -488,12 +488,18 @@ class ExportBomDialog(QDialog):
             self._open_path(str(dest_path))
 
     def _open_path(self, fp: str) -> None:
-        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。"""
+        """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
+
+        不使用 shell=True，以避免在默认 Shell 为 PowerShell 的环境下
+        explorer 被解析到 OEM 目录下的 Explorer.ps1。
+        """
+        import os
+        explorer = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "explorer.exe")
         p = Path(fp).resolve()
         try:
             if p.exists():
-                subprocess.Popen(f'explorer /select,"{p}"', shell=True)
+                subprocess.Popen([explorer, f"/select,{p}"])
             elif p.parent.exists():
-                subprocess.Popen(f'explorer "{p.parent}"', shell=True)
+                subprocess.Popen([explorer, str(p.parent)])
         except Exception as exc:
             logger.warning(f"Failed to open path in Explorer: {exc}")
