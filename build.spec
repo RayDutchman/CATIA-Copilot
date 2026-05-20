@@ -39,7 +39,32 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # ── Qt 模块：项目不使用 QML / PDF / 虚拟键盘 ──────────────────────────
+        'PySide6.QtQuick', 'PySide6.QtQuickWidgets', 'PySide6.QtQuickControls2',
+        'PySide6.QtQml', 'PySide6.QtQmlModels', 'PySide6.QtQmlWorkerScript',
+        'PySide6.QtQmlMeta',
+        'PySide6.QtPdf', 'PySide6.QtPdfWidgets',
+        'PySide6.QtVirtualKeyboard',
+        'PySide6.QtBluetooth', 'PySide6.QtNfc',
+        'PySide6.QtMultimedia', 'PySide6.QtMultimediaWidgets',
+        'PySide6.QtWebEngine', 'PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets',
+        'PySide6.QtWebChannel', 'PySide6.QtWebSockets',
+        'PySide6.Qt3DCore', 'PySide6.Qt3DRender', 'PySide6.Qt3DInput',
+        'PySide6.QtCharts', 'PySide6.QtDataVisualization',
+        'PySide6.QtLocation', 'PySide6.QtPositioning',
+        'PySide6.QtRemoteObjects', 'PySide6.QtScxml',
+        'PySide6.QtSensors', 'PySide6.QtSerialPort', 'PySide6.QtSerialBus',
+        'PySide6.QtTest',
+        # ── PIL / Pillow：openpyxl 可选依赖，项目代码不使用 ───────────────────
+        'PIL',
+        # ── lxml：openpyxl 可选 XML 后端，项目代码不使用 ──────────────────────
+        'lxml',
+        # ── numpy：pycatia 间接依赖，但项目未调用矩阵运算相关功能 ─────────────
+        'numpy',
+        # ── Pythonwin：pywin32 的 MFC GUI 组件，项目只用 win32com/win32api ─────
+        'Pythonwin',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -76,3 +101,37 @@ coll = COLLECT(
     upx_exclude=[],
     name=_app_name,
 )
+
+# ── 打包后清理：删除不需要的大文件 ─────────────────────────────────────────────
+# 必须在 COLLECT 之后执行，否则目录尚不存在。
+import os as _os
+import shutil as _shutil
+
+_dist = _os.path.join('dist', _app_name, '_internal')
+
+# 1. opengl32sw.dll：Qt 软件渲染回退，桌面环境有系统 OpenGL 不需要（-20M）
+_opengl_sw = _os.path.join(_dist, 'PySide6', 'opengl32sw.dll')
+if _os.path.exists(_opengl_sw):
+    _os.remove(_opengl_sw)
+    print(f"[slim] removed opengl32sw.dll")
+
+# 2. Qt translations：只保留中文和英文，其余语言包一律删除（-~5M）
+_trans_dir = _os.path.join(_dist, 'PySide6', 'translations')
+if _os.path.isdir(_trans_dir):
+    for _f in _os.listdir(_trans_dir):
+        # 保留 zh_CN、zh_TW、en（含无后缀的基础文件如 qtbase.qm）
+        if not any(tag in _f for tag in ('zh_CN', 'zh_TW', '_en', 'qtbase.qm')):
+            _path = _os.path.join(_trans_dir, _f)
+            _os.remove(_path)
+            print(f"[slim] removed translation: {_f}")
+
+# 3. PySide6/plugins/imageformats：只保留 png/svg，删除 avif/webp/jp2/tiff 等
+_imgfmt_dir = _os.path.join(_dist, 'PySide6', 'plugins', 'imageformats')
+_keep_formats = {'qpng', 'qsvg', 'qico', 'qjpeg', 'qgif'}
+if _os.path.isdir(_imgfmt_dir):
+    for _f in _os.listdir(_imgfmt_dir):
+        _stem = _f.split('.')[0].lower()  # e.g. "qavif", "qwebp"
+        if _stem not in _keep_formats:
+            _path = _os.path.join(_imgfmt_dir, _f)
+            _os.remove(_path)
+            print(f"[slim] removed imageformat: {_f}")
