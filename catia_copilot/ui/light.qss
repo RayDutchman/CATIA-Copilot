@@ -327,6 +327,33 @@ QTreeWidget {
 QTreeWidget::item:selected { background-color: #cce4ff; color: #000000; }
 QTreeWidget::item:hover    { background-color: #f0f0f0; }
 
+/* tree 内嵌 QComboBox：无边框、背景透明，与 item 行高一致，视觉融入表格 */
+QComboBox#treeCombo {
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    color: #1a1a1a;
+    padding: 0px 4px;
+    min-height: 0;
+    max-height: 24px;
+}
+QComboBox#treeCombo:hover  { background-color: #e8e8e8; }
+QComboBox#treeCombo:focus  { background-color: #e0efff; }
+QComboBox#treeCombo::drop-down { border: none; width: 20px; }
+QComboBox#treeCombo::down-arrow {
+    width: 10px;
+    height: 10px;
+    image: url(@chevron_down_icon);
+}
+QComboBox#treeCombo QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: @control_radiuspx;
+    selection-background-color: #cce4ff;
+    color: #1a1a1a;
+    outline: none;
+}
+
 /* ── 对话框内部 ────────────────────────────────────────────────────── */
 QDialog QGroupBox { background-color: #f8f8f8; }
 

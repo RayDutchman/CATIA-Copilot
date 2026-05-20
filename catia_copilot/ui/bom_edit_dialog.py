@@ -822,6 +822,7 @@ class BomEditDialog(QDialog):
                     if pn_val not in SOURCE_OPTIONS:
                         pn_val = SOURCE_TO_DISPLAY.get(pn_val, SOURCE_OPTIONS[0])
                     combo = QComboBox()
+                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
                     combo.blockSignals(True)
                     combo.addItems(SOURCE_OPTIONS)
                     combo.setCurrentText(pn_val)
@@ -852,6 +853,7 @@ class BomEditDialog(QDialog):
                         )
                         display_opts.append(pn_val)
                     combo = QComboBox()
+                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
                     combo.blockSignals(True)
                     combo.addItems(display_opts)
                     combo.setCurrentText(pn_val)
