@@ -91,18 +91,60 @@ threw java.lang.NullPointerException in PartTemplateResource.java at line 166
 
 ### PLM-04：checkout 被其他用户锁定时无服务端通知机制
 
-**状态**：已知限制  
-**发现时间**：2026-05
+**状态**：客户端已改进（用户名显示）  
+**发现时间**：2026-05  
+**改进版本**：feat/plm-sync-improvements-v3
 
 **描述**  
 当某个零件已被其他用户 checkout（锁定），服务端返回 403/400，
-当前客户端仅记录警告并跳过该节点的属性更新，用户不会在 UI 上看到锁定者信息。
-
-DocdokuPLM REST API 在 checkout 失败响应体中是否包含锁定者用户名，尚未验证。
+当前客户端从 `GET /parts/{pn}-{ver}` 的 `checkOutUser` 字段读取锁定者用户名，
+并在同步日志表格中以橙色显示（如 `跳过-被@admin`），同时在 errors 汇总中附上锁定者名称。
 
 **待确认**
-- `PUT /parts/{pn}-{ver}/checkout` 的 403 响应体结构
-- 是否有 `GET /parts/{pn}-{ver}/lock` 接口可提前查询锁定状态
+- `PUT /parts/{pn}-{ver}/checkout` 的 403 响应体结构（当前通过独立 GET 查询，而非解析 checkout 失败响应）
+- 是否有 `GET /parts/{pn}-{ver}/lock` 接口可提前查询锁定状态（可减少一次 GET 请求）
+
+---
+
+### PLM-06：`GET /parts/{pn}-{ver}` 在数据异常时抛 500 NullPointerException
+
+**状态**：服务端 bug，客户端已做防御处理  
+**发现时间**：2026-05  
+**端点**：`GET /workspaces/{ws}/parts/{partNumber}-{version}`
+
+**现象**  
+对含空格的零件编号（如 `front wing final`）执行查询时，服务端报：
+```
+NullPointerException at ProductManagerBean.java:3509
+isCheckedOutByAnotherUser threw NullPointerException
+```
+
+**根因分析**（源码）  
+`ProductManagerBean.java:3508` 的 `isCheckoutByAnotherUser` 方法缺少 null guard：
+```java
+// 有 bug 的代码
+return partRevision.isCheckedOut()
+    && !partRevision.getCheckOutUser().equals(user);  // getCheckOutUser() 可能为 null
+
+// 正确写法
+return partRevision.isCheckedOut()
+    && partRevision.getCheckOutUser() != null
+    && !partRevision.getCheckOutUser().equals(user);
+```
+数据库中存在 `isCheckedOut=true` 但 `checkOutUser=null` 的不一致记录时触发此 bug。
+含空格的零件名本身不是直接原因，但 URL 路径切割歧义可能命中这类异常记录。
+
+**影响**  
+受影响的零件在同步时被跳过并计入 `result.failed`，同步日志显示
+`"PLM 服务端内部错误(500)，跳过此零件"`。
+
+**客户端处理**（已实施）
+- `_sync_node`：HTTP 500 单独提示，与其他查询失败区分
+- `_get_checkout_owner`：`(result.get("checkOutUser") or {}).get("login")` 防御性读取，避免客户端自身因 null 崩溃
+
+**待跟进**  
+PLM 管理员需修复 `ProductManagerBean.java:3508` 添加 null guard，
+并清理数据库中 `checkOutUser=null` 且 `checkOutState=CHECKED_OUT` 的脏数据记录。
 
 ---
 

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QTextEdit,
     QVBoxLayout,
 )
 
@@ -243,7 +244,7 @@ class _SyncWorker(QThread):
 
     # 进度日志信号（文本行）
     log_line    = Signal(str)
-    finished_ok = Signal(str)
+    finished_ok = Signal(object)   # 传 SyncResult 实例
     finished_err = Signal(str)
 
     def __init__(self, cfg: dict, options=None, parent=None):
@@ -303,7 +304,7 @@ class _SyncWorker(QThread):
             self.finished_err.emit(f"同步过程中发生意外错误：{exc}")
             return
 
-        self.finished_ok.emit(result.summary())
+        self.finished_ok.emit(result)
 
 
 # ── 对话框 ────────────────────────────────────────────────────────────────────
@@ -441,18 +442,33 @@ class PlmSyncDialog(QDialog):
         self.sync_started.emit()
 
     def _append_log(self, msg: str) -> None:
-        self._log.appendPlainText(msg)
+        # 含 @username 的锁定行（跳过-被@xxx / 撤销失败-@xxx）用橙色高亮
+        if "@" in msg and ("跳过-被@" in msg or "撤销失败-@" in msg):
+            from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
+            cursor = self._log.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#e8a020"))   # 橙色，深浅主题下均清晰
+            cursor.insertText(msg + "\n", fmt)
+            self._log.setTextCursor(cursor)
+            self._log.ensureCursorVisible()
+        else:
+            self._log.appendPlainText(msg)
         # 主线程 emit（BOM 提取阶段）时需要主动刷新事件循环，
         # 否则所有行会在 _start_sync 返回后才一次性渲染出来
         QApplication.processEvents()
 
-    def _on_success(self, summary: str) -> None:
+    def _on_success(self, result) -> None:
         self._progress.setVisible(False)
         self._btn_start.setEnabled(True)
         self._status_label.setText("同步完成。")
         self._log.appendPlainText("\n" + "─" * 40)
-        self._log.appendPlainText(summary)
+        self._log.appendPlainText(result.summary())
         self.sync_done.emit()
+
+        # 有 warning/error 时弹窗提醒
+        if result.errors:
+            _show_sync_issues(result, self)
 
     def _on_error(self, msg: str) -> None:
         self._progress.setVisible(False)
@@ -481,3 +497,67 @@ class PlmSyncDialog(QDialog):
             self._worker.finished.connect(self._worker.deleteLater)
             self._worker = None
         super().closeEvent(event)
+
+
+# ── 同步问题弹窗 ──────────────────────────────────────────────────────────────
+
+_MAX_INLINE  = 5   # 条数 ≤ 此值时用 QMessageBox；超出时用带滚动条的自定义对话框
+_MAX_DISPLAY = 50  # 自定义对话框最多显示的条数
+
+
+def _show_sync_issues(result, parent=None) -> None:
+    """同步完成后弹窗汇报 warning / error。
+
+    - 0 条：不弹窗
+    - 1–5 条：QMessageBox（纯文本，简洁）
+    - >5 条：带滚动条的自定义对话框，最多展示 50 条，超出则末尾注明总数
+    """
+    errors = result.errors
+    n = len(errors)
+    if n == 0:
+        return
+
+    # 构建失败/警告的统计标题行
+    title = "同步完成 — 有问题需关注"
+    header = (
+        f"同步结束，共 {result.total} 个节点。\n"
+        f"失败：{result.failed} 个，跳过：{result.skipped} 个。\n\n"
+        f"以下为详细问题（共 {n} 条）："
+    )
+
+    if n <= _MAX_INLINE:
+        body = "\n".join(f"· {e}" for e in errors)
+        QMessageBox.warning(parent, title, f"{header}\n\n{body}")
+        return
+
+    # 条数较多时使用自定义对话框（带滚动文本框）
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(title)
+    dlg.setMinimumWidth(560)
+    dlg.setMinimumHeight(360)
+
+    layout = QVBoxLayout(dlg)
+
+    # 顶部统计标签
+    lbl = QLabel(header)
+    lbl.setWordWrap(True)
+    layout.addWidget(lbl)
+
+    # 问题列表（只读文本框，自带滚动）
+    txt = QTextEdit()
+    txt.setReadOnly(True)
+    txt.setObjectName("logView")   # 跟随主题 QSS
+
+    displayed = errors[:_MAX_DISPLAY]
+    lines = [f"· {e}" for e in displayed]
+    if n > _MAX_DISPLAY:
+        lines.append(f"\n… 仅显示前 {_MAX_DISPLAY} 条，共 {n} 条")
+    txt.setPlainText("\n".join(lines))
+    layout.addWidget(txt)
+
+    # 关闭按钮
+    btn_box = QDialogButtonBox(QDialogButtonBox.Ok)
+    btn_box.accepted.connect(dlg.accept)
+    layout.addWidget(btn_box)
+
+    dlg.exec()

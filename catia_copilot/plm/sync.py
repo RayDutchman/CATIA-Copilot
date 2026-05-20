@@ -332,10 +332,9 @@ def _get_checkout_owner(client, workspace: str, part_number: str, version: str) 
         ws_q  = _up.quote(workspace)
         pn_q  = _up.quote(part_number)
         result = client._request("GET", f"/workspaces/{ws_q}/parts/{pn_q}-{version}") or {}
-        user   = result.get("checkOutUser") or result.get("checkOutLogin")
-        if isinstance(user, dict):
-            # 部分版本返回 {"login": "admin", ...}
-            user = user.get("login") or user.get("name")
+        # checkOutUser 是嵌套对象 {"login": ..., ...}，未签出时为 null
+        # 文档确认无顶级 checkOutLogin 字段
+        user = (result.get("checkOutUser") or {}).get("login")
         return str(user).strip() if user else None
     except Exception:
         return None
@@ -388,7 +387,11 @@ def _sync_node(
     except PlmApiError as exc:
         if exc.status_code not in (404, 400, 0):
             result.failed += 1
-            msg = f"查询版本失败({exc.status_code})"
+            if exc.status_code == 500:
+                # 服务端已知 bug：checkOutUser 为 null 时 isCheckoutByAnotherUser 抛 NPE
+                msg = "PLM 服务端内部错误(500)，跳过此零件"
+            else:
+                msg = f"查询版本失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg} — {exc}")
             cb(_log_fail(msg, lbl))
             return None
@@ -481,7 +484,7 @@ def _sync_node(
         if options.other_checked_out_policy == CheckedOutByOtherPolicy.SKIP:
             result.skipped += 1
             result.errors.append(f"{lbl}: 已被 {checkout_owner} 签出，已跳过")
-            cb(_log_skip(f"跳过-他人签出", lbl))
+            cb(_log_skip(f"跳过-被@{checkout_owner}", lbl))
             return part_number, version
 
         # FORCE_UNDO：尝试强制撤销他人签出
@@ -492,8 +495,8 @@ def _sync_node(
         except PlmApiError as exc:
             result.skipped += 1
             msg = f"撤销失败({exc.status_code})"
-            result.errors.append(f"{lbl}: {msg}（权限不足）— {exc}")
-            cb(_log_skip(f"撤销失败-降级跳过", lbl))
+            result.errors.append(f"{lbl}: {msg}（权限不足，锁定者：{checkout_owner}）— {exc}")
+            cb(_log_skip(f"撤销失败-@{checkout_owner}", lbl))
             return part_number, version
 
         # 撤销成功后重新签出
