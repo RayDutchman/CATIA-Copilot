@@ -207,7 +207,8 @@ class ExportBomDialog(QDialog):
         up_btn     = QPushButton("↑")
         down_btn   = QPushButton("↓")
         for btn in (add_btn, remove_btn, up_btn, down_btn):
-            btn.setFixedWidth(36)
+            btn.setFixedSize(36, 32)
+            btn.setStyleSheet("padding: 4px 2px;")
         add_btn.clicked.connect(self._add_column)
         remove_btn.clicked.connect(self._remove_column)
         up_btn.clicked.connect(self._move_up)

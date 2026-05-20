@@ -9,8 +9,7 @@ catia_copilot/ui/
 ├── light.qss                 # 浅色主题样式表
 ├── check_white.svg           # 复选框勾号图标（白色）
 ├── radio_checked.svg         # 单选框选中图标（蓝色外环 + 中心点）
-├── radio_unchecked_light.svg # 单选框未选中图标（灰色圆环，浅色主题）
-├── radio_unchecked_dark.svg  # 单选框未选中图标（灰色圆环，深色主题）
+├── radio_unchecked_dark.svg  # 单选框未选中图标（灰色圆环，深色主题；浅色主题走原生渲染）
 └── title_bar.py              # 自绘标题栏组件
 ```
 

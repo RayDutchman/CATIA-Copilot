@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(540, 420)
 
         # 无边框窗口 resize 边缘热区宽度（像素），供 nativeEvent 使用
-        self._resize_margin = 6
+        self._resize_margin = 8
 
         self._build_frameless_ui()
         self._build_connection_indicator()
@@ -412,28 +412,19 @@ class MainWindow(QMainWindow):
     def nativeEvent(self, event_type: bytes, message) -> tuple[bool, int]:  # noqa: N802
         """拦截 Windows WM_NCHITTEST 消息，实现无边框窗口八方向 resize。
 
-        lParam 低 16 位为屏幕 X，高 16 位为屏幕 Y；均为有符号短整型，
-        超过 0x7FFF 时需减去 0x10000 转换为负值。
+        使用 QCursor.pos() + mapFromGlobal() 获取逻辑坐标，避免高 DPI 下
+        lParam 物理像素与 Qt 逻辑像素不一致导致边缘热区失效的问题。
         """
         if event_type == b"windows_generic_MSG":
             import ctypes.wintypes
+            from PySide6.QtGui import QCursor
             msg = ctypes.cast(int(message), ctypes.POINTER(ctypes.wintypes.MSG)).contents
             if msg.message == 0x0084:  # WM_NCHITTEST
-                # 解析屏幕坐标（有符号）
-                lp = msg.lParam
-                sx = lp & 0xFFFF
-                sy = (lp >> 16) & 0xFFFF
-                if sx >= 0x8000:
-                    sx -= 0x10000
-                if sy >= 0x8000:
-                    sy -= 0x10000
-
-                # 转为窗口本地坐标
-                geo = self.geometry()
-                x = sx - geo.x()
-                y = sy - geo.y()
-                w = geo.width()
-                h = geo.height()
+                pos = self.mapFromGlobal(QCursor.pos())
+                x = pos.x()
+                y = pos.y()
+                w = self.width()
+                h = self.height()
                 m = self._resize_margin
 
                 left   = x < m
