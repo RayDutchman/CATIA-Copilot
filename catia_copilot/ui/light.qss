@@ -101,7 +101,7 @@ QPushButton#titleBarCloseBtn:pressed {
 QGroupBox {
     background-color: #ffffff;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    border-radius: @groupbox_radiuspx;
     margin-top: 10px;
     padding: 10px 10px 8px 10px;
     font-weight: 600;
@@ -122,10 +122,10 @@ QGroupBox::title {
 QPushButton {
     background-color: #f5f5f5;
     border: 1px solid #d0d0d0;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     color: #1a1a1a;
     padding: 5px 14px;
-    min-height: 26px;
+    min-height: @button_heightpx;
     font-size: 9pt;
 }
 QPushButton:hover   { background-color: #e8e8e8; border-color: #b8b8b8; }
@@ -155,7 +155,7 @@ QTableWidget {
     background-color: #ffffff;
     gridline-color: #e8e8e8;
     border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     selection-background-color: #cce4ff;
     selection-color: #000000;
     alternate-background-color: #f8f8f8;
@@ -176,10 +176,10 @@ QTableWidget QTableCornerButton::section { background-color: #f0f0f0; border: no
 QLineEdit {
     background-color: #ffffff;
     border: 1px solid #cccccc;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     color: #1a1a1a;
     padding: 4px 8px;
-    min-height: 22px;
+    min-height: @input_heightpx;
 }
 QLineEdit:focus    { border-color: #0078d4; }
 QLineEdit:read-only { background-color: #f5f5f5; color: #888888; border-color: #e0e0e0; }
@@ -188,10 +188,10 @@ QLineEdit:read-only { background-color: #f5f5f5; color: #888888; border-color: #
 QComboBox {
     background-color: #ffffff;
     border: 1px solid #cccccc;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     color: #1a1a1a;
     padding: 4px 8px;
-    min-height: 22px;
+    min-height: @input_heightpx;
 }
 QComboBox:hover { border-color: #aaaaaa; }
 QComboBox:focus { border-color: #0078d4; }
@@ -204,7 +204,7 @@ QComboBox::down-arrow {
 QComboBox QAbstractItemView {
     background-color: #ffffff;
     border: 1px solid #cccccc;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     selection-background-color: #cce4ff;
     color: #1a1a1a;
     outline: none;
@@ -284,7 +284,7 @@ QTextEdit {
     background-color: #ffffff;
     color: #1a1a1a;
     border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     font-family: "Cascadia Code", "Consolas", monospace;
     font-size: 8.5pt;
 }
@@ -293,7 +293,7 @@ QTextEdit {
 QMenu {
     background-color: #ffffff;
     border: 1px solid #d0d0d0;
-    border-radius: 6px;
+    border-radius: @groupbox_radiuspx;
     padding: 4px 0;
     color: #1a1a1a;
 }
@@ -309,7 +309,7 @@ QMenu::separator { height: 1px; background-color: #e8e8e8; margin: 3px 8px; }
 QProgressBar {
     background-color: #e8e8e8;
     border: 1px solid #d0d0d0;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     text-align: center;
     color: #1a1a1a;
     font-size: 8.5pt;
@@ -321,7 +321,7 @@ QProgressBar::chunk { background-color: #0078d4; border-radius: 3px; }
 QTreeWidget {
     background-color: #ffffff;
     border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    border-radius: @control_radiuspx;
     alternate-background-color: #f8f8f8;
 }
 QTreeWidget::item:selected { background-color: #cce4ff; color: #000000; }
