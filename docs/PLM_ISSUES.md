@@ -74,6 +74,21 @@ STEP 几何上传功能目前在 UI 层硬编码关闭（`upload_step=False`）�
 
 ---
 
+### PLM-05：`POST /part-templates` 返回 500 NullPointerException
+
+**发现时间**：2026-05  
+**端点**：`POST /workspaces/{ws}/part-templates`  
+**现象**：调用创建零件模板接口时，服务端抛出：
+```
+Unhandled system error: PartTemplateResource.createPartMasterTemplate
+threw java.lang.NullPointerException in PartTemplateResource.java at line 166
+```
+**影响**：无法使用零件模板，同步时所有零件以无模板方式创建。  
+**客户端处理**：捕获 500 错误，打印警告后继续同步，不影响零件创建/更新主流程。  
+**待跟进**：需 PLM 管理员检查 `PartTemplateResource.java:166` 处空指针原因（可能是工作区配置缺失某必填字段）。
+
+---
+
 ### PLM-04：checkout 被其他用户锁定时无服务端通知机制
 
 **状态**：已知限制  

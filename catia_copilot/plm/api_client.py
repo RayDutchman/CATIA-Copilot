@@ -66,6 +66,7 @@ class PlmApiClient:
         self._base = base_url.rstrip("/")
         self._token: str | None = None
         self._basic_auth: str | None = None   # base64(login:password)，Basic Auth 兜底
+        self._login: str | None = None        # 登录用户名，用于判断 checkout 持有者
 
         # Cookie jar：自动接收 Set-Cookie（JSESSIONID 等）并在后续请求中回传
         self._cj = http.cookiejar.CookieJar()
@@ -152,6 +153,8 @@ class PlmApiClient:
             {"login": login, "password": password},
             return_response_headers=True,
         )
+        # 登录成功后记录用户名，供后续判断 checkout 持有者
+        self._login = login
 
         # 诊断：打印登录响应体和关键响应头，便于排查 401
         logger.debug(f"PLM 登录响应体：{result}")
@@ -242,46 +245,40 @@ class PlmApiClient:
         self,
         workspace: str,
         part_number: str,
+        name: str,
         description: str,
         template_id: str | None = None,
     ) -> tuple[str, str]:
         """创建零件，返回 (零件号, 版本)。
 
-        若零件已存在（HTTP 409），则直接返回现有零件的版本号（不报错）。
+        若零件已存在（HTTP 409 或 400-不唯一），直接重新抛出 PlmApiError，
+        由调用方（sync.py）按策略决定如何处理已存在零件，不在此处吞掉。
 
         参数：
+            name:        零件名称（对应 Nomenclature；为空时回退到零件编号）
+            description: 描述文本
             template_id: 零件模板 ID；传 None 时不携带 templateId 字段
         """
         ws = urllib.parse.quote(workspace)
         path = f"/workspaces/{ws}/parts"
         payload: dict = {
-            "number": part_number,
-            "name": part_number,
+            "number":      part_number,
+            "name":        name or part_number,
             "description": description,
         }
         if template_id is not None:
             payload["templateId"] = template_id
-        try:
-            result = self._request("POST", path, payload)
-            version = (result or {}).get("version", "A")
-            logger.info(f"PLM 零件已创建：{part_number}-{version}")
-            return part_number, version
-        except PlmApiError as exc:
-            if exc.status_code == 409:
-                # 标准重复冲突
-                logger.debug(f"PLM 零件已存在（409），跳过创建：{part_number}")
-                return self._get_latest_version(workspace, part_number)
-            if exc.status_code == 400 and (
-                "不唯一" in str(exc) or "unique" in str(exc).lower()
-            ):
-                # DocdokuPLM 部分版本对重复零件返回 400 而非 409
-                logger.debug(f"PLM 零件已存在（400 不唯一），跳过创建：{part_number}")
-                return self._get_latest_version(workspace, part_number)
-            raise
+        result = self._request("POST", path, payload)
+        version = (result or {}).get("version", "A")
+        logger.info(f"PLM 零件已创建：{part_number}-{version}")
+        return part_number, version
 
-    def _get_latest_version(self, workspace: str, part_number: str) -> tuple[str, str]:
-        """获取已存在零件的最新版本号。
+    def _get_latest_version(
+        self, workspace: str, part_number: str
+    ) -> tuple[str, str, int]:
+        """获取已存在零件的最新版本号和最新迭代号。
 
+        返回：(零件号, 版本, 最新迭代号)
         DocdokuPLM 端点须带版本后缀：/parts/{pn}-{ver}
         实际上零件版本几乎都从 A 开始，直接尝试 -A。
         """
@@ -291,14 +288,15 @@ class PlmApiClient:
         for ver in ("A", "B", "C"):
             try:
                 result = self._request("GET", f"/workspaces/{ws}/parts/{pn}-{ver}") or {}
-                version = result.get("version", ver)
-                return part_number, version
+                version   = result.get("version", ver)
+                iteration = result.get("lastIterationNumber", 1)
+                return part_number, version, iteration
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
                 raise
-        # 兜底：返回 A（后续操作失败时会有对应错误）
-        return part_number, "A"
+        # 兜底：返回 A iter 1（后续操作失败时会有对应错误）
+        return part_number, "A", 1
 
     def update_iteration(
         self,
@@ -332,6 +330,22 @@ class PlmApiClient:
         })
         logger.debug(f"PLM 属性更新：{part_number}-{version} iter{iteration}")
 
+    def checkout_part(self, workspace: str, part_number: str, version: str) -> int:
+        """签出（Checkout）零件，返回新迭代号（lastIterationNumber）。
+
+        DocdokuPLM 端点：PUT /workspaces/{ws}/parts/{pn}-{ver}/checkout
+        签出成功后服务端创建新迭代，响应体含 lastIterationNumber。
+        """
+        ws = urllib.parse.quote(workspace)
+        pn = urllib.parse.quote(part_number)
+        result = self._request(
+            "PUT",
+            f"/workspaces/{ws}/parts/{pn}-{version}/checkout",
+        )
+        iteration = (result or {}).get("lastIterationNumber", 1)
+        logger.info(f"PLM 签出：{part_number}-{version} iter{iteration}")
+        return int(iteration)
+
     def checkin_part(self, workspace: str, part_number: str, version: str) -> None:
         """Check In 零件（锁定当前迭代）。"""
         ws = urllib.parse.quote(workspace)
@@ -342,6 +356,24 @@ class PlmApiClient:
             expect_json=False,
         )
         logger.debug(f"PLM Check In：{part_number}-{version}")
+
+    def force_undo_checkout(
+        self, workspace: str, part_number: str, version: str
+    ) -> None:
+        """强制撤销他人的 Checkout（需管理员权限）。
+
+        DocdokuPLM 端点：PUT /workspaces/{ws}/parts/{pn}-{ver}/undocheckout
+        普通用户只能撤销自己的签出；撤销他人签出需要 ADMIN 角色，
+        否则服务端返回 403。
+        """
+        ws = urllib.parse.quote(workspace)
+        pn = urllib.parse.quote(part_number)
+        self._request(
+            "PUT",
+            f"/workspaces/{ws}/parts/{pn}-{version}/undocheckout",
+            expect_json=False,
+        )
+        logger.info(f"PLM 强制撤销签出：{part_number}-{version}")
 
     def upload_step(
         self,
