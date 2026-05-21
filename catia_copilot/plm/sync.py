@@ -330,7 +330,6 @@ def _get_checkout_owner(client, workspace: str, part_number: str, version: str) 
     通过 GET /parts/{pn}-{ver} 响应体中的 checkOutUser 字段判断。
     若服务端不返回该字段，则返回 None（按未签出处理）。
     """
-    ws = urllib.parse.quote(workspace) if False else workspace  # 已在调用前 quote，此处直接用
     try:
         from catia_copilot.plm.api_client import PlmApiError
         import urllib.parse as _up
@@ -410,7 +409,16 @@ def _sync_node(
             child_components, options, result, cb,
         )
     except PlmApiError as exc:
-        if exc.status_code == 400 and "不唯一" in str(exc):
+        # POST /parts：零件已存在时服务端抛出 PartMasterAlreadyExistsException，
+        # 经 ApplicationExceptionMapper 映射为 HTTP 400，响应体为本地化消息字符串：
+        #   英文：The part "{pn}" already exists
+        #   中文：零件"{pn}"已存在
+        _msg = str(exc)
+        _is_exists = (exc.status_code == 400 and (
+            "already exists" in _msg
+            or "已存在" in _msg
+        ))
+        if _is_exists:
             # 零件已存在，继续走已存在流程
             part_number, version = pn, "A"
         else:

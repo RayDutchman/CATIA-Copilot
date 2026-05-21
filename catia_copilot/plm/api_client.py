@@ -126,6 +126,19 @@ class PlmApiClient:
                 body_text = exc.read().decode(errors="replace")
             except Exception:
                 pass
+            # 针对常见状态码给出中文说明，避免将 HTML 错误页暴露给用户
+            if exc.code == 401:
+                raise PlmApiError(
+                    f"{method} {path} 失败 [401]：认证失败，请检查用户名/密码是否正确，"
+                    f"或重新登录后重试（会话可能已过期）。",
+                    status_code=401,
+                ) from exc
+            if exc.code == 403:
+                raise PlmApiError(
+                    f"{method} {path} 失败 [403]：权限不足，当前用户无权执行此操作。"
+                    "请确认该用户在工作空间中的角色为管理员或贡献者。",
+                    status_code=403,
+                ) from exc
             raise PlmApiError(
                 f"{method} {path} 失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
@@ -298,15 +311,8 @@ class PlmApiClient:
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
-                # PLM-06 bug：服务端 isCheckoutByAnotherUser NPE，对所有零件（含不存在的）
-                # 返回 500；此 bug 在服务端未完全修复前继续对 500+NPE 按"不存在"处理。
-                # 注意：此路径现在仅用于"已存在零件的 checkout 后迭代号刷新"场景，
-                # 存在性判断已改由 POST /parts 完成（见 sync._sync_node），不再依赖本方法。
-                if exc.status_code == 500 and (
-                    "NullPointerException" in str(exc)
-                    or "isCheckoutByAnotherUser" in str(exc)
-                ):
-                    continue
+                # PLM-06（ProductManagerBean:3509 NPE）已于 2026-05-20 服务端修复，
+                # 此处不再对 500 静默跳过，直接抛出，避免掩盖真实服务端错误。
                 raise
         raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
 
@@ -459,6 +465,17 @@ class PlmApiClient:
                 body_text = exc.read().decode(errors="replace")
             except Exception:
                 pass
+            if exc.code == 401:
+                raise PlmApiError(
+                    f"STEP 上传失败 [401]：认证失败，请重新登录后重试。",
+                    status_code=401,
+                ) from exc
+            if exc.code == 403:
+                raise PlmApiError(
+                    f"STEP 上传失败 [403]：权限不足，当前用户无权上传文件。"
+                    "请确认工作空间角色为管理员或贡献者。",
+                    status_code=403,
+                ) from exc
             raise PlmApiError(
                 f"STEP 上传失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,

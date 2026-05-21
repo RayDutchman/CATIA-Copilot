@@ -60,7 +60,7 @@ a = Analysis(
         'PIL',
         # ── lxml：openpyxl 可选 XML 后端，项目代码不使用 ──────────────────────
         'lxml',
-        # ── numpy：pycatia 间接依赖，但项目未调用矩阵运算相关功能 ─────────────
+        # ── numpy：项目未调用矩阵运算相关功能 ────────────────────────────────
         'numpy',
         # ── Pythonwin：pywin32 的 MFC GUI 组件，项目只用 win32com/win32api ─────
         'Pythonwin',

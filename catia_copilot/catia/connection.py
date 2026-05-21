@@ -1,7 +1,7 @@
 """
 CATIA V5 R28 连接辅助模块。
 
-提供 get_catia_v5_application()，用于替代 pycatia 原生的 catia()，确保：
+提供 get_catia_v5_application()，返回 win32com dispatch 对象，确保：
 
 1. 即使机器上同时安装了 3DEXPERIENCE，也只连接到 CATIA V5（不会误启动 3DE）。
 2. 当 CATIA V5 未启动时，自动通过注册表检测 CATIA V5 安装路径并启动 CNEXT.exe。
@@ -9,7 +9,7 @@ CATIA V5 R28 连接辅助模块。
    则依次尝试已知 CLSID 直连和 ROT 枚举来找到 V5 对象。
 
 所有模块内部的 CATIA COM 调用都应使用本模块提供的 get_catia_v5_application()
-而非直接调用 pycatia 的 catia()，以避免意外连接到 3DEXPERIENCE 或新建实例。
+以避免意外连接到 3DEXPERIENCE 或新建实例。
 """
 
 import logging

@@ -25,7 +25,7 @@ def get_product_filepath(product) -> str:
     失败时返回空字符串。
 
     参数：
-        product: win32com CATIA 产品对象（直接 dispatch，非 pycatia 包装）
+        product: win32com CATIA 产品对象（直接 dispatch）
 
     返回：
         文档完整路径，或空字符串（失败时）

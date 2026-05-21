@@ -2774,8 +2774,8 @@ class MassPropsDialog(QDialog):
         打开后，若 ``win32gui`` 可用，则将CATIA V5主窗口置于Windows前台。
         """
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _pycatia  # noqa: PLC0415
-            caa         = _pycatia()
+            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
+            caa         = _get_catia()
             application = caa
             application.Visible = True
             documents   = application.Documents

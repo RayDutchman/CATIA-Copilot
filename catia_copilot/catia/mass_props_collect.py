@@ -933,7 +933,7 @@ def collect_mass_props_rows(
         """递归遍历产品树，将每个节点的质量特性信息追加到 rows。
 
         参数：
-            product:         当前节点的 pycatia Product 对象。
+            product:         当前节点的 win32com 产品对象。
             rows:            行字典列表，结果追加于此。
             level:           当前节点的层级深度（根节点为 0）。
             parent_filepath: 父节点的文件路径（用于判断"嵌入式部件"）。
