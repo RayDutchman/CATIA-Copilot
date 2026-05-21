@@ -453,12 +453,10 @@ class PlmApiClient:
         ]
         body = b"".join(body_parts)
 
+        # extra_headers 会覆盖 _headers() 中默认的 application/json Content-Type
         headers = self._headers({
             "Content-Type": f"multipart/form-data; boundary={boundary}",
         })
-        # Content-Type 已被 _headers 设为 application/json，需要覆盖
-        del headers["Content-Type"]
-        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
 
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         logger.debug(f"PLM STEP 上传：{filename} → {part_number}-{version} iter{iteration}")
