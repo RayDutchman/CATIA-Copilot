@@ -78,7 +78,13 @@ class PlmApiClient:
 
     def _headers(self, extra: dict | None = None) -> dict:
         """构造请求头，优先附加 JWT Bearer，次选 Basic Auth。"""
-        h = {"Content-Type": "application/json", "Accept": "application/json"}
+        h = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            # Cloudflare 等 CDN/WAF 会对 Python-urllib 默认 UA 返回 403（Bot Protection）
+            # 使用通用 User-Agent 规避此拦截
+            "User-Agent": "Mozilla/5.0 (compatible; CATIACopilot/1.0)",
+        }
         if self._token:
             h["Authorization"] = f"Bearer {self._token}"
         elif self._basic_auth:
