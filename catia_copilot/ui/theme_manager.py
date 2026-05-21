@@ -34,13 +34,13 @@ theme_signal = _ThemeSignalEmitter()
 _UI_DIR = Path(__file__).parent
 
 # ── 控件尺寸常量（调整这里即可全局生效）────────────────────────────
-INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px），Windows 11 原生值
-CONTROL_SPACING = 8    # indicator 与文字之间的间距（px）
-CHECKBOX_RADIUS = 4    # checkbox indicator 圆角（px），Windows 11 ControlCornerRadius
-CONTROL_RADIUS  = 4    # 普通控件圆角（px）：按钮、输入框、下拉框、表格、树等
-GROUPBOX_RADIUS = 6    # 分组框 / 菜单整体圆角（px）
-BUTTON_HEIGHT   = 26   # QPushButton min-height（px）
-INPUT_HEIGHT    = 22   # QLineEdit / QComboBox min-height（px）
+INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px）
+CONTROL_SPACING = 6    # indicator 与文字之间的间距（px）
+CHECKBOX_RADIUS = 2    # checkbox indicator 圆角（px），接近 Win10 原生
+CONTROL_RADIUS  = 3    # 普通控件圆角（px）：按钮、输入框、下拉框、表格、树等
+GROUPBOX_RADIUS = 4    # 分组框 / 菜单整体圆角（px）
+BUTTON_HEIGHT   = 22   # QPushButton min-height（px），与旧版 style.qss 一致
+INPUT_HEIGHT    = 20   # QLineEdit / QComboBox min-height（px）
 LOG_FONT_FAMILY = '"Consolas", "Cascadia Code", "NSimSun", monospace'  # 信息/日志文本框等宽字体族（NSimSun 保证汉字宽度=2×英文）
 LOG_FONT_SIZE   = "9pt"                                     # 信息/日志文本框字号
 

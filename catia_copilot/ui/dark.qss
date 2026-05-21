@@ -160,7 +160,7 @@ QPushButton {
     border: 1px solid #505050;
     border-radius: @control_radiuspx;
     color: #e8e8e8;
-    padding: 5px 14px;
+    padding: 4px 12px;
     min-height: @button_heightpx;
     font-size: 9pt;
 }
@@ -228,11 +228,11 @@ QLineEdit {
     border: 1px solid #505050;
     border-radius: @control_radiuspx;
     color: #e8e8e8;
-    padding: 4px 8px;
+    padding: 3px 6px;
     min-height: @input_heightpx;
 }
 QLineEdit:focus    { border-color: #0078d4; background-color: #2e2e2e; }
-QLineEdit:read-only { background-color: #242424; color: #808080; border-color: #3a3a3a; }
+QLineEdit:read-only { background-color: #242424; color: #c0c0c0; border-color: #3a3a3a; }
 
 /* ── 下拉框 ────────────────────────────────────────────────────────── */
 QComboBox {
@@ -240,7 +240,7 @@ QComboBox {
     border: 1px solid #505050;
     border-radius: @control_radiuspx;
     color: #e8e8e8;
-    padding: 4px 8px;
+    padding: 3px 6px;
     min-height: @input_heightpx;
 }
 QComboBox:hover  { border-color: #646464; }

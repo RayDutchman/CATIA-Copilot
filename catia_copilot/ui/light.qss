@@ -156,17 +156,17 @@ QGroupBox::title {
 
 /* ── 普通按钮 ──────────────────────────────────────────────────────── */
 QPushButton {
-    background-color: #f5f5f5;
-    border: 1px solid #d0d0d0;
+    background-color: #f0f0f0;
+    border: 1px solid #adadad;
     border-radius: @control_radiuspx;
     color: #1a1a1a;
-    padding: 5px 14px;
+    padding: 4px 12px;
     min-height: @button_heightpx;
     font-size: 9pt;
 }
-QPushButton:hover   { background-color: #e8e8e8; border-color: #b8b8b8; }
-QPushButton:pressed { background-color: #d8d8d8; border-color: #aaaaaa; }
-QPushButton:disabled { color: #b0b0b0; background-color: #f0f0f0; border-color: #e0e0e0; }
+QPushButton:hover   { background-color: #e5f1fb; border-color: #0078d4; }
+QPushButton:pressed { background-color: #cce4f7; border-color: #0078d4; }
+QPushButton:disabled { color: #a0a0a0; background-color: #f5f5f5; border-color: #d0d0d0; }
 QPushButton:default {
     border: 1px solid #0078d4;
     background-color: #0078d4;
@@ -198,11 +198,11 @@ QTableWidget {
 }
 QHeaderView::section {
     background-color: #f0f0f0;
-    color: #606060;
+    color: #1a1a1a;
     border: none;
-    border-right: 1px solid #e0e0e0;
-    border-bottom: 1px solid #e0e0e0;
-    padding: 5px 8px;
+    border-right: 1px solid #d0d0d0;
+    border-bottom: 1px solid #d0d0d0;
+    padding: 4px 8px;
     font-weight: 700;
     font-size: 8pt;
 }
@@ -211,25 +211,25 @@ QTableWidget QTableCornerButton::section { background-color: #f0f0f0; border: no
 /* ── 文本输入 ──────────────────────────────────────────────────────── */
 QLineEdit {
     background-color: #ffffff;
-    border: 1px solid #cccccc;
+    border: 1px solid #adadad;
     border-radius: @control_radiuspx;
     color: #1a1a1a;
-    padding: 4px 8px;
+    padding: 3px 6px;
     min-height: @input_heightpx;
 }
 QLineEdit:focus    { border-color: #0078d4; }
-QLineEdit:read-only { background-color: #f5f5f5; color: #888888; border-color: #e0e0e0; }
+QLineEdit:read-only { background-color: #f5f5f5; color: #1a1a1a; border-color: #d0d0d0; }
 
 /* ── 下拉框 ────────────────────────────────────────────────────────── */
 QComboBox {
     background-color: #ffffff;
-    border: 1px solid #cccccc;
+    border: 1px solid #adadad;
     border-radius: @control_radiuspx;
     color: #1a1a1a;
-    padding: 4px 8px;
+    padding: 3px 6px;
     min-height: @input_heightpx;
 }
-QComboBox:hover { border-color: #aaaaaa; }
+QComboBox:hover { border-color: #0078d4; }
 QComboBox:focus { border-color: #0078d4; }
 QComboBox::drop-down { border: none; width: 24px; }
 QComboBox::down-arrow {
@@ -258,6 +258,11 @@ QRadioButton::indicator {
     background-color: transparent;
     image: url(@radio_unchecked_icon);
 }
+QRadioButton::indicator:hover {
+    image: url(@radio_checked_icon);
+    /* hover 时使用 checked 图标但用半透明覆盖模拟原生 hover 感觉 */
+    opacity: 0.5;
+}
 QRadioButton::indicator:checked {
     border: none;
     background-color: transparent;
@@ -276,10 +281,10 @@ QCheckBox::indicator {
     width: @indicator_sizepx;
     height: @indicator_sizepx;
     border-radius: @checkbox_radiuspx;
-    border: 1px solid #aaaaaa;
+    border: 1px solid #767676;
     background-color: #ffffff;
 }
-QCheckBox::indicator:hover   { border-color: #0078d4; }
+QCheckBox::indicator:hover   { border-color: #0078d4; background-color: #f0f8ff; }
 QCheckBox::indicator:checked {
     border: 1px solid #0078d4;
     background-color: #0078d4;
@@ -287,7 +292,7 @@ QCheckBox::indicator:checked {
 }
 QCheckBox::indicator:checked:hover { background-color: #1a8fe3; border-color: #1a8fe3; }
 QCheckBox:disabled { color: #b0b0b0; }
-QCheckBox::indicator:disabled { border-color: #d0d0d0; background-color: #f5f5f5; }
+QCheckBox::indicator:disabled { border-color: #c0c0c0; background-color: #f5f5f5; }
 
 /* ── 状态栏 ────────────────────────────────────────────────────────── */
 QStatusBar {
