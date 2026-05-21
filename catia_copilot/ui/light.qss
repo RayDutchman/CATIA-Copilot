@@ -250,6 +250,7 @@ QRadioButton {
     spacing: @control_spacingpx;
     color: #1a1a1a;
     background: transparent;
+    min-height: 22px;
 }
 QRadioButton::indicator {
     width: @indicator_sizepx;
@@ -276,10 +277,11 @@ QCheckBox {
     spacing: @control_spacingpx;
     color: #1a1a1a;
     background: transparent;
+    min-height: 22px;
 }
 QCheckBox::indicator {
-    width: @indicator_sizepx;
-    height: @indicator_sizepx;
+    width: @checkbox_indicator_sizepx;
+    height: @checkbox_indicator_sizepx;
     border-radius: @checkbox_radiuspx;
     border: 1px solid #767676;
     background-color: #ffffff;

@@ -48,7 +48,7 @@ from pathlib import Path
 
 
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX
+from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +498,7 @@ def _post_process_rows(rows: list[dict]) -> None:
     #   I_local 是在零件重心处、沿零件局部坐标轴方向的惯量；
     #   I_root  是在零件重心处、沿根产品坐标轴方向的惯量。
     for row in rows:
-        if row.get("Type") not in ("零件", "对称件"):
+        if row.get("Type") not in BomNodeType.LEAF_TYPES:
             continue
         mp = row.get("_mass_props")
         if not mp:
@@ -556,7 +556,7 @@ def _post_process_rows(rows: list[dict]) -> None:
     # 算法由 _rollup_one_product() 实现（详见其文档字符串）。
     for i in range(n):
         row = rows[i]
-        if row.get("Type") not in ("产品", "部件"):
+        if row.get("Type") not in BomNodeType.ASSEMBLY_TYPES:
             continue
 
         level = int(row.get("Level", 0))
@@ -607,7 +607,7 @@ def recompute_product_rows(rows: list[dict]) -> None:
     n = len(rows)
     for i in range(n):
         row = rows[i]
-        if row.get("Type") not in ("产品", "部件"):
+        if row.get("Type") not in BomNodeType.ASSEMBLY_TYPES:
             continue
 
         level = int(row.get("Level", 0))
@@ -978,14 +978,14 @@ def collect_mass_props_rows(
         if not_found:
             node_type = ""
         elif is_embedded:
-            node_type = "部件"
+            node_type = BomNodeType.COMPONENT
         else:
             ext = Path(filepath).suffix.lower()
             if ext == ".catpart":
-                node_type = "零件"
+                node_type = BomNodeType.PART
             else:
-                # .catproduct 或其他未知扩展名统一视为"产品"
-                node_type = "产品"
+                # .catproduct 或其他未知扩展名统一视为 Product
+                node_type = BomNodeType.PRODUCT
 
         # ── 计算本节点到根坐标系的累积变换矩阵 ──────────────────────────────
         # local_mat4：本节点相对父节点的局部变换（由 CATIA Position 读取）
@@ -1021,7 +1021,7 @@ def collect_mass_props_rows(
         mass_props: dict | None = None
         meas_failed = False
 
-        if node_type == "零件" and is_readable and filepath:
+        if node_type == BomNodeType.PART and is_readable and filepath:
             if filepath in _mass_cache:
                 # 同一文件路径已测量过（多实例复用），直接取缓存，避免重复耗时测量
                 mass_props = _mass_cache[filepath]
@@ -1052,7 +1052,7 @@ def collect_mass_props_rows(
 
         # 若零件本应可测但最终无数据，标记 meas_failed（无论是找不到文档还是读参数失败）
         if mass_props is None:
-            meas_failed = meas_failed or (node_type == "零件" and is_readable and not not_found)
+            meas_failed = meas_failed or (node_type == BomNodeType.PART and is_readable and not not_found)
 
         # ── 组装行字典 ─────────────────────────────────────────────────────────
         # CogX/Y/Z 和 Ixx 等此处存储的是零件局部坐标系下的原始测量值；

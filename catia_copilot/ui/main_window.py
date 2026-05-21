@@ -473,7 +473,13 @@ class MainWindow(QMainWindow):
         )
         btn_plm_sync.clicked.connect(self._open_plm_sync_dialog)
 
-        for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_sync):
+        btn_plm_workbench = QPushButton("PLM 工作台")
+        btn_plm_workbench.setToolTip(
+            "打开 PLM 工作台——整合连接管理、增量同步、Tag 规则、产品注册与历史记录"
+        )
+        btn_plm_workbench.clicked.connect(self._open_plm_workbench)
+
+        for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_sync, btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -828,6 +834,11 @@ class MainWindow(QMainWindow):
             dlg.sync_done.connect(self._connection_timer.start)
             return dlg
         self._show_dialog("_dlg_plm_sync", factory)
+
+    def _open_plm_workbench(self) -> None:
+        """打开 PLM 工作台（非模态独立窗口，单例）。"""
+        from catia_copilot.ui.plm_workbench import PlmWorkbench
+        self._show_dialog("_dlg_plm_workbench", lambda: PlmWorkbench(self))
 
     def _open_stamp_part_template_dialog(self) -> None:
         self._show_dialog("_dlg_stamp_template", lambda: FileConvertDialog(

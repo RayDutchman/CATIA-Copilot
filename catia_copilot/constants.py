@@ -45,6 +45,32 @@ ABOUT_TEXT = f"""{APP_NAME} v{APP_VERSION}
 \u00a9 2026 {APP_AUTHOR}. 仅供内部使用。"""
 
 # ---------------------------------------------------------------------------
+# BOM 节点类型常量
+# ---------------------------------------------------------------------------
+# row["Type"] 的存储值统一使用英文 key，显示名通过 TYPE_DISPLAY_NAMES 转换。
+# 避免直接在业务逻辑中硬编码中文字符串（language-agnostic）。
+
+class BomNodeType:
+    """BOM 节点类型的英文 key 常量。"""
+    PART       = "Part"        # 零件（.CATPart 叶节点）
+    PRODUCT    = "Product"     # 产品（.CATProduct 独立子装配）
+    COMPONENT  = "Component"   # 部件（嵌入式子装配，无独立文件）
+    MIRROR     = "Mirror"      # 对称件（mass_props_dialog 虚拟行）
+
+    # 所有"装配"类型（非叶节点），用于过滤 / 聚合判断
+    ASSEMBLY_TYPES: frozenset = frozenset({PRODUCT, COMPONENT})
+    # 所有"叶节点"类型（需要测量质量特性 / 上传 STP 等）
+    LEAF_TYPES: frozenset = frozenset({PART, MIRROR})
+
+# 显示名映射：英文 key → 界面显示中文
+TYPE_DISPLAY_NAMES: dict = {
+    BomNodeType.PART:      "零件",
+    BomNodeType.PRODUCT:   "产品",
+    BomNodeType.COMPONENT: "部件",
+    BomNodeType.MIRROR:    "对称件",
+}
+
+# ---------------------------------------------------------------------------
 # Default window geometry
 # ---------------------------------------------------------------------------
 
@@ -243,6 +269,27 @@ PART_NUMBER_VALID_PATTERN: re.Pattern = re.compile(
 # DocdokuPLM 内置属性列（对应 PartRevision 的标准字段，作为 instanceAttributes 上传）
 # "Description" 是 PLM 创建零件时的描述字段，其余四项与 BOM_HIDEABLE_COLUMNS 一致
 PLM_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
+
+# ---------------------------------------------------------------------------
+# PLM 同步：单次同步最大节点数（硬限制，超出则禁止同步）
+# ---------------------------------------------------------------------------
+
+PLM_SYNC_MAX_NODES: int = 50
+
+# ---------------------------------------------------------------------------
+# PLM 工作台：连接 Tab 成员列表列定义
+# 每项：(字段键, 列标题, 拉伸模式)
+# 拉伸模式："stretch" = Stretch，"contents" = ResizeToContents，"fixed:N" = Fixed N px
+# 如需增删列或调整顺序，只改这里即可。
+# ---------------------------------------------------------------------------
+
+PLM_MEMBER_TABLE_COLUMNS: list[tuple[str, str, str]] = [
+    ("login",       "登录名",    "contents"),
+    ("name",        "姓名",      "stretch"),
+    ("email",       "邮箱",      "stretch"),
+    ("language",    "语言",      "fixed:60"),
+    ("workspaceId", "工作区",    "contents"),
+]
 
 # ---------------------------------------------------------------------------
 # 可调参数：惯量包络体编号上限

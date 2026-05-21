@@ -35,6 +35,8 @@ from catia_copilot.constants import (
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,
     BOM_THUMBNAIL_MAX_SIZE,
+    BomNodeType,
+    TYPE_DISPLAY_NAMES,
 )
 from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
 from catia_copilot.catia.bom_write import write_bom_to_catia
@@ -887,7 +889,9 @@ class BomEditDialog(QDialog):
                 elif col_name == "Filepath":
                     value = str(row_data.get("_filepath", ""))
                 elif col_name in BOM_READONLY_COLUMNS:
-                    value = str(row_data.get(col_name, ""))
+                    raw = str(row_data.get(col_name, ""))
+                    # Type 列存储英文 key，显示时转为中文
+                    value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
                 else:
                     value = str(
                         self._canonical_data.get(pn, {}).get(
@@ -1803,6 +1807,29 @@ class BomEditDialog(QDialog):
                 QMessageBox.information(self, "无更改", "没有检测到任何修改，无需写回。")
             return
 
+        # ── 检查被修改的行中是否有从未保存到磁盘的零件 ──────────────────────
+        # 构建 pn → _no_file 的快速查找表（以 _rows 为准）
+        _no_file_pns: set[str] = {
+            str(r.get("Part Number", ""))
+            for r in self._rows
+            if r.get("_no_file") and r.get("Part Number")
+        }
+        affected_no_file = [pn for pn in dirty_data if pn in _no_file_pns]
+        if affected_no_file:
+            pn_list = "\n".join(f"  • {pn}" for pn in affected_no_file)
+            ret = QMessageBox.warning(
+                self,
+                "零件从未保存到磁盘",
+                f"以下被修改的零件从未保存到磁盘，写回操作仅修改 CATIA 内存，"
+                f"关闭 CATIA 后修改将丢失：\n\n{pn_list}\n\n"
+                f"建议先在 CATIA 中对这些零件执行「另存为」后再写回。\n\n"
+                f"是否忽略风险，继续写回？",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel,
+            )
+            if ret != QMessageBox.Ok:
+                return
+
         self._save_btn.setEnabled(False)
         self._finish_btn.setEnabled(False)
         QApplication.processEvents()
@@ -2050,7 +2077,8 @@ class BomEditDialog(QDialog):
                         )
                         value = raw_val
                 else:
-                    value = raw_val
+                    # Type 列存储英文 key，导出时转为中文显示
+                    value = TYPE_DISPLAY_NAMES.get(raw_val, raw_val) if col_name == "Type" else raw_val
                 cell        = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.border = thin_border
                 if col_name in ("Level", "Quantity", "Type"):
@@ -2112,7 +2140,7 @@ class BomEditDialog(QDialog):
         row_data     = self._rows[row_idx]
         fp           = str(row_data.get("_filepath", ""))
         fp_path      = Path(fp) if fp else None
-        is_component = row_data.get("Type") == "部件"
+        is_component = row_data.get("Type") == BomNodeType.COMPONENT
         not_found    = bool(row_data.get("_not_found"))
         no_file      = bool(row_data.get("_no_file"))
         unreadable   = bool(row_data.get("_unreadable"))

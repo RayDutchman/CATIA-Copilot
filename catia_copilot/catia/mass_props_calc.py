@@ -9,6 +9,8 @@
 
 import math
 
+from catia_copilot.constants import BomNodeType
+
 
 def _mat3_mul(A: list[list[float]], B: list[list[float]]) -> list[list[float]]:
     """3×3 矩阵乘法，返回 A @ B。"""
@@ -115,7 +117,7 @@ def rollup_mass_properties(rows: list[dict]) -> dict:
     I_at_origin  = [[0.0] * 3 for _ in range(3)]  # Σ I_i 转换到根原点
 
     for row in rows:
-        if row.get("Type") not in ("零件", "对称件"):
+        if row.get("Type") not in BomNodeType.LEAF_TYPES:
             continue
         if row.get("_excluded"):
             continue

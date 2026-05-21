@@ -182,7 +182,8 @@ class ThemeManager:
         _radio_unchecked_icon = str(_UI_DIR / f"radio_unchecked_{mode}.svg").replace("\\", "/")
         _chevron_down_icon    = str(_UI_DIR / f"chevron_down_{mode}.svg").replace("\\", "/")
         qss = (DARK_QSS if mode == "dark" else LIGHT_QSS) \
-            .replace("@indicator_sizepx",  f"{INDICATOR_SIZE}px") \
+            .replace("@indicator_sizepx",         f"{INDICATOR_SIZE}px") \
+            .replace("@checkbox_indicator_sizepx", f"{INDICATOR_SIZE - 2}px") \
             .replace("@control_spacingpx", f"{CONTROL_SPACING}px") \
             .replace("@checkbox_radiuspx", f"{CHECKBOX_RADIUS}px") \
             .replace("@control_radiuspx",  f"{CONTROL_RADIUS}px") \
