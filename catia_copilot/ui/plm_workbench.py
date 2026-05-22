@@ -229,7 +229,7 @@ class _SyncWorker(QThread):
     """执行 BOM 同步 + 可选附件上传。"""
     progress   = Signal(str)
     upload_log = Signal(str, str, str, str)  # (pn, source, update, checkin)
-    finished   = Signal(object)         # SyncResult
+    sync_done  = Signal(object)         # SyncResult（避免与 QThread.finished 内置信号同名冲突）
     error      = Signal(str)
 
     def __init__(self, base_url, login, password, workspace, options, rows):
@@ -265,7 +265,7 @@ class _SyncWorker(QThread):
             # 注：附件上传（CATPart / STP）已移入 sync.py 的 _do_update_and_checkin，
             # 在 checkin 前执行，确保零件处于 checked-out 状态。
 
-            self.finished.emit(result)
+            self.sync_done.emit(result)
         except Exception as exc:
             logger.exception("PLM 同步后台线程异常")
             self.error.emit(str(exc))
@@ -588,9 +588,13 @@ class PlmWorkbench(QMainWindow):
         (self._rb_other_skip, self._rb_other_force), self._bg_other, row_other = \
             _radio_row("跳过", "强制覆盖（暂不可用）")
         self._rb_other_force.setEnabled(False)
+        (self._rb_after_checkin, self._rb_after_keep), self._bg_after, row_after = \
+            _radio_row("自动签入", "保留签出")
+
         form.addRow("不存在的零件：",  row_create)
         form.addRow("已签入的零件：",  row_exist)
         form.addRow("他人已签出：",    row_other)
+        form.addRow("更新后操作：",    row_after)
         opt_layout.addLayout(form)
 
         # 分隔线
@@ -857,6 +861,7 @@ class PlmWorkbench(QMainWindow):
         self._lbl_node_count.setText("正在加载……")
         self._preview_tree.clear()
         self._bom_rows = []
+        self._sync_result_map.clear()   # 重新加载 BOM 时清空同步状态列
 
         # 进度对话框（不定模式，实时显示已读节点数）
         self._load_progress_dlg = QProgressDialog("正在从 CATIA 读取 BOM……", None, 0, 0, self)
@@ -994,19 +999,21 @@ class PlmWorkbench(QMainWindow):
         self._rb_create_yes.setChecked(True)
         self._rb_exist_skip.setChecked(True)
         self._rb_other_skip.setChecked(True)
+        self._rb_after_checkin.setChecked(True)
         self._chk_incremental.setChecked(False)
 
     def _apply_preset_update(self) -> None:
         self._rb_create_no.setChecked(True)
         self._rb_exist_checkout.setChecked(True)
         self._rb_other_skip.setChecked(True)
+        self._rb_after_checkin.setChecked(True)
         self._chk_incremental.setChecked(True)
 
     # ── 构建 SyncOptions ─────────────────────────────────────────────────────
 
     def _build_sync_options(self):
         from catia_copilot.plm.sync import (
-            CheckedOutByOtherPolicy,
+            AfterUpdatePolicy, CheckedOutByOtherPolicy,
             ExistingPartPolicy, OwnCheckedOutPolicy, SyncOptions,
         )
         return SyncOptions(
@@ -1018,6 +1025,11 @@ class PlmWorkbench(QMainWindow):
             create_new_parts=self._rb_create_yes.isChecked(),
             own_checked_out_policy=OwnCheckedOutPolicy.UPDATE,
             other_checked_out_policy=CheckedOutByOtherPolicy.SKIP,
+            after_update_policy=(
+                AfterUpdatePolicy.KEEP_CHECKOUT
+                if self._rb_after_keep.isChecked()
+                else AfterUpdatePolicy.CHECKIN
+            ),
             incremental=self._chk_incremental.isChecked(),
             upload_step_files=self._chk_upload_files.isChecked(),
             register_product=self._chk_reg_product.isChecked(),
@@ -1130,7 +1142,7 @@ class PlmWorkbench(QMainWindow):
         w = _SyncWorker(base_url, login, password, workspace, options, list(self._bom_rows))
         w.progress.connect(self._on_sync_progress)
         w.upload_log.connect(self._on_upload_log)
-        w.finished.connect(self._on_sync_done)
+        w.sync_done.connect(self._on_sync_done)
         w.error.connect(self._on_sync_error)
         self._start_worker(w)
 

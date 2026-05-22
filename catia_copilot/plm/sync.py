@@ -45,13 +45,15 @@ class OwnCheckedOutPolicy(Enum):
     SKIP   = "skip"    # 跳过并计入失败统计
 
 
+class AfterUpdatePolicy(Enum):
+    """所有零件上传完毕后的签入策略。"""
+    CHECKIN       = "checkin"       # 等待转换完成后批量签入（推荐）
+    KEEP_CHECKOUT = "keep_checkout" # 保留签出状态，不执行签入
+
+
 @dataclass
 class SyncOptions:
-    """同步策略选项，由 UI 收集后传入 sync_bom_to_plm()。
-
-    签入策略：固定为"所有零件上传完毕 → 等待转换完成 → 批量签入"。
-    不再提供"保留签出"选项。
-    """
+    """同步策略选项，由 UI 收集后传入 sync_bom_to_plm()。"""
     # 已存在零件（Checked In）的处理方式
     existing_part_policy: ExistingPartPolicy = ExistingPartPolicy.CHECKOUT_UPDATE
 
@@ -83,6 +85,9 @@ class SyncOptions:
     # 转换由 PLM 异步处理，必须在转换结束（零件仍 checked-out）时才写入 geometry。
     # 设为 0 表示上传后不等待（geometry 可能无法写入）。
     conversion_timeout_s: int = 120
+
+    # 所有上传完毕后的签入策略：批量签入 或 保留签出
+    after_update_policy: AfterUpdatePolicy = AfterUpdatePolicy.CHECKIN
 
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
@@ -443,9 +448,14 @@ def sync_bom_to_plm(
     # ════════════════════════════════════════════════════════════════════
     # 阶段二：等待所有 STP 转换完成，再批量 checkin
     # ════════════════════════════════════════════════════════════════════
+    keep_checkout = (
+        getattr(options, "after_update_policy", AfterUpdatePolicy.CHECKIN)
+        == AfterUpdatePolicy.KEEP_CHECKOUT
+    )
     if tickets:
         conversion_tickets = [t for t in tickets if t.needs_conversion]
-        if conversion_tickets:
+        # 保留签出时不需要等待转换（零件不会被签入，geometry 写不写无所谓）
+        if conversion_tickets and not keep_checkout:
             timeout = getattr(options, "conversion_timeout_s", 120)
             _cb(f"── 等待 CAD 转换（{len(conversion_tickets)} 个零件，超时 {timeout}s）──")
             for t in conversion_tickets:
@@ -456,9 +466,15 @@ def sync_bom_to_plm(
                         lbl=t.lbl, source=t.source,
                     )
 
-        _cb(f"── 批量签入（{len(tickets)} 个零件）──")
-        for t in tickets:
-            _do_checkin_ticket(t, client, workspace, options, result, _cb)
+        if keep_checkout:
+            # 保留签出：不执行 checkin，仅输出终态日志行（col3="保留签出"）
+            _cb(f"── 保留签出（{len(tickets)} 个零件，不执行签入）──")
+            for t in tickets:
+                _cb(_log_row(t.source, t.update_col or "属性已写入", "保留签出", t.lbl))
+        else:
+            _cb(f"── 批量签入（{len(tickets)} 个零件）──")
+            for t in tickets:
+                _do_checkin_ticket(t, client, workspace, options, result, _cb)
 
     # ── Product 注册 ──────────────────────────────────────────────────────────
     if options.register_product:
