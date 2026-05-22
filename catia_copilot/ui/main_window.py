@@ -969,9 +969,11 @@ class MainWindow(QMainWindow):
         与 bom_edit_dialog._open_in_catia 逻辑保持一致。
         """
         import win32gui  # type: ignore[import]
+        import win32con  # type: ignore[import]
         from catia_copilot.catia.connection import get_catia_v5_application
         try:
             app  = get_catia_v5_application()
+            app.Visible = True  # 确保 CATIA 窗口可见
             docs = app.Documents
 
             # 检查是否已打开：大小写不敏感比对（Windows 文件系统不区分大小写，
@@ -1005,24 +1007,25 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger.warning(f"_open_catia_file: Activate() 失败（已忽略）：{e}")
 
-            # 置前台：找到 CATIA 主窗口并激活
+            # 置前台：找到 CATIA V5 主窗口，先恢复再激活
             catia_hwnd = 0
 
             def _enum_cb(hwnd: int, _: None) -> bool:
                 nonlocal catia_hwnd
                 if win32gui.IsWindowVisible(hwnd):
                     title = win32gui.GetWindowText(hwnd)
-                    if "CATIA" in title:
+                    if title.startswith("CATIA V5"):
                         catia_hwnd = hwnd
                         return False
                 return True
 
             win32gui.EnumWindows(_enum_cb, None)
             if catia_hwnd:
+                win32gui.ShowWindow(catia_hwnd, win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(catia_hwnd)
                 logger.debug(f"_open_catia_file: SetForegroundWindow hwnd={catia_hwnd}")
             else:
-                logger.warning("_open_catia_file: 未找到 CATIA 主窗口，无法置前台")
+                logger.warning("_open_catia_file: 未找到 CATIA V5 主窗口，无法置前台")
 
         except Exception as e:
             QMessageBox.critical(
