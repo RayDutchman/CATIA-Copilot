@@ -86,7 +86,9 @@ def find_dependencies(
     if progress_callback:
         progress_callback("正在打开文件，请稍候…")
 
-    documents.Open(target_path)
+    # 若目标文件已在 CATIA 中打开，则不重新打开（避免 CATIA 弹出"是否重新加载"询问）
+    if target_lower not in already_open_lower:
+        documents.Open(target_path)
 
     results:             list[str] = []
     newly_opened_lower:  set[str]  = set()  # 小写路径集合，用于比对
@@ -463,10 +465,11 @@ def _read_part_pn(part_path: str) -> str | None:
         from catia_copilot.catia.connection import get_catia_v5_application
         application = get_catia_v5_application()
         documents   = application.Documents
+        part_path_lower = part_path.lower()
         for i in range(1, documents.Count + 1):
             try:
                 doc = documents.Item(i)
-                if doc.FullName != part_path:
+                if doc.FullName.lower() != part_path_lower:
                     continue
                 return doc.Product.PartNumber
             except Exception:
@@ -513,6 +516,14 @@ def _drawing_strategy(
     elif strategy == "strip_prefix_scan_dirs":
         # 方法 4：扫描向上 N 级目录内的 .CATDrawing，strip 图纸文件名前缀后与零件 stem 比较
         return _find_drawing_strip_prefix_in_dirs(part, part.stem, max_parent_levels)
+
+    elif strategy == "doc_file_links":
+        # 方法 5：遍历已打开的 CATDrawing，反查其生成式视图链接是否指向该零件/产品
+        try:
+            return _find_drawings_via_part_link(part_path)
+        except Exception as e:
+            logger.debug(f"doc_file_links strategy failed: {e}")
+            return []
 
     else:
         logger.warning(f"find_drawing_for_part: 未知策略 '{strategy}'，已跳过。")
@@ -590,3 +601,33 @@ def _find_drawing_strip_prefix_in_dirs(
 
     # 去重（保序），直接用 str(p)——运行在 Windows，路径已是绝对路径
     return list(dict.fromkeys(str(p) for p in candidates if p.exists()))
+
+
+def _find_drawings_via_part_link(part_path: str) -> list[str]:
+    """方法 5（2B）实现：遍历已打开的 CATDrawing，反查其生成式视图是否链接到 part_path。
+
+    对每张已打开图纸调用 _find_parts_via_file_links()，若结果中包含目标零件/产品路径，
+    则将该图纸加入返回列表。
+    图纸须已在 CATIA 中打开；若无已打开图纸则返回空列表。
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+
+    application   = get_catia_v5_application()
+    documents     = application.Documents
+    part_lower    = part_path.lower()
+    results: list[str] = []
+
+    for i in range(1, documents.Count + 1):
+        try:
+            doc       = documents.Item(i)
+            full_name = doc.FullName
+            if not full_name.lower().endswith(".catdrawing"):
+                continue
+            # 该图纸的所有视图链接指向的零件列表
+            linked_parts = _find_parts_via_file_links(full_name)
+            if any(p.lower() == part_lower for p in linked_parts):
+                results.append(full_name)
+        except Exception:
+            continue
+
+    return list(dict.fromkeys(results))

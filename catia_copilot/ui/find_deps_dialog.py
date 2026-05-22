@@ -56,6 +56,7 @@ _PART_STRATEGY_LABELS: dict[str, str] = {
     "pn_param_scan_drws":     "目录扫描，文件名匹配 PartNumber",
     "same_name_scan_dirs":    "目录扫描，同名图纸文件",
     "strip_prefix_scan_dirs": "目录扫描，去前缀后同名图纸文件",
+    "doc_file_links":         "COM 视图链接（兜底，图纸须已打开）",
 }
 
 # ---------------------------------------------------------------------------
