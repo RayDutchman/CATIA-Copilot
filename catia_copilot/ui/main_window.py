@@ -974,20 +974,25 @@ class MainWindow(QMainWindow):
             app  = get_catia_v5_application()
             docs = app.Documents
 
-            # 检查是否已打开：精确比对（file_path 与 d.FullName 均为 Windows 原生路径）
+            # 检查是否已打开：大小写不敏感比对（Windows 文件系统不区分大小写，
+            # 且策略函数返回的路径与 COM FullName 大小写可能不一致）
+            file_path_lower = file_path.lower()
             target_doc = None
             for i in range(1, docs.Count + 1):
                 try:
                     d = docs.Item(i)
-                    if d.FullName == file_path:
+                    if d.FullName.lower() == file_path_lower:
                         target_doc = d
                         break
                 except Exception:
                     pass
 
             if target_doc is None:
-                # 直接用原始 Windows 路径字符串，不经 Path.resolve()
+                # 直接用原始 Windows 路径字符串打开，不经 Path.resolve()
                 target_doc = docs.Open(file_path)
+
+            if target_doc is None:
+                raise RuntimeError(f"docs.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}")
 
             # 激活
             try:

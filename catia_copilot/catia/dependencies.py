@@ -291,12 +291,13 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
     application = get_catia_v5_application()
     documents   = application.Documents
 
-    # 找到图纸的 COM 文档对象（不主动打开，精确路径比对）
+    # 找到图纸的 COM 文档对象（不主动打开，大小写不敏感路径比对）
+    drawing_path_lower = drawing_path.lower()
     doc = None
     for i in range(1, documents.Count + 1):
         try:
             d = documents.Item(i)
-            if d.FullName == drawing_path:
+            if d.FullName.lower() == drawing_path_lower:
                 doc = d
                 break
         except Exception:
