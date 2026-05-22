@@ -873,8 +873,8 @@ class MainWindow(QMainWindow):
     def _open_related_file_for_active_doc(self) -> None:
         """根据当前活跃文档类型，自动查找并打开关联文件。
 
-        - CATPart / CATProduct → 查找对应 CATDrawing（find_drawing_for_part）
-        - CATDrawing → 查找对应 CATPart / CATProduct（find_part_for_drawing）
+        - CATPart / CATProduct → 启发式查找对应 CATDrawing（文件名/PartNumber 匹配）
+        - CATDrawing → 正向查询（COM 视图链接）+ 启发式查找对应 CATPart / CATProduct
         - 其他格式 → 提示不支持
         """
         from catia_copilot.catia.connection import get_catia_v5_application
@@ -883,7 +883,7 @@ class MainWindow(QMainWindow):
             find_part_for_drawing,
         )
 
-        # 1. 获取当前活跃文档（full_name 保留 COM 返回的原始路径，不做任何大小写变换）
+        # 1. 获取当前活跃文档
         try:
             app       = get_catia_v5_application()
             full_name = app.ActiveDocument.FullName
@@ -895,12 +895,32 @@ class MainWindow(QMainWindow):
 
         # 2. 按类型分支
         if ext((".catpart", ".catproduct")):
-            candidates = find_drawing_for_part(full_name)
+            candidates: list[str] = []
+
+            # 启发式：文件名/PartNumber 匹配
+            try:
+                heu = find_drawing_for_part(full_name)
+                for p in heu:
+                    if p not in candidates:
+                        candidates.append(p)
+            except Exception:
+                pass
+
             empty_msg  = f"未能找到对应的 CATDrawing。\n\n零件：{Path(full_name).name}"
             pick_title = "选择要打开的图纸"
 
         elif ext(".catdrawing",):
-            candidates = find_part_for_drawing(full_name)
+            candidates = []
+
+            # doc_file_links 策略已包含在 find_part_for_drawing 中（COM 视图链接优先）
+            try:
+                heu = find_part_for_drawing(full_name)
+                for p in heu:
+                    if p not in candidates:
+                        candidates.append(p)
+            except Exception:
+                pass
+
             empty_msg  = (
                 f"未能找到对应的 CATPart 或 CATProduct。\n\n图纸：{Path(full_name).name}"
             )
@@ -922,12 +942,10 @@ class MainWindow(QMainWindow):
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
             from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground
+            from catia_copilot.catia.utils import open_catia_file
             try:
                 app = get_catia_v5_application()
-                app.Visible = True
-                open_catia_file(app.Documents, chosen)
-                bring_catia_to_foreground()
+                open_catia_file(app.Documents, chosen, foreground=True)
             except Exception as e:
                 QMessageBox.critical(
                     self, "打开文件失败",

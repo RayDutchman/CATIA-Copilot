@@ -2,27 +2,36 @@
 CATIA 依赖项查找器。
 
 提供：
-- find_dependencies()       – 收集目标 CATIA 文件依赖的所有文档（层面 1）
-- find_part_for_drawing()   – 给定 CATDrawing，查找对应的 CATPart/CATProduct（层面 2A）
-- find_drawing_for_part()   – 给定 CATPart/CATProduct，查找对应的 CATDrawing（层面 2B）
+- find_dependencies()          – 正向查询：打开目标文件，遍历其引用结构，收集所有子文档路径
+- find_reverse_dependencies()  – 反向查询：遍历已打开文档，找出哪些文档引用了目标文件
+- find_part_for_drawing()      – 给定 CATDrawing，启发式查找对应的 CATPart/CATProduct（2A）
+- find_drawing_for_part()      – 给定 CATPart/CATProduct，启发式查找对应的 CATDrawing（2B）
 
-层面 2A 策略（DRAWING_SEARCH_STRATEGIES）：
+正向查询策略（find_dependencies）：
+  CATProduct  – 通过 COM 打开后，只读直接子层（一级）的 Product.Products，
+                收集每个直接子件的 ReferenceProduct.Parent.FullName
+  CATDrawing  – 通过 COM 打开后，遍历生成式视图 GenerativeBehavior.Document，
+                收集关联的零件/产品文档路径（与 doc_file_links 策略一致）
+  其他格式    – 退化为快照差值法（打开前后 Documents 集合的新增项），
+                结果可能不完整
+
+反向查询策略（find_reverse_dependencies）：
+  对每个已打开文档调用 find_dependencies，取其直接依赖列表，
+  检查目标路径是否在其中。相当于对所有已打开文档各做一次正向查询，
+  找出哪些文档直接引用了目标文件。
+  典型用途：想删除某个零件前，先确认哪些已打开的装配体/图纸直接用到了它。
+
+启发式补充策略（DRAWING_SEARCH_STRATEGIES / PART_TO_DRAWING_STRATEGIES）：
   pn_param_open_docs     – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配
-                           doc.Product.PartNumber == 该值（需 CATIA 运行，优先级最高）
+                           doc.Product.PartNumber == 该值
+  pn_param_open_drws     – 遍历已打开 CATDrawing，找 Parameters["PartNumber"]
+                           == 零件 doc.Product.PartNumber 的图纸
   pn_param_scan_dirs     – 读图纸 Parameters["PartNumber"]，在向上 N 级目录中找
                            文件名（stem）== 该值的 .CATPart/.CATProduct
-  same_name_scan_dirs    – 用图纸文件名 stem 在向上 N 级目录中找同名零件文件
-  strip_prefix_scan_dirs – 同上，但先 strip 图纸文件名前缀再匹配
-  doc_file_links         – 通过图纸生成式视图的 GenerativeBehavior.Document 取关联零件
-                           （图纸须已打开，兜底策略）
-
-层面 2B 策略（PART_TO_DRAWING_STRATEGIES）：
-  pn_param_open_drws     – 遍历已打开 CATDrawing，找 Parameters["PartNumber"]
-                           == 零件 doc.Product.PartNumber 的图纸（需 CATIA 运行，优先级最高）
   pn_param_scan_drws     – 在向上 N 级目录中找文件名（stem）== 零件
                            doc.Product.PartNumber 的 .CATDrawing
-  same_name_scan_dirs    – 在向上 N 级目录中找文件名（stem）== 零件 stem 的 .CATDrawing
-  strip_prefix_scan_dirs – 同上，但对图纸文件名先 strip 前缀再与零件 stem 比较
+  same_name_scan_dirs    – 用文件名 stem 在向上 N 级目录中找同名对应文件
+  strip_prefix_scan_dirs – 同上，但先 strip 文件名前缀再匹配
 """
 
 import logging
@@ -32,9 +41,9 @@ from pathlib import Path
 
 from catia_copilot.constants import (
     DRAWING_SEARCH_STRATEGIES,
-    DRAWING_SEARCH_MAX_LEVELS,
+    SEARCH_MAX_LEVELS,
     PART_TO_DRAWING_STRATEGIES,
-    PART_TO_DRAWING_MAX_LEVELS,
+    SEARCH_MAX_LEVELS,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,91 +55,194 @@ _PART_EXTS = (".CATPart", ".CATProduct")
 def find_dependencies(
     target_path: str,
     progress_callback: Callable[[str], None] | None = None,
+    activate: bool = True,
 ) -> list[str]:
-    """返回 *target_path* 依赖的所有文件的完整路径。
+    """返回 *target_path* 所引用的全部子文档路径（去重、保序）。
 
-    在运行中的 CATIA 实例中打开目标文件；CATIA 会自动加载所有引用的文档。
-    该函数收集每个新打开文档的路径，然后在返回前关闭所有这些文档。
+    根据目标文件类型采用不同策略：
+
+    - **CATProduct**：通过 COM 打开后，遍历 ``Product.Products`` 直接子层，
+      收集每个子件的 ``ReferenceProduct.Parent.FullName``。
+    - **CATDrawing**：通过 COM 打开后，遍历所有生成式视图的
+      ``GenerativeBehavior.Document``，收集关联的零件/产品文档路径。
+    - **其他格式**：不支持，直接返回空列表。
 
     参数
     ----------
     target_path:
-        任意 CATIA 文档的绝对路径（``CATPart``、``CATProduct``、``CATDrawing``、
-        ``CATAnalysis``、``cgr``、``model`` 等均可）。
+        任意 CATIA 文档的绝对路径。
     progress_callback:
         可选的 ``callable(str)``，在搜索运行时使用状态消息调用。
+    activate:
+        为 ``True``（默认）时，若文档已打开则调用 ``Activate()`` 切换到前台，
+        若未打开则调用 ``documents.Open()``。
+        为 ``False`` 时，只在当前已打开的文档中查找目标文档，不激活、不打开；
+        若目标文档未打开则直接返回空列表。适合在反向遍历场景中使用，
+        避免批量查询时频繁切换前台文档。
 
     注意
     ----
-    - 结果不限格式，可能包含任意 CATIA 支持的文档类型。
+    - 结果中不包含目标文件本身。
     - 路径比对使用小写，以兼容 Windows 文件系统大小写不敏感的特性。
-    - 若某文档关闭时抛异常（如 cgr 等只读格式），将静默跳过。
     """
     from catia_copilot.catia.connection import get_catia_v5_application
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
 
-    target      = Path(target_path)
     target_lower = target_path.lower()
+    ext_lower    = Path(target_path).suffix.lower()
+
     application = get_catia_v5_application()
     application.Visible = True
     documents   = application.Documents
 
-    # 在我们执行任何操作之前，已打开文档的快照（小写，用于比对）
-    already_open_lower: set[str] = set()
-    for i in range(1, documents.Count + 1):
+    if activate:
+        logger.info(f"find_dependencies: opening target {target_path}")
+        if progress_callback:
+            progress_callback("正在打开文件，请稍候…")
+        open_catia_file(documents, target_path)  # 已打开则 Activate，未打开则 Open
+    else:
+        # 不激活：检查文档是否已打开，未打开则无法读取依赖，直接返回空列表
+        is_open = any(
+            documents.Item(i).FullName.lower() == target_lower
+            for i in range(1, documents.Count + 1)
+        )
+        if not is_open:
+            logger.debug(f"find_dependencies(activate=False): 文档未打开，跳过：{Path(target_path).name}")
+            return []
+        logger.debug(f"find_dependencies(activate=False): 文档已打开，读取依赖：{Path(target_path).name}")
+
+    # ── CATProduct：只读直接子层（一级）─────────────────────────────
+    if ext_lower == ".catproduct":
+        if progress_callback:
+            progress_callback("正在读取产品直接子件…")
+        # 找到目标文档对象
+        target_doc = None
+        for i in range(1, documents.Count + 1):
+            try:
+                d = documents.Item(i)
+                if d.FullName.lower() == target_lower:
+                    target_doc = d
+                    break
+            except Exception:
+                continue
+        if target_doc is None:
+            logger.warning("find_dependencies: 无法在 Documents 中定位目标 CATProduct")
+            return []
+
+        results: list[str] = []
         try:
-            already_open_lower.add(documents.Item(i).FullName.lower())
-        except Exception:
-            pass
+            prods = target_doc.Product.Products
+            for j in range(1, prods.Count + 1):
+                try:
+                    child    = prods.Item(j)
+                    ref_name = child.ReferenceProduct.Parent.FullName
+                    ref_lower = ref_name.lower()
+                    if ref_lower != target_lower:
+                        results.append(ref_name)
+                except Exception as e:
+                    logger.debug(f"find_dependencies: 子件 {j} 读取失败：{e}")
+        except Exception as e:
+            logger.debug(f"find_dependencies: Product.Products 访问失败：{e}")
 
-    logger.info(f"Opening target for dependency scan: {target_path}")
-    if progress_callback:
-        progress_callback("正在打开文件，请稍候…")
+        result = list(dict.fromkeys(results))  # 去重保序
+        logger.info(
+            f"find_dependencies (CATProduct): {len(result)} direct child(ren) for "
+            f"{Path(target_path).name}"
+        )
+        return result
 
-    # 若目标文件已在 CATIA 中打开，则不重新打开（避免 CATIA 弹出"是否重新加载"询问）
-    if target_lower not in already_open_lower:
-        documents.Open(target_path)
+    # ── CATDrawing：遍历生成式视图链接 ────────────────────────────────
+    elif ext_lower == ".catdrawing":
+        if progress_callback:
+            progress_callback("正在读取图纸视图链接…")
+        results = _find_parts_via_file_links(target_path)
+        logger.info(
+            f"find_dependencies (CATDrawing): {len(results)} dep(s) for "
+            f"{Path(target_path).name}"
+        )
+        return results
 
-    results:             list[str] = []
-    newly_opened_lower:  set[str]  = set()  # 小写路径集合，用于比对
+    # ── 其他格式：不支持 ──────────────────────────────────────────────
+    else:
+        logger.debug(
+            f"find_dependencies: 不支持的文档格式，返回空列表：{Path(target_path).name}"
+        )
+        return []
 
-    for i in range(1, documents.Count + 1):
+def find_reverse_dependencies(
+    target_path: str,
+    progress_callback: Callable[[str], None] | None = None,
+) -> list[str]:
+    """反向查询：遍历当前已打开的文档，返回直接依赖了 *target_path* 的文档路径列表。
+
+    对每个已打开文档调用 :func:`find_dependencies` 获取其直接依赖列表，
+    检查目标路径是否在其中：
+    - CATProduct：``find_dependencies`` 返回其直接子层零件/产品路径列表
+    - CATDrawing：``find_dependencies`` 返回其视图链接的零件/产品路径列表
+    - CATPart 及其他格式：无可用 COM 接口，跳过不查询
+
+    典型用途：想删除某个零件前，先查哪些已打开文档直接引用了它。
+
+    结果去重（保序），不包含目标文件本身。
+
+    参数
+    ----------
+    target_path:
+        被查询文件的绝对路径。
+    progress_callback:
+        可选的 ``callable(str)``，在遍历时传递进度信息。
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+
+    application    = get_catia_v5_application()
+    documents      = application.Documents
+    target_lower   = target_path.lower()
+    results: list[str] = []
+
+    # 只有这两种格式的 find_dependencies 能返回有效依赖信息
+    # CATPart 无可用 COM 接口读取引用，直接跳过
+    _QUERYABLE_EXTS = (".catproduct", ".catdrawing")
+
+    total = documents.Count
+    for i in range(1, total + 1):
         try:
             doc       = documents.Item(i)
             full_name = doc.FullName
             fn_lower  = full_name.lower()
-            # 排除：目标文件本身、以及快照中已存在的文档
-            if fn_lower == target_lower or fn_lower in already_open_lower:
+
+            # 跳过目标文件本身
+            if fn_lower == target_lower:
                 continue
-            newly_opened_lower.add(fn_lower)
-            results.append(full_name)
-            logger.info(f"  Dependency: {full_name}")
+
+            # 跳过系统库、材料库等非用户文档（.CATfct / .catalog / .cgr 等）
+            if not fn_lower.endswith(_QUERYABLE_EXTS):
+                logger.debug(f"find_reverse_dependencies: 跳过非查询格式：{Path(full_name).name}")
+                continue
+
+            if progress_callback:
+                progress_callback(f"反向查询 {i}/{total}：{Path(full_name).name}")
+
+            # 调用 find_dependencies 取该文档的直接依赖列表，检查 target 是否在其中
+            # activate=False：不切换前台，仅读取已打开文档的依赖
+            deps = find_dependencies(full_name, activate=False)
+            if any(d.lower() == target_lower for d in deps):
+                results.append(full_name)
+
         except Exception as e:
-            logger.debug(f"  Could not read document {i}: {e}")
+            logger.debug(f"find_reverse_dependencies: 文档 {i} 读取失败：{e}")
 
-    # 关闭我们打开的所有文档（倒序，目标文件最后关闭）
-    for i in range(documents.Count, 0, -1):
-        try:
-            doc       = documents.Item(i)
-            fn_lower  = doc.FullName.lower()
-            if fn_lower in newly_opened_lower or fn_lower == target_lower:
-                doc.Close()
-        except Exception:
-            pass
-
+    result = list(dict.fromkeys(results))  # 去重保序
     logger.info(
-        f"Dependency scan complete: {len(results)} found for {target.name}"
+        f"find_reverse_dependencies: {len(result)} referencing doc(s) for "
+        f"{Path(target_path).name}"
     )
-    return results
+    return result
 
-
-# ---------------------------------------------------------------------------
-# 层面 2A：给定 CATDrawing，查找对应的 CATPart / CATProduct
-# ---------------------------------------------------------------------------
 
 def find_part_for_drawing(
     drawing_path: str,
     strategies: list[str] | None = None,
-    max_parent_levels: int = DRAWING_SEARCH_MAX_LEVELS,
+    max_parent_levels: int = SEARCH_MAX_LEVELS,
 ) -> list[str]:
     """给定图纸路径，返回所有匹配的 CATPart/CATProduct 文件路径列表。
 
@@ -246,7 +358,7 @@ def _part_strategy(
 
 
 # ---------------------------------------------------------------------------
-# 层面 2A 策略实现
+# 启发式 2A：给定 CATDrawing，查找对应的 CATPart / CATProduct
 # ---------------------------------------------------------------------------
 
 def _find_part_in_open_docs(pn_value: str) -> str | None:
@@ -412,13 +524,13 @@ def _strip_drawing_prefix(drawing_stem: str) -> str | None:
 
 
 # ===========================================================================
-# 层面 2B：给定 CATPart/CATProduct，查找对应的 CATDrawing
+# 启发式 2B：给定 CATPart/CATProduct，查找对应的 CATDrawing
 # ===========================================================================
 
 def find_drawing_for_part(
     part_path: str,
     strategies: list[str] | None = None,
-    max_parent_levels: int = PART_TO_DRAWING_MAX_LEVELS,
+    max_parent_levels: int = SEARCH_MAX_LEVELS,
 ) -> list[str]:
     """给定零件/产品路径，返回所有匹配的 CATDrawing 文件路径列表。
 

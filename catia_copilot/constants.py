@@ -300,19 +300,17 @@ PLM_MEMBER_TABLE_COLUMNS: list[tuple[str, str, str]] = [
 MAX_INERTIA_INDEX: int = 20
 
 # ---------------------------------------------------------------------------
-# CATDrawing 查找策略优先级（给图纸 → 找对应的 CATPart/CATProduct）
+# CATDrawing 启发式查找策略（给图纸 → 找对应的 CATPart/CATProduct）
 # ---------------------------------------------------------------------------
-# find_part_for_drawing() 支持多种策略，按此列表顺序尝试，找到即返回。
-# 可调整顺序或注释掉某项以禁用对应策略。
+# find_part_for_drawing() 支持多种策略，按此列表顺序尝试。
+# 注意：doc_file_links 已移至正向查询（图纸视图链接），不再属于启发式策略。
 # 支持的策略键：
-#   "pn_param_open_docs"   – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配
-#                            doc.Product.PartNumber == 该值的零件/产品（优先级最高）
-#   "pn_param_scan_dirs"   – 读图纸 Parameters["PartNumber"]，在向上 N 级目录范围内
-#                            查找文件名（stem）== 该值的 .CATPart/.CATProduct
-#   "same_name_scan_dirs"  – 用图纸文件名 stem 在向上 N 级目录范围内找同名零件文件
+#   "pn_param_open_docs"     – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配
+#                              doc.Product.PartNumber == 该值（需 CATIA 运行）
+#   "pn_param_scan_dirs"     – 读图纸 Parameters["PartNumber"]，在向上 N 级目录范围内
+#                              查找文件名（stem）== 该值的 .CATPart/.CATProduct
+#   "same_name_scan_dirs"    – 用图纸文件名 stem 在向上 N 级目录范围内找同名零件文件
 #   "strip_prefix_scan_dirs" – 同上，但先 strip 图纸文件名中"前缀_"/"前缀-"前缀再匹配
-#   "doc_file_links"       – 通过 COM 读取图纸的 FileLinks（被指向的文档列表），
-#                            过滤出 .CATPart/.CATProduct（兜底，结果直接来自 CATIA 内部链接）
 # ---------------------------------------------------------------------------
 
 DRAWING_SEARCH_STRATEGIES: list[str] = [
@@ -324,17 +322,16 @@ DRAWING_SEARCH_STRATEGIES: list[str] = [
 ]
 
 # 向上查找父目录的最大层级数
-# 被 "pn_param_scan_dirs" / "same_name_scan_dirs" / "strip_prefix_scan_dirs" 共用
-DRAWING_SEARCH_MAX_LEVELS: int = 2
+SEARCH_MAX_LEVELS: int = 2
 
 # ---------------------------------------------------------------------------
-# CATPart/CATProduct 查找策略优先级（给零件/产品 → 找对应的 CATDrawing）
+# CATPart/CATProduct 启发式查找策略（给零件/产品 → 找对应的 CATDrawing）
 # ---------------------------------------------------------------------------
-# find_drawing_for_part() 支持多种策略，按此列表顺序尝试，找到即返回。
-# 可调整顺序或注释掉某项以禁用对应策略。
+# find_drawing_for_part() 支持多种策略，按此列表顺序尝试。
+# 注意：doc_file_links 已移至反向查询（遍历已打开图纸反查），不再属于启发式策略。
 # 支持的策略键：
 #   "pn_param_open_drws"     – 遍历已打开 CATDrawing，找 Parameters["PartNumber"]
-#                              == 零件 doc.Product.PartNumber 的图纸（优先级最高）
+#                              == 零件 doc.Product.PartNumber 的图纸（需 CATIA 运行）
 #   "pn_param_scan_drws"     – 在向上 N 级目录中找文件名（stem）== 零件
 #                              doc.Product.PartNumber 的 .CATDrawing
 #   "same_name_scan_dirs"    – 在向上 N 级目录中找文件名（stem）== 零件 stem 的 .CATDrawing
@@ -348,6 +345,3 @@ PART_TO_DRAWING_STRATEGIES: list[str] = [
     "strip_prefix_scan_dirs",
     "doc_file_links",
 ]
-
-# 向上查找父目录的最大层级数（给零件找图纸，与 DRAWING_SEARCH_MAX_LEVELS 独立可调）
-PART_TO_DRAWING_MAX_LEVELS: int = 2
