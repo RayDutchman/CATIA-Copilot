@@ -2778,12 +2778,10 @@ class MassPropsDialog(QDialog):
         """通过 COM 在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
-            from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground  # noqa: PLC0415
+            from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
 
             app = _get_catia()
-            app.Visible = True
-            open_catia_file(app.Documents, fp)
-            bring_catia_to_foreground()
+            open_catia_file(app.Documents, fp, foreground=True)
 
         except Exception as e:
             QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")

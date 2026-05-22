@@ -1132,31 +1132,10 @@ def collect_mass_props_rows(
             logger.debug(f"恢复根文档激活状态失败（无害）: {e}")
         return rows
 
-    src = Path(file_path).resolve()
+    src = file_path
 
-    # 记录 CATIA 中已打开的所有文档路径，避免重复打开同一文件
-    already_open: set[Path] = set()
-    for i in range(1, documents.Count + 1):
-        try:
-            already_open.add(Path(documents.Item(i).FullName).resolve())
-        except Exception:
-            pass
-
-    if src not in already_open:
-        documents.Open(str(src))
-
-    # 在已打开文档列表中查找与目标路径匹配的文档对象
-    target_doc = None
-    for i in range(1, documents.Count + 1):
-        try:
-            doc = documents.Item(i)
-            if Path(doc.FullName).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, src)
 
     root_product = target_doc.Product
     rows = []

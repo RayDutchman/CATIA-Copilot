@@ -371,6 +371,24 @@ QProgressBar {
 }
 QProgressBar::chunk { background-color: #0078d4; border-radius: 3px; }
 
+/* ── 列表控件 ──────────────────────────────────────────────────────── */
+QListWidget {
+    background-color: #1e1e1e;
+    border: 1px solid #363636;
+    border-radius: @control_radiuspx;
+    alternate-background-color: #222222;
+}
+QListWidget::item:selected { background-color: #004578; color: #ffffff; }
+QListWidget::item:hover    { background-color: #2a2a2a; }
+
+/* ── 提示文字标签（hint / 说明性文字）─────────────────────────────── */
+QLabel#hintLabel {
+    color: #707070;
+    font-size: 9pt;
+    background: transparent;
+    margin-bottom: 4px;
+}
+
 /* ── 树控件 ────────────────────────────────────────────────────────── */
 QTreeWidget {
     background-color: #1e1e1e;

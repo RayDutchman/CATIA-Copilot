@@ -265,29 +265,8 @@ def collect_bom_rows(
         _traverse(root_product, rows, level=0)
         return rows
 
-    src = Path(file_path).resolve()
-    already_open: set[Path] = set()
-    for i in range(1, documents.Count + 1):
-        try:
-            already_open.add(Path(documents.Item(i).FullName).resolve())
-        except Exception:
-            pass
-
-    if src not in already_open:
-        documents.Open(str(src))
-
-    target_doc = None
-    for i in range(1, documents.Count + 1):
-        try:
-            doc = documents.Item(i)
-            if Path(doc.FullName).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
-
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, file_path)
     root_product = target_doc.Product
     rows = []
     _traverse(root_product, rows, level=0)

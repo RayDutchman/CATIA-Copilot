@@ -209,32 +209,13 @@ def write_bom_to_catia(
         logger.info("Write-back complete for active document (not saved)")
         return
 
-    src = Path(file_path).resolve()
-    already_open: set[Path] = set()
-    for i in range(1, documents.Count + 1):
-        try:
-            already_open.add(Path(documents.Item(i).FullName).resolve())
-        except Exception:
-            pass
-
-    if src not in already_open:
-        documents.Open(str(src))
-
-    target_doc = None
-    for i in range(1, documents.Count + 1):
-        try:
-            doc = documents.Item(i)
-            if Path(doc.FullName).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
+    src = file_path
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, src)
 
     root_product = target_doc.Product
     _traverse_write(root_product, parent_filepath="")
     logger.info(
-        f"Write-back complete for {src.name} "
+        f"Write-back complete for {Path(src).name} "
         "(not saved; user must save manually in CATIA)"
     )

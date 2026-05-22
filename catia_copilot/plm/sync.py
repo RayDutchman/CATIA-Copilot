@@ -732,16 +732,21 @@ def _get_checkout_owner(client, workspace: str, part_number: str, version: str) 
 def _find_drawing_for_part(filepath: str) -> str | None:
     """从零件文件路径查找对应的 CATDrawing 文件路径。
 
-    TODO-01（见 docs/PLM_WORKBENCH_PLAN.md）：
-    CATDrawing 定位逻辑尚未实现，当前始终返回 None（静默跳过图纸上传）。
-
-    候选实现方案：
-      1. 同目录同名查找：PartA.CATPart → PartA.CATDrawing
-      2. 依赖反查：扫描 application.Documents 中的 DrawingDocument，
-         检查其视图引用的零件路径是否匹配。
-      3. 利用 catia_copilot/catia/dependencies.py 提供的依赖分析逻辑。
+    委托给 dependencies.find_drawing_for_part()，取优先级最高的第一个结果。
+    同步场景不需要用户选择，若有多个候选则记录日志后取第一个。
+    未找到时返回 None。
     """
-    return None  # TODO-01
+    from catia_copilot.catia.dependencies import find_drawing_for_part
+
+    candidates = find_drawing_for_part(filepath)
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        import logging
+        logging.getLogger(__name__).info(
+            f"_find_drawing_for_part: 找到 {len(candidates)} 个候选图纸，取第一个：{candidates[0]}"
+        )
+    return candidates[0]
 
 
 def _instances_to_cad_instances(instances: list) -> list[dict]:
@@ -1177,7 +1182,7 @@ def _do_update_and_upload(
             cb(_log_row(source, "✗ STP上传失败", "", lbl))
 
     # 3. 将对应 CATDrawing 转换为 PDF 并上传
-    #    CATDrawing 定位逻辑待实现（TODO-01），_find_drawing_for_part 当前返回 None
+    #    按 constants.DRAWING_SEARCH_STRATEGIES 策略查找 CATDrawing
     if options.upload_drawing_pdf and fp:
         drawing_path = _find_drawing_for_part(fp)
         if drawing_path and _os.path.isfile(drawing_path):
@@ -1210,10 +1215,9 @@ def _do_update_and_upload(
                 result.errors.append(f"{lbl}: 图纸 PDF 上传失败 — {_exc}")
                 cb(_log_row(source, "✗ 图纸PDF上传失败", "", lbl))
         elif drawing_path is None:
-            logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过 PDF 上传（TODO-01）")
+            logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过 PDF 上传")
 
     # 4. 上传 CATDrawing 原文件
-    #    CATDrawing 定位逻辑待实现（TODO-01），当前静默跳过
     if options.upload_drawing_file and fp:
         drawing_path = _find_drawing_for_part(fp)
         if drawing_path and _os.path.isfile(drawing_path):
