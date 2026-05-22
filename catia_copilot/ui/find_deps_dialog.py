@@ -317,7 +317,6 @@ class FindDependenciesDialog(QDialog):
             for key in DRAWING_SEARCH_STRATEGIES:
                 label = _DRAWING_STRATEGY_LABELS.get(key, key)
                 cb    = QCheckBox(label)
-                cb.setWordWrap(True)
                 cb.setChecked(self._load_cb_state(f"drw_{key}", True))
                 cb.stateChanged.connect(
                     lambda _, k=key: self._save_cb_state(
@@ -336,7 +335,6 @@ class FindDependenciesDialog(QDialog):
             for key in PART_TO_DRAWING_STRATEGIES:
                 label = _PART_STRATEGY_LABELS.get(key, key)
                 cb    = QCheckBox(label)
-                cb.setWordWrap(True)
                 cb.setChecked(self._load_cb_state(f"part_{key}", True))
                 cb.stateChanged.connect(
                     lambda _, k=key: self._save_cb_state(
