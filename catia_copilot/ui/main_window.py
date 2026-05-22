@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
     QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
-    QSizePolicy,
+    QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
 from PySide6.QtCore import Qt, QTimer, QRect
@@ -573,6 +573,17 @@ class MainWindow(QMainWindow):
         btn_deps.clicked.connect(self._open_find_dependencies_dialog)
 
         layout.addWidget(btn_deps)
+
+        # 图纸 ↔ 零件/产品 互相查找（单按钮，自动判断当前文档类型）
+        btn_open_related = QPushButton("打开当前文档的关联图纸/零件")
+        btn_open_related.setToolTip(
+            "自动判断当前活跃文档类型：\n"
+            "• CATPart / CATProduct → 查找对应 CATDrawing\n"
+            "• CATDrawing → 查找对应 CATPart / CATProduct"
+        )
+        btn_open_related.clicked.connect(self._open_related_file_for_active_doc)
+        layout.addWidget(btn_open_related)
+
         layout.addStretch()
         return self._make_page(body)
 
@@ -854,6 +865,157 @@ class MainWindow(QMainWindow):
 
     def _open_find_dependencies_dialog(self) -> None:
         self._show_dialog("_dlg_find_deps", lambda: FindDependenciesDialog(self))
+
+    # ------------------------------------------------------------------
+    # 图纸 ↔ 零件/产品 互相查找（单入口，自动判断活跃文档类型）
+    # ------------------------------------------------------------------
+
+    def _open_related_file_for_active_doc(self) -> None:
+        """根据当前活跃文档类型，自动查找并打开关联文件。
+
+        - CATPart / CATProduct → 查找对应 CATDrawing（find_drawing_for_part）
+        - CATDrawing → 查找对应 CATPart / CATProduct（find_part_for_drawing）
+        - 其他格式 → 提示不支持
+        """
+        from catia_copilot.catia.connection import get_catia_v5_application
+        from catia_copilot.catia.dependencies import (
+            find_drawing_for_part,
+            find_part_for_drawing,
+        )
+
+        # 1. 获取当前活跃文档（full_name 保留 COM 返回的原始路径，不做任何大小写变换）
+        try:
+            app       = get_catia_v5_application()
+            full_name = app.ActiveDocument.FullName
+        except Exception as e:
+            QMessageBox.warning(self, "无法访问 CATIA", f"无法获取当前活跃文档：\n{e}")
+            return
+
+        ext = full_name.lower().endswith
+
+        # 2. 按类型分支
+        if ext((".catpart", ".catproduct")):
+            candidates = find_drawing_for_part(full_name)
+            empty_msg  = f"未能找到对应的 CATDrawing。\n\n零件：{Path(full_name).name}"
+            pick_title = "选择要打开的图纸"
+
+        elif ext(".catdrawing",):
+            candidates = find_part_for_drawing(full_name)
+            empty_msg  = (
+                f"未能找到对应的 CATPart 或 CATProduct。\n\n图纸：{Path(full_name).name}"
+            )
+            pick_title = "选择要打开的零件/产品"
+
+        else:
+            QMessageBox.information(
+                self, "不支持的文档类型",
+                f"当前活跃文档不是 CATPart / CATProduct / CATDrawing：\n{full_name}",
+            )
+            return
+
+        # 3. 无结果
+        if not candidates:
+            QMessageBox.information(self, "未找到关联文件", empty_msg)
+            return
+
+        # 4. 单结果直接打开；多结果弹选择框
+        chosen = self._pick_one_file(candidates, pick_title)
+        if chosen:
+            self._open_catia_file(chosen)
+
+    def _pick_one_file(self, paths: list[str], title: str) -> str | None:
+        """若只有一个候选直接返回；否则弹出列表对话框让用户选择。
+
+        用户取消时返回 None。
+        """
+        if len(paths) == 1:
+            return paths[0]
+
+        dlg  = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(560, 300)
+        vlay = QVBoxLayout(dlg)
+
+        hint = QLabel(f"找到 {len(paths)} 个候选文件，请选择一个：")
+        vlay.addWidget(hint)
+
+        lst = QListWidget()
+        for p in paths:
+            item = QListWidgetItem(p)
+            item.setToolTip(p)
+            lst.addItem(item)
+        lst.setCurrentRow(0)
+        vlay.addWidget(lst)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        vlay.addWidget(btns)
+
+        # 双击也确认
+        lst.itemDoubleClicked.connect(lambda _: dlg.accept())
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        selected = lst.currentItem()
+        return selected.text() if selected else None
+
+    def _open_catia_file(self, file_path: str) -> None:
+        """通过 COM 在 CATIA 中打开文件，若已打开则直接激活并置前台。
+
+        与 bom_edit_dialog._open_in_catia 逻辑保持一致。
+        """
+        import win32gui  # type: ignore[import]
+        from catia_copilot.catia.connection import get_catia_v5_application
+        try:
+            app  = get_catia_v5_application()
+            docs = app.Documents
+
+            # 检查是否已打开：精确比对（file_path 与 d.FullName 均为 Windows 原生路径）
+            target_doc = None
+            for i in range(1, docs.Count + 1):
+                try:
+                    d = docs.Item(i)
+                    if d.FullName == file_path:
+                        target_doc = d
+                        break
+                except Exception:
+                    pass
+
+            if target_doc is None:
+                # 直接用原始 Windows 路径字符串，不经 Path.resolve()
+                target_doc = docs.Open(file_path)
+
+            # 激活
+            try:
+                target_doc.Activate()
+            except Exception:
+                pass
+
+            # 置前台：找到 CATIA 主窗口并激活
+            catia_hwnd = 0
+
+            def _enum_cb(hwnd: int, _: None) -> bool:
+                nonlocal catia_hwnd
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if "CATIA" in title:
+                        catia_hwnd = hwnd
+                        return False
+                return True
+
+            win32gui.EnumWindows(_enum_cb, None)
+            if catia_hwnd:
+                win32gui.SetForegroundWindow(catia_hwnd)
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "打开文件失败",
+                f"无法在 CATIA 中打开文件：\n{file_path}\n\n错误：{e}",
+            )
 
     def _open_fastener_assembly_dialog(self) -> None:
         """直接运行 macros 文件夹中的 fastener_assembly.catvba VBA 宏。"""
