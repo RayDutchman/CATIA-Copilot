@@ -921,7 +921,18 @@ class MainWindow(QMainWindow):
         # 4. 单结果直接打开；多结果弹选择框
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
-            self._open_catia_file(chosen)
+            from catia_copilot.catia.connection import get_catia_v5_application
+            from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground
+            try:
+                app = get_catia_v5_application()
+                app.Visible = True
+                open_catia_file(app.Documents, chosen)
+                bring_catia_to_foreground()
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "打开文件失败",
+                    f"无法在 CATIA 中打开文件：\n{chosen}\n\n错误：{e}",
+                )
 
     def _pick_one_file(self, paths: list[str], title: str) -> str | None:
         """若只有一个候选直接返回；否则弹出列表对话框让用户选择。
@@ -962,24 +973,6 @@ class MainWindow(QMainWindow):
 
         selected = lst.currentItem()
         return selected.text() if selected else None
-
-    def _open_catia_file(self, file_path: str) -> None:
-        """通过 COM 在 CATIA 中打开文件并置前台。
-
-        打开逻辑委托给 ``catia_copilot.catia.utils.open_catia_file``。
-        """
-        from catia_copilot.catia.connection import get_catia_v5_application
-        from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground
-        try:
-            app = get_catia_v5_application()
-            app.Visible = True
-            open_catia_file(app.Documents, file_path)
-            bring_catia_to_foreground()
-        except Exception as e:
-            QMessageBox.critical(
-                self, "打开文件失败",
-                f"无法在 CATIA 中打开文件：\n{file_path}\n\n错误：{e}",
-            )
 
     def _open_fastener_assembly_dialog(self) -> None:
         """直接运行 macros 文件夹中的 fastener_assembly.catvba VBA 宏。"""
