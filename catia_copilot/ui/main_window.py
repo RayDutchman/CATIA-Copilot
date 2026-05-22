@@ -964,9 +964,10 @@ class MainWindow(QMainWindow):
         return selected.text() if selected else None
 
     def _open_catia_file(self, file_path: str) -> None:
-        """通过 COM 在 CATIA 中打开文件，若已打开则直接激活并置前台。
+        """通过 COM 在 CATIA 中打开文件，与 bom_edit_dialog._open_in_catia 逻辑一致。
 
-        与 bom_edit_dialog._open_in_catia 逻辑保持一致。
+        无论文件是否已打开，均调用 docs.Open()——CATIA 会自动切换到该文档窗口。
+        不调用 Activate()，因为 Activate() 只激活文档对象，不切换 CATIA 显示窗口。
         """
         import win32gui  # type: ignore[import]
         import win32con  # type: ignore[import]
@@ -976,36 +977,16 @@ class MainWindow(QMainWindow):
             app.Visible = True  # 确保 CATIA 窗口可见
             docs = app.Documents
 
-            # 检查是否已打开：大小写不敏感比对（Windows 文件系统不区分大小写，
-            # 且策略函数返回的路径与 COM FullName 大小写可能不一致）
-            file_path_lower = file_path.lower()
-            target_doc = None
-            for i in range(1, docs.Count + 1):
-                try:
-                    d = docs.Item(i)
-                    if d.FullName.lower() == file_path_lower:
-                        target_doc = d
-                        logger.debug(f"_open_catia_file: 文件已打开，直接激活：{file_path}")
-                        break
-                except Exception:
-                    pass
-
-            if target_doc is None:
-                logger.debug(f"_open_catia_file: 文件未打开，调用 docs.Open：{file_path}")
-                target_doc = docs.Open(file_path)
-                logger.debug(f"_open_catia_file: docs.Open 返回：{target_doc}")
+            # 直接调用 docs.Open()，让 CATIA 自己处理"已打开则切换"逻辑
+            # 不经 Path.resolve()，避免 WSL 路径污染
+            logger.debug(f"_open_catia_file: docs.Open({file_path})")
+            target_doc = docs.Open(file_path)
+            logger.debug(f"_open_catia_file: docs.Open 返回：{target_doc}")
 
             if target_doc is None:
                 raise RuntimeError(
                     f"docs.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}"
                 )
-
-            # 激活文档
-            try:
-                target_doc.Activate()
-                logger.debug(f"_open_catia_file: Activate() 成功")
-            except Exception as e:
-                logger.warning(f"_open_catia_file: Activate() 失败（已忽略）：{e}")
 
             # 置前台：找到 CATIA V5 主窗口，先恢复再激活
             catia_hwnd = 0
