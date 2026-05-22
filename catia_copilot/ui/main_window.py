@@ -964,29 +964,18 @@ class MainWindow(QMainWindow):
         return selected.text() if selected else None
 
     def _open_catia_file(self, file_path: str) -> None:
-        """通过 COM 在 CATIA 中打开文件，与 bom_edit_dialog._open_in_catia 逻辑一致。
+        """通过 COM 在 CATIA 中打开文件并置前台。
 
-        无论文件是否已打开，均调用 docs.Open()——CATIA 会自动切换到该文档窗口。
-        不调用 Activate()，因为 Activate() 只激活文档对象，不切换 CATIA 显示窗口。
+        打开逻辑委托给 ``catia_copilot.catia.utils.open_catia_file``。
         """
         import win32gui  # type: ignore[import]
         import win32con  # type: ignore[import]
         from catia_copilot.catia.connection import get_catia_v5_application
+        from catia_copilot.catia.utils import open_catia_file
         try:
-            app  = get_catia_v5_application()
-            app.Visible = True  # 确保 CATIA 窗口可见
-            docs = app.Documents
-
-            # 直接调用 docs.Open()，让 CATIA 自己处理"已打开则切换"逻辑
-            # 不经 Path.resolve()，避免 WSL 路径污染
-            logger.debug(f"_open_catia_file: docs.Open({file_path})")
-            target_doc = docs.Open(file_path)
-            logger.debug(f"_open_catia_file: docs.Open 返回：{target_doc}")
-
-            if target_doc is None:
-                raise RuntimeError(
-                    f"docs.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}"
-                )
+            app = get_catia_v5_application()
+            app.Visible = True
+            open_catia_file(app.Documents, file_path)
 
             # 置前台：找到 CATIA V5 主窗口，先恢复再激活
             catia_hwnd = 0
@@ -994,8 +983,7 @@ class MainWindow(QMainWindow):
             def _enum_cb(hwnd: int, _: None) -> bool:
                 nonlocal catia_hwnd
                 if win32gui.IsWindowVisible(hwnd):
-                    title = win32gui.GetWindowText(hwnd)
-                    if title.startswith("CATIA V5"):
+                    if win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
                         catia_hwnd = hwnd
                         return False
                 return True

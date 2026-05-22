@@ -2781,35 +2781,27 @@ class MassPropsDialog(QDialog):
         """
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
-            caa         = _get_catia()
-            application = caa
-            application.Visible = True
-            documents   = application.Documents
+            from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+            import win32gui  # noqa: PLC0415
+            import win32con  # noqa: PLC0415
 
-            fp_resolved = Path(fp).resolve()
-            documents.Open(str(fp_resolved))
+            app = _get_catia()
+            app.Visible = True
+            open_catia_file(app.Documents, fp)
 
-            try:
-                import win32gui  # noqa: PLC0415
-                import win32con  # noqa: PLC0415
+            # 将 CATIA V5 主窗口置于 Windows 前台
+            def _raise_catia_window(hwnd, _extra):
+                if not win32gui.IsWindowVisible(hwnd):
+                    return
+                if win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
+                    try:
+                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                        win32gui.SetForegroundWindow(hwnd)
+                    except Exception:
+                        pass
+                    return False
 
-                def _raise_catia_window(hwnd, _extra):
-                    if not win32gui.IsWindowVisible(hwnd):
-                        return
-                    title = win32gui.GetWindowText(hwnd)
-                    if title.startswith("CATIA V5"):
-                        try:
-                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                            win32gui.SetForegroundWindow(hwnd)
-                        except Exception:
-                            pass
-                        return False
-
-                win32gui.EnumWindows(_raise_catia_window, None)
-            except ImportError:
-                pass
-            except Exception:
-                pass
+            win32gui.EnumWindows(_raise_catia_window, None)
 
         except Exception as e:
             QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")
