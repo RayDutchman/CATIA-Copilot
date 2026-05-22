@@ -176,10 +176,11 @@ def _read_drawing_pn_param(drawing_path: str) -> str | None:
         from catia_copilot.catia.connection import get_catia_v5_application
         application = get_catia_v5_application()
         documents   = application.Documents
+        drawing_path_lower = drawing_path.lower()
         for i in range(1, documents.Count + 1):
             try:
                 doc = documents.Item(i)
-                if doc.FullName != drawing_path:
+                if doc.FullName.lower() != drawing_path_lower:
                     continue
                 return doc.Parameters.Item("PartNumber").Value
             except Exception:
@@ -324,10 +325,8 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
                     full_name = product.ReferenceProduct.Parent.FullName
                     if full_name.lower().endswith(tuple(e.lower() for e in _PART_EXTS)):
                         results.append(full_name)
-                except Exception as e:
-                    logger.debug(
-                        f"doc_file_links: view [{view.Name}] 读取关联文档失败：{e}"
-                    )
+                except Exception:
+                    # 视图无关联文档（CATIA 正常情况），静默跳过
                     continue
     except Exception as e:
         logger.debug(f"doc_file_links: 遍历图纸结构失败：{e}")

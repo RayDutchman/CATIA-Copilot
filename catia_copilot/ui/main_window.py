@@ -983,22 +983,27 @@ class MainWindow(QMainWindow):
                     d = docs.Item(i)
                     if d.FullName.lower() == file_path_lower:
                         target_doc = d
+                        logger.debug(f"_open_catia_file: 文件已打开，直接激活：{file_path}")
                         break
                 except Exception:
                     pass
 
             if target_doc is None:
-                # 直接用原始 Windows 路径字符串打开，不经 Path.resolve()
+                logger.debug(f"_open_catia_file: 文件未打开，调用 docs.Open：{file_path}")
                 target_doc = docs.Open(file_path)
+                logger.debug(f"_open_catia_file: docs.Open 返回：{target_doc}")
 
             if target_doc is None:
-                raise RuntimeError(f"docs.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}")
+                raise RuntimeError(
+                    f"docs.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}"
+                )
 
-            # 激活
+            # 激活文档
             try:
                 target_doc.Activate()
-            except Exception:
-                pass
+                logger.debug(f"_open_catia_file: Activate() 成功")
+            except Exception as e:
+                logger.warning(f"_open_catia_file: Activate() 失败（已忽略）：{e}")
 
             # 置前台：找到 CATIA 主窗口并激活
             catia_hwnd = 0
@@ -1015,6 +1020,9 @@ class MainWindow(QMainWindow):
             win32gui.EnumWindows(_enum_cb, None)
             if catia_hwnd:
                 win32gui.SetForegroundWindow(catia_hwnd)
+                logger.debug(f"_open_catia_file: SetForegroundWindow hwnd={catia_hwnd}")
+            else:
+                logger.warning("_open_catia_file: 未找到 CATIA 主窗口，无法置前台")
 
         except Exception as e:
             QMessageBox.critical(
