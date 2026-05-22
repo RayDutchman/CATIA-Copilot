@@ -2775,33 +2775,15 @@ class MassPropsDialog(QDialog):
             logger.warning(f"无法在资源管理器中打开路径: {exc}")
 
     def _open_in_catia(self, fp: str) -> None:
-        """通过 ``documents.open`` 在CATIA中打开 *fp* 指向的文档。
-
-        打开后，若 ``win32gui`` 可用，则将CATIA V5主窗口置于Windows前台。
-        """
+        """通过 COM 在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
-            from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
-            import win32gui  # noqa: PLC0415
-            import win32con  # noqa: PLC0415
+            from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground  # noqa: PLC0415
 
             app = _get_catia()
             app.Visible = True
             open_catia_file(app.Documents, fp)
-
-            # 将 CATIA V5 主窗口置于 Windows 前台
-            def _raise_catia_window(hwnd, _extra):
-                if not win32gui.IsWindowVisible(hwnd):
-                    return
-                if win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
-                    try:
-                        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                        win32gui.SetForegroundWindow(hwnd)
-                    except Exception:
-                        pass
-                    return False
-
-            win32gui.EnumWindows(_raise_catia_window, None)
+            bring_catia_to_foreground()
 
         except Exception as e:
             QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")

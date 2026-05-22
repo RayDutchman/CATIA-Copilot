@@ -968,34 +968,13 @@ class MainWindow(QMainWindow):
 
         打开逻辑委托给 ``catia_copilot.catia.utils.open_catia_file``。
         """
-        import win32gui  # type: ignore[import]
-        import win32con  # type: ignore[import]
         from catia_copilot.catia.connection import get_catia_v5_application
-        from catia_copilot.catia.utils import open_catia_file
+        from catia_copilot.catia.utils import open_catia_file, bring_catia_to_foreground
         try:
             app = get_catia_v5_application()
             app.Visible = True
             open_catia_file(app.Documents, file_path)
-
-            # 置前台：找到 CATIA V5 主窗口，先恢复再激活
-            catia_hwnd = 0
-
-            def _enum_cb(hwnd: int, _: None) -> bool:
-                nonlocal catia_hwnd
-                if win32gui.IsWindowVisible(hwnd):
-                    if win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
-                        catia_hwnd = hwnd
-                        return False
-                return True
-
-            win32gui.EnumWindows(_enum_cb, None)
-            if catia_hwnd:
-                win32gui.ShowWindow(catia_hwnd, win32con.SW_RESTORE)
-                win32gui.SetForegroundWindow(catia_hwnd)
-                logger.debug(f"_open_catia_file: SetForegroundWindow hwnd={catia_hwnd}")
-            else:
-                logger.warning("_open_catia_file: 未找到 CATIA V5 主窗口，无法置前台")
-
+            bring_catia_to_foreground()
         except Exception as e:
             QMessageBox.critical(
                 self, "打开文件失败",
