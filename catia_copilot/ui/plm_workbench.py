@@ -602,18 +602,43 @@ class PlmWorkbench(QMainWindow):
         sep.setStyleSheet("background: palette(mid);")
         opt_layout.addWidget(sep)
 
-        # 复选框选项
-        chk_row = QHBoxLayout()
-        chk_row.setSpacing(20)
-        self._chk_incremental   = QCheckBox("增量同步（跳过属性无变化的零件）")
-        self._chk_upload_files  = QCheckBox("同步时上传附件（CATPart / STP）")
-        self._chk_reg_product   = QCheckBox("注册顶层装配体为产品配置（PLM Product）")
+        # 复选框选项 — 行一：基础选项
+        chk_row1 = QHBoxLayout()
+        chk_row1.setSpacing(20)
+        self._chk_incremental  = QCheckBox("增量同步（跳过属性无变化的零件）")
+        self._chk_reg_product  = QCheckBox("注册顶层装配体为产品配置（PLM Product）")
         self._chk_incremental.setChecked(True)
-        chk_row.addWidget(self._chk_incremental)
-        chk_row.addWidget(self._chk_upload_files)
-        chk_row.addWidget(self._chk_reg_product)
-        chk_row.addStretch()
-        opt_layout.addLayout(chk_row)
+        chk_row1.addWidget(self._chk_incremental)
+        chk_row1.addWidget(self._chk_reg_product)
+        chk_row1.addStretch()
+        opt_layout.addLayout(chk_row1)
+
+        # 复选框选项 — 行二：上传选项（4 个独立开关）
+        chk_row2 = QHBoxLayout()
+        chk_row2.setSpacing(16)
+        self._chk_upload_catpart  = QCheckBox("上传 CATIA 文件")
+        self._chk_upload_stp      = QCheckBox("上传 STP 几何文件")
+        self._chk_upload_drw_pdf  = QCheckBox("上传图纸 PDF")
+        self._chk_upload_drw_file = QCheckBox("上传图纸原文件")
+        self._chk_upload_catpart.setToolTip("将 CATPart / CATProduct 原始文件作为附件上传到 PLM")
+        self._chk_upload_stp.setToolTip(
+            "将 CATPart 导出为 STP 几何文件并上传；PLM 将异步转换为 OBJ 以供三维预览。\n"
+            "勾选后可设置转换等待超时时间。"
+        )
+        self._chk_upload_drw_pdf.setToolTip(
+            "将对应的 CATDrawing 图纸转换为 PDF 后上传。\n"
+            "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
+        )
+        self._chk_upload_drw_file.setToolTip(
+            "将对应的 CATDrawing 原文件作为附件上传到 PLM。\n"
+            "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
+        )
+        chk_row2.addWidget(self._chk_upload_catpart)
+        chk_row2.addWidget(self._chk_upload_stp)
+        chk_row2.addWidget(self._chk_upload_drw_pdf)
+        chk_row2.addWidget(self._chk_upload_drw_file)
+        chk_row2.addStretch()
+        opt_layout.addLayout(chk_row2)
 
         # STP 转换等待超时（仅上传附件时有意义）
         conv_row = QHBoxLayout()
@@ -631,9 +656,9 @@ class PlmWorkbench(QMainWindow):
             "建议保持默认值 120 秒；若转换服务较慢可适当增大。\n"
             "设为 0 则上传后立即 Check-in（不等待，恢复旧行为）。"
         )
-        # 仅在"上传附件"勾选时启用
-        self._spn_conversion_timeout.setEnabled(self._chk_upload_files.isChecked())
-        self._chk_upload_files.toggled.connect(self._spn_conversion_timeout.setEnabled)
+        # 仅在"上传 STP"勾选时启用
+        self._spn_conversion_timeout.setEnabled(self._chk_upload_stp.isChecked())
+        self._chk_upload_stp.toggled.connect(self._spn_conversion_timeout.setEnabled)
         conv_row.addWidget(lbl_conv)
         conv_row.addWidget(self._spn_conversion_timeout)
         conv_row.addStretch()
@@ -1031,7 +1056,10 @@ class PlmWorkbench(QMainWindow):
                 else AfterUpdatePolicy.CHECKIN
             ),
             incremental=self._chk_incremental.isChecked(),
-            upload_step_files=self._chk_upload_files.isChecked(),
+            upload_catpart_file=self._chk_upload_catpart.isChecked(),
+            upload_step_file=self._chk_upload_stp.isChecked(),
+            upload_drawing_pdf=self._chk_upload_drw_pdf.isChecked(),
+            upload_drawing_file=self._chk_upload_drw_file.isChecked(),
             register_product=self._chk_reg_product.isChecked(),
             tag_rules=self._load_tag_rules(),
             conversion_timeout_s=self._spn_conversion_timeout.value(),

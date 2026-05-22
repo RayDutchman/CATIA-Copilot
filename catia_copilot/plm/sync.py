@@ -71,8 +71,22 @@ class SyncOptions:
     # 增量同步：仅同步属性有变化的零件（False=全量强制同步）
     incremental: bool = True
 
-    # 同步完成后是否为每个 CATPart 上传 STEP 几何文件
-    upload_step_files: bool = False
+    # ── 上传选项（各项独立，可组合勾选）─────────────────────────────────────
+
+    # 是否将 CATPart / CATProduct 原始文件作为附件上传到 PLM
+    upload_catpart_file: bool = False
+
+    # 是否将 CATPart 导出为 STP 几何文件并上传（仅 Part 类型节点；触发 PLM 异步转换）
+    upload_step_file: bool = False
+
+    # 是否将对应 CATDrawing 转换为 PDF 后上传
+    # 注：CATDrawing 文件定位逻辑待实现（见 docs/PLM_WORKBENCH_PLAN.md TODO-01），
+    #     当前若找不到图纸文件则静默跳过，不报错。
+    upload_drawing_pdf: bool = False
+
+    # 是否将对应 CATDrawing 原文件作为附件上传
+    # 同上，定位逻辑待实现。
+    upload_drawing_file: bool = False
 
     # 同步完成后是否将顶层装配体注册为 PLM Product
     register_product: bool = False
@@ -106,6 +120,10 @@ class BomNode:
     filepath: str = field(default="", repr=False)
     # 文件类型（来自 row["Type"]）：BomNodeType.PART / PRODUCT / COMPONENT / ""
     filetype: str = field(default="", repr=False)
+    # 该节点在其父节点坐标系中的各实例局部变换矩阵列表（行主序 4×4，平移单位 mm）。
+    # 列表长度 = 该零件在父节点中的实例数（qty）。None 表示对应实例位置读取失败。
+    # 根节点此字段为空列表。
+    instances: list = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -187,10 +205,161 @@ _RETRY_MAX:    int  = 2
 _RETRY_DELAYS: list = [1, 3]
 
 
-def extract_bom(progress_callback=None) -> BomNode | None:
-    """从当前活动 CATIA 文档提取 BOM 树（须在主线程调用）。"""
-    from catia_copilot.catia.bom_collect import collect_bom_rows
+# ── 位置读取辅助（PLM 同步专用，平移单位保留 mm）──────────────────────────────
 
+def _sync_position_to_mat4(product) -> list[list[float]]:
+    """从 CATIA Product 对象读取局部变换矩阵，平移单位保留 mm（不转换为 m）。
+
+    CATIA Position.GetComponents 列主序 12 元素：
+      arr[0..2]=X轴向, arr[3..5]=Y轴向, arr[6..8]=Z轴向, arr[9..11]=平移(mm)
+    组装为行主序 4×4 矩阵后返回。
+    若读取失败则返回单位矩阵。
+    """
+    try:
+        arr = list(product.Position.GetComponents())
+        if arr and len(arr) >= 12:
+            return [
+                [arr[0], arr[3], arr[6], arr[9] ],
+                [arr[1], arr[4], arr[7], arr[10]],
+                [arr[2], arr[5], arr[8], arr[11]],
+                [0.0,    0.0,    0.0,    1.0    ],
+            ]
+    except Exception:
+        pass
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+def collect_bom_for_sync(progress_callback=None) -> list[dict] | None:
+    """遍历当前活动 CATIA 文档，返回逐实例行列表（不去重）。
+
+    与 bom_collect.collect_bom_rows() 的区别：
+      - 同一 pn 在同一父节点下有多个实例时，每个实例单独输出一行
+      - 每行包含 _local_mat4（4×4 列表，平移单位 mm）表示该实例相对父节点的局部变换
+      - 不折叠 Quantity，不共享行（Quantity 字段始终为 1）
+
+    返回 None 表示 CATIA 连接失败；返回空列表表示文档无产品结构。
+    """
+    from pathlib import Path as _Path
+    from catia_copilot.catia.catia_utils import get_catia_v5_application
+    from catia_copilot.constants import BomNodeType
+
+    def _cb(msg: str) -> None:
+        if progress_callback:
+            progress_callback(msg)
+        logger.debug(msg)
+
+    try:
+        app = get_catia_v5_application()
+    except Exception as exc:
+        logger.error(f"collect_bom_for_sync: 无法连接 CATIA: {exc}")
+        return None
+
+    try:
+        root_product = app.ActiveDocument.Product
+    except Exception as exc:
+        logger.error(f"collect_bom_for_sync: 无活动文档或文档无 Product: {exc}")
+        return None
+
+    rows: list[dict] = []
+
+    def _traverse(product, level: int, parent_filepath: str) -> None:
+        """递归遍历，每个实例输出一行（不去重）。"""
+        # ── Part Number ──────────────────────────────────────────────────────
+        try:
+            pn = product.PartNumber
+        except Exception:
+            try:
+                pn = product.ReferenceProduct.PartNumber
+            except Exception:
+                n  = getattr(product, "Name", "UNKNOWN")
+                pn = n.rsplit(".", 1)[0] if "." in n else n
+
+        # ── 文件路径 ─────────────────────────────────────────────────────────
+        try:
+            filepath = product.ReferenceProduct.Parent.FullName
+        except Exception:
+            filepath = ""
+
+        # ── 节点类型 ─────────────────────────────────────────────────────────
+        is_embedded = bool(filepath) and bool(parent_filepath) and filepath == parent_filepath
+        if not filepath:
+            node_type = ""
+        elif is_embedded:
+            node_type = BomNodeType.COMPONENT
+        else:
+            ext = _Path(filepath).suffix.lower()
+            node_type = BomNodeType.PART if ext == ".catpart" else BomNodeType.PRODUCT
+
+        # ── 属性（Nomenclature / Revision / Source 等）───────────────────────
+        nomenclature = ""
+        revision     = ""
+        source       = ""
+        try:
+            nomenclature = str(product.GetItem("Nomenclature") or "")
+        except Exception:
+            pass
+        try:
+            revision = str(product.GetItem("Revision") or "")
+        except Exception:
+            pass
+        try:
+            source = str(product.GetItem("Source") or "")
+        except Exception:
+            pass
+
+        # ── 文件名 ───────────────────────────────────────────────────────────
+        if filepath:
+            filename = _Path(filepath).name
+        else:
+            filename = ""
+
+        # ── 局部变换矩阵（相对父节点，平移单位 mm）───────────────────────────
+        local_mat4 = _sync_position_to_mat4(product)
+
+        row: dict = {
+            "Level":        level,
+            "Type":         node_type,
+            "Part Number":  pn,
+            "Filename":     filename,
+            "Filepath":     filepath,
+            "Quantity":     1,
+            "Nomenclature": nomenclature,
+            "Revision":     revision,
+            "Source":       source,
+            "_filepath":    filepath,
+            "_local_mat4":  local_mat4,
+        }
+        rows.append(row)
+        _cb(f"  已读取 {len(rows)} 个实例……")
+
+        # ── 递归子节点（每个实例单独递归，不去重）───────────────────────────
+        try:
+            count = product.Products.Count
+            for i in range(1, count + 1):
+                try:
+                    child = product.Products.Item(i)
+                    _traverse(child, level + 1, parent_filepath=filepath)
+                except Exception as e:
+                    logger.debug(f"遍历子节点 {i} 失败: {e}")
+        except Exception:
+            pass
+
+    _traverse(root_product, level=0, parent_filepath="")
+    return rows
+
+
+def extract_bom(progress_callback=None) -> BomNode | None:
+    """从当前活动 CATIA 文档提取 BOM 树（PLM 同步专用，须在主线程调用）。
+
+    使用 collect_bom_for_sync() 逐实例遍历（不去重），
+    _rows_to_bom_tree() 在构建树时按 pn 聚合同级同 pn 的多个实例，
+    使 BomNode.instances 包含所有实例的局部变换矩阵。
+    """
     def _cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
@@ -198,35 +367,41 @@ def extract_bom(progress_callback=None) -> BomNode | None:
 
     _cb("正在读取 BOM……")
 
-    try:
-        rows = collect_bom_rows(
-            file_path=None,
-            columns=_ALL_ATTR_COLS,
-            custom_columns=_CUSTOM_COLS,
-            progress_callback=lambda count: _cb(f"  已读取 {count} 个节点……"),
-        )
-    except Exception as exc:
-        logger.error(f"BOM 提取失败：{exc}")
-        _cb(f"BOM 提取失败：{exc}")
+    rows = collect_bom_for_sync(progress_callback=progress_callback)
+
+    if rows is None:
+        _cb("BOM 提取失败：无法连接 CATIA 或无活动文档")
         return None
 
     if not rows:
         logger.warning("BOM 为空，无活动文档或文档无产品结构")
         return None
 
-    _cb(f"BOM 读取完成，共 {len(rows)} 个节点，正在构建树……")
+    _cb(f"BOM 读取完成，共 {len(rows)} 个实例行，正在构建树……")
     return _rows_to_bom_tree(rows)
 
 
 def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
-    """将平面层级行列表转换为 BomNode 树。"""
+    """将平面层级行列表转换为 BomNode 树。
+
+    支持两种输入格式：
+      1. collect_bom_rows() 输出（去重，含 Quantity）：用于 BOM 预览展示。
+         此格式不含位置信息，instances 列表为空。
+      2. collect_bom_for_sync() 输出（不去重，含 _local_mat4）：用于 PLM 同步。
+         此格式每行代表一个实例，构建树时按 pn 聚合同级同 pn 的多个实例，
+         将各实例的 local_mat4 合并到父节点对应 child entry 的 instances 列表。
+    """
     if not rows:
         return None
 
     from catia_copilot.constants import SOURCE_TO_DISPLAY
 
     root: BomNode | None = None
+    # stack[i] 存储 level i 的当前节点
     stack: list[BomNode] = []
+    # 去重表：(level, parent_pn, child_pn) → BomNode
+    # 同级同父下相同 pn 的多个实例行聚合为同一个 BomNode，instances 追加
+    _seen: dict[tuple, BomNode] = {}
 
     for row in rows:
         level = int(row.get("Level", 0))
@@ -234,17 +409,38 @@ def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
         if not pn:
             pn = str(row.get("Filename") or "UNKNOWN").strip()
 
+        local_mat4 = row.get("_local_mat4")  # collect_bom_for_sync 格式才有此字段
+
+        parent_pn = stack[level - 1].part_number if level > 0 and len(stack) >= level else ""
+        dedup_key = (level, parent_pn, pn)
+
+        if dedup_key in _seen:
+            # 同级同父已有此 pn 的节点 → 追加实例位置，不新建节点
+            existing = _seen[dedup_key]
+            existing.instances.append(local_mat4)
+            # stack 更新为该节点，以便其子节点能正确挂载
+            while len(stack) > level:
+                stack.pop()
+            if len(stack) == level:
+                stack.append(existing)
+            else:
+                stack[level] = existing
+            continue
+
         node = BomNode(part_number=pn)
-        # 保存本地文件路径供附件上传使用（内部键，不写入 attrs）
         node.filepath = str(row.get("_filepath") or "").strip()
-        # 保存文件类型（BomNodeType.PART / PRODUCT / COMPONENT），用于 STP 导出判断
         node.filetype = str(row.get("Type") or "").strip()
+        # 首个实例的 local_mat4（后续同 pn 实例通过 dedup_key 追加）
+        if local_mat4 is not None:
+            node.instances = [local_mat4]
         for col in _ALL_ATTR_COLS:
             val = str(row.get(col) or "").strip()
             if col == "Source":
                 val = SOURCE_TO_DISPLAY.get(val, val)
             if val:
                 node.attrs[col] = val
+
+        _seen[dedup_key] = node
 
         if level == 0:
             root  = node
@@ -346,7 +542,7 @@ def sync_bom_to_plm(
               收集待签入票据（CheckinTicket）列表。
       阶段二：对上传了 STP 的零件轮询等待转换完成，再对所有票据批量 checkin。
 
-    upload_step 参数保留兼容旧调用方，新调用方通过 options.upload_step_files 控制。
+    upload_step 参数保留兼容旧调用方，新调用方通过 options.upload_step_file 控制。
     """
     from catia_copilot.plm.api_client import PlmApiError
 
@@ -361,7 +557,7 @@ def sync_bom_to_plm(
             own_checked_out_policy=options.own_checked_out_policy,
             other_checked_out_policy=options.other_checked_out_policy,
             incremental=options.incremental,
-            upload_step_files=True,
+            upload_step_file=True,
             register_product=options.register_product,
             tag_rules=options.tag_rules,
         )
@@ -533,6 +729,59 @@ def _get_checkout_owner(client, workspace: str, part_number: str, version: str) 
         return None
 
 
+def _find_drawing_for_part(filepath: str) -> str | None:
+    """从零件文件路径查找对应的 CATDrawing 文件路径。
+
+    TODO-01（见 docs/PLM_WORKBENCH_PLAN.md）：
+    CATDrawing 定位逻辑尚未实现，当前始终返回 None（静默跳过图纸上传）。
+
+    候选实现方案：
+      1. 同目录同名查找：PartA.CATPart → PartA.CATDrawing
+      2. 依赖反查：扫描 application.Documents 中的 DrawingDocument，
+         检查其视图引用的零件路径是否匹配。
+      3. 利用 catia_copilot/catia/dependencies.py 提供的依赖分析逻辑。
+    """
+    return None  # TODO-01
+
+
+def _instances_to_cad_instances(instances: list) -> list[dict]:
+    """将 BomNode.instances 中的 4×4 变换矩阵列表转换为 PLM cadInstances JSON 格式。
+
+    PLM CADInstance 使用 MATRIX 模式存储：
+      - rotationType: "MATRIX"
+      - m00~m22：3×3 旋转矩阵（9 个无量纲分量）
+      - tx/ty/tz：平移分量（mm，与 CATIA Position.GetComponents 原始单位一致）
+
+    PLM 服务端 CADInstance 构造函数（Java）使用**列优先**存储，但客户端 JSON 字段
+    命名规范为行列下标（mRC，R=行，C=列）。
+    输入矩阵为行主序 4×4，layout：mat[row][col]。
+
+    参数：
+        instances: 每项为 4×4 列表（行主序）或 None（位置未知时跳过）
+
+    返回：cadInstances 列表，空列表表示无有效位置信息。
+    """
+    result = []
+    for mat in instances:
+        if mat is None:
+            continue
+        try:
+            # mat[row][col]，旋转部分为左上 3×3
+            entry = {
+                "rotationType": "MATRIX",
+                "m00": mat[0][0], "m01": mat[0][1], "m02": mat[0][2],
+                "m10": mat[1][0], "m11": mat[1][1], "m12": mat[1][2],
+                "m20": mat[2][0], "m21": mat[2][1], "m22": mat[2][2],
+                "tx":  mat[0][3],
+                "ty":  mat[1][3],
+                "tz":  mat[2][3],
+            }
+            result.append(entry)
+        except Exception as e:
+            logger.debug(f"_instances_to_cad_instances: 跳过无效矩阵 {e}")
+    return result
+
+
 def _sync_node(
     node: BomNode,
     client,
@@ -543,11 +792,16 @@ def _sync_node(
     cb,
     plm_parts_cache: dict | None = None,
     tickets: list | None = None,
+    uploaded_pns: dict | None = None,
 ) -> tuple[str, str] | None:
     """递归同步单个 BOM 节点（阶段一：checkout + update + upload）。
 
     返回 (part_number, version) 或 None（失败/跳过时）。
     成功处理的节点以 CheckinTicket 追加到 tickets 列表，由调用方在阶段二统一 checkin。
+
+    uploaded_pns: dict[pn -> (part_number, version)]
+        跨层级去重表——同一 Part Number 无论出现在多少个父节点下，只上传一次。
+        后续出现时直接返回缓存的引用，但父节点仍会用正确的 cadInstances 写入装配关系。
     """
     from catia_copilot.plm.api_client import PlmApiError
 
@@ -555,6 +809,8 @@ def _sync_node(
         plm_parts_cache = {}
     if tickets is None:
         tickets = []
+    if uploaded_pns is None:
+        uploaded_pns = {}
 
     # 1. 递归处理子节点（后序）
     child_components = []
@@ -563,6 +819,7 @@ def _sync_node(
             child, client, workspace, tpl_id, options, result, cb,
             plm_parts_cache=plm_parts_cache,
             tickets=tickets,
+            uploaded_pns=uploaded_pns,
         )
         if ref:
             child_pn, _ver = ref
@@ -572,12 +829,25 @@ def _sync_node(
                 )
             except PlmApiError:
                 latest_ver = _ver
-            child_components.append({"component": {"number": child_pn, "version": latest_ver}})
+
+            # 从该子节点的 instances 列表构造 cadInstances（局部变换矩阵→PLM 格式）
+            cad_instances = _instances_to_cad_instances(child.instances)
+            comp_entry: dict = {"component": {"number": child_pn, "version": latest_ver}}
+            if cad_instances:
+                comp_entry["cadInstances"] = cad_instances
+            child_components.append(comp_entry)
 
     pn       = node.part_number
     nom      = (node.attrs.get("Nomenclature") or "").strip()
     plm_name = nom or pn
     lbl      = _lbl(pn, nom)
+
+    # 去重：同一 Part Number 跨层级只执行一次 checkout/update/upload
+    # 后续出现时直接返回已缓存的 (part_number, version)，跳过上传
+    # 注：child_components 仍以正确的 cadInstances 写入，装配关系不丢失
+    if pn in uploaded_pns:
+        logger.debug(f"{lbl}: 已处理过（跨层级去重），跳过上传，返回缓存引用")
+        return uploaded_pns[pn]
 
     # 2. 用 POST /parts 探测零件是否存在，同时完成新建
     try:
@@ -599,10 +869,12 @@ def _sync_node(
             cb(_log_skip("跳过-不新建", lbl))
             return None
         result.created += 1
-        return _do_update_and_upload(
+        _ref = _do_update_and_upload(
             node, lbl, "新建", client, workspace, part_number, version, iteration,
             child_components, options, result, cb, tickets,
         )
+        uploaded_pns[pn] = _ref
+        return _ref
     except PlmApiError as exc:
         _msg = str(exc)
         _is_exists = (exc.status_code == 400 and (
@@ -661,10 +933,12 @@ def _sync_node(
             cb(_log_fail(msg, lbl))
             return part_number, version
 
-        return _do_update_and_upload(
+        _ref = _do_update_and_upload(
             node, lbl, "签出", client, workspace, part_number, version, iteration,
             child_components, options, result, cb, tickets,
         )
+        uploaded_pns[pn] = _ref
+        return _ref
 
     current_login = getattr(client, "_login", None)
     is_mine = (current_login is not None and checkout_owner.lower() == current_login.lower())
@@ -677,10 +951,12 @@ def _sync_node(
             )
         except PlmApiError:
             iteration = 1
-        return _do_update_and_upload(
+        _ref = _do_update_and_upload(
             node, lbl, "已签出-本人", client, workspace, part_number, version, iteration,
             child_components, options, result, cb, tickets,
         )
+        uploaded_pns[pn] = _ref
+        return _ref
 
     else:
         # 状态：Checked Out by other
@@ -712,10 +988,12 @@ def _sync_node(
             cb(_log_fail(msg, lbl))
             return part_number, version
 
-        return _do_update_and_upload(
+        _ref = _do_update_and_upload(
             node, lbl, "覆盖他人签出", client, workspace, part_number, version, iteration,
             child_components, options, result, cb, tickets,
         )
+        uploaded_pns[pn] = _ref
+        return _ref
 
 
 def _wait_for_conversion(
@@ -837,66 +1115,120 @@ def _do_update_and_upload(
         logger.warning(f"{lbl}: {msg}")
         result.errors.append(f"{lbl}: {msg}")
 
-    # ── 附件 / STP 上传 ───────────────────────────────────────────────────────
-    upload_col       = ""   # 供 ticket.upload_col 显示用
+    # ── 文件上传（各项独立，由 SyncOptions 控制）────────────────────────────
+    import os as _os
+
+    upload_col       = ""   # 供 ticket.upload_col 显示用（取最后一次非空上传结果）
     needs_conversion = False
+    fp = node.filepath
 
-    if options.upload_step_files and node.filepath:
-        import os as _os
-        fp = node.filepath
-        if _os.path.isfile(fp):
+    # 1. 上传原始 CATIA 文件（CATPart / CATProduct）
+    if options.upload_catpart_file and fp and _os.path.isfile(fp):
+        try:
+            client.upload_attached_file(workspace, part_number, version, iteration, fp)
+            upload_col = "CATIA文件已上传"
+            cb(_log_row(source, "CATIA文件已上传", "", lbl))
+        except Exception as _exc:
+            logger.warning(f"{lbl}: CATIA 文件上传失败 — {_exc}")
+            result.errors.append(f"{lbl}: CATIA 文件上传失败 — {_exc}")
+            cb(_log_row(source, "✗ CATIA文件上传失败", "", lbl))
+
+    # 2. 导出并上传 STP 几何文件（仅 Part 类型；触发 PLM 异步 CAD 转换）
+    if (options.upload_step_file
+            and fp and node.filetype == BomNodeType.PART
+            and fp.lower().endswith(".catpart")
+            and _os.path.isfile(fp)):
+        try:
+            import tempfile
+            import pythoncom as _pcom        # noqa: PLC0415
+            import win32com.client as _win32 # noqa: PLC0415
+            _pcom.CoInitialize()
             try:
-                client.upload_attached_file(workspace, part_number, version, iteration, fp)
-                upload_col = "附件已上传"
-                # col3="" → 过程行，UI 不计入 node_done
-                cb(_log_row(source, "附件已上传", "", lbl))
-            except Exception as _exc:
-                msg = f"附件上传失败 — {_exc}"
-                logger.warning(f"{lbl}: {msg}")
-                result.errors.append(f"{lbl}: 原始文件上传失败 — {_exc}")
-                cb(_log_row(source, "✗ 附件上传失败", "", lbl))
+                catia   = _win32.GetActiveObject("CATIA.Application")
+                fp_norm = _os.path.normcase(_os.path.normpath(fp))
+                target_doc = None
+                for i in range(catia.Documents.Count):
+                    doc = catia.Documents.Item(i + 1)
+                    try:
+                        if _os.path.normcase(_os.path.normpath(doc.FullName)) == fp_norm:
+                            target_doc = doc
+                            break
+                    except Exception:
+                        continue
+                if target_doc is None:
+                    raise RuntimeError(f"CATIA 中未找到已打开的文档：{_os.path.basename(fp)}")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    stp_name = _os.path.splitext(_os.path.basename(fp))[0] + ".stp"
+                    stp_path = _os.path.join(tmpdir, stp_name)
+                    logger.debug(f"{lbl}: 开始导出 STP → {stp_path}")
+                    target_doc.ExportData(stp_path, "stp")
+                    if not _os.path.isfile(stp_path):
+                        raise FileNotFoundError(f"ExportData 未生成文件：{stp_path}")
+                    client.upload_step(workspace, part_number, version, iteration, stp_path)
+                    result.step_uploaded += 1
+                    upload_col       = "STP已上传"
+                    needs_conversion = True
+                    cb(_log_row(source, "STP已上传", "", lbl))
+            finally:
+                _pcom.CoUninitialize()
+        except Exception as _exc:
+            logger.warning(f"{lbl}: STP 上传失败（不影响主流程）— {_exc}")
+            result.errors.append(f"{lbl}: STP 上传失败 — {_exc}")
+            cb(_log_row(source, "✗ STP上传失败", "", lbl))
 
-        # CATPart → 额外导出并上传 STP（仅 Part 类型）
-        if node.filetype == BomNodeType.PART and fp.lower().endswith(".catpart") and _os.path.isfile(fp):
+    # 3. 将对应 CATDrawing 转换为 PDF 并上传
+    #    CATDrawing 定位逻辑待实现（TODO-01），_find_drawing_for_part 当前返回 None
+    if options.upload_drawing_pdf and fp:
+        drawing_path = _find_drawing_for_part(fp)
+        if drawing_path and _os.path.isfile(drawing_path):
             try:
                 import tempfile
-                import pythoncom as _pcom          # noqa: PLC0415
-                import win32com.client as _win32   # noqa: PLC0415
-                _pcom.CoInitialize()
-                try:
-                    catia    = _win32.GetActiveObject("CATIA.Application")
-                    fp_norm  = _os.path.normcase(_os.path.normpath(fp))
-                    target_doc = None
-                    for i in range(catia.Documents.Count):
-                        doc = catia.Documents.Item(i + 1)
-                        try:
-                            doc_path = _os.path.normcase(_os.path.normpath(doc.FullName))
-                            if doc_path == fp_norm:
-                                target_doc = doc
-                                break
-                        except Exception:
-                            continue
-                    if target_doc is None:
-                        raise RuntimeError(f"CATIA 中未找到已打开的文档：{_os.path.basename(fp)}")
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        stp_name = _os.path.splitext(_os.path.basename(fp))[0] + ".stp"
-                        stp_path = _os.path.join(tmpdir, stp_name)
-                        logger.debug(f"{lbl}: 开始导出 STP → {stp_path}")
-                        target_doc.ExportData(stp_path, "stp")
-                        if not _os.path.isfile(stp_path):
-                            raise FileNotFoundError(f"ExportData 未生成文件：{stp_path}")
-                        logger.debug(f"{lbl}: STP 导出完成，准备上传")
-                        client.upload_step(workspace, part_number, version, iteration, stp_path)
-                        result.step_uploaded += 1
-                        upload_col       = "STP 已上传"
-                        needs_conversion = True
-                        cb(_log_row(source, "STP 已上传", "", lbl))
-                finally:
-                    _pcom.CoUninitialize()
+                from catia_copilot.catia.conversion import convert_drawing_to_pdf
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    converted = convert_drawing_to_pdf(
+                        file_paths=[drawing_path],
+                        output_folder=tmpdir,
+                        prefix="",
+                        suffix="",
+                    )
+                    if converted:
+                        # convert_drawing_to_pdf 输出文件名与源文件同名，扩展名 .pdf
+                        import pathlib as _pl
+                        pdf_path = str(_pl.Path(tmpdir) / (_pl.Path(drawing_path).stem + ".pdf"))
+                        if _os.path.isfile(pdf_path):
+                            client.upload_attached_file(
+                                workspace, part_number, version, iteration, pdf_path
+                            )
+                            upload_col = "图纸PDF已上传"
+                            cb(_log_row(source, "图纸PDF已上传", "", lbl))
+                        else:
+                            raise FileNotFoundError(f"PDF 文件未生成：{pdf_path}")
+                    else:
+                        raise RuntimeError("convert_drawing_to_pdf 返回 0（转换失败）")
             except Exception as _exc:
-                logger.warning(f"{lbl}: STP 上传失败（不影响主流程）— {_exc}")
-                result.errors.append(f"{lbl}: STP 上传失败 — {_exc}")
-                cb(_log_row(source, "✗ STP 上传失败", "", lbl))
+                logger.warning(f"{lbl}: 图纸 PDF 上传失败 — {_exc}")
+                result.errors.append(f"{lbl}: 图纸 PDF 上传失败 — {_exc}")
+                cb(_log_row(source, "✗ 图纸PDF上传失败", "", lbl))
+        elif drawing_path is None:
+            logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过 PDF 上传（TODO-01）")
+
+    # 4. 上传 CATDrawing 原文件
+    #    CATDrawing 定位逻辑待实现（TODO-01），当前静默跳过
+    if options.upload_drawing_file and fp:
+        drawing_path = _find_drawing_for_part(fp)
+        if drawing_path and _os.path.isfile(drawing_path):
+            try:
+                client.upload_attached_file(
+                    workspace, part_number, version, iteration, drawing_path
+                )
+                upload_col = "图纸文件已上传"
+                cb(_log_row(source, "图纸文件已上传", "", lbl))
+            except Exception as _exc:
+                logger.warning(f"{lbl}: CATDrawing 上传失败 — {_exc}")
+                result.errors.append(f"{lbl}: CATDrawing 上传失败 — {_exc}")
+                cb(_log_row(source, "✗ 图纸文件上传失败", "", lbl))
+        elif drawing_path is None:
+            logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过文件上传（TODO-01）")
 
     # ── 生成 CheckinTicket ────────────────────────────────────────────────────
     ticket = CheckinTicket(

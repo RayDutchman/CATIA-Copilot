@@ -266,3 +266,33 @@ QTextEdit  详细日志（右侧，只读，objectName="logView"）
 > 由开发方在实施完成后填写具体测试项，交付用户按清单逐条验收。
 
 （见实施完成后附录）
+
+---
+
+## 十一、待实现功能（TODO）
+
+> 本节记录已知但暂未实现的功能，后续迭代时逐项处理。
+
+### TODO-01：PLM 同步上传时自动查找对应 CATDrawing 文件
+
+**背景**：同步选项中已有"转换图纸为 PDF 并上传"和"上传图纸原文件（CATDrawing）"两个开关，
+但从 CATPart/CATProduct 定位到其对应 CATDrawing 文件的逻辑尚未实现。
+
+**当前行为**：`_find_drawing_for_part(filepath)` 函数直接返回 `None`，
+两个图纸相关上传开关在找不到图纸时静默跳过，不报错。
+
+**需要实现的逻辑**（候选方案，选一或组合）：
+
+1. **同目录同名查找**：在 CATPart 所在目录查找同名 `.CATDrawing` 文件，
+   如 `PartA.CATPart` → `PartA.CATDrawing`。
+2. **依赖关系反查**：利用 `catia_copilot/catia/dependencies.py` 中已有的
+   依赖分析逻辑，在已打开的 CATIA 文档中找到引用了该 CATPart 的 CATDrawing。
+3. **CATIA 文档集合扫描**：遍历 `application.Documents`，过滤出
+   `DrawingDocument` 类型，检查其视图中引用的零件路径是否匹配。
+
+**涉及文件**：
+- `catia_copilot/plm/sync.py`：`_find_drawing_for_part()` 函数（当前返回 `None` 占位）
+- `catia_copilot/catia/dependencies.py`：可能提供反查入口
+
+**优先级**：中  
+**前置条件**：需明确项目的 CATDrawing 命名规范与存放规则
