@@ -1,8 +1,7 @@
 """BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
-from PySide6.QtCore import Qt, QSize, QEvent
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import Qt, QSize
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
 
@@ -84,21 +83,9 @@ class _BomTreeWidget(QTreeWidget):
     构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item`` 规则。
     子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
     由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
-
-    重写 :meth:`viewportEvent`：鼠标移入 setItemWidget 嵌入的 QComboBox 时，
-    viewport 收到 Leave 事件，QAbstractItemView 默认处理会清除已选行的 active
-    高亮。检测到鼠标仍在 viewport 范围内时阻止默认处理，保持选中着色稳定。
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         # 安装默认行高委托；setItemDelegate 会替换它，新委托需自行保证行高
         self.setItemDelegate(_RowHeightDelegate(self))
-
-    def viewportEvent(self, event: QEvent) -> bool:
-        """拦截 viewport Leave：鼠标仍在 viewport 内时（仅进入子控件）阻止默认处理。"""
-        if event.type() == QEvent.Type.Leave:
-            vp = self.viewport()
-            if vp.rect().contains(vp.mapFromGlobal(QCursor.pos())):
-                return True  # 吃掉事件，保持已选行 active 高亮
-        return super().viewportEvent(event)
