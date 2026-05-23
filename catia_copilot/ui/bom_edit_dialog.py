@@ -289,7 +289,7 @@ class BomEditDialog(QDialog):
             "文件名/路径可编辑。"
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setObjectName("hintLabel")
         layout.addWidget(hint)
 
         # BOM树形控件（替代 QTableWidget，原生支持展开/折叠）
@@ -309,7 +309,6 @@ class BomEditDialog(QDialog):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setAlternatingRowColors(True)
         self._table.setIndentation(16)
-        self._table.setStyleSheet("QTreeWidget::item { min-height: 24px; }")
         self._table.itemChanged.connect(self._on_item_changed)
         hdr.sectionResized.connect(self._on_section_resized)
         _delegate = _BomTreeDelegate(lambda: self._columns, self._table)
@@ -366,7 +365,7 @@ class BomEditDialog(QDialog):
         # 状态标签（显示行数及待写回修改数）
         btn_row.addSpacing(8)
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._status_label.setObjectName("hintLabel")
         btn_row.addWidget(self._status_label)
 
         btn_row.addStretch()

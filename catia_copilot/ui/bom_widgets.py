@@ -107,19 +107,24 @@ class _BomTreeWidget(QTreeWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)  # 关闭抗锯齿，保持像素级对齐，使点状虚线清晰。
         painter.setPen(pen)  # 应用上面配置好的点状虚线画笔。
 
+        # x 坐标从 rect.right() 反推，确保与 Qt 绘制的展开/折叠箭头精确对齐，
+        # 不受 rect.left() 因 border/padding 偏移的影响。
+        # 层级 d（0=最顶层）对应的 indent 块中心：rect.right() - (depth-d)*indent + indent//2
+        def _x(d: int) -> int:
+            return rect.right() - (depth - d) * indent + indent // 2
+
         # 遍历当前节点的所有祖先层（除最近一级直接父层外），
         # 如果该层的祖先节点下方还有兄弟节点（has_next[d] 为 True），
         # 则在该层对应的 x 列绘制一条贯穿整行高度的竖线（表示该分支尚未结束）。
         for d in range(depth - 1):
             if has_next[d + 1]:  # 该祖先层仍有后续兄弟节点，需要绘制连续竖线。
-                x = rect.left() + d * indent + indent // 2  # 计算该祖先层连接线的 x 坐标（列中心）。
-                painter.drawLine(x, rect.top(), x, rect.bottom())  # 绘制贯通整行的竖线。
+                painter.drawLine(_x(d), rect.top(), _x(d), rect.bottom())
 
         # 处理当前节点的直接父层（最近一级）连接线，分两种情况：
         #   T 型连接符（├─）：当前节点后面还有兄弟节点 → 绘制贯通整行的竖线 + 水平横线。
         #   L 型连接符（└─）：当前节点是最后一个子节点 → 仅绘制上半段竖线（转角）+ 水平横线。
-        x     = rect.left() + (depth - 1) * indent + indent // 2  # 直接父层连接线的 x 坐标（列中心）。
-        x_end = rect.left() + depth * indent                       # 水平横线的终点 x 坐标（当前节点内容列的左边缘）。
+        x     = _x(depth - 1)        # 直接父层连接线的 x 坐标（与展开箭头对齐）。
+        x_end = rect.right()         # 水平横线的终点 x 坐标（当前节点内容列的左边缘）。
         if has_next[-1]:  # T 型：当前节点后面还有兄弟节点。
             painter.drawLine(x, rect.top(), x, rect.bottom())  # 绘制贯通整行高度的竖线（T 型竖边）。
         else:             # L 型：当前节点是最后一个子节点。

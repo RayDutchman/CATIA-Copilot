@@ -638,7 +638,6 @@ class MassPropsDialog(QDialog):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setAlternatingRowColors(True)
         self._table.setIndentation(16)
-        self._table.setStyleSheet("QTreeWidget::item { min-height: 24px; }")
         self._table.setItemDelegate(_MassPropsDelegate(lambda: self._columns, self._table))
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -655,7 +654,7 @@ class MassPropsDialog(QDialog):
 
         def _sec_lbl(text: str) -> QLabel:
             lb = QLabel(text)
-            lb.setStyleSheet("font-weight: bold;")
+            lb.setObjectName("sectionLabel")
             return lb
 
         def _fld_lbl(text: str) -> QLabel:

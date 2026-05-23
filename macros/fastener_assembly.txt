@@ -147,8 +147,8 @@ Public Sub ContinueSelectFastener()
 
     ' 选择循环：若所选元素不是圆形边则提示重新选择；按 ESC 可退出宏
     Do
-        status = sel.SelectElement2(fastEdgeFilter, _
-            "请选择紧固件安装面上的圆或圆弧（确定轴向和定位点）[ESC 退出]", False)
+        status = sel.SelectElement3(fastEdgeFilter, _
+            "请选择紧固件安装面上的圆或圆弧（确定轴向和定位点）[ESC 退出]", False, 0, False)
         If status <> "Normal" Then Exit Sub
 
         Set fastEdgeRef = sel.Item(1).Reference
@@ -224,8 +224,8 @@ Public Sub ContinueSelectProduct()
     Dim prodFilter As Variant
     prodFilter = Array("Product")
     Dim status As String
-    status = sel.SelectElement2(prodFilter, _
-        "在产品结构树中选择紧固件要装入的产品/部件", False)
+    status = sel.SelectElement3(prodFilter, _
+        "在产品结构树中选择紧固件要装入的产品/部件", False, 0, False)
     If status <> "Normal" Then
         MsgBox "已取消选择。", vbInformation, "快速装配紧固件"
         Exit Sub
@@ -283,9 +283,9 @@ Public Sub ContinueSelectProduct()
         bHoleGeomOK = False
 
         ' ── 第一步：选择孔位元素（圆形边 或 锚点顶点）──────────────────────────
-        status = sel.SelectElement2(firstFilter, _
+        status = sel.SelectElement3(firstFilter, _
             "选择孔的圆形边（圆弧模式）或安装锚点顶点（点+线模式） [" & g_fastenerPN & " -> " & g_targetPN & _
-            "  已装配:" & g_count & "]  点""退出""按钮结束", False)
+            "  已装配:" & g_count & "]  点""退出""按钮结束", False, 0, False)
         If status <> "Normal" Then
             g_loopActive = False
             g_hasLastComp = False
@@ -403,8 +403,8 @@ Public Sub ContinueSelectProduct()
 
                 ' 步骤2：选择轴线方向
                 sel.Clear
-                status = sel.SelectElement2(holeFilter, _
-                    "【点+线模式】选择轴线方向（直线或轴线）", False)
+                status = sel.SelectElement3(holeFilter, _
+                    "【点+线模式】选择轴线方向（直线或轴线）", False, 0, False)
                 If status <> "Normal" Then
                     g_loopActive = False
                     g_hasLastComp = False
