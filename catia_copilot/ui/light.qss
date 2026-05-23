@@ -194,3 +194,12 @@ QLabel#logPathLabel {
 QTreeView:branch:selected       { background-color: #9FCBFF; }
 QTreeView:branch:hover          { background-color: #D2D5D8; }
 QTreeView:branch:selected:hover { background-color: #9FCBFF; }
+
+/* ── item 选中色在窗口失焦/hover 其他行时保持不变 ── */
+QTreeView::item:selected:!active,
+QListView::item:selected:!active,
+QTableView::item:selected:!active {
+  color: #19232D;
+  background-color: #9FCBFF;
+}
+QTreeView:branch:selected:!active { background-color: #9FCBFF; }
