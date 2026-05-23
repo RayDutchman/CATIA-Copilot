@@ -191,10 +191,9 @@ QLabel#logPathLabel {
 }
 
 /* ── branch 区域选中/hover 背景色与 item 保持一致，消除 Win11 蓝色焦点竖线 ── */
-/* 注：不设 branch:hover，避免鼠标悬停 branch 时触发全局重绘导致已选 item 状态切换 */
-QTreeView:branch:selected,
-QTreeView:branch:selected:hover,
-QTreeView:branch:selected:!active { background-color: #9FCBFF; }
+QTreeView:branch:selected       { background-color: #9FCBFF; }
+QTreeView:branch:hover          { background-color: #D2D5D8; }
+QTreeView:branch:selected:hover { background-color: #9FCBFF; }
 
 /* ── item 选中色在窗口失焦/hover 其他行时保持不变 ── */
 QTreeView::item:selected:!active,
@@ -203,3 +202,4 @@ QTableView::item:selected:!active {
   color: #19232D;
   background-color: #9FCBFF;
 }
+QTreeView:branch:selected:!active { background-color: #9FCBFF; }
