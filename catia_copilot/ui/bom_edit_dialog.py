@@ -45,7 +45,7 @@ from catia_copilot.ui.bom_catia_helpers import (
     _is_catia_com_error,
     _find_catia_doc_by_path,
 )
-from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
+from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem, _ROW_HEIGHT
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.ui_colors import (
     MODIFIED_FG          as _MODIFIED_FG,
@@ -159,7 +159,7 @@ class BomEditDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # 数据来源选择行
-        self._use_active_chk = QCheckBox("使用当前CATIA活动文档（不选择文件）")
+        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
@@ -301,13 +301,15 @@ class BomEditDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(True)
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._table.setAlternatingRowColors(True)
+        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
+        # 开启后 branch 列背景无法同步，且选中行颜色因奇偶行底色不同而出现色差。
+        self._table.setAlternatingRowColors(False)
         self._table.setIndentation(16)
         self._table.itemChanged.connect(self._on_item_changed)
         hdr.sectionResized.connect(self._on_section_resized)
@@ -409,6 +411,9 @@ class BomEditDialog(QDialog):
 
         # ── 主题切换：重新着色所有行 ──────────────────────────────────────────
         theme_signal.theme_changed.connect(self._on_theme_changed)
+
+        # ── 默认使用活动文档（所有控件构建完毕后再触发 toggled）────────────────
+        self._use_active_chk.setChecked(True)
 
     # ── 文件/活动文档切换 ─────────────────────────────────────────────────────
 

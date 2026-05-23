@@ -54,7 +54,7 @@ from PySide6.QtWidgets import (
     QProgressDialog
 )
 
-from catia_copilot.ui.bom_widgets import _BomTreeWidget
+from catia_copilot.ui.bom_widgets import _BomTreeWidget, _ROW_HEIGHT
 from catia_copilot.ui.ui_colors import get_colors as _get_colors
 from catia_copilot.ui.theme_manager import theme_manager
 
@@ -490,14 +490,15 @@ class PlmWorkbench(QMainWindow):
             [col[1] for col in PLM_MEMBER_TABLE_COLUMNS]
         )
         hdr = self._tbl_users.horizontalHeader()
+        hdr.setStretchLastSection(True)
         for i, (_key, _label, mode) in enumerate(PLM_MEMBER_TABLE_COLUMNS):
-            if mode == "stretch":
-                hdr.setSectionResizeMode(i, QHeaderView.Stretch)
-            elif mode == "contents":
-                hdr.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+            hdr.setSectionResizeMode(i, QHeaderView.Interactive)
+            if mode == "contents":
+                hdr.resizeSection(i, 80)
             elif mode.startswith("fixed:"):
-                hdr.setSectionResizeMode(i, QHeaderView.Fixed)
                 hdr.resizeSection(i, int(mode.split(":")[1]))
+            else:
+                hdr.resizeSection(i, 120)
         self._tbl_users.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tbl_users.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._tbl_users.setMinimumHeight(100)
@@ -726,17 +727,17 @@ class PlmWorkbench(QMainWindow):
         self._preview_tree = _BomTreeWidget()
         self._preview_tree.setUniformRowHeights(True)
         self._preview_tree.setRootIsDecorated(True)
-        self._preview_tree.setAlternatingRowColors(True)
+        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
+        # 开启后 branch 列背景无法同步，会出现竖条色块。
+        self._preview_tree.setAlternatingRowColors(False)
         self._preview_tree.setIndentation(16)
-        self._preview_tree.setStyleSheet(
-            "QTreeWidget::item { min-height: 24px; padding-top: 2px; padding-bottom: 2px; }"
-        )
+        # 行高由 _BomTreeWidget 内置的 _RowHeightDelegate.sizeHint() 保证，无需 setStyleSheet
         self._preview_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._preview_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
         hdr = self._preview_tree.header()
         hdr.setSectionResizeMode(QHeaderView.Interactive)
         hdr.setStretchLastSection(True)
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(_ROW_HEIGHT)
         v_prev.addWidget(self._preview_tree, 1)
 
         # 进度 & 状态（嵌入 GroupBox 底部）
@@ -1369,8 +1370,11 @@ class PlmWorkbench(QMainWindow):
         # 标签表格（比列表展示更多信息）
         self._tbl_plm_tags = QTableWidget(0, 2)
         self._tbl_plm_tags.setHorizontalHeaderLabels(["标签名称", "ID"])
-        self._tbl_plm_tags.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._tbl_plm_tags.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        _hdr_tags = self._tbl_plm_tags.horizontalHeader()
+        _hdr_tags.setSectionResizeMode(0, QHeaderView.Interactive)
+        _hdr_tags.setSectionResizeMode(1, QHeaderView.Interactive)
+        _hdr_tags.resizeSection(0, 180)
+        _hdr_tags.setStretchLastSection(True)
         self._tbl_plm_tags.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tbl_plm_tags.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._tbl_plm_tags.setMinimumHeight(120)
@@ -1399,11 +1403,15 @@ class PlmWorkbench(QMainWindow):
 
         self._tbl_rules = QTableWidget(0, 3)
         self._tbl_rules.setHorizontalHeaderLabels(["CATIA 属性值", "PLM 标签", "操作"])
-        # 列宽：两列内容列各占一半弹性宽度，操作列收缩到内容
-        self._tbl_rules.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._tbl_rules.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self._tbl_rules.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self._tbl_rules.horizontalHeader().resizeSection(2, 60)
+        _hdr_rules = self._tbl_rules.horizontalHeader()
+        _hdr_rules.setSectionResizeMode(0, QHeaderView.Interactive)
+        _hdr_rules.setSectionResizeMode(1, QHeaderView.Interactive)
+        _hdr_rules.setSectionResizeMode(2, QHeaderView.Fixed)
+        _hdr_rules.resizeSection(0, 160)
+        _hdr_rules.resizeSection(2, 60)
+        _hdr_rules.setStretchLastSection(False)
+        # 让第 1 列（PLM 标签）自动撑满剩余空间
+        _hdr_rules.setSectionResizeMode(1, QHeaderView.Stretch)
         self._tbl_rules.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tbl_rules.setMinimumHeight(120)
         v_r.addWidget(self._tbl_rules)
@@ -1551,8 +1559,14 @@ class PlmWorkbench(QMainWindow):
         # 历史表格（比列表展示更多信息）
         self._tbl_history = QTableWidget(0, 7)
         self._tbl_history.setHorizontalHeaderLabels(["时间", "新建", "更新", "跳过", "失败", "用户名", "同步模式"])
-        for i in range(7):
-            self._tbl_history.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        _hdr_hist = self._tbl_history.horizontalHeader()
+        _hdr_hist.setStretchLastSection(True)
+        # 时间列宽稍宽，数字列紧凑，最后「同步模式」列 stretch 填满
+        _col_widths = [140, 50, 50, 50, 50, 100]
+        for i, w in enumerate(_col_widths):
+            _hdr_hist.setSectionResizeMode(i, QHeaderView.Interactive)
+            _hdr_hist.resizeSection(i, w)
+        _hdr_hist.setSectionResizeMode(6, QHeaderView.Stretch)
         self._tbl_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tbl_history.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._tbl_history.setSelectionMode(QAbstractItemView.SingleSelection)

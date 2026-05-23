@@ -190,16 +190,7 @@ QLabel#logPathLabel {
     background: transparent;
 }
 
-/* ── QTreeWidget 连接线：清除 qdarkstyle 的 branch 图片，
-   由 _BomTreeWidget.drawBranches 负责绘制点状虚线；
-   只保留展开/折叠箭头图标（branch_closed / branch_open）。 ── */
-QTreeView:branch:has-siblings:!adjoins-item     { border-image: none; image: none; }
-QTreeView:branch:has-siblings:adjoins-item      { border-image: none; image: none; }
-QTreeView:branch:!has-children:!has-siblings:adjoins-item { border-image: none; image: none; }
-
-/* ── branch 区域的 hover/selected 背景与 item 保持一致，消除两端蓝色竖线 ── */
-QTreeView:branch:hover    { background-color: #D2D5D8; }
-QTreeView:branch:selected { background-color: #9FCBFF; }
-
-/* ── QTreeWidget 行高 / 交替色统一（与 bom_edit_dialog 保持一致）── */
-QTreeWidget::item { min-height: 24px; }
+/* ── branch 区域选中/hover 背景色与 item 保持一致，消除 Win11 蓝色焦点竖线 ── */
+QTreeView:branch:selected       { background-color: #9FCBFF; }
+QTreeView:branch:hover          { background-color: #D2D5D8; }
+QTreeView:branch:selected:hover { background-color: #9FCBFF; }

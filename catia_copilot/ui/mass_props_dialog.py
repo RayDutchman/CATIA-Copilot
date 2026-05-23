@@ -57,7 +57,7 @@ from catia_copilot.ui.ui_colors import (
     get_colors as _get_colors,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
+from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem, _ROW_HEIGHT
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,12 @@ class _MassPropsDelegate(QStyledItemDelegate):
         if col_name == "Density" and item.data(0, _DENSITY_LOCKED_ROLE):
             return None
         return super().createEditor(parent, option, index)
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        if hint.height() < _ROW_HEIGHT:
+            hint.setHeight(_ROW_HEIGHT)
+        return hint
 
 
 def _fmt(value) -> str:
@@ -232,6 +238,9 @@ class MassPropsDialog(QDialog):
 
         # ── 主题切换：重新着色所有行及提示标签 ───────────────────────────────
         theme_signal.theme_changed.connect(self._on_theme_changed)
+
+        # ── 默认使用活动文档（_build_ui 已完成，控件已存在）────────────────────
+        self._use_active_chk.setChecked(True)
 
     def done(self, result: int) -> None:
         """保存窗口几何后执行标准关闭流程。"""
@@ -416,7 +425,7 @@ class MassPropsDialog(QDialog):
         layout.addWidget(prereq_lbl)
 
         # ── 数据来源选择 ────────────────────────────────────────────────────
-        self._use_active_chk = QCheckBox("使用当前CATIA活动文档（不选择文件）")
+        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
@@ -630,13 +639,15 @@ class MassPropsDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(False)
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._table.setAlternatingRowColors(True)
+        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
+        # 开启后 branch 列背景无法同步，且选中行颜色因奇偶行底色不同而出现色差。
+        self._table.setAlternatingRowColors(False)
         self._table.setIndentation(16)
         self._table.setItemDelegate(_MassPropsDelegate(lambda: self._columns, self._table))
         self._table.itemChanged.connect(self._on_item_changed)
