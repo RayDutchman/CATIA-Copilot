@@ -1,7 +1,8 @@
 """BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
-from PySide6.QtCore import Qt, QSize, QEvent, QObject
+from PySide6.QtCore import Qt, QSize, QEvent
+from PySide6.QtGui import QCursor
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
 
@@ -76,25 +77,6 @@ class _BomTreeDelegate(QStyledItemDelegate):
         return hint
 
 
-class _ViewportLeaveFilter(QObject):
-    """拦截 viewport 的 Leave 事件：若鼠标仍在 viewport 范围内（仅进入子 widget），
-    则吃掉该事件，避免 QAbstractItemView 清除已选行的 active 高亮。
-    """
-
-    def __init__(self, viewport: QObject) -> None:
-        super().__init__(viewport)
-        self._viewport = viewport
-
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if obj is self._viewport and event.type() == QEvent.Type.Leave:
-            # 判断鼠标全局位置是否仍在 viewport 矩形内
-            from PySide6.QtGui import QCursor
-            vp = self._viewport
-            if vp.rect().contains(vp.mapFromGlobal(QCursor.pos())):
-                return True  # 吃掉事件：鼠标只是进入了子控件，未真正离开
-        return False
-
-
 class _BomTreeWidget(QTreeWidget):
     """BOM 用 QTreeWidget 封装。
 
@@ -103,16 +85,20 @@ class _BomTreeWidget(QTreeWidget):
     子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
     由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
 
-    通过 :class:`_ViewportLeaveFilter` 拦截 viewport Leave 事件：鼠标移入嵌入的
-    QComboBox 等子控件时，viewport 会收到 Leave，导致已选行 active 高亮消失。
-    过滤器检测鼠标是否仍在 viewport 范围内，若是则吃掉 Leave 事件。
+    重写 :meth:`viewportEvent`：鼠标移入 setItemWidget 嵌入的 QComboBox 时，
+    viewport 收到 Leave 事件，QAbstractItemView 默认处理会清除已选行的 active
+    高亮。检测到鼠标仍在 viewport 范围内时阻止默认处理，保持选中着色稳定。
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         # 安装默认行高委托；setItemDelegate 会替换它，新委托需自行保证行高
         self.setItemDelegate(_RowHeightDelegate(self))
-        # 安装 viewport Leave 过滤器，防止子控件 hover 时已选行高亮消失
-        vp = self.viewport()
-        self._leave_filter = _ViewportLeaveFilter(vp)
-        vp.installEventFilter(self._leave_filter)
+
+    def viewportEvent(self, event: QEvent) -> bool:
+        """拦截 viewport Leave：鼠标仍在 viewport 内时（仅进入子控件）阻止默认处理。"""
+        if event.type() == QEvent.Type.Leave:
+            vp = self.viewport()
+            if vp.rect().contains(vp.mapFromGlobal(QCursor.pos())):
+                return True  # 吃掉事件，保持已选行 active 高亮
+        return super().viewportEvent(event)
