@@ -169,3 +169,59 @@ class ExistingPartPolicy(Enum):
 | `BOM_COLUMNS` | 所有列的完整定义列表（顺序即默认显示顺序） |
 | `HIDEABLE_COLUMNS` | 可在 UI 中隐藏的列名集合 |
 | `EDITABLE_COLUMNS_ORDER` | BOM 编辑对话框中可编辑列的顺序 |
+
+---
+
+## 属性映射关系
+
+### CATIA → PLM 字段映射
+
+同步 BOM 到 PLM 时，属性按以下规则映射：
+
+#### 内置属性映射
+
+| CATIA 属性 | PLM instanceAttributes 名称 | 类型 | 说明 |
+|-----------|---------------------------|------|------|
+| `PartNumber` | （不映射到 instanceAttributes） | - | 用作 PLM 零件主键（`partNumber` 字段） |
+| `Nomenclature` | `中文名称` | TEXT | 零件中文名称 |
+| `Revision` | `版本` | TEXT | 版本号 |
+| `Definition` | `定义` | TEXT | 定义/说明 |
+| `Source` | `来源` | TEXT | Made/Bought/Unknown |
+| `Description` | （不映射到 instanceAttributes） | - | 仅用于 PLM 零件的 `description` 字段 |
+
+#### 用户自定义属性映射（PRESET_USER_REF_PROPERTIES）
+
+| CATIA UserRefProperty | PLM instanceAttributes 名称 | 类型 | 说明 |
+|----------------------|---------------------------|------|------|
+| `零件类型` | `零件类型` | TEXT | 零件分类 |
+| `设计状态` | `设计状态` | TEXT | 草稿/冻结/发布/废弃 |
+| `材料` | `材料` | TEXT | 材料名称 |
+| `重量` | `重量` | NUMBER | 数值类型，单位 kg |
+| `物料编码` | `物料编码` | TEXT | ERP 物料编码 |
+| `存货类别` | `存货类别` | TEXT | 物料分类（复材件/金属件等） |
+| `规格型号` | `规格型号` | TEXT | 规格说明 |
+| `备注` | `备注` | TEXT | 备注信息 |
+
+**注意：**
+- PLM `instanceAttributes` 中的属性名直接使用中文键名
+- `重量` 字段类型为 `NUMBER`，其他均为 `TEXT`
+- 修改 `PRESET_USER_REF_PROPERTIES` 后需同步更新 `plm/api_client.py` 中的 `_TEMPLATE_ATTRS`
+
+### BomNode 数据结构
+
+`plm/sync.py` 中的 `BomNode` 类用于表示 BOM 树节点：
+
+```python
+@dataclass
+class BomNode:
+    part_number: str                    # 零件编号
+    attrs: dict[str, str]               # 属性字典
+    children: list["BomNode"]           # 子节点列表
+    filepath: str                       # 本地文件路径
+    filetype: str                       # PART/PRODUCT/COMPONENT
+    instances: list                     # 实例变换矩阵（4×4，平移单位 mm）
+```
+
+**`attrs` 字典键名规则：**
+- 内置属性：使用英文列名（`Nomenclature`、`Definition`、`Revision`、`Source`、`Description`）
+- 自定义属性：使用中文键名（`"零件类型"`、`"设计状态"`、`"材料"`、`"重量"` 等）
