@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
     QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
-    QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox,
+    QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
 from PySide6.QtCore import Qt, QTimer, QRect
@@ -604,12 +604,11 @@ class MainWindow(QMainWindow):
         self._btn_macro_open_folder.clicked.connect(self._open_macros_folder)
         layout.addWidget(self._btn_macro_open_folder)
 
-        # 宏文件列表（动态，每次显示时刷新）
-        self._macro_btn_container = QWidget()
-        self._macro_btn_layout = QVBoxLayout(self._macro_btn_container)
-        self._macro_btn_layout.setContentsMargins(0, 0, 0, 0)
-        self._macro_btn_layout.setSpacing(6)
-        layout.addWidget(self._macro_btn_container)
+        # 「运行宏…」单按钮，点击后弹出 QMenu 列出宏文件
+        self._btn_run_macro = QPushButton("运行宏…")
+        self._btn_run_macro.setToolTip("选择并运行一个宏文件")
+        self._btn_run_macro.clicked.connect(self._show_macro_menu)
+        layout.addWidget(self._btn_run_macro)
 
         layout.addSpacing(4)
 
@@ -645,22 +644,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(btn_about)
 
         layout.addStretch()
-        page = self._make_page(body)
+        return self._make_page(body)
 
-        # 每次切换到此 Tab 时刷新宏按钮列表
-        self._tab_widget.currentChanged.connect(
-            lambda idx: self._refresh_macro_buttons() if idx == 4 else None
-        )
-        return page
-
-    def _refresh_macro_buttons(self) -> None:
-        """动态刷新宏文件按钮列表。"""
-        # 清空旧按钮
-        while self._macro_btn_layout.count():
-            item = self._macro_btn_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
+    def _show_macro_menu(self) -> None:
+        """在「运行宏…」按钮下方弹出宏文件菜单。"""
         macros_dir = self._macros_dir()
         macro_files: list[Path] = []
         if macros_dir.is_dir():
@@ -669,16 +656,18 @@ class MainWindow(QMainWindow):
                 if f.is_file() and f.suffix.lower() in self._MACRO_EXTENSIONS
             )
 
+        menu = QMenu(self)
         if macro_files:
             for mp in macro_files:
-                btn = QPushButton(mp.name)
-                btn.setToolTip(str(mp))
-                btn.clicked.connect(lambda checked=False, p=mp: self._run_macro(p))
-                self._macro_btn_layout.addWidget(btn)
+                action = menu.addAction(mp.name)
+                action.setToolTip(str(mp))
+                action.triggered.connect(lambda checked=False, p=mp: self._run_macro(p))
         else:
-            lbl = QLabel("（未找到宏文件）")
-            lbl.setEnabled(False)
-            self._macro_btn_layout.addWidget(lbl)
+            empty = menu.addAction("（未找到宏文件）")
+            empty.setEnabled(False)
+
+        pos = self._btn_run_macro.mapToGlobal(self._btn_run_macro.rect().bottomLeft())
+        menu.exec(pos)
 
     def _toggle_log_window(self, checked: bool) -> None:
         """切换日志窗口的显示/隐藏状态（保留，供外部调用）。"""
