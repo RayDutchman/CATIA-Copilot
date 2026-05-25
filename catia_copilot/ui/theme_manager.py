@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QObject, Signal, QEvent
@@ -188,7 +189,8 @@ class ThemeManager:
                 from qdarkstyle.light import palette as _lp
                 _palette = _lp.LightPalette
             base_qss = qdarkstyle.load_stylesheet(qt_api="pyside6", palette=_palette)
-        except Exception:
+        except Exception as e:
+            logging.warning("qdarkstyle 加载失败，主题将降级为项目 overlay（请确认已安装 qdarkstyle>=3.0.0）: %s", e)
             base_qss = ""
 
         # ② 构建项目专属 overlay QSS（占位符替换）
