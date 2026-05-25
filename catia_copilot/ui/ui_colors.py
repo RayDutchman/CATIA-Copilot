@@ -22,6 +22,13 @@
   EXCL_BG              row_data["_excluded"] = True
   EXCL_FG              同上，与 EXCL_BG 同时生效
   MIRROR_BG            row_data["_is_mirror"] = True（仅 mass_props_dialog）
+  DEP_COM_FG           依赖查找结果行：引用的文档（COM 链接）
+  DEP_2A_FG            依赖查找结果行：被引用零件/产品（2A 策略）
+  DEP_2B_FG            依赖查找结果行：被引用图纸（2B 策略）
+  DEP_ERROR_FG         依赖查找：搜索错误提示文字
+  DEP_EMPTY_FG         依赖查找：无结果提示文字
+  DEP_DONE_FG          依赖查找：搜索完成汇总文字
+  WIDGET_LINE_COLOR    树控件层级连接线颜色
 """
 
 from __future__ import annotations
@@ -32,17 +39,24 @@ from PySide6.QtGui import QColor
 @dataclass(frozen=True)
 class RowColors:
     """一套完整的行状态颜色 + 样式表字符串，深色/浅色各一个实例。"""
-    MODIFIED_FG:         QColor
+    MODIFIED_FG:          QColor
     MODIFIED_COMBO_STYLE: str
-    ROW_LOCKED_FG:       QColor
-    ROW_NOT_FOUND_BG:    QColor
-    ROW_LIGHTWEIGHT_BG:  QColor
-    ROW_UNSAVED_BG:      QColor
-    ROW_MEAS_FAILED_BG:  QColor
-    ROW_PRODUCT_BG:      QColor
-    EXCL_BG:             QColor
-    EXCL_FG:             QColor
-    MIRROR_BG:           QColor
+    ROW_LOCKED_FG:        QColor
+    ROW_NOT_FOUND_BG:     QColor
+    ROW_LIGHTWEIGHT_BG:   QColor
+    ROW_UNSAVED_BG:       QColor
+    ROW_MEAS_FAILED_BG:   QColor
+    ROW_PRODUCT_BG:       QColor
+    EXCL_BG:              QColor
+    EXCL_FG:              QColor
+    MIRROR_BG:            QColor
+    DEP_COM_FG:           QColor
+    DEP_2A_FG:            QColor
+    DEP_2B_FG:            QColor
+    DEP_ERROR_FG:         QColor
+    DEP_EMPTY_FG:         QColor
+    DEP_DONE_FG:          QColor
+    WIDGET_LINE_COLOR:    QColor
 
 
 # ── 浅色主题（默认）──────────────────────────────────────────────────────────
@@ -58,6 +72,13 @@ _LIGHT = RowColors(
     EXCL_BG              = QColor("#d8d4f0"),   # 薰衣草：_excluded（已排除）
     EXCL_FG              = QColor("#5858a0"),   # 深紫：_excluded 前景
     MIRROR_BG            = QColor("#c8e4ff"),   # 浅蓝：_is_mirror（对称件）
+    DEP_COM_FG           = QColor("#1565C0"),   # 深蓝：引用的文档（COM 链接）
+    DEP_2A_FG            = QColor("#2E7D32"),   # 深绿：被引用零件/产品（2A）
+    DEP_2B_FG            = QColor("#6A1B9A"),   # 深紫：被引用图纸（2B）
+    DEP_ERROR_FG         = QColor("#B71C1C"),   # 深红：搜索错误
+    DEP_EMPTY_FG         = QColor("#777777"),   # 中灰：无结果提示
+    DEP_DONE_FG          = QColor("#0277BD"),   # 深青蓝：搜索完成（与 DEP_2A_FG 区分）
+    WIDGET_LINE_COLOR    = QColor("#b0bec5"),   # 蓝灰：树控件层级连接线
 )
 
 # ── 深色主题（柔和暗色调，避免在深色背景上过于刺眼）────────────────────────
@@ -73,6 +94,13 @@ _DARK = RowColors(
     EXCL_BG              = QColor("#28254a"),   # 深薰衣草：_excluded（已排除）
     EXCL_FG              = QColor("#a8a8e0"),   # 浅紫：_excluded 前景（深色背景可读）
     MIRROR_BG            = QColor("#1a3550"),   # 深蓝：_is_mirror（对称件）
+    DEP_COM_FG           = QColor("#64b5f6"),   # 亮蓝：引用的文档（COM 链接）
+    DEP_2A_FG            = QColor("#81c784"),   # 亮绿：被引用零件/产品（2A）
+    DEP_2B_FG            = QColor("#ce93d8"),   # 亮紫：被引用图纸（2B）
+    DEP_ERROR_FG         = QColor("#ef9a9a"),   # 亮红：搜索错误
+    DEP_EMPTY_FG         = QColor("#909090"),   # 中灰：无结果提示
+    DEP_DONE_FG          = QColor("#4dd0e1"),   # 亮青：搜索完成（与 DEP_2A_FG 区分）
+    WIDGET_LINE_COLOR    = QColor("#4a5568"),   # 暗蓝灰：树控件层级连接线
 )
 
 
@@ -98,5 +126,5 @@ EXCL_BG              = _LIGHT.EXCL_BG
 EXCL_FG              = _LIGHT.EXCL_FG
 MIRROR_BG            = _LIGHT.MIRROR_BG
 
-# ── 树控件层级连接线颜色（与主题无关，保持不变）──────────────────────────────
-WIDGET_LINE_COLOR = QColor("#a0aab4")
+# ── 树控件层级连接线颜色（向后兼容，取浅色主题值）────────────────────────────
+WIDGET_LINE_COLOR = _LIGHT.WIDGET_LINE_COLOR

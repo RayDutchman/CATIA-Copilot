@@ -91,7 +91,8 @@ class FileConvertDialog(QDialog):
 
         # ── "Use active document" option ─────────────────────────────────────
         if show_active_doc_option:
-            self._use_active_chk = QCheckBox("使用当前CATIA活动文档（不选择文件）")
+            self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
+            self._use_active_chk.setChecked(True)
             self._use_active_chk.toggled.connect(self._toggle_file_section)
             layout.addWidget(self._use_active_chk)
         else:
@@ -310,8 +311,8 @@ class FileConvertDialog(QDialog):
     # ── Output folder ────────────────────────────────────────────────────────
 
     def _toggle_file_section(self, use_active: bool) -> None:
-        """Show/hide the file-list section when active-doc mode is toggled."""
-        self._file_section.setVisible(not use_active)
+        """勾选「使用活动文档」时灰掉文件列表区域（保持可见，避免窗口大小骤变）。"""
+        self._file_section.setEnabled(not use_active)
 
     def _toggle_folder_row(self, checked: bool) -> None:
         self._folder_edit.setEnabled(checked)
@@ -338,7 +339,7 @@ class FileConvertDialog(QDialog):
             try:
                 from catia_copilot.catia.connection import get_catia_v5_application as _catia
                 _caa = _catia()
-                active_path = _caa.application.active_document.full_name
+                active_path = _caa.ActiveDocument.FullName
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",

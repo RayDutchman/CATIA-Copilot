@@ -34,13 +34,13 @@ theme_signal = _ThemeSignalEmitter()
 _UI_DIR = Path(__file__).parent
 
 # ── 控件尺寸常量（调整这里即可全局生效）────────────────────────────
-INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px），Windows 11 原生值
-CONTROL_SPACING = 8    # indicator 与文字之间的间距（px）
-CHECKBOX_RADIUS = 4    # checkbox indicator 圆角（px），Windows 11 ControlCornerRadius
-CONTROL_RADIUS  = 4    # 普通控件圆角（px）：按钮、输入框、下拉框、表格、树等
-GROUPBOX_RADIUS = 6    # 分组框 / 菜单整体圆角（px）
-BUTTON_HEIGHT   = 26   # QPushButton min-height（px）
-INPUT_HEIGHT    = 22   # QLineEdit / QComboBox min-height（px）
+INDICATOR_SIZE  = 16   # radio / checkbox indicator 边长（px）
+CONTROL_SPACING = 6    # indicator 与文字之间的间距（px）
+CHECKBOX_RADIUS = 2    # checkbox indicator 圆角（px），接近 Win10 原生
+CONTROL_RADIUS  = 3    # 普通控件圆角（px）：按钮、输入框、下拉框、表格、树等
+GROUPBOX_RADIUS = 4    # 分组框 / 菜单整体圆角（px）
+BUTTON_HEIGHT   = 22   # QPushButton min-height（px），与旧版 style.qss 一致
+INPUT_HEIGHT    = 20   # QLineEdit / QComboBox min-height（px）
 LOG_FONT_FAMILY = '"Consolas", "Cascadia Code", "NSimSun", monospace'  # 信息/日志文本框等宽字体族（NSimSun 保证汉字宽度=2×英文）
 LOG_FONT_SIZE   = "9pt"                                     # 信息/日志文本框字号
 
@@ -177,12 +177,28 @@ class ThemeManager:
             # 尚未调用 register()，暂不应用
             return
         mode = self._current_mode()
+
+        # ① 加载 qdarkstyle 基础层（同时注册 Qt 资源，使 :/qss_icons/... 路径生效）
+        try:
+            import qdarkstyle
+            if mode == "dark":
+                from qdarkstyle.dark import palette as _dp
+                _palette = _dp.DarkPalette
+            else:
+                from qdarkstyle.light import palette as _lp
+                _palette = _lp.LightPalette
+            base_qss = qdarkstyle.load_stylesheet(qt_api="pyside6", palette=_palette)
+        except Exception:
+            base_qss = ""
+
+        # ② 构建项目专属 overlay QSS（占位符替换）
         _check_icon           = str(_UI_DIR / "check_white.svg").replace("\\", "/")
         _radio_checked_icon   = str(_UI_DIR / "radio_checked.svg").replace("\\", "/")
         _radio_unchecked_icon = str(_UI_DIR / f"radio_unchecked_{mode}.svg").replace("\\", "/")
         _chevron_down_icon    = str(_UI_DIR / f"chevron_down_{mode}.svg").replace("\\", "/")
-        qss = (DARK_QSS if mode == "dark" else LIGHT_QSS) \
-            .replace("@indicator_sizepx",  f"{INDICATOR_SIZE}px") \
+        overlay_qss = (DARK_QSS if mode == "dark" else LIGHT_QSS) \
+            .replace("@indicator_sizepx",         f"{INDICATOR_SIZE}px") \
+            .replace("@checkbox_indicator_sizepx", f"{INDICATOR_SIZE - 2}px") \
             .replace("@control_spacingpx", f"{CONTROL_SPACING}px") \
             .replace("@checkbox_radiuspx", f"{CHECKBOX_RADIUS}px") \
             .replace("@control_radiuspx",  f"{CONTROL_RADIUS}px") \
@@ -195,6 +211,10 @@ class ThemeManager:
             .replace("@radio_checked_icon", _radio_checked_icon) \
             .replace("@radio_unchecked_icon", _radio_unchecked_icon) \
             .replace("@chevron_down_icon", _chevron_down_icon)
+
+        # ③ 合并：qdarkstyle 基础层 + 项目 overlay（后者覆盖前者同名规则）
+        qss = base_qss + "\n" + overlay_qss
+
         # 应用到整个 application，所有顶层窗口（包括 QDialog）均生效
         app = QApplication.instance()
         if app:

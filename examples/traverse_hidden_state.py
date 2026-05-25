@@ -8,8 +8,8 @@
 
 运行前提
 --------
-- 已安装 pycatia（``pip install pycatia``）与 pywin32（``pip install pywin32``）
-- CATIA V5 / V6 处于运行状态，并已打开一个产品文档（.CATProduct）
+- 已安装 pywin32（``pip install pywin32``）
+- CATIA V5 处于运行状态，并已打开一个产品文档（.CATProduct）
 
 win32com 后期绑定说明
 ---------------------
@@ -23,7 +23,7 @@ win32com 后期绑定说明
     - 缺点：若 gen_py 缓存与当前 CATIA 版本不匹配，可能导致 COM 连接异常
 
   后期绑定（late binding）：
-    win32com.client.Dispatch("CATIA.Application")   # 或 pycatia.catia()
+    win32com.client.Dispatch("CATIA.Application")
     - 通过 IDispatch::GetIDsOfNames + IDispatch::Invoke 在运行时解析方法
     - 无需 gen_py 缓存，不受版本不匹配影响
     - ByRef 出参行为不同（见下文）
@@ -60,10 +60,9 @@ from __future__ import annotations
 
 
 def _get_catia_application():
-    """获取 CATIA Application COM 对象（后期绑定）。"""
-    from pycatia import catia
-    caa = catia()
-    return caa.application
+    """获取 CATIA Application COM 对象（win32com 后期绑定）。"""
+    import win32com.client
+    return win32com.client.Dispatch("CATIA.Application")
 
 
 def is_instance_hidden(product, application) -> bool:
@@ -77,20 +76,19 @@ def is_instance_hidden(product, application) -> bool:
 
     参数
     ----
-    product     : pycatia Product 包装对象（节点实例）
-    application : CATIA Application COM 对象
+    product     : win32com 产品对象（节点实例）
+    application : CATIA Application win32com 对象
 
     返回
     ----
     True  → 实例处于隐藏状态（catVisNoShow = 1）
     False → 实例处于可见状态（catVisShow = 0），或读取失败时保守返回 False
     """
-    com = product.com_object
     sel = None
     try:
-        sel = application.com_object.ActiveDocument.Selection
+        sel = application.ActiveDocument.Selection
         sel.Clear()
-        sel.Add(com)
+        sel.Add(product)
 
         # 后期绑定 ByRef 模式：传入 0 作为占位输入值，返回值即为出参的修改结果。
         # 绝对不要传入 VARIANT(VT_BYREF|VT_I4, 0)——win32com 会在序列化 DISPPARAMS
@@ -119,15 +117,18 @@ def traverse_and_print_hidden(product, application, level: int = 0) -> None:
 
     参数
     ----
-    product     : pycatia Product 包装对象（起始节点）
-    application : CATIA Application COM 对象
+    product     : win32com 产品对象（起始节点）
+    application : CATIA Application win32com 对象
     level       : 当前递归深度（根节点为 0）
     """
     try:
-        pn = product.part_number
+        pn = product.PartNumber
     except Exception:
-        name = product.name
-        pn = name.rsplit(".", 1)[0] if "." in name else name
+        try:
+            name = product.Name
+            pn = name.rsplit(".", 1)[0] if "." in name else name
+        except Exception:
+            pn = "UNKNOWN"
 
     # 根节点（level=0）是虚拟根，本身没有父装配上下文，跳过可见性检测
     if level >= 1:
@@ -141,15 +142,15 @@ def traverse_and_print_hidden(product, application, level: int = 0) -> None:
 
     # 递归遍历子节点
     try:
-        count = product.products.count
+        count = product.Products.Count
         for i in range(1, count + 1):
             try:
-                child = product.products.item(i)
+                child = product.Products.Item(i)
                 traverse_and_print_hidden(child, application, level + 1)
             except Exception as e:
                 print(f"{indent}  [!] 遍历子节点 {i} 失败: {e}")
     except Exception:
-        pass  # 叶子零件无 .products，跳过
+        pass  # 叶子零件无 .Products，跳过
 
 
 def collect_hidden_states(
@@ -163,7 +164,7 @@ def collect_hidden_states(
     返回值中每个元素为：
         {
           "level":   int,   # 层级深度（根节点为 0）
-          "name":    str,   # 零件编号（part_number）
+          "name":    str,   # 零件编号（PartNumber）
           "hidden":  bool,  # True = 隐藏，False = 可见
         }
     """
@@ -171,10 +172,13 @@ def collect_hidden_states(
         result = []
 
     try:
-        pn = product.part_number
+        pn = product.PartNumber
     except Exception:
-        name = product.name
-        pn = name.rsplit(".", 1)[0] if "." in name else name
+        try:
+            name = product.Name
+            pn = name.rsplit(".", 1)[0] if "." in name else name
+        except Exception:
+            pn = "UNKNOWN"
 
     if level >= 1:
         hidden = is_instance_hidden(product, application)
@@ -184,10 +188,10 @@ def collect_hidden_states(
     result.append({"level": level, "name": pn, "hidden": hidden})
 
     try:
-        count = product.products.count
+        count = product.Products.Count
         for i in range(1, count + 1):
             try:
-                child = product.products.item(i)
+                child = product.Products.Item(i)
                 collect_hidden_states(child, application, level + 1, result)
             except Exception:
                 pass

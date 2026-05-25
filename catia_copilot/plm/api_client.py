@@ -78,7 +78,13 @@ class PlmApiClient:
 
     def _headers(self, extra: dict | None = None) -> dict:
         """构造请求头，优先附加 JWT Bearer，次选 Basic Auth。"""
-        h = {"Content-Type": "application/json", "Accept": "application/json"}
+        h = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            # Cloudflare 等 CDN/WAF 会对 Python-urllib 默认 UA 返回 403（Bot Protection）
+            # 使用通用 User-Agent 规避此拦截
+            "User-Agent": "Mozilla/5.0 (compatible; CATIACopilot/1.0)",
+        }
         if self._token:
             h["Authorization"] = f"Bearer {self._token}"
         elif self._basic_auth:
@@ -126,6 +132,19 @@ class PlmApiClient:
                 body_text = exc.read().decode(errors="replace")
             except Exception:
                 pass
+            # 针对常见状态码给出中文说明，避免将 HTML 错误页暴露给用户
+            if exc.code == 401:
+                raise PlmApiError(
+                    f"{method} {path} 失败 [401]：认证失败，请检查用户名/密码是否正确，"
+                    f"或重新登录后重试（会话可能已过期）。",
+                    status_code=401,
+                ) from exc
+            if exc.code == 403:
+                raise PlmApiError(
+                    f"{method} {path} 失败 [403]：权限不足，当前用户无权执行此操作。"
+                    "请确认该用户在工作空间中的角色为管理员或贡献者。",
+                    status_code=403,
+                ) from exc
             raise PlmApiError(
                 f"{method} {path} 失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
@@ -298,15 +317,8 @@ class PlmApiClient:
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
-                # PLM-06 bug：服务端 isCheckoutByAnotherUser NPE，对所有零件（含不存在的）
-                # 返回 500；此 bug 在服务端未完全修复前继续对 500+NPE 按"不存在"处理。
-                # 注意：此路径现在仅用于"已存在零件的 checkout 后迭代号刷新"场景，
-                # 存在性判断已改由 POST /parts 完成（见 sync._sync_node），不再依赖本方法。
-                if exc.status_code == 500 and (
-                    "NullPointerException" in str(exc)
-                    or "isCheckoutByAnotherUser" in str(exc)
-                ):
-                    continue
+                # PLM-06（ProductManagerBean:3509 NPE）已于 2026-05-20 服务端修复，
+                # 此处不再对 500 静默跳过，直接抛出，避免掩盖真实服务端错误。
                 raise
         raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
 
@@ -382,7 +394,7 @@ class PlmApiClient:
             f"/workspaces/{ws}/parts/{pn}-{version}",
             expect_json=False,
         )
-        logger.info(f"PLM 零件已删除：{part_number}-{version}")
+        logger.debug(f"PLM 零件已删除（探测回滚）：{part_number}-{version}")
 
     def force_undo_checkout(
         self, workspace: str, part_number: str, version: str
@@ -414,21 +426,29 @@ class PlmApiClient:
         iteration: int,
         step_path: str,
     ) -> None:
-        """将 STEP 文件作为几何文件上传到零件迭代。
+        """将 STEP 文件作为 CAD 几何文件上传到零件迭代（触发 PLM 自动转换 obj）。
+
+        端点：POST /files/{ws}/parts/{pn}/{ver}/{iter}/nativecad
+        源码：PartBinaryResource.uploadNativeCADFile（@POST @Path("/{iter}/nativecad")）
+        PLM 会自动触发格式转换生成 obj 用于三维预览。
 
         参数：
             step_path: 本地 .stp 文件的绝对路径
         """
         import os
-        ws = urllib.parse.quote(workspace)
-        pn = urllib.parse.quote(part_number)
+        ws  = urllib.parse.quote(workspace,   safe="")
+        pn  = urllib.parse.quote(part_number, safe="")
+        filename = os.path.basename(step_path)
+        fn_enc   = urllib.parse.quote(filename, safe="")
+        # 源码：PartBinaryResource.uploadNativeCADFile
+        # 路径常量：PartIteration.NATIVE_CAD_SUBTYPE = "nativecad"
+        # 方法：POST，multipart/form-data
         url = (
-            f"{self._base}/workspaces/{ws}/parts/{pn}-{version}"
-            f"/iterations/{iteration}/geometry"
+            f"{self._base}/files/{ws}/parts/{pn}/{version}"
+            f"/{iteration}/nativecad"
         )
 
-        filename = os.path.basename(step_path)
-        boundary = "----PlmUploadBoundary7f3a9b2c"
+        boundary = "----PlmGeomBoundaryA3c8d2e1"
         with open(step_path, "rb") as f:
             file_data = f.read()
 
@@ -444,12 +464,10 @@ class PlmApiClient:
         headers = self._headers({
             "Content-Type": f"multipart/form-data; boundary={boundary}",
         })
-        # Content-Type 已被 _headers 设为 application/json，需要覆盖
-        del headers["Content-Type"]
-        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
 
+        # POST（源码 @POST 注解，与 upload_attached_file 一致）
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-        logger.debug(f"PLM STEP 上传：{filename} → {part_number}-{version} iter{iteration}")
+        logger.debug(f"PLM CAD 文件上传：{filename} → {part_number}-{version} iter{iteration}  URL={url}")
         try:
             with self._opener.open(req, timeout=120):
                 pass
@@ -459,10 +477,265 @@ class PlmApiClient:
                 body_text = exc.read().decode(errors="replace")
             except Exception:
                 pass
+            # 完整记录响应体，便于诊断端点/字段错误
+            logger.warning(
+                f"PLM CAD 文件上传失败 [{exc.code}]  URL={url}  "
+                f"响应体：{body_text[:500]}"
+            )
+            if exc.code == 401:
+                raise PlmApiError(
+                    "CAD 文件上传失败 [401]：认证失败，请重新登录后重试。",
+                    status_code=401,
+                ) from exc
+            if exc.code == 403:
+                raise PlmApiError(
+                    "CAD 文件上传失败 [403]：权限不足，当前用户无权上传文件。"
+                    "请确认工作空间角色为管理员或贡献者。",
+                    status_code=403,
+                ) from exc
             raise PlmApiError(
-                f"STEP 上传失败 [{exc.code}]: {body_text[:200]}",
+                f"CAD 文件上传失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
             ) from exc
         except urllib.error.URLError as exc:
             raise PlmApiError(f"网络错误（{exc.reason}）：{url}") from exc
-        logger.info(f"PLM STEP 上传成功：{filename}")
+        logger.info(f"PLM CAD 文件上传成功：{filename}")
+
+
+    def get_conversion_status(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        iteration: int,
+    ) -> dict:
+        """查询零件迭代的 CAD 转换状态。
+
+        端点：GET /workspaces/{ws}/parts/{pn}-{ver}/iterations/{iter}/conversion
+        路径规则：partNumber 与 partVersion 用 '-' 连接（PartsResource @Path "{partNumber}-{partVersion}"）
+        返回字典含 succeed(bool)、pending(bool)、startDate、endDate。
+        若该迭代从未上传过 CAD 文件（无转换记录），服务端返回空 body 或 null，
+        此时本方法返回 {"succeed": False, "pending": False}。
+        """
+        ws  = urllib.parse.quote(workspace,   safe="")
+        pn  = urllib.parse.quote(part_number, safe="")
+        url = (
+            f"{self._base}/workspaces/{ws}/parts/{pn}-{version}"
+            f"/iterations/{iteration}/conversion"
+        )
+        result = self._request("GET", url)
+        return result if isinstance(result, dict) else {"succeed": False, "pending": False}
+
+
+    def retry_conversion(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        iteration: int,
+    ) -> None:
+        """重新触发零件迭代的 CAD → OBJ 转换任务。
+
+        端点：PUT /workspaces/{ws}/parts/{pn}-{ver}/iterations/{iter}/conversion
+        路径规则：partNumber 与 partVersion 用 '-' 连接（PartsResource @Path "{partNumber}-{partVersion}"）
+        源码：PartResource.retryConversion（@PUT @Path("/iterations/{iter}/conversion")）
+        要求：零件必须处于 checked-out 状态，否则回调会丢弃结果。
+        """
+        ws  = urllib.parse.quote(workspace,   safe="")
+        pn  = urllib.parse.quote(part_number, safe="")
+        url = (
+            f"{self._base}/workspaces/{ws}/parts/{pn}-{version}"
+            f"/iterations/{iteration}/conversion"
+        )
+        self._request("PUT", url)
+
+
+    def upload_attached_file(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        iteration: int,
+        file_path: str,
+    ) -> None:
+        """将文件作为普通附件上传到零件迭代。
+
+        端点：POST /files/{ws}/parts/{pn}/{ver}/{iter}/attachedfiles
+        适用于 CATPart、CATProduct、STP 等所有附件（不触发 PLM 格式转换）。
+        注意：此端点路径前缀为 /files/，与业务端点 /workspaces/ 不同。
+
+        参数：
+            file_path: 本地文件的绝对路径
+        """
+        import os
+        ws  = urllib.parse.quote(workspace,   safe="")
+        pn  = urllib.parse.quote(part_number, safe="")
+        # 附件端点 base_url 同根，只需替换路径前缀
+        # self._base 形如 http://host/docdoku-plm-server-rest/api
+        # 附件端点为   http://host/docdoku-plm-server-rest/api/files/...
+        url = (
+            f"{self._base}/files/{ws}/parts/{pn}/{version}"
+            f"/{iteration}/attachedfiles"
+        )
+
+        filename = os.path.basename(file_path)
+        boundary = "----PlmAttachBoundary8e4d1f7a"
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+
+        body_parts = [
+            f"--{boundary}\r\n".encode(),
+            f'Content-Disposition: form-data; name="upload"; filename="{filename}"\r\n'.encode(),
+            b"Content-Type: application/octet-stream\r\n\r\n",
+            file_data,
+            f"\r\n--{boundary}--\r\n".encode(),
+        ]
+        body = b"".join(body_parts)
+
+        headers = self._headers({
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        })
+
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        logger.debug(f"PLM 附件上传：{filename} → {part_number}-{version} iter{iteration}")
+        try:
+            with self._opener.open(req, timeout=120):
+                pass
+        except urllib.error.HTTPError as exc:
+            body_text = ""
+            try:
+                body_text = exc.read().decode(errors="replace")
+            except Exception:
+                pass
+            if exc.code == 401:
+                raise PlmApiError("附件上传失败 [401]：认证失败", status_code=401) from exc
+            if exc.code == 403:
+                raise PlmApiError("附件上传失败 [403]：权限不足", status_code=403) from exc
+            raise PlmApiError(
+                f"附件上传失败 [{exc.code}]: {body_text[:200]}",
+                status_code=exc.code,
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise PlmApiError(f"网络错误（{exc.reason}）：{url}") from exc
+        logger.info(f"PLM 附件上传成功：{filename}")
+
+    # ── 零件查询（批量/详情）────────────────────────────────────────────────
+
+    def list_parts(self, workspace: str, max_count: int = 500) -> list[dict]:
+        """拉取工作区全量零件列表。
+
+        返回每项包含 number / version / lastIterationNumber / tags /
+        checkOutUser 等字段的字典列表。用于增量同步前建立本地缓存。
+
+        参数：
+            max_count: 最多拉取条数（DocdokuPLM 分页参数 count），默认 500
+        """
+        ws = urllib.parse.quote(workspace)
+        result = self._request(
+            "GET",
+            f"/workspaces/{ws}/parts?start=0&count={max_count}",
+        )
+        return result or []
+
+    def get_part_detail(
+        self, workspace: str, part_number: str, version: str
+    ) -> dict:
+        """获取零件完整详情（含 instanceAttributes / tags / checkOutUser）。
+
+        返回原始响应字典，调用方自行解析所需字段。
+        """
+        ws = urllib.parse.quote(workspace)
+        pn = urllib.parse.quote(part_number)
+        return self._request("GET", f"/workspaces/{ws}/parts/{pn}-{version}") or {}
+
+    # ── 标签（Tag）操作 ───────────────────────────────────────────────────────
+
+    def list_tags(self, workspace: str) -> list[dict]:
+        """获取工作区所有标签。
+
+        返回列表，每项形如 {"id": "已归档", "label": "已归档", "workspaceId": "..."}
+        """
+        ws = urllib.parse.quote(workspace)
+        return self._request("GET", f"/workspaces/{ws}/tags") or []
+
+    def update_part_tags(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        tags: list[str],
+    ) -> None:
+        """更新零件的标签列表（全量替换）。
+
+        DocdokuPLM 的 PUT /parts/{pn}-{ver} 会覆盖整个 PartRevision，
+        因此必须先 GET 当前完整数据，将 tags 字段替换后再 PUT 回去。
+        若零件处于 checkout 状态，tags 字段仍可写入（不需要额外 checkout）。
+
+        参数：
+            tags: 标签 ID 字符串列表，如 ["已归档", "紧急"]
+        """
+        ws = urllib.parse.quote(workspace)
+        pn = urllib.parse.quote(part_number)
+        path = f"/workspaces/{ws}/parts/{pn}-{version}"
+
+        # 先 GET 当前数据，避免覆盖其他字段
+        current = self._request("GET", path) or {}
+
+        # 只替换 tags 字段，其余字段原样保留
+        payload = {
+            "number":      current.get("number", part_number),
+            "name":        current.get("name", part_number),
+            "description": current.get("description", ""),
+            "tags":        tags,
+        }
+        self._request("PUT", path, payload, expect_json=False)
+        logger.debug(f"PLM 标签更新：{part_number}-{version} → {tags}")
+
+    # ── 产品（Product）操作 ───────────────────────────────────────────────────
+
+    def list_products(self, workspace: str) -> list[dict]:
+        """获取工作区所有产品（Product）配置。
+
+        返回列表，每项包含 id / designItemNumber / designItemName / description 等。
+        """
+        ws = urllib.parse.quote(workspace)
+        return self._request("GET", f"/workspaces/{ws}/products") or []
+
+    def create_product(
+        self,
+        workspace: str,
+        product_id: str,
+        design_item_number: str,
+        description: str = "",
+    ) -> dict:
+        """创建产品（Product）。
+
+        DocdokuPLM 中 Product 是产品结构的根节点视图，绑定到某个零件版本。
+        若同名产品已存在，服务端返回 400 或 409，此时抛出 PlmApiError。
+        调用方应捕获并判断是否为"已存在"场景。
+
+        参数：
+            product_id:          产品 ID（唯一字符串，如 "MyAssembly_Prod"）
+            design_item_number:  根零件号（对应顶层 CATProduct 的 Part Number）
+            description:         产品说明文本
+        """
+        ws = urllib.parse.quote(workspace)
+        payload = {
+            "id":                 product_id,
+            "description":        description,
+            "designItemNumber":   design_item_number,
+            "designItemVersion":  "A",
+        }
+        result = self._request("POST", f"/workspaces/{ws}/products", payload) or {}
+        logger.info(f"PLM 产品已创建：{product_id}（根零件 {design_item_number}）")
+        return result
+
+    # ── 用户查询 ─────────────────────────────────────────────────────────────
+
+    def list_users(self, workspace: str) -> list[dict]:
+        """获取工作区用户列表。
+
+        返回列表，每项形如 {"login": "alice", "name": "Alice Zhang", ...}
+        """
+        ws = urllib.parse.quote(workspace)
+        return self._request("GET", f"/workspaces/{ws}/users") or []

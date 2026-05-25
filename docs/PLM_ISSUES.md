@@ -191,6 +191,40 @@ Payara 5.194 仅监听 IPv4，导致每次 TCP 连接等待超时后才回落到
 每个零件请求耗时 63 秒以上。  
 **解决方案**：PLM 服务地址统一使用 `127.0.0.1` 而非 `localhost`。
 
+### 已解决-03：Python urllib 默认 User-Agent 被 Cloudflare Bot Protection 拦截（403）
+
+**解决时间**：2026-05-21  
+**现象**：使用公网地址（经过 Cloudflare Tunnel/CDN）访问 PLM 时，
+`urllib` 发出的所有请求（包括 `/auth/login`）均返回 `HTTP 403 Forbidden`，
+而用 `requests` 库或浏览器访问同一地址完全正常。
+
+**根因**  
+Python `urllib` 的默认 User-Agent 为 `Python-urllib/3.x`，
+Cloudflare Bot Protection（"Browser Integrity Check"）识别此 UA 为自动化脚本并直接拒绝。  
+`requests` 库默认 UA 为 `python-requests/2.x.x`，Cloudflare 对此放行。
+
+**复现路径**
+```python
+# 403（被 Cloudflare 拦截）
+urllib.request.urlopen(req)  # UA: Python-urllib/3.14
+
+# 200（正常）
+requests.post(url, ...)      # UA: python-requests/2.31.0
+```
+
+**修复**（`api_client.py` `_headers()` 方法，commit `7b86a16`）  
+在所有请求的基础头中固定设置：
+```python
+"User-Agent": "Mozilla/5.0 (compatible; CATIACopilot/1.0)"
+```
+`_headers()` 是唯一构造请求头的入口，`_request()` 和 `upload_step()` 均通过它获取头，
+因此一处修改覆盖全部端点，无需逐一修改。
+
+**注意**  
+内网直连（不经过 Cloudflare）时，此 UA 设置无副作用，对 Payara 服务端完全透明。
+
+---
+
 ### 已解决-02：JWT token 在响应头而非响应体
 
 **解决时间**：2026-05  

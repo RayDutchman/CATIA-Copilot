@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED
+from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType
 
 logger = logging.getLogger(__name__)
 
@@ -20,18 +20,18 @@ logger = logging.getLogger(__name__)
 def get_product_filepath(product) -> str:
     """返回支持 CATIA 产品 *product* 的文档完整路径。
 
-    使用 ``com_object.ReferenceProduct.Parent.FullName`` – 纯 COM 路径，
+    使用 ``product.ReferenceProduct.Parent.FullName`` – 纯 COM 路径，
     适用于独立产品/零件和嵌入式部件（无自己的文件，返回父级路径）。
     失败时返回空字符串。
 
     参数：
-        product: CATIA 产品对象
+        product: win32com CATIA 产品对象（直接 dispatch）
 
     返回：
         文档完整路径，或空字符串（失败时）
     """
     try:
-        return product.com_object.ReferenceProduct.Parent.FullName
+        return product.ReferenceProduct.Parent.FullName
     except Exception as e:
         logger.debug(f"无法获取产品文件路径: {e}")
         return ""
@@ -60,18 +60,20 @@ def collect_bom_rows(
         is appended to the result list.  May raise an exception to abort the
         traversal (e.g. when the user cancels).
     """
-    from pycatia import CatWorkModeType
-    from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    # pycatia Product 对象直接封装的内置属性（getattr 路径）
-    # description_reference → product.DescriptionRef（引用产品的描述，属性对话框里填写的值）
+    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
+    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
+    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
+
+    # win32com Product 对象的内置属性（CamelCase COM 属性名）
+    # Description → DescriptionRef（引用产品的描述，属性对话框里填写的值）
     DIRECT_ATTR_MAP: dict[str, str] = {
-        "Nomenclature": "nomenclature",
-        "Revision":     "revision",
-        "Definition":   "definition",
-        "Source":       "source",
-        "Description":  "description_reference",
+        "Nomenclature": "Nomenclature",
+        "Revision":     "Revision",
+        "Definition":   "Definition",
+        "Source":       "Source",
+        "Description":  "DescriptionRef",
     }
 
     def _get_prop(product, name: str) -> str:
@@ -80,7 +82,7 @@ def collect_bom_rows(
             return ""
         targets = [product]
         try:
-            targets.insert(0, product.reference_product)
+            targets.insert(0, product.ReferenceProduct)
         except Exception:
             pass
         for target in targets:
@@ -95,17 +97,17 @@ def collect_bom_rows(
     def _get_user_prop(product, name: str) -> str:
         targets = [product]
         try:
-            targets.insert(0, product.reference_product)
+            targets.insert(0, product.ReferenceProduct)
         except Exception:
             pass
         for target in targets:
             try:
-                prop  = target.user_ref_properties.item(name)
-                value = prop.value
+                prop  = target.UserRefProperties.Item(name)
+                value = prop.Value
                 if value is not None and str(value).strip():
                     return str(value)
-            except Exception: # as e:
-                pass # logger.debug(f"无法从 {target} 获取用户属性 {name}: {e}")
+            except Exception:
+                pass
         return ""
 
     _total_count: int = 0
@@ -120,9 +122,9 @@ def collect_bom_rows(
     def _traverse(product, rows: list, level: int, parent_filepath: str = "") -> None:
         nonlocal _total_count
         try:
-            pn = product.part_number
+            pn = product.PartNumber
         except Exception:
-            name = product.name
+            name = product.Name
             pn   = name.rsplit(".", 1)[0] if "." in name else name
 
         filepath  = get_product_filepath(product)
@@ -154,13 +156,13 @@ def collect_bom_rows(
             # Performance optimization: Check current work mode before switching
             # to avoid unnecessary DESIGN_MODE transitions (costly COM calls)
             try:
-                current_mode = product.get_work_mode()
-                if current_mode != CatWorkModeType.DESIGN_MODE:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                current_mode = product.GetWorkMode()
+                if current_mode != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
             except Exception:
-                # If get_work_mode fails, try apply_work_mode anyway
+                # If GetWorkMode fails, try ApplyWorkMode anyway
                 try:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
                 except Exception:
                     is_readable = False
 
@@ -182,7 +184,7 @@ def collect_bom_rows(
             "Level":        level,
             "Part Number":  pn,
             "Filename":     (FILENAME_UNSAVED   if no_file   else
-                             Path(filepath).stem if filepath else FILENAME_NOT_FOUND),
+                             Path(filepath).name if filepath else FILENAME_NOT_FOUND),
             "_filepath":    filepath,
             "_not_found":   not_found,
             "_no_file":     no_file,
@@ -190,23 +192,23 @@ def collect_bom_rows(
         }
 
         try:
-            child_count = product.products.count
+            child_count = product.Products.Count
             if filepath and filepath == parent_filepath:
                 # The child shares the same backing file as its parent, which
                 # means it is an embedded sub-assembly (部件) rather than a
                 # standalone product (产品) or leaf part (零件).
-                row["Type"] = "部件"
+                row["Type"] = BomNodeType.COMPONENT
             elif not filepath:
                 row["Type"] = ""
             else:
                 # Determine type from file extension so that a CATProduct with
-                # no children is still classified as "产品", not "零件".
+                # no children is still classified as Product, not Part.
                 ext = Path(filepath).suffix.lower()
                 if ext == ".catpart":
-                    row["Type"] = "零件"
+                    row["Type"] = BomNodeType.PART
                 else:
                     # .catproduct or any other extension → product/assembly
-                    row["Type"] = "产品"
+                    row["Type"] = BomNodeType.PRODUCT
         except Exception:
             row["Type"] = ""
 
@@ -220,21 +222,21 @@ def collect_bom_rows(
             progress_callback(_total_count)
 
         try:
-            products  = product.products
-            count     = products.count
+            products  = product.Products
+            count     = products.Count
             if count == 0:
                 return
             children: dict = {}
             for i in range(1, count + 1):
                 try:
-                    child = products.item(i)
+                    child = products.Item(i)
                     try:
-                        cpn = child.part_number
+                        cpn = child.PartNumber
                     except Exception:
                         try:
-                            cpn = child.reference_product.part_number
+                            cpn = child.ReferenceProduct.PartNumber
                         except Exception:
-                            n   = child.name
+                            n   = child.Name
                             cpn = n.rsplit(".", 1)[0] if "." in n else n
                 except Exception:
                     continue
@@ -253,46 +255,100 @@ def collect_bom_rows(
             pass
 
     # ── CATIA connection ────────────────────────────────────────────────────
-    caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents   = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents   = application.Documents
 
     if file_path is None:
-        product_doc  = ProductDocument(application.active_document.com_object)
-        root_product = product_doc.product
+        root_product = application.ActiveDocument.Product
         rows: list[dict] = []
         _traverse(root_product, rows, level=0)
         return rows
 
-    src = Path(file_path).resolve()
-    already_open: set[Path] = set()
-    for i in range(1, documents.count + 1):
-        try:
-            already_open.add(Path(documents.item(i).full_name).resolve())
-        except Exception:
-            pass
-
-    if src not in already_open:
-        documents.open(str(src))
-
-    target_doc = None
-    for i in range(1, documents.count + 1):
-        try:
-            doc = documents.item(i)
-            if Path(doc.full_name).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
-
-    product_doc  = ProductDocument(target_doc.com_object)
-    root_product = product_doc.product
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, file_path)
+    root_product = target_doc.Product
     rows = []
     _traverse(root_product, rows, level=0)
     return rows
+
+
+def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
+    """检查 BOM 行中处于未保存状态的文档，返回供 UI 展示的描述字符串列表。
+
+    涵盖两种场景：
+      1. ``_no_file == True``：零件从未保存到磁盘（CATIA 内存中有，磁盘无文件）。
+         此类零件的属性/几何体无法上传，直接从 bom_rows 标记读取，无需 COM 查询。
+         条目格式：``"{Part Number}（从未保存到磁盘）"``
+
+      2. ``Document.Saved == False``：文件已存在于磁盘，但自上次保存后有未提交修改。
+         通过 COM 枚举 CATIA 已打开文档并检查 ``Saved`` 属性。
+         条目格式：``"{filename.CATPart}（有未提交修改）"``
+
+    参数：
+        bom_rows: collect_bom_rows 返回的行字典列表。
+
+    返回：
+        描述字符串列表，供对话框逐条展示。
+        若 CATIA 未运行或 COM 调用失败，仍返回第一段（_no_file）结果，
+        不因 COM 异常丢失最确定的那部分信息。
+    """
+    result: list[str] = []
+
+    # ── 第一段：_no_file 行（从未保存到磁盘），直接从标记读取 ─────────────────
+    seen_pn: set[str] = set()
+    for row in bom_rows:
+        if not row.get("_no_file"):
+            continue
+        pn = str(row.get("Part Number", "")).strip() or str(row.get("Filename", "")).strip()
+        if pn and pn not in seen_pn:
+            seen_pn.add(pn)
+            result.append(f"{pn}（从未保存到磁盘）")
+
+    # ── 第二段：有效 _filepath 文件，通过 COM 检查 Document.Saved ─────────────
+    try:
+        from catia_copilot.catia.connection import get_catia_v5_application
+        application = get_catia_v5_application()
+        documents   = application.Documents
+    except Exception as exc:
+        logger.warning(f"check_unsaved_docs：无法连接 CATIA，跳过 Document.Saved 检查 — {exc}")
+        return result  # 至少返回第一段结果
+
+    # 构建 resolved_path → doc 的映射
+    open_docs: dict[Path, object] = {}
+    for i in range(1, documents.Count + 1):
+        try:
+            doc = documents.Item(i)
+            open_docs[Path(doc.FullName).resolve()] = doc
+        except Exception:
+            pass
+
+    seen_path: set[Path] = set()
+    for row in bom_rows:
+        # 跳过已在第一段报告的行，以及无有效路径的行
+        if row.get("_no_file") or row.get("_not_found") or row.get("_unreadable"):
+            continue
+        fp = str(row.get("_filepath", "")).strip()
+        if not fp:
+            continue
+        try:
+            resolved = Path(fp).resolve()
+        except Exception:
+            continue
+        if resolved in seen_path:
+            continue
+        seen_path.add(resolved)
+        doc = open_docs.get(resolved)
+        if doc is None:
+            # 文件未在 CATIA 中打开，不可能有未保存修改
+            continue
+        try:
+            if not doc.Saved:
+                result.append(f"{Path(fp).name}（有未提交修改）")
+        except Exception:
+            pass
+
+    return result
 
 
 def flatten_bom_to_summary(
@@ -369,7 +425,7 @@ def flatten_bom_to_summary(
     summary:     dict[str, dict] = {}   # key → merged row dict
     key_to_qty:  dict[str, int]  = {}   # key → accumulated total qty
 
-    _assembly_types = {"产品", "部件"}
+    _assembly_types = BomNodeType.ASSEMBLY_TYPES
 
     for row, abs_qty in zip(rows, absolute_qtys):
         level = row.get("Level", 0)

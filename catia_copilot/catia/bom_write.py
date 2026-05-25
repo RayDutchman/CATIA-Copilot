@@ -35,15 +35,18 @@ def write_bom_to_catia(
                           可抛出异常以中止。遍历顺序为后序（子节点在父节点之前），
                           因此较深层级在父级之前写入 CATIA。
     """
-    from pycatia import CatWorkModeType
-    from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
+    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
+    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
+    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
+
+    # win32com Product 对象的可写内置属性（CamelCase COM 属性名）
     WRITABLE_DIRECT: dict[str, str] = {
-        "Nomenclature": "nomenclature",
-        "Revision":     "revision",
-        "Definition":   "definition",
-        "Source":       "source",
+        "Nomenclature": "Nomenclature",
+        "Revision":     "Revision",
+        "Definition":   "Definition",
+        "Source":       "Source",
     }
 
     def _set_prop(product, name: str, value: str) -> None:
@@ -52,7 +55,7 @@ def write_bom_to_catia(
             return
         targets: list = []
         try:
-            targets.append(product.reference_product)
+            targets.append(product.ReferenceProduct)
         except Exception:
             pass
         targets.append(product)
@@ -71,21 +74,21 @@ def write_bom_to_catia(
     def _set_user_prop(product, name: str, value: str) -> None:
         targets: list = []
         try:
-            targets.append(product.reference_product)
+            targets.append(product.ReferenceProduct)
         except Exception:
             pass
         targets.append(product)
         # Try to update an existing property first
         for target in targets:
             try:
-                target.user_ref_properties.item(name).value = value
+                target.UserRefProperties.Item(name).Value = value
                 return
             except Exception:
                 pass
         # Property does not exist – create it on the first available target
         for target in targets:
             try:
-                target.user_ref_properties.create_string(name, value)
+                target.UserRefProperties.CreateString(name, value)
                 return
             except Exception:
                 continue
@@ -113,14 +116,14 @@ def write_bom_to_catia(
             return
 
         try:
-            pn = product.part_number
+            pn = product.PartNumber
         except Exception:
-            name = product.name
+            name = product.Name
             pn   = name.rsplit(".", 1)[0] if "." in name else name
 
         # Resolve the backing filepath for this node.
         try:
-            filepath = product.com_object.ReferenceProduct.Parent.FullName
+            filepath = product.ReferenceProduct.Parent.FullName
         except Exception:
             filepath = ""
 
@@ -145,12 +148,12 @@ def write_bom_to_catia(
         # early-exit break inside the loop only fires when truly nothing is
         # left to write (i.e. the parent itself is also not dirty).
         try:
-            count = product.products.count
+            count = product.Products.Count
             for i in range(1, count + 1):
                 if not remaining_pns:
                     break
                 try:
-                    _traverse_write(product.products.item(i),
+                    _traverse_write(product.Products.Item(i),
                                     parent_filepath=filepath)
                 except Exception:
                     pass
@@ -161,13 +164,13 @@ def write_bom_to_catia(
             # Performance optimization: Check current work mode before switching
             # to avoid unnecessary DESIGN_MODE transitions (costly COM calls)
             try:
-                current_mode = product.get_work_mode()
-                if current_mode != CatWorkModeType.DESIGN_MODE:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                current_mode = product.GetWorkMode()
+                if current_mode != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
             except Exception:
-                # If get_work_mode fails, try apply_work_mode anyway
+                # If GetWorkMode fails, try ApplyWorkMode anyway
                 try:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
                 except Exception:
                     pass
             for col, value in pn_data[pn].items():
@@ -175,12 +178,9 @@ def write_bom_to_catia(
                     continue
                 if col == "Part Number":
                     try:
-                        product.part_number = value
+                        product.PartNumber = value
                     except Exception:
-                        try:
-                            product.com_object.PartNumber = value
-                        except Exception:
-                            pass
+                        pass
                 elif col in WRITABLE_DIRECT:
                     _set_prop(product, col, value)
                 elif col in custom_columns:
@@ -199,45 +199,23 @@ def write_bom_to_catia(
             _written_fps.add(filepath)
 
     # ── CATIA connection ────────────────────────────────────────────────────
-    caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents   = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True
+    documents   = application.Documents
 
     if file_path is None:
-        product_doc  = ProductDocument(application.active_document.com_object)
-        root_product = product_doc.product
+        root_product = application.ActiveDocument.Product
         _traverse_write(root_product, parent_filepath="")
         logger.info("Write-back complete for active document (not saved)")
         return
 
-    src = Path(file_path).resolve()
-    already_open: set[Path] = set()
-    for i in range(1, documents.count + 1):
-        try:
-            already_open.add(Path(documents.item(i).full_name).resolve())
-        except Exception:
-            pass
+    src = file_path
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, src)
 
-    if src not in already_open:
-        documents.open(str(src))
-
-    target_doc = None
-    for i in range(1, documents.count + 1):
-        try:
-            doc = documents.item(i)
-            if Path(doc.full_name).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
-
-    product_doc  = ProductDocument(target_doc.com_object)
-    root_product = product_doc.product
+    root_product = target_doc.Product
     _traverse_write(root_product, parent_filepath="")
     logger.info(
-        f"Write-back complete for {src.name} "
+        f"Write-back complete for {Path(src).name} "
         "(not saved; user must save manually in CATIA)"
     )

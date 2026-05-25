@@ -135,7 +135,6 @@ CATIA-Copilot/
 | 包 | 用途 |
 |------|------|
 | [PySide6](https://pypi.org/project/PySide6/) | Qt 6 GUI 框架 |
-| [pycatia](https://pypi.org/project/pycatia/) | CATIA V5 COM 自动化 |
 | [openpyxl](https://pypi.org/project/openpyxl/) | Excel 文件读写 |
 
 ---

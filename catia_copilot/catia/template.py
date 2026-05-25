@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 def _find_open_document(application, resolved_path: Path):
     """如果 *resolved_path* 已打开则返回 CATIA 文档对象，否则返回 ``None``。"""
     try:
-        docs = application.documents
-        for i in range(1, docs.count + 1):
+        docs = application.Documents
+        for i in range(1, docs.Count + 1):
             try:
-                doc = docs.item(i)  # single COM call; reused below
-                full_name = doc.com_object.FullName
+                doc = docs.Item(i)  # single COM call; reused below
+                full_name = doc.FullName
                 if Path(full_name).resolve() == resolved_path:
                     return doc
             except Exception:
@@ -60,12 +60,10 @@ def apply_part_template(
         ``(success_count, failed_messages)``，其中 *failed_messages* 包含
         每个无法刷写的文件的一个人类可读字符串。
     """
-    from pycatia.mec_mod_interfaces.part_document import PartDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    caa = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
+    application = get_catia_v5_application()
+    application.Visible = True
 
     succeeded: list[str] = []
     failed:    list[str] = []
@@ -78,11 +76,8 @@ def apply_part_template(
         try:
             if keep_open:
                 # The document is already active in CATIA – skip re-opening it.
-                # Using documents.open() on an already-open file would trigger
-                # a CATIA "reload?" dialog, and would fail for unsaved documents
-                # that have no file on disk yet.
                 logger.info(f"Stamping active document: {src.name}")
-                doc = PartDocument(application.active_document.com_object)
+                doc = application.ActiveDocument
                 was_already_open = True
             else:
                 src = src.resolve()
@@ -90,48 +85,42 @@ def apply_part_template(
                 if existing_doc is not None:
                     logger.info(f"File already open, reusing: {src.name}")
                     was_already_open = True
-                    # Make the already-open document the active one so that
-                    # active_document refers to it after this branch.
-                    existing_doc.com_object.Activate()
+                    existing_doc.Activate()
                 else:
                     logger.info(f"Opening: {src}")
-                    application.documents.open(str(src))
+                    application.Documents.Open(str(src))
                     # Capture the document we just opened so that the finally
                     # block closes exactly this doc (not whatever is active later).
-                    opened_doc = application.active_document
-                doc = PartDocument(application.active_document.com_object)
+                    opened_doc = application.ActiveDocument
+                doc = application.ActiveDocument
 
-            product    = doc.product
-            user_props = product.user_ref_properties
-
-            existing_names: set[str] = set()
-            for i in range(1, user_props.count + 1):
-                try:
-                    # CATIA returns a qualified path such as
-                    # "Part1\属性\物料编码" (or using "/" depending on locale).
-                    # Only the trailing leaf name is relevant for dedup.
-                    raw = user_props.item(i).name
-                    leaf = raw.replace("/", "\\").rsplit("\\", 1)[-1]
-                    existing_names.add(leaf)
-                except Exception:
-                    pass
+            product    = doc.Product
+            user_props = product.UserRefProperties
 
             added: list[str] = []
             for prop_name in PRESET_USER_REF_PROPERTIES:
-                if prop_name not in existing_names:
-                    user_props.create_string(prop_name, "")
-                    added.append(prop_name)
-                    logger.info(f"  Added property: '{prop_name}'")
+                # 用 Item(name) 探测属性是否已存在；找不到时 CATIA 会抛 COM 错误
+                already = False
+                try:
+                    user_props.Item(prop_name)
+                    already = True
+                except Exception:
+                    pass
+
+                if not already:
+                    try:
+                        user_props.CreateString(prop_name, "")
+                        added.append(prop_name)
+                        logger.info(f"  Added property: '{prop_name}'")
+                    except Exception as ce:
+                        logger.warning(f"  CreateString('{prop_name}') 失败: {ce}")
                 else:
                     logger.info(f"  Skipped (already exists): '{prop_name}'")
 
             try:
-                doc.save()
+                doc.Save()
                 logger.info(f"  Saved: {src.name}")
             except Exception as save_err:
-                # Unsaved (new) documents have no disk path yet – log a warning
-                # but still count the stamp as successful since properties were
-                # written into memory.
                 logger.warning(f"  Could not save {src.name} (may be unsaved): {save_err}")
 
             succeeded.append(f"{src.name} (+{len(added)} added)")
@@ -142,7 +131,7 @@ def apply_part_template(
         finally:
             if not was_already_open and opened_doc is not None:
                 try:
-                    opened_doc.close()
+                    opened_doc.Close()
                 except Exception:
                     pass
 

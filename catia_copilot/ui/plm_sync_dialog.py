@@ -286,10 +286,15 @@ class _SyncWorker(QThread):
         try:
             client.login(cfg["login"], cfg["password"])
         except PlmApiError as exc:
-            self.finished_err.emit(
-                f"PLM 登录失败：{exc}\n\n请确认 DocdokuPLM 服务已启动，"
-                f"并检查连接配置是否正确。"
-            )
+            code = getattr(exc, "status_code", 0)
+            if code == 401:
+                hint = "用户名或密码错误，或登录会话已过期，请检查配置后重试。"
+            elif code == 403:
+                hint = ("当前用户权限不足。请在 DocdokuPLM 中确认该用户在工作空间的角色为"
+                        "管理员或贡献者，角色变更后可能需要重新登录才能生效。")
+            else:
+                hint = "请确认 DocdokuPLM 服务已启动，并检查连接配置是否正确。"
+            self.finished_err.emit(f"PLM 登录失败：{exc}\n\n{hint}")
             return
         self.log_line.emit("PLM 登录成功，开始同步……")
 
@@ -303,7 +308,18 @@ class _SyncWorker(QThread):
                 progress_callback=lambda msg: self.log_line.emit(msg),
             )
         except Exception as exc:
-            self.finished_err.emit(f"同步过程中发生意外错误：{exc}")
+            code = getattr(exc, "status_code", 0)
+            if code == 401:
+                self.finished_err.emit(
+                    f"同步失败 [401]：认证已失效，请关闭对话框后重新打开并再次同步。\n\n{exc}"
+                )
+            elif code == 403:
+                self.finished_err.emit(
+                    f"同步失败 [403]：权限不足，当前用户无权执行此操作。\n"
+                    f"请确认工作空间角色为管理员或贡献者，角色变更后需重新登录。\n\n{exc}"
+                )
+            else:
+                self.finished_err.emit(f"同步过程中发生意外错误：{exc}")
             return
 
         self.finished_ok.emit(result)

@@ -72,7 +72,6 @@ def export_bom_to_excel(
     """
     import openpyxl
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-    from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
 
     if columns is None:
@@ -88,9 +87,9 @@ def export_bom_to_excel(
     use_csv = output_format.lower() == "csv"
 
     caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True
-    documents   = application.documents
+    application = caa
+    application.Visible = True
+    documents   = application.Documents
 
     # ── Shared xlsx style objects ────────────────────────────────────────────
     center       = Alignment(horizontal="center", vertical="center")
@@ -161,7 +160,7 @@ def export_bom_to_excel(
         if path is None:
             # Use the active document without opening or closing
             try:
-                active_full = application.active_document.full_name
+                active_full = application.ActiveDocument.FullName
             except Exception as e:
                 raise RuntimeError(
                     "无法获取当前CATIA活动文档，请确保CATIA已打开CATProduct。"
@@ -223,9 +222,9 @@ def export_bom_to_excel(
 
         # Track already-open documents to avoid closing files we did not open
         already_open: set[Path] = set()
-        for i in range(1, documents.count + 1):
+        for i in range(1, documents.Count + 1):
             try:
-                already_open.add(Path(documents.item(i).full_name).resolve())
+                already_open.add(Path(documents.Item(i).FullName).resolve())
             except Exception:
                 pass
 
@@ -251,11 +250,11 @@ def export_bom_to_excel(
 
         # Close the document only if we were the one who opened it
         if src not in already_open:
-            for i in range(1, documents.count + 1):
+            for i in range(1, documents.Count + 1):
                 try:
-                    doc = documents.item(i)
-                    if Path(doc.full_name).resolve() == src:
-                        ProductDocument(doc.com_object).close()
+                    doc = documents.Item(i)
+                    if Path(doc.FullName).resolve() == src:
+                        doc.Close()
                         break
                 except Exception:
                     pass

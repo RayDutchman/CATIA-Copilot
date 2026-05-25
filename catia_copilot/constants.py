@@ -45,6 +45,32 @@ ABOUT_TEXT = f"""{APP_NAME} v{APP_VERSION}
 \u00a9 2026 {APP_AUTHOR}. 仅供内部使用。"""
 
 # ---------------------------------------------------------------------------
+# BOM 节点类型常量
+# ---------------------------------------------------------------------------
+# row["Type"] 的存储值统一使用英文 key，显示名通过 TYPE_DISPLAY_NAMES 转换。
+# 避免直接在业务逻辑中硬编码中文字符串（language-agnostic）。
+
+class BomNodeType:
+    """BOM 节点类型的英文 key 常量。"""
+    PART       = "Part"        # 零件（.CATPart 叶节点）
+    PRODUCT    = "Product"     # 产品（.CATProduct 独立子装配）
+    COMPONENT  = "Component"   # 部件（嵌入式子装配，无独立文件）
+    MIRROR     = "Mirror"      # 对称件（mass_props_dialog 虚拟行）
+
+    # 所有"装配"类型（非叶节点），用于过滤 / 聚合判断
+    ASSEMBLY_TYPES: frozenset = frozenset({PRODUCT, COMPONENT})
+    # 所有"叶节点"类型（需要测量质量特性 / 上传 STP 等）
+    LEAF_TYPES: frozenset = frozenset({PART, MIRROR})
+
+# 显示名映射：英文 key → 界面显示中文
+TYPE_DISPLAY_NAMES: dict = {
+    BomNodeType.PART:      "零件",
+    BomNodeType.PRODUCT:   "产品",
+    BomNodeType.COMPONENT: "部件",
+    BomNodeType.MIRROR:    "对称件",
+}
+
+# ---------------------------------------------------------------------------
 # Default window geometry
 # ---------------------------------------------------------------------------
 
@@ -245,9 +271,77 @@ PART_NUMBER_VALID_PATTERN: re.Pattern = re.compile(
 PLM_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
 
 # ---------------------------------------------------------------------------
+# PLM 同步：单次同步最大节点数（硬限制，超出则禁止同步）
+# ---------------------------------------------------------------------------
+
+PLM_SYNC_MAX_NODES: int = 100
+
+# ---------------------------------------------------------------------------
+# PLM 工作台：连接 Tab 成员列表列定义
+# 每项：(字段键, 列标题, 拉伸模式)
+# 拉伸模式："stretch" = Stretch，"contents" = ResizeToContents，"fixed:N" = Fixed N px
+# 如需增删列或调整顺序，只改这里即可。
+# ---------------------------------------------------------------------------
+
+PLM_MEMBER_TABLE_COLUMNS: list[tuple[str, str, str]] = [
+    ("login",       "登录名",    "contents"),
+    ("name",        "姓名",      "stretch"),
+    ("email",       "邮箱",      "stretch"),
+    ("language",    "语言",      "fixed:60"),
+    ("workspaceId", "工作区",    "contents"),
+]
+
+# ---------------------------------------------------------------------------
 # 可调参数：惯量包络体编号上限
 # ---------------------------------------------------------------------------
 
 # 每个零件最多读取"惯量包络体.1"到"惯量包络体.MAX_INERTIA_INDEX"的保持测量。
 # 编号不要求连续；所有编号在此范围内存在的测量均会被读取并在零件级汇总。
 MAX_INERTIA_INDEX: int = 20
+
+# ---------------------------------------------------------------------------
+# CATDrawing 启发式查找策略（给图纸 → 找对应的 CATPart/CATProduct）
+# ---------------------------------------------------------------------------
+# find_part_for_drawing() 支持多种策略，按此列表顺序尝试。
+# 注意：doc_file_links 已移至正向查询（图纸视图链接），不再属于启发式策略。
+# 支持的策略键：
+#   "pn_param_open_docs"     – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配
+#                              doc.Product.PartNumber == 该值（需 CATIA 运行）
+#   "pn_param_scan_dirs"     – 读图纸 Parameters["PartNumber"]，在向上 N 级目录范围内
+#                              查找文件名（stem）== 该值的 .CATPart/.CATProduct
+#   "same_name_scan_dirs"    – 用图纸文件名 stem 在向上 N 级目录范围内找同名零件文件
+#   "strip_prefix_scan_dirs" – 同上，但先 strip 图纸文件名中"前缀_"/"前缀-"前缀再匹配
+# ---------------------------------------------------------------------------
+
+DRAWING_SEARCH_STRATEGIES: list[str] = [
+    "pn_param_open_docs",
+    "pn_param_scan_dirs",
+    "same_name_scan_dirs",
+    "strip_prefix_scan_dirs",
+    "doc_file_links",
+]
+
+# 向上查找父目录的最大层级数
+SEARCH_MAX_LEVELS: int = 2
+
+# ---------------------------------------------------------------------------
+# CATPart/CATProduct 启发式查找策略（给零件/产品 → 找对应的 CATDrawing）
+# ---------------------------------------------------------------------------
+# find_drawing_for_part() 支持多种策略，按此列表顺序尝试。
+# 注意：doc_file_links 已移至反向查询（遍历已打开图纸反查），不再属于启发式策略。
+# 支持的策略键：
+#   "pn_param_open_drws"     – 遍历已打开 CATDrawing，找 Parameters["PartNumber"]
+#                              == 零件 doc.Product.PartNumber 的图纸（需 CATIA 运行）
+#   "pn_param_scan_drws"     – 在向上 N 级目录中找文件名（stem）== 零件
+#                              doc.Product.PartNumber 的 .CATDrawing
+#   "same_name_scan_dirs"    – 在向上 N 级目录中找文件名（stem）== 零件 stem 的 .CATDrawing
+#   "strip_prefix_scan_dirs" – 同上，但对图纸文件名先 strip "前缀_"/"前缀-" 再与零件 stem 比较
+# ---------------------------------------------------------------------------
+
+PART_TO_DRAWING_STRATEGIES: list[str] = [
+    "pn_param_open_drws",
+    "pn_param_scan_drws",
+    "same_name_scan_dirs",
+    "strip_prefix_scan_dirs",
+    "doc_file_links",
+]

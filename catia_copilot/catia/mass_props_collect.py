@@ -48,7 +48,7 @@ from pathlib import Path
 
 
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX
+from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +118,10 @@ def _row_inertia_to_root(row: dict) -> list[list[float]]:
 
 
 def _position_to_mat4(product) -> list[list[float]]:
-    """从 pycatia Product 包装对象的 position.get_components() 读取位置，返回 4×4 变换矩阵。
+    """从 win32com Product 对象的 Position.GetComponents() 读取位置，返回 4×4 变换矩阵。
 
-    接收 pycatia Product 包装对象（非 com_object），无参调用
-    ``product.position.get_components()``，捕获返回的 12 个 double 分量。
+    接收 win32com Product COM 对象，无参调用
+    ``product.Position.GetComponents()``，捕获返回的 12 个 double 分量。
 
     CATIA Position.GetComponents 数组布局（**列主序**，共 12 个元素）：
       arr[ 0.. 2] = X 轴方向向量（旋转矩阵第 1 列）
@@ -138,14 +138,14 @@ def _position_to_mat4(product) -> list[list[float]]:
     若调用失败或返回值无效，返回 4×4 单位矩阵（等价于零件位于父坐标系原点，无旋转）。
     """
     try:
-        product_name = getattr(product, "name", repr(product))
+        product_name = getattr(product, "Name", repr(product))
     except Exception:
         product_name = repr(product)
 
     try:
-        arr = product.position.get_components()
+        arr = list(product.Position.GetComponents())
     except Exception as e:
-        logger.debug(f"[MAT4] {product_name}: get_components 失败: {e}，返回单位矩阵")
+        logger.debug(f"[MAT4] {product_name}: GetComponents 失败: {e}，返回单位矩阵")
         return _identity_4x4()
 
     if arr is None or len(arr) < 12:
@@ -498,7 +498,7 @@ def _post_process_rows(rows: list[dict]) -> None:
     #   I_local 是在零件重心处、沿零件局部坐标轴方向的惯量；
     #   I_root  是在零件重心处、沿根产品坐标轴方向的惯量。
     for row in rows:
-        if row.get("Type") not in ("零件", "对称件"):
+        if row.get("Type") not in BomNodeType.LEAF_TYPES:
             continue
         mp = row.get("_mass_props")
         if not mp:
@@ -556,7 +556,7 @@ def _post_process_rows(rows: list[dict]) -> None:
     # 算法由 _rollup_one_product() 实现（详见其文档字符串）。
     for i in range(n):
         row = rows[i]
-        if row.get("Type") not in ("产品", "部件"):
+        if row.get("Type") not in BomNodeType.ASSEMBLY_TYPES:
             continue
 
         level = int(row.get("Level", 0))
@@ -607,7 +607,7 @@ def recompute_product_rows(rows: list[dict]) -> None:
     n = len(rows)
     for i in range(n):
         row = rows[i]
-        if row.get("Type") not in ("产品", "部件"):
+        if row.get("Type") not in BomNodeType.ASSEMBLY_TYPES:
             continue
 
         level = int(row.get("Level", 0))
@@ -788,18 +788,17 @@ def remeasure_part_mass_props(
     """
     from catia_copilot.catia.connection import get_catia_v5_application  # 运行时导入，避免无 CATIA 环境时报错
     try:
-        caa = get_catia_v5_application()
-        application = caa.application
-        application.visible = True
-        documents = application.documents
+        application = get_catia_v5_application()
+        application.Visible = True
+        documents = application.Documents
 
         fp_resolved = Path(filepath).resolve()
         target_doc = None
-        doc_count = documents.count  # 缓存文档数量，减少重复 COM 属性访问
+        doc_count = documents.Count  # 缓存文档数量，减少重复 COM 属性访问
         for i in range(1, doc_count + 1):
             try:
-                doc = documents.item(i)
-                if Path(doc.full_name).resolve() == fp_resolved:
+                doc = documents.Item(i)
+                if Path(doc.FullName).resolve() == fp_resolved:
                     target_doc = doc
                     break
             except Exception:
@@ -809,7 +808,7 @@ def remeasure_part_mass_props(
             logger.debug(f"[REMEAS] 找不到已打开的文档: {filepath}")
             return None
 
-        part_com = target_doc.com_object.Part
+        part_com = target_doc.Part
         return _measure_part_mass_props(part_com, part_number, read_mode=read_mode)
     except Exception as e:
         logger.debug(f"[REMEAS] 重新读取质量特性失败 ({filepath}): {e}")
@@ -850,9 +849,11 @@ def collect_mass_props_rows(
           Density, Weight, CogX, CogY, CogZ, Ixx, Iyy, Izz, Ixy, Ixz, Iyz,
           _filepath, _placement, _not_found, _no_file, _unreadable, _meas_failed
     """
-    from pycatia import CatWorkModeType
-    from pycatia.product_structure_interfaces.product_document import ProductDocument
     from catia_copilot.catia.connection import get_catia_v5_application
+
+    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
+    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
+    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
 
     _total_count: int = 0
     # 以文件路径为键缓存质量特性测量结果，避免同一零件多实例重复测量
@@ -860,13 +861,13 @@ def collect_mass_props_rows(
 
     def _get_prop(product, name: str) -> str:
         """读取直接属性（Nomenclature / Revision）。"""
-        attr_map = {"Nomenclature": "nomenclature", "Revision": "revision"}
+        attr_map = {"Nomenclature": "Nomenclature", "Revision": "Revision"}
         attr = attr_map.get(name)
         if not attr:
             return ""
         targets = [product]
         try:
-            targets.insert(0, product.reference_product)
+            targets.insert(0, product.ReferenceProduct)
         except Exception:
             pass
         for target in targets:
@@ -892,10 +893,10 @@ def collect_mass_props_rows(
         返回：catVisNoShow=1（隐藏）→ True；catVisShow=0（可见）→ False。
         """
         tag = pn or "<unknown>"
-        com = product.com_object
+        com = product
         sel = None
         try:
-            sel = application.com_object.ActiveDocument.Selection
+            sel = application.ActiveDocument.Selection
             sel.Clear()
             sel.Add(com)
             # In win32com late-binding (IDispatch), ByRef out-params are returned
@@ -932,7 +933,7 @@ def collect_mass_props_rows(
         """递归遍历产品树，将每个节点的质量特性信息追加到 rows。
 
         参数：
-            product:         当前节点的 pycatia Product 对象。
+            product:         当前节点的 win32com 产品对象。
             rows:            行字典列表，结果追加于此。
             level:           当前节点的层级深度（根节点为 0）。
             parent_filepath: 父节点的文件路径（用于判断"嵌入式部件"）。
@@ -942,9 +943,9 @@ def collect_mass_props_rows(
 
         # 读取零件编号（PartNumber）；失败时退而使用名称去掉扩展名
         try:
-            pn = product.part_number
+            pn = product.PartNumber
         except Exception:
-            name = product.name
+            name = product.Name
             pn   = name.rsplit(".", 1)[0] if "." in name else name
 
         # 可见性探测：仅当用户勾选"忽略隐藏的节点"（skip_hidden=True）时才发起
@@ -957,7 +958,7 @@ def collect_mass_props_rows(
 
         # 解析本节点对应的磁盘文件路径（通过 COM ReferenceProduct.Parent.FullName）
         try:
-            filepath = product.com_object.ReferenceProduct.Parent.FullName
+            filepath = product.ReferenceProduct.Parent.FullName
         except Exception:
             filepath = ""
 
@@ -977,14 +978,14 @@ def collect_mass_props_rows(
         if not_found:
             node_type = ""
         elif is_embedded:
-            node_type = "部件"
+            node_type = BomNodeType.COMPONENT
         else:
             ext = Path(filepath).suffix.lower()
             if ext == ".catpart":
-                node_type = "零件"
+                node_type = BomNodeType.PART
             else:
-                # .catproduct 或其他未知扩展名统一视为"产品"
-                node_type = "产品"
+                # .catproduct 或其他未知扩展名统一视为 Product
+                node_type = BomNodeType.PRODUCT
 
         # ── 计算本节点到根坐标系的累积变换矩阵 ──────────────────────────────
         # local_mat4：本节点相对父节点的局部变换（由 CATIA Position 读取）
@@ -1001,12 +1002,12 @@ def collect_mass_props_rows(
         if not not_found:
             # 确保节点处于"设计模式"（非可视化/缓存模式），否则属性读取可能失败
             try:
-                current_mode = product.get_work_mode()
-                if current_mode != CatWorkModeType.DESIGN_MODE:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                current_mode = product.GetWorkMode()
+                if current_mode != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
             except Exception:
                 try:
-                    product.apply_work_mode(CatWorkModeType.DESIGN_MODE)
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
                 except Exception:
                     is_readable = False
 
@@ -1020,7 +1021,7 @@ def collect_mass_props_rows(
         mass_props: dict | None = None
         meas_failed = False
 
-        if node_type == "零件" and is_readable and filepath:
+        if node_type == BomNodeType.PART and is_readable and filepath:
             if filepath in _mass_cache:
                 # 同一文件路径已测量过（多实例复用），直接取缓存，避免重复耗时测量
                 mass_props = _mass_cache[filepath]
@@ -1028,7 +1029,7 @@ def collect_mass_props_rows(
                 try:
                     # ReferenceProduct.Parent 就是该零件的 PartDocument COM 对象，
                     # 无需遍历 Documents 集合按路径查找，直接取 .Part 即可。
-                    part_doc_com = product.com_object.ReferenceProduct.Parent
+                    part_doc_com = product.ReferenceProduct.Parent
                     part_com     = part_doc_com.Part
                     mass_props   = _measure_part_mass_props(part_com, pn, read_mode=read_mode)
                 except Exception as e:
@@ -1051,7 +1052,7 @@ def collect_mass_props_rows(
 
         # 若零件本应可测但最终无数据，标记 meas_failed（无论是找不到文档还是读参数失败）
         if mass_props is None:
-            meas_failed = meas_failed or (node_type == "零件" and is_readable and not not_found)
+            meas_failed = meas_failed or (node_type == BomNodeType.PART and is_readable and not not_found)
 
         # ── 组装行字典 ─────────────────────────────────────────────────────────
         # CogX/Y/Z 和 Ixx 等此处存储的是零件局部坐标系下的原始测量值；
@@ -1099,10 +1100,10 @@ def collect_mass_props_rows(
         # 注意：不跳过重复实例——同一文件多次出现时每个实例单独记录一行，
         # 质量特性通过 _mass_cache 共享，不会重复测量。
         try:
-            count = product.products.count
+            count = product.Products.Count
             for i in range(1, count + 1):
                 try:
-                    child = product.products.item(i)
+                    child = product.Products.Item(i)
                     _traverse(child, rows, level + 1,
                               parent_filepath=filepath,
                               parent_mat4=abs_mat4)
@@ -1112,15 +1113,13 @@ def collect_mass_props_rows(
             pass
 
     # ── CATIA 连接与文档处理 ─────────────────────────────────────────────────
-    caa         = get_catia_v5_application()
-    application = caa.application
-    application.visible = True  # 确保 CATIA 窗口可见，避免后台静默状态下 COM 调用挂起
-    documents   = application.documents
+    application = get_catia_v5_application()
+    application.Visible = True  # 确保 CATIA 窗口可见，避免后台静默状态下 COM 调用挂起
+    documents   = application.Documents
 
     if file_path is None:
         # 使用当前 CATIA 活动文档（不做文件操作，直接读取）
-        product_doc  = ProductDocument(application.active_document.com_object)
-        root_product = product_doc.product
+        root_product = application.ActiveDocument.Product
         rows: list[dict] = []
         # 根节点的父矩阵为单位矩阵（无变换），从第 0 层开始遍历
         _traverse(root_product, rows, level=0, parent_filepath="",
@@ -1128,39 +1127,17 @@ def collect_mass_props_rows(
         _post_process_rows(rows)
         # 遍历过程中 VBS 可能激活了各子零件文档；恢复活动文档为根产品
         try:
-            product_doc.com_object.Activate()
+            application.ActiveDocument.Activate()
         except Exception as e:
             logger.debug(f"恢复根文档激活状态失败（无害）: {e}")
         return rows
 
-    src = Path(file_path).resolve()
+    src = file_path
 
-    # 记录 CATIA 中已打开的所有文档路径，避免重复打开同一文件
-    already_open: set[Path] = set()
-    for i in range(1, documents.count + 1):
-        try:
-            already_open.add(Path(documents.item(i).full_name).resolve())
-        except Exception:
-            pass
+    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, src)
 
-    if src not in already_open:
-        documents.open(str(src))
-
-    # 在已打开文档列表中查找与目标路径匹配的文档对象
-    target_doc = None
-    for i in range(1, documents.count + 1):
-        try:
-            doc = documents.item(i)
-            if Path(doc.full_name).resolve() == src:
-                target_doc = doc
-                break
-        except Exception:
-            pass
-    if target_doc is None:
-        raise RuntimeError(f"无法在CATIA中找到文档：{src}")
-
-    product_doc  = ProductDocument(target_doc.com_object)
-    root_product = product_doc.product
+    root_product = target_doc.Product
     rows = []
     # 根节点的父矩阵为单位矩阵，从第 0 层开始遍历
     _traverse(root_product, rows, level=0, parent_filepath="",
@@ -1168,7 +1145,7 @@ def collect_mass_props_rows(
     _post_process_rows(rows)
     # 遍历过程中 VBS 可能激活了各子零件文档；恢复活动文档为根产品
     try:
-        target_doc.com_object.Activate()
+        target_doc.Activate()
     except Exception as e:
         logger.debug(f"恢复根文档激活状态失败（无害）: {e}")
     return rows

@@ -39,6 +39,8 @@ from catia_copilot.constants import (
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,
     MAX_INERTIA_INDEX,
+    BomNodeType,
+    TYPE_DISPLAY_NAMES,
 )
 from catia_copilot.catia.mass_props_collect import (
     collect_mass_props_rows, _row_inertia_to_root, recompute_product_rows,
@@ -55,7 +57,7 @@ from catia_copilot.ui.ui_colors import (
     get_colors as _get_colors,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
+from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem, _ROW_HEIGHT
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,12 @@ class _MassPropsDelegate(QStyledItemDelegate):
         if col_name == "Density" and item.data(0, _DENSITY_LOCKED_ROLE):
             return None
         return super().createEditor(parent, option, index)
+
+    def sizeHint(self, option, index):
+        hint = super().sizeHint(option, index)
+        if hint.height() < _ROW_HEIGHT:
+            hint.setHeight(_ROW_HEIGHT)
+        return hint
 
 
 def _fmt(value) -> str:
@@ -230,6 +238,9 @@ class MassPropsDialog(QDialog):
 
         # ── 主题切换：重新着色所有行及提示标签 ───────────────────────────────
         theme_signal.theme_changed.connect(self._on_theme_changed)
+
+        # ── 默认使用活动文档（_build_ui 已完成，控件已存在）────────────────────
+        self._use_active_chk.setChecked(True)
 
     def done(self, result: int) -> None:
         """保存窗口几何后执行标准关闭流程。"""
@@ -414,7 +425,7 @@ class MassPropsDialog(QDialog):
         layout.addWidget(prereq_lbl)
 
         # ── 数据来源选择 ────────────────────────────────────────────────────
-        self._use_active_chk = QCheckBox("使用当前CATIA活动文档（不选择文件）")
+        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
@@ -628,15 +639,16 @@ class MassPropsDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(False)
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._table.setAlternatingRowColors(True)
+        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
+        # 开启后 branch 列背景无法同步，且选中行颜色因奇偶行底色不同而出现色差。
+        self._table.setAlternatingRowColors(False)
         self._table.setIndentation(16)
-        self._table.setStyleSheet("QTreeWidget::item { min-height: 24px; }")
         self._table.setItemDelegate(_MassPropsDelegate(lambda: self._columns, self._table))
         self._table.itemChanged.connect(self._on_item_changed)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -653,7 +665,7 @@ class MassPropsDialog(QDialog):
 
         def _sec_lbl(text: str) -> QLabel:
             lb = QLabel(text)
-            lb.setStyleSheet("font-weight: bold;")
+            lb.setObjectName("sectionLabel")
             return lb
 
         def _fld_lbl(text: str) -> QLabel:
@@ -1068,7 +1080,7 @@ class MassPropsDialog(QDialog):
 
         failed_count = sum(
             1 for r in (new_rows if new_rows is not None else rows)
-            if r.get("_meas_failed") and r.get("Type") == "零件"
+            if r.get("_meas_failed") and r.get("Type") == BomNodeType.PART
         )
         if failed_count:
             _read_mode_desc = {
@@ -1260,7 +1272,7 @@ class MassPropsDialog(QDialog):
         for i, row in enumerate(self._rows):
             r = dict(row)
             r["_rows_idx"] = i
-            if r.get("Type") in ("零件", "对称件"):
+            if r.get("Type") in BomNodeType.LEAF_TYPES:
                 rmp = r.get("_root_mp")
                 if rmp:
                     cog = rmp.get("cog", [None, None, None])
@@ -1298,7 +1310,7 @@ class MassPropsDialog(QDialog):
         for i, row in enumerate(self._rows):
             r = dict(row)
             r["_rows_idx"] = i
-            if r.get("Type") in ("零件", "对称件"):
+            if r.get("Type") in BomNodeType.LEAF_TYPES:
                 rmp = r.get("_root_mp")
                 if rmp:
                     cog = rmp.get("cog", [None, None, None])
@@ -1337,7 +1349,7 @@ class MassPropsDialog(QDialog):
             # 否则产品行会成为该 PN 的"规范行"，随后被类型过滤器删除，导致该 PN 的
             # 零件实例在汇总BOM中完全消失，且数量也会被错误地计入产品实例。
             # 对称件：其重心/惯量是位置相关量（根坐标系），在汇总上下文中无意义，故排除。
-            if row.get("Type") != "零件":
+            if row.get("Type") != BomNodeType.PART:
                 continue
             pn = str(row.get("Part Number", ""))
             if not pn:
@@ -1436,8 +1448,8 @@ class MassPropsDialog(QDialog):
                 density = row_data.get("Density")
                 if density is None:
                     # 对称件：按原件类型决定空显示（产品/部件→""，零件→"—"）
-                    effective_type = row_data.get("_mirror_src_type") if node_type == "对称件" else node_type
-                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in ("产品", "部件") else "—")
+                    effective_type = row_data.get("_mirror_src_type") if node_type == BomNodeType.MIRROR else node_type
+                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in BomNodeType.ASSEMBLY_TYPES else "—")
                 elif density < 0:
                     item.setText(col_idx, "不统一")
                 else:
@@ -1445,25 +1457,29 @@ class MassPropsDialog(QDialog):
             elif col_name == "Weight":
                 raw = row_data.get("Weight")
                 if raw is None:
-                    effective_type = row_data.get("_mirror_src_type") if node_type == "对称件" else node_type
-                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in ("产品", "部件") else "—")
+                    effective_type = row_data.get("_mirror_src_type") if node_type == BomNodeType.MIRROR else node_type
+                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in BomNodeType.ASSEMBLY_TYPES else "—")
                 else:
                     item.setText(col_idx, self._fmt_mass_val(raw))
             elif col_name in _INERTIA_IDX or col_name in ("CogX", "CogY", "CogZ"):
                 raw = row_data.get(col_name)
                 if raw is None:
-                    effective_type = row_data.get("_mirror_src_type") if node_type == "对称件" else node_type
-                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in ("产品", "部件") else "—")
+                    effective_type = row_data.get("_mirror_src_type") if node_type == BomNodeType.MIRROR else node_type
+                    item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in BomNodeType.ASSEMBLY_TYPES else "—")
                 else:
                     if col_name in _INERTIA_IDX:
                         item.setText(col_idx, self._fmt_inertia_val(raw))
                     else:
                         item.setText(col_idx, self._fmt_cog_val(raw))
+            elif col_name == "Type":
+                # 存储英文 key，显示时转为中文
+                raw = str(row_data.get("Type", ""))
+                item.setText(col_idx, TYPE_DISPLAY_NAMES.get(raw, raw))
             else:
                 item.setText(col_idx, str(row_data.get(col_name, "")))
 
         # 可编辑性：仅未锁定零件行的 Weight 和 Density（有效值）列可编辑
-        if node_type == "零件" and not row_locked:
+        if node_type == BomNodeType.PART and not row_locked:
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             item.setData(0, _ITEM_LOCKED_ROLE, False)
         else:
@@ -1542,7 +1558,7 @@ class MassPropsDialog(QDialog):
             return
 
         row_data = self._rows[row_idx]
-        if row_data.get("Type") != "零件":
+        if row_data.get("Type") != BomNodeType.PART:
             return
 
         new_text = item.text(col_idx).strip()
@@ -1629,7 +1645,7 @@ class MassPropsDialog(QDialog):
         scale: float = 1.0
         mp_shared: dict | None = None
         for r in self._rows:
-            if str(r.get("Part Number", "")) == pn and r.get("Type") == "零件":
+            if str(r.get("Part Number", "")) == pn and r.get("Type") == BomNodeType.PART:
                 try:
                     old_w_f_0 = float(r.get("Weight") or 0.0)
                 except (ValueError, TypeError):
@@ -1654,7 +1670,7 @@ class MassPropsDialog(QDialog):
         # 其数据由 _sync_all_mirrors() 在 _calculate() 中统一重算。
         for r in self._rows:
             if (str(r.get("Part Number", "")) != pn
-                    or r.get("Type") != "零件"
+                    or r.get("Type") != BomNodeType.PART
                     or r.get("_is_mirror")):
                 continue
             r["Weight"] = new_weight_stored
@@ -1711,7 +1727,7 @@ class MassPropsDialog(QDialog):
                     continue
                 vis_row = self._rows[vis_row_idx]
                 # 对称件虚拟行的显示刷新由 _sync_all_mirrors() 负责
-                if vis_row.get("Type") != "零件" or vis_row.get("_is_mirror"):
+                if vis_row.get("Type") != BomNodeType.PART or vis_row.get("_is_mirror"):
                     continue
                 if w_idx >= 0:
                     vis_item.setText(w_idx, self._fmt_mass_val(vis_row.get("Weight")))
@@ -1781,7 +1797,7 @@ class MassPropsDialog(QDialog):
                 if row_idx is None:
                     continue
                 row_data = self._rows[row_idx]
-                if row_data.get("Type") not in ("产品", "部件"):
+                if row_data.get("Type") not in BomNodeType.ASSEMBLY_TYPES:
                     continue
                 for col_idx, col_name in enumerate(self._columns):
                     if col_name == "Weight":
@@ -2237,10 +2253,10 @@ class MassPropsDialog(QDialog):
         镜像重心，使 rollup_mass_properties() 可直接累加其贡献。
         """
         source_row = self._rows[row_idx]
-        node_type  = str(source_row.get("Type", "零件"))
+        node_type  = str(source_row.get("Type", BomNodeType.PART))
 
         # ── 获取根坐标系质量特性 ─────────────────────────────────────────
-        if node_type == "零件":
+        if node_type == BomNodeType.PART:
             rmp = source_row.get("_root_mp")
             mp  = source_row.get("_mass_props")
             if rmp:
@@ -2313,7 +2329,7 @@ class MassPropsDialog(QDialog):
         source_pn = str(source_row.get("Part Number", ""))
         return {
             "Level":        source_row.get("Level", 0),
-            "Type":         "对称件",    # 虚拟叶节点：对称件以独立类型标识，
+            "Type":         BomNodeType.MIRROR,    # 虚拟叶节点：对称件以独立类型标识，
                                         # 直接贡献质量特性汇总（不参与层级汇总）
             "Part Number":  source_pn + " (对称件)",
             "Filename":     "(虚拟)",
@@ -2419,7 +2435,7 @@ class MassPropsDialog(QDialog):
 
                 # Step 3a：若原件为产品/部件，先内联重算其子树汇总值
                 # （此时更深层对称件的 _root_mp 已在前面迭代中刷新）
-                if src_row.get("Type") in ("产品", "部件"):
+                if src_row.get("Type") in BomNodeType.ASSEMBLY_TYPES:
                     level = int(src_row.get("Level", 0))
                     child_parts: list[dict] = []
                     for j in range(src_idx + 1, n):
@@ -2462,9 +2478,9 @@ class MassPropsDialog(QDialog):
                 for vis_item in self._item_by_row:
                     if vis_item.data(0, _ROW_IDX_ROLE) != mi:
                         continue
-                    src_type = str(src_row.get("Type", "零件"))
+                    src_type = str(src_row.get("Type", BomNodeType.PART))
                     # 原件为产品/部件时，None 值显示空字符串；原件为零件时显示"—"
-                    empty_text = "" if src_type in ("产品", "部件") else "—"
+                    empty_text = "" if src_type in BomNodeType.ASSEMBLY_TYPES else "—"
                     for ci, col in enumerate(self._columns):
                         if col == "Weight":
                             raw = mirror_row.get("Weight")
@@ -2589,7 +2605,7 @@ class MassPropsDialog(QDialog):
             for ci in range(col_count):
                 item.setBackground(ci, c.ROW_UNSAVED_BG)
                 item.setToolTip(ci, no_file_tip)
-        elif node_type in ("产品", "部件"):
+        elif node_type in BomNodeType.ASSEMBLY_TYPES:
             for ci in range(col_count):
                 item.setBackground(ci, c.ROW_PRODUCT_BG)
 
@@ -2624,9 +2640,9 @@ class MassPropsDialog(QDialog):
         row_data     = self._rows[clicked_row_idx]
         fp           = str(row_data.get("_filepath", ""))
         fp_path      = Path(fp) if fp else None
-        is_component = row_data.get("Type") == "部件"
-        is_part      = row_data.get("Type") == "零件"
-        is_product   = row_data.get("Type") == "产品"
+        is_component = row_data.get("Type") == BomNodeType.COMPONENT
+        is_part      = row_data.get("Type") == BomNodeType.PART
+        is_product   = row_data.get("Type") == BomNodeType.PRODUCT
         not_found    = bool(row_data.get("_not_found"))
         no_file      = bool(row_data.get("_no_file"))
         unreadable   = bool(row_data.get("_unreadable"))
@@ -2665,7 +2681,7 @@ class MassPropsDialog(QDialog):
         reread_idxs = [
             ri for ri in selected_idxs
             if not self._rows[ri].get("_is_mirror")
-            and self._rows[ri].get("Type") == "零件"
+            and self._rows[ri].get("Type") == BomNodeType.PART
             and not self._rows[ri].get("_not_found")
             and bool(self._rows[ri].get("_filepath", ""))
             and Path(str(self._rows[ri].get("_filepath", ""))).exists()
@@ -2769,41 +2785,13 @@ class MassPropsDialog(QDialog):
             logger.warning(f"无法在资源管理器中打开路径: {exc}")
 
     def _open_in_catia(self, fp: str) -> None:
-        """通过 ``documents.open`` 在CATIA中打开 *fp* 指向的文档。
-
-        打开后，若 ``win32gui`` 可用，则将CATIA V5主窗口置于Windows前台。
-        """
+        """通过 COM 在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _pycatia  # noqa: PLC0415
-            caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
+            from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
 
-            fp_resolved = Path(fp).resolve()
-            documents.open(str(fp_resolved))
-
-            try:
-                import win32gui  # noqa: PLC0415
-                import win32con  # noqa: PLC0415
-
-                def _raise_catia_window(hwnd, _extra):
-                    if not win32gui.IsWindowVisible(hwnd):
-                        return
-                    title = win32gui.GetWindowText(hwnd)
-                    if title.startswith("CATIA V5"):
-                        try:
-                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                            win32gui.SetForegroundWindow(hwnd)
-                        except Exception:
-                            pass
-                        return False
-
-                win32gui.EnumWindows(_raise_catia_window, None)
-            except ImportError:
-                pass
-            except Exception:
-                pass
+            app = _get_catia()
+            open_catia_file(app.Documents, fp, foreground=True)
 
         except Exception as e:
             QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")
@@ -2871,7 +2859,7 @@ class MassPropsDialog(QDialog):
         for pn, new_mp in results.items():
             target_rows: list[int] = [
                 i for i, r in enumerate(self._rows)
-                if str(r.get("Part Number", "")) == pn and r.get("Type") == "零件"
+                if str(r.get("Part Number", "")) == pn and r.get("Type") == BomNodeType.PART
             ]
             total_updated += len(target_rows)
 
@@ -2912,7 +2900,7 @@ class MassPropsDialog(QDialog):
                     if vis_row_idx is None:
                         continue
                     vis_row = self._rows[vis_row_idx]
-                    if vis_row.get("Type") != "零件":
+                    if vis_row.get("Type") != BomNodeType.PART:
                         continue
                     self._refresh_part_item_after_reread(vis_item, vis_row)
         finally:

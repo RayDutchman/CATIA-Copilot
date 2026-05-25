@@ -678,50 +678,38 @@ def diagnose_catia_connection() -> dict:
 
 
 def ensure_clean_gencache() -> None:
-    """启动时清理 win32com 早绑定缓存目录（gen_py）。
+    """启动时清理 win32com 早绑定缓存目录（gen_py/{python版本}/）。
 
-    win32com 的 ``EnsureDispatch`` 会在 ``%LOCALAPPDATA%\\Temp\\gen_py\\``
-    写入 CATIA 类型库的早绑定缓存。一旦该缓存存在，后续所有晚绑定调用
-    （包括本程序使用的 ``GetActiveObject``）都可能受到干扰，导致无法连接 CATIA。
+    win32com 的 ``EnsureDispatch`` 会在
+    ``%LOCALAPPDATA%\\Temp\\gen_py\\{major}.{minor}\\`` 写入 CATIA 类型库的
+    早绑定缓存。一旦该缓存存在，后续所有晚绑定调用（包括本程序使用的
+    ``GetActiveObject``）都可能受到干扰，导致无法连接 CATIA。
 
-    本程序仅使用晚绑定，因此在每次启动时主动删除该目录可彻底消除上述隐患。
+    本程序仅使用晚绑定，因此在每次启动时主动删除该版本特定子目录。
 
-    为确保在 PyInstaller 打包环境中（不论可执行文件放在 C: 还是 D: 等任意盘符下）
-    都能找到并清理正确的 gen_py 目录，本函数会同时清理所有已知候选路径：
-
-    1. ``gencache.GetGeneratePath()`` 返回的版本特定路径（如 …/gen_py/3.11）
-    2. 上述路径的父目录（gen_py）
-    3. ``tempfile.gettempdir()/gen_py``（最通用的临时目录下的 gen_py）
-    4. ``%LOCALAPPDATA%/Temp/gen_py``（Windows 标准本地临时目录）
-    5. ``Path.home()/AppData/Local/Temp/gen_py``（家目录推算的路径）
+    **只删版本特定目录（如 gen_py/3.13），不删父目录 gen_py。**
+    删父目录会误伤同机上其他 Python 版本或其他程序的 win32com 早绑定缓存。
 
     清理操作是幂等的：目录不存在时静默跳过。
     """
     candidates: set[Path] = set()
+    ver = f"{sys.version_info.major}.{sys.version_info.minor}"
 
-    # 1. 通过 gencache 模块获取版本特定路径及其父目录
+    # 1. 通过 gencache 模块获取版本特定路径（最准确）
     if _win32com_client is not None:
         try:
             from win32com.client import gencache as _gencache
-            gp = Path(_gencache.GetGeneratePath())
-            candidates.add(gp)          # e.g., …/gen_py/3.11
-            candidates.add(gp.parent)   # e.g., …/gen_py
+            candidates.add(Path(_gencache.GetGeneratePath()))  # e.g., …/gen_py/3.13
         except Exception:
             pass
 
-    # 2. tempfile.gettempdir() / gen_py
+    # 2. fallback：tempfile.gettempdir() / gen_py / {major}.{minor}
+    #    Windows 下 gettempdir() 通常即 %LOCALAPPDATA%\Temp，与候选 1 等价，
+    #    但在 PyInstaller 打包或非标准环境下可能不同，保留作兜底。
     try:
-        candidates.add(Path(tempfile.gettempdir()) / "gen_py")
+        candidates.add(Path(tempfile.gettempdir()) / "gen_py" / ver)
     except Exception:
         pass
-
-    # 3. %LOCALAPPDATA% / Temp / gen_py
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        candidates.add(Path(local_app_data) / "Temp" / "gen_py")
-
-    # 4. Path.home() / AppData / Local / Temp / gen_py
-    candidates.add(Path.home() / "AppData" / "Local" / "Temp" / "gen_py")
 
     for path in candidates:
         if path.exists():

@@ -35,6 +35,8 @@ from catia_copilot.constants import (
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,
     BOM_THUMBNAIL_MAX_SIZE,
+    BomNodeType,
+    TYPE_DISPLAY_NAMES,
 )
 from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
 from catia_copilot.catia.bom_write import write_bom_to_catia
@@ -43,7 +45,7 @@ from catia_copilot.ui.bom_catia_helpers import (
     _is_catia_com_error,
     _find_catia_doc_by_path,
 )
-from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
+from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem, _ROW_HEIGHT
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.ui_colors import (
     MODIFIED_FG          as _MODIFIED_FG,
@@ -157,7 +159,7 @@ class BomEditDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # 数据来源选择行
-        self._use_active_chk = QCheckBox("使用当前CATIA活动文档（不选择文件）")
+        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
@@ -287,7 +289,7 @@ class BomEditDialog(QDialog):
             "文件名/路径可编辑。"
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setObjectName("hintLabel")
         layout.addWidget(hint)
 
         # BOM树形控件（替代 QTableWidget，原生支持展开/折叠）
@@ -299,15 +301,16 @@ class BomEditDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(True)
-        hdr.setFixedHeight(28)
+        hdr.setFixedHeight(_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._table.setAlternatingRowColors(True)
+        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
+        # 开启后 branch 列背景无法同步，且选中行颜色因奇偶行底色不同而出现色差。
+        self._table.setAlternatingRowColors(False)
         self._table.setIndentation(16)
-        self._table.setStyleSheet("QTreeWidget::item { min-height: 24px; }")
         self._table.itemChanged.connect(self._on_item_changed)
         hdr.sectionResized.connect(self._on_section_resized)
         _delegate = _BomTreeDelegate(lambda: self._columns, self._table)
@@ -364,7 +367,7 @@ class BomEditDialog(QDialog):
         # 状态标签（显示行数及待写回修改数）
         btn_row.addSpacing(8)
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._status_label.setObjectName("hintLabel")
         btn_row.addWidget(self._status_label)
 
         btn_row.addStretch()
@@ -408,6 +411,9 @@ class BomEditDialog(QDialog):
 
         # ── 主题切换：重新着色所有行 ──────────────────────────────────────────
         theme_signal.theme_changed.connect(self._on_theme_changed)
+
+        # ── 默认使用活动文档（所有控件构建完毕后再触发 toggled）────────────────
+        self._use_active_chk.setChecked(True)
 
     # ── 文件/活动文档切换 ─────────────────────────────────────────────────────
 
@@ -822,6 +828,8 @@ class BomEditDialog(QDialog):
                     if pn_val not in SOURCE_OPTIONS:
                         pn_val = SOURCE_TO_DISPLAY.get(pn_val, SOURCE_OPTIONS[0])
                     combo = QComboBox()
+                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
+                    combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不抢走树的焦点，避免已选行高亮消失
                     combo.blockSignals(True)
                     combo.addItems(SOURCE_OPTIONS)
                     combo.setCurrentText(pn_val)
@@ -852,6 +860,8 @@ class BomEditDialog(QDialog):
                         )
                         display_opts.append(pn_val)
                     combo = QComboBox()
+                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
+                    combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不抢走树的焦点，避免已选行高亮消失
                     combo.blockSignals(True)
                     combo.addItems(display_opts)
                     combo.setCurrentText(pn_val)
@@ -885,7 +895,9 @@ class BomEditDialog(QDialog):
                 elif col_name == "Filepath":
                     value = str(row_data.get("_filepath", ""))
                 elif col_name in BOM_READONLY_COLUMNS:
-                    value = str(row_data.get(col_name, ""))
+                    raw = str(row_data.get(col_name, ""))
+                    # Type 列存储英文 key，显示时转为中文
+                    value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
                 else:
                     value = str(
                         self._canonical_data.get(pn, {}).get(
@@ -1521,18 +1533,18 @@ class BomEditDialog(QDialog):
         renamed_count = 0
 
         # 性能优化：一次性构建文档缓存，避免重复扫描
-        from catia_copilot.catia.connection import get_catia_v5_application as _pycatia
-        caa         = _pycatia()
-        application = caa.application
-        application.visible = True
-        documents   = application.documents
+        from catia_copilot.catia.connection import get_catia_v5_application as _get_catia
+        caa         = _get_catia()
+        application = caa
+        application.Visible = True
+        documents   = application.Documents
 
         # 缓存：文件路径 → 文档对象
         doc_cache: dict[Path, object] = {}
-        for i in range(1, documents.count + 1):
+        for i in range(1, documents.Count + 1):
             try:
-                doc = documents.item(i)
-                doc_path = Path(doc.full_name).resolve()
+                doc = documents.Item(i)
+                doc_path = Path(doc.FullName).resolve()
                 doc_cache[doc_path] = doc
             except Exception:
                 pass
@@ -1560,11 +1572,11 @@ class BomEditDialog(QDialog):
                 # 使用缓存快速查找
                 target_doc = doc_cache.get(src)
                 if target_doc is None:
-                    documents.open(str(src))
-                    candidate = documents.item(documents.count)
+                    documents.Open(str(src))
+                    candidate = documents.Item(documents.Count)
                     target_doc = (
                         candidate
-                        if Path(candidate.full_name).resolve() == src
+                        if Path(candidate.FullName).resolve() == src
                         else _find_catia_doc_by_path(documents, src)
                     )
                     if target_doc:
@@ -1577,7 +1589,7 @@ class BomEditDialog(QDialog):
                     )
                     continue
 
-                target_doc.com_object.SaveAs(new_fp)
+                target_doc.SaveAs(new_fp)
 
                 if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
                     try:
@@ -1691,22 +1703,20 @@ class BomEditDialog(QDialog):
         QMessageBox.information(self, "请在CATIA中继续操作", "准备就绪，请在CATIA中确认后续操作。")
 
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _pycatia
-            caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia
+            caa         = _get_catia()
+            application = caa
+            application.Visible = True
+            documents   = application.Documents
             src         = Path(fp).resolve()
 
             target_doc = _find_catia_doc_by_path(documents, src)
-            # 仅当文件在磁盘上存在时才尝试打开；
-            # 未保存过的零件只能通过已打开的文档缓存找到。
             if target_doc is None and file_on_disk:
-                documents.open(str(src))
-                candidate  = documents.item(documents.count)
+                documents.Open(str(src))
+                candidate  = documents.Item(documents.Count)
                 target_doc = (
                     candidate
-                    if Path(candidate.full_name).resolve() == src
+                    if Path(candidate.FullName).resolve() == src
                     else _find_catia_doc_by_path(documents, src)
                 )
 
@@ -1718,7 +1728,7 @@ class BomEditDialog(QDialog):
                 )
                 return
 
-            target_doc.com_object.SaveAs(new_fp)
+            target_doc.SaveAs(new_fp)
 
             if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
                 try:
@@ -1802,6 +1812,29 @@ class BomEditDialog(QDialog):
             else:
                 QMessageBox.information(self, "无更改", "没有检测到任何修改，无需写回。")
             return
+
+        # ── 检查被修改的行中是否有从未保存到磁盘的零件 ──────────────────────
+        # 构建 pn → _no_file 的快速查找表（以 _rows 为准）
+        _no_file_pns: set[str] = {
+            str(r.get("Part Number", ""))
+            for r in self._rows
+            if r.get("_no_file") and r.get("Part Number")
+        }
+        affected_no_file = [pn for pn in dirty_data if pn in _no_file_pns]
+        if affected_no_file:
+            pn_list = "\n".join(f"  • {pn}" for pn in affected_no_file)
+            ret = QMessageBox.warning(
+                self,
+                "零件从未保存到磁盘",
+                f"以下被修改的零件从未保存到磁盘，写回操作仅修改 CATIA 内存，"
+                f"关闭 CATIA 后修改将丢失：\n\n{pn_list}\n\n"
+                f"建议先在 CATIA 中对这些零件执行「另存为」后再写回。\n\n"
+                f"是否忽略风险，继续写回？",
+                QMessageBox.Cancel | QMessageBox.Ok,
+                QMessageBox.Cancel,
+            )
+            if ret != QMessageBox.Ok:
+                return
 
         self._save_btn.setEnabled(False)
         self._finish_btn.setEnabled(False)
@@ -2050,7 +2083,8 @@ class BomEditDialog(QDialog):
                         )
                         value = raw_val
                 else:
-                    value = raw_val
+                    # Type 列存储英文 key，导出时转为中文显示
+                    value = TYPE_DISPLAY_NAMES.get(raw_val, raw_val) if col_name == "Type" else raw_val
                 cell        = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.border = thin_border
                 if col_name in ("Level", "Quantity", "Type"):
@@ -2112,7 +2146,7 @@ class BomEditDialog(QDialog):
         row_data     = self._rows[row_idx]
         fp           = str(row_data.get("_filepath", ""))
         fp_path      = Path(fp) if fp else None
-        is_component = row_data.get("Type") == "部件"
+        is_component = row_data.get("Type") == BomNodeType.COMPONENT
         not_found    = bool(row_data.get("_not_found"))
         no_file      = bool(row_data.get("_no_file"))
         unreadable   = bool(row_data.get("_unreadable"))
@@ -2201,7 +2235,7 @@ class BomEditDialog(QDialog):
         if action == act_open_path:
             self._open_path(fp)
         elif action == act_copy_path:
-            QApplication.clipboard().setText(fp)
+            QApplication.clipboard().setText(str(Path(fp).parent))
         elif action == act_copy_cell:
             QApplication.clipboard().setText(cell_text)
         elif action == act_open_catia:
@@ -2230,44 +2264,13 @@ class BomEditDialog(QDialog):
             logger.warning(f"Failed to open path in Explorer: {exc}")
 
     def _open_in_catia(self, fp: str) -> None:
-        """通过 ``documents.open`` 在CATIA中打开 *fp* 指向的文档。
-
-        打开后，若 ``win32gui`` 可用，则将CATIA V5主窗口置于Windows前台。
-        """
+        """通过 COM 在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _pycatia  # noqa: PLC0415
-            caa         = _pycatia()
-            application = caa.application
-            application.visible = True
-            documents   = application.documents
+            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
+            from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
 
-            fp_resolved = Path(fp).resolve()
-            documents.open(str(fp_resolved))
-
-            # ── 将CATIA V5主窗口置于Windows前台 ──────────────────────────────
-            try:
-                import win32gui  # noqa: PLC0415
-                import win32con  # noqa: PLC0415
-
-                def _raise_catia_window(hwnd, _extra):
-                    if not win32gui.IsWindowVisible(hwnd):
-                        return
-                    title = win32gui.GetWindowText(hwnd)
-                    # 仅匹配CATIA V5应用程序主窗口，排除其他含"CATIA"字样的窗口
-                    if title.startswith("CATIA V5"):
-                        try:
-                            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-                            win32gui.SetForegroundWindow(hwnd)
-                        except Exception:
-                            pass
-                        # 找到第一个CATIA V5窗口后停止枚举
-                        return False
-
-                win32gui.EnumWindows(_raise_catia_window, None)
-            except ImportError:
-                pass
-            except Exception:
-                pass
+            app = _get_catia()
+            open_catia_file(app.Documents, fp, foreground=True)
 
         except Exception as e:
             QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")
