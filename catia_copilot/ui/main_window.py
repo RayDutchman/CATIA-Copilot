@@ -291,6 +291,7 @@ class MainWindow(QMainWindow):
         """构建主窗口 UI 结构（TabWidget 分页 + 状态栏）。"""
         # ── Tab 分页内容区 ──────────────────────────────────────────────────
         self._tab_widget = QTabWidget()
+        self._tab_widget.setObjectName("mainTabWidget")  # 专属样式：Tab 标题 padding + 按钮高度
         self._tab_widget.addTab(self._build_export_page(), "导出")   # 0
         self._tab_widget.addTab(self._build_bom_page(),    "BOM")    # 1
         self._tab_widget.addTab(self._build_drawing_page(), "图纸")  # 2

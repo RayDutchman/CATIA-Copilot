@@ -80,6 +80,16 @@ QTabBar::tab:last {
     font-weight: 400;
 }
 
+/* ── 主界面专属样式 ───────────────────────────────────────────────── */
+/* 主界面 Tab 标题左右 padding 增加 */
+QTabWidget#mainTabWidget QTabBar::tab {
+    padding: 0 29px;
+}
+/* 主界面功能按钮高度增加 */
+QTabWidget#mainTabWidget QPushButton {
+    min-height: 40px;
+}
+
 /* ── 标题栏 caption 按钮（≡ / 最小化 / 最大化）Win11 原生规格 ───── */
 QPushButton#titleBarMoreBtn,
 QPushButton#titleBarMinBtn,
