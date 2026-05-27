@@ -495,14 +495,29 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
-        layout.addWidget(self._make_section_label("工程图纸"))
+        # Python 实现版本（新）
+        layout.addWidget(self._make_section_label("工程图纸 (Python 实现)"))
 
-        btn_new = QPushButton("新建图纸")
-        btn_new.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸")
+        btn_new_py = QPushButton("新建图纸 (Python)")
+        btn_new_py.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸 - Python 实现版本")
+        btn_new_py.clicked.connect(self._open_generate_drawing_dialog_python)
+
+        btn_refresh_py = QPushButton("刷新图纸 (Python)")
+        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- Python 实现版本")
+        btn_refresh_py.clicked.connect(self._open_refresh_drawing_dialog_python)
+
+        for btn in (btn_new_py, btn_refresh_py):
+            layout.addWidget(btn)
+
+        # VBScript 实现版本（旧，用于对比测试）
+        layout.addWidget(self._make_section_label("工程图纸 (VBScript 宏)"))
+
+        btn_new = QPushButton("新建图纸 (VBScript)")
+        btn_new.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸 - VBScript 宏版本")
         btn_new.clicked.connect(self._open_generate_drawing_dialog)
 
-        btn_refresh = QPushButton("刷新图纸")
-        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）")
+        btn_refresh = QPushButton("刷新图纸 (VBScript)")
+        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- VBScript 宏版本")
         btn_refresh.clicked.connect(self._open_refresh_drawing_dialog)
 
         for btn in (btn_new, btn_refresh):
@@ -1063,6 +1078,100 @@ class MainWindow(QMainWindow):
             )
             return
         self._run_macro(catvbs_path)
+
+    # ── Drawing generation (Python implementation) ──────────────────────────
+
+    def _open_generate_drawing_dialog_python(self) -> None:
+        """新建图纸 - Python 实现版本"""
+        from catia_copilot.catia.drawing_operations import generate_drawing
+        
+        templates_dir = self._drawing_templates_dir()
+        templates_dir.mkdir(parents=True, exist_ok=True)
+
+        templates = sorted(templates_dir.glob("*.CATDrawing"))
+        if not templates:
+            QMessageBox.warning(
+                self, "未找到模板",
+                f"在以下目录中未找到任何 CATDrawing 模板文件：\n{templates_dir}\n\n"
+                "请将 *.CATDrawing 模板放入该文件夹后重试。",
+            )
+            return
+
+        name, ok = QInputDialog.getItem(
+            self,
+            "选择图纸模板",
+            "请选择一个 CATDrawing 模板：",
+            [t.name for t in templates],
+            0,
+            False,
+        )
+        if not ok:
+            return
+
+        template_path = templates_dir / name
+
+        # 定义输入回调函数（当属性不存在时弹窗询问用户）
+        def input_callback(prop_name: str, part_number: str) -> tuple[str, bool]:
+            text, ok = QInputDialog.getText(
+                self,
+                f"补充缺失属性 - {prop_name}",
+                f'零件 "{part_number}" 中未找到用户自定义属性 "{prop_name}"。\n'
+                f'请输入该属性的值（留空则以空值写入图纸）：',
+                text="",
+            )
+            return (text, ok)
+
+        # 调用 Python 实现的生成图纸函数
+        try:
+            result = generate_drawing(
+                template_path=str(template_path),
+                input_callback=input_callback,
+            )
+            
+            if result["success"]:
+                # 显示同步日志
+                log_msg = "\n".join(result["details"])
+                QMessageBox.information(self, "同步日志", log_msg)
+            else:
+                QMessageBox.critical(self, "生成图纸失败", result["message"])
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self, "生成图纸失败",
+                f"发生错误：\n{e}"
+            )
+
+    def _open_refresh_drawing_dialog_python(self) -> None:
+        """刷新图纸 - Python 实现版本"""
+        from catia_copilot.catia.drawing_operations import refresh_drawing
+        
+        # 定义输入回调函数（当属性不存在时弹窗询问用户）
+        def input_callback(prop_name: str, part_number: str) -> tuple[str, bool]:
+            text, ok = QInputDialog.getText(
+                self,
+                f"补充缺失属性 - {prop_name}",
+                f'零件 "{part_number}" 中未找到用户自定义属性 "{prop_name}"。\n'
+                f'请输入该属性的值（留空则以空值写入图纸）：',
+                text="",
+            )
+            return (text, ok)
+
+        # 调用 Python 实现的刷新图纸函数
+        try:
+            result = refresh_drawing(input_callback=input_callback)
+            
+            if result["success"]:
+                # 显示同步日志
+                log_msg = "\n".join(result["details"])
+                QMessageBox.information(self, "同步日志", log_msg)
+            else:
+                QMessageBox.critical(self, "刷新图纸失败", result["message"])
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self, "刷新图纸失败",
+                f"发生错误：\n{e}"
+            )
 
     def _execute_catscript(
         self,
