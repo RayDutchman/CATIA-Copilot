@@ -49,6 +49,7 @@ $RECYCLE.BIN/
 tmp/
 # macros/
 crack/
+drawing_templates/
 test.py
 
 # ── Playwright MCP ───────────────────────────────────────────────────────────
