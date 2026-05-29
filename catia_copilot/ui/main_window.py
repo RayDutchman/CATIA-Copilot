@@ -663,7 +663,7 @@ class MainWindow(QMainWindow):
         # 「运行宏…」单按钮，点击后弹出 QMenu 列出宏文件
         self._btn_run_macro = QPushButton("运行宏…")
         self._btn_run_macro.setToolTip("选择并运行一个宏文件")
-        self._btn_run_macro.clicked.connect(self._show_macro_menu)
+        self._btn_run_macro.clicked.connect(lambda: self._show_macro_menu())
         layout.addWidget(self._btn_run_macro)
 
         layout.addSpacing(4)

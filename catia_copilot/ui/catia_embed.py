@@ -997,9 +997,6 @@ class CATIAEmbedManager:
                         cb()
                     except Exception:
                         logger.exception("run_macro_file callback 调用失败")
-                else:
-                    # 无回调时降级：直接在后台线程运行（仅当 COM 已初始化为 STA 时有效）
-                    self._run_macro_file(macro_path)
             return
         
         if cmd == MENU_POS_RESET:
@@ -1051,17 +1048,6 @@ class CATIAEmbedManager:
         else:
             logger.debug("无回调 key=%s，降级子进程", key)
             self._launch_subprocess_fallback(key)
-
-    def _run_macro_file(self, macro_path: str):
-        """运行指定的宏文件。"""
-        from pathlib import Path
-        try:
-            from catia_copilot.catia.connection import get_catia_v5_application
-            app = get_catia_v5_application()
-            app.SystemService.ExecuteScript(str(Path(macro_path).resolve()))
-            logger.info(f"已运行宏: {macro_path}")
-        except Exception as e:
-            logger.exception(f"运行宏失败: {macro_path}")
 
     def _reset_position(self):
         """恢复默认锚点和偏移量，立即刷新面板，并持久化。"""
