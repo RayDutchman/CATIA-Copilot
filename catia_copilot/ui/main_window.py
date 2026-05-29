@@ -844,17 +844,19 @@ class MainWindow(QMainWindow):
                 # CATIA 最小化：隐藏所有可见对话框，并记录它们
                 self._hidden_dialogs.clear()
                 for attr, value in vars(self).items():
-                    if attr.startswith("_dlg_") and isinstance(value, QDialog) and value.isVisible():
+                    if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)) and value.isVisible():
                         value.hide()
                         self._hidden_dialogs.add(attr)
-                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏对话框 {attr}")
+                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏窗口 {attr} (type={type(value).__name__})")
             else:
                 # CATIA 还原：恢复之前隐藏的对话框
                 for attr in list(self._hidden_dialogs):
                     value = getattr(self, attr, None)
-                    if value is not None and isinstance(value, QDialog):
+                    if value is not None and isinstance(value, (QDialog, QMainWindow)):
                         value.show()
-                        logger.debug(f"_check_catia_state: CATIA 还原，显示对话框 {attr}")
+                        logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr} (type={type(value).__name__})")
+                    else:
+                        logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在或类型错误 (value={value})")
                 self._hidden_dialogs.clear()
 
     # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
@@ -1125,9 +1127,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
             self._catia_monitor_timer.stop()
         
-        # 关闭所有对话框
+        # 关闭所有对话框和子窗口（包括 QDialog 和 QMainWindow）
         for attr, value in list(vars(self).items()):
-            if attr.startswith("_dlg_") and isinstance(value, QDialog):
+            if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)):
                 value.close()
         
         super().closeEvent(event)
