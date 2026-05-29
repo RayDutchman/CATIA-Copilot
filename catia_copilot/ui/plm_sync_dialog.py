@@ -341,6 +341,13 @@ class PlmSyncDialog(QDialog):
         self.setMinimumHeight(420)
         self._worker: _SyncWorker | None = None
         self._cfg = _load_plm_config()
+        
+        # 恢复窗口几何
+        s = QSettings(_SETTINGS_ORG, "PlmSyncDialog")
+        saved_geom = s.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+        
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -514,6 +521,11 @@ class PlmSyncDialog(QDialog):
             # 线程完成后自动删除自身（避免内存泄漏）
             self._worker.finished.connect(self._worker.deleteLater)
             self._worker = None
+        
+        # 保存窗口几何
+        s = QSettings(_SETTINGS_ORG, "PlmSyncDialog")
+        s.setValue("geometry", self.saveGeometry())
+        
         super().closeEvent(event)
 
 

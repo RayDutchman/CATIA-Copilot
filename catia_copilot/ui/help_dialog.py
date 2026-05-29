@@ -5,7 +5,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QTextBrowser, QPushButton, QHBoxLayout,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 
 from catia_copilot.constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_CONTACT, MAX_INERTIA_INDEX
 from catia_copilot.utils import resource_path
@@ -660,6 +660,13 @@ class HelpDialog(QDialog):
         self.resize(700, 560)
         self.setMinimumSize(480, 360)
 
+        self._settings = QSettings("CATIACompanion", "HelpDialog")
+        
+        # 恢复窗口几何
+        saved_geom = self._settings.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
 
@@ -676,3 +683,8 @@ class HelpDialog(QDialog):
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
         layout.addLayout(btn_layout)
+
+    def closeEvent(self, event):  # noqa: N802
+        """关闭时保存窗口几何。"""
+        self._settings.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)
