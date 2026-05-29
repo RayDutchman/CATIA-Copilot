@@ -83,6 +83,68 @@ def open_catia_file(documents, file_path: str, foreground: bool = False):
     return doc
 
 
+def safe_set_visible(application) -> None:
+    """安全地将 CATIA Application.Visible 设为 True，保留窗口最大化状态。
+
+    CATIA COM 的 ``application.Visible = True`` 内部会调用 ``ShowWindow(SW_SHOW)``，
+    这会将最大化窗口（SW_MAXIMIZE）还原为普通窗口（SW_NORMAL）。
+    本函数在设置前记录 CATIA 主窗口的 showCmd，设置后若状态发生变化则恢复。
+
+    Args:
+        application: CATIA ``Application`` COM 对象。
+    """
+    if application.Visible:
+        # 已经可见，无需设置，直接返回（避免触发 CATIA 内部 ShowWindow）
+        return
+
+    try:
+        import win32gui  # type: ignore[import]
+        import win32con  # type: ignore[import]
+    except ImportError:
+        # win32gui 不可用，退化为直接设置
+        application.Visible = True
+        return
+
+    # 记录设置前的窗口状态
+    catia_hwnd = 0
+
+    def _find_catia(hwnd: int, _) -> bool:
+        nonlocal catia_hwnd
+        try:
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
+                catia_hwnd = hwnd
+                return False
+        except Exception:
+            pass
+        return True
+
+    try:
+        win32gui.EnumWindows(_find_catia, None)
+    except Exception:
+        pass
+
+    show_cmd_before = 0
+    if catia_hwnd:
+        try:
+            placement = win32gui.GetWindowPlacement(catia_hwnd)
+            show_cmd_before = placement[1]  # showCmd: 1=normal, 2=min, 3=max
+        except Exception:
+            pass
+
+    # 设置 Visible（可能改变窗口状态）
+    application.Visible = True
+
+    # 若原来是最大化，且现在变成了普通窗口，则恢复最大化
+    if catia_hwnd and show_cmd_before == win32con.SW_SHOWMAXIMIZED:
+        try:
+            placement_after = win32gui.GetWindowPlacement(catia_hwnd)
+            if placement_after[1] != win32con.SW_SHOWMAXIMIZED:
+                win32gui.ShowWindow(catia_hwnd, win32con.SW_MAXIMIZE)
+                logger.debug("safe_set_visible: 已恢复 CATIA 最大化状态")
+        except Exception as e:
+            logger.warning(f"safe_set_visible: 恢复最大化失败（已忽略）：{e}")
+
+
 def bring_catia_to_foreground() -> None:
     """将 CATIA V5 主窗口置于 Windows 前台。
 
@@ -121,7 +183,9 @@ def bring_catia_to_foreground() -> None:
 
     if catia_hwnd:
         try:
-            win32gui.ShowWindow(catia_hwnd, win32con.SW_RESTORE)
+            # 只在窗口最小化时才恢复，避免将最大化窗口变成普通窗口
+            if win32gui.IsIconic(catia_hwnd):  # IsIconic 检测窗口是否最小化
+                win32gui.ShowWindow(catia_hwnd, win32con.SW_RESTORE)
             win32gui.SetForegroundWindow(catia_hwnd)
             logger.debug(f"bring_catia_to_foreground: SetForegroundWindow hwnd={catia_hwnd}")
         except Exception as e:

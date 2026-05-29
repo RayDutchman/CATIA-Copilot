@@ -53,8 +53,9 @@ def _load_qss(name: str) -> str:
         return ""
 
 
-DARK_QSS  = _load_qss("dark.qss")
-LIGHT_QSS = _load_qss("light.qss")
+DARK_QSS   = _load_qss("dark.qss")
+LIGHT_QSS  = _load_qss("light.qss")
+NATIVE_QSS = _load_qss("native.qss")
 
 
 def _apply_dwm_dark_mode(dark: bool) -> None:
@@ -140,7 +141,7 @@ class ThemeManager:
         saved = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP).value(
             self._SETTINGS_KEY, None
         )
-        if saved in ("dark", "light"):
+        if saved in ("dark", "light", "native"):
             self._manual = saved
         # 安装事件过滤器，确保后续新打开的对话框也能获得正确的标题栏颜色
         app = QApplication.instance()
@@ -154,16 +155,27 @@ class ThemeManager:
         )
 
     def toggle(self) -> None:
-        """在深色 / 浅色之间切换并持久化。"""
-        new_mode = "light" if self._current_mode() == "dark" else "dark"
-        self._manual = new_mode
+        """在深色 / 浅色 / 原生之间循环切换并持久化。"""
+        cycle = {"dark": "light", "light": "native", "native": "dark"}
+        new_mode = cycle.get(self._current_mode(), "dark")
+        self.set_theme(new_mode)
+
+    def set_theme(self, name: str) -> None:
+        """设置指定主题并持久化。
+
+        :param name: ``'dark'`` | ``'light'`` | ``'native'``
+        """
+        if name not in ("dark", "light", "native"):
+            logging.warning("set_theme: 未知主题 %r，忽略", name)
+            return
+        self._manual = name
         QSettings(self._SETTINGS_ORG, self._SETTINGS_APP).setValue(
-            self._SETTINGS_KEY, new_mode
+            self._SETTINGS_KEY, name
         )
         self._apply()
 
     def current_mode(self) -> str:
-        """返回当前生效的主题名称：'dark' 或 'light'。"""
+        """返回当前生效的主题名称：``'dark'``、``'light'`` 或 ``'native'``。"""
         return self._current_mode()
 
     def _current_mode(self) -> str:
@@ -178,6 +190,24 @@ class ThemeManager:
             # 尚未调用 register()，暂不应用
             return
         mode = self._current_mode()
+        app = QApplication.instance()
+        if app is None:
+            return
+
+        # ── 原生主题：Windows 经典风格，与 CATIA V5 界面一致 ──────────────
+        if mode == "native":
+            app.setStyle("windows")
+            # native.qss 只含项目专属控件样式，占位符替换（仅日志字体用到）
+            native_qss = NATIVE_QSS \
+                .replace("@log_font_family", LOG_FONT_FAMILY) \
+                .replace("@log_font_size",   LOG_FONT_SIZE)
+            app.setStyleSheet(native_qss)
+            theme_signal.theme_changed.emit("native")
+            _apply_dwm_dark_mode(False)   # 原生主题固定浅色标题栏
+            return
+
+        # ── 深色 / 浅色主题：Fusion + qdarkstyle + 项目 overlay ──────────
+        app.setStyle("fusion")
 
         # ① 加载 qdarkstyle 基础层（同时注册 Qt 资源，使 :/qss_icons/... 路径生效）
         try:
@@ -218,9 +248,7 @@ class ThemeManager:
         qss = base_qss + "\n" + overlay_qss
 
         # 应用到整个 application，所有顶层窗口（包括 QDialog）均生效
-        app = QApplication.instance()
-        if app:
-            app.setStyleSheet(qss)
+        app.setStyleSheet(qss)
         # 通知订阅者（如 dialog 中的行着色逻辑）主题已切换
         theme_signal.theme_changed.emit(mode)
         # 通知 Windows DWM 将所有顶层窗口的系统标题栏切换为深/浅色

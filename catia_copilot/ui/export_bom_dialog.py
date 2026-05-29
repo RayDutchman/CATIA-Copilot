@@ -43,6 +43,11 @@ class ExportBomDialog(QDialog):
         self._use_active_doc: bool = self._settings.value("use_active_doc", False, type=bool)
         self._use_same_dir: bool = self._settings.value("use_same_dir", True, type=bool)
 
+        # 恢复窗口几何
+        saved_geom = self._settings.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+
         saved_custom = self._settings.value("custom_columns", [])
         if isinstance(saved_custom, str):
             saved_custom = [saved_custom]
@@ -507,3 +512,9 @@ class ExportBomDialog(QDialog):
                 )
         except Exception as exc:
             logger.warning(f"Failed to open path in Explorer: {exc}")
+
+
+    def closeEvent(self, event):  # noqa: N802
+        """关闭时保存窗口几何。"""
+        self._settings.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)

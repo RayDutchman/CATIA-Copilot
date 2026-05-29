@@ -128,6 +128,11 @@ class FindDependenciesDialog(QDialog):
 
         self._settings = QSettings("CATIACompanion", "FindDependenciesDialog")
 
+        # 恢复窗口几何
+        saved_geom = self._settings.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+
         # 各策略的 checkbox（固定存在，不随文件类型销毁重建；2A/2B 合并为一组）
         self._strategy_cbs: dict[str, QCheckBox] = {}
 
@@ -749,3 +754,9 @@ class FindDependenciesDialog(QDialog):
                 )
         except Exception as exc:
             logger.warning(f"打开路径失败: {exc}")
+
+
+    def closeEvent(self, event):  # noqa: N802
+        """关闭时保存窗口几何。"""
+        self._settings.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)

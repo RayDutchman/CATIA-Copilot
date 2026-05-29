@@ -1,0 +1,50 @@
+/* ═══════════════════════════════════════════════════════════════════
+   CATIA Copilot – 原生主题（Native / CATIA 风格）
+   
+   本文件配合 QApplication.setStyle("windows") 使用。
+   Qt 的 "windows" 风格会渲染出 Windows 经典 3D 控件外观（凸起按钮、
+   凹陷输入框、XP 调色板），与 CATIA V5 界面风格一致。
+   
+   本文件只写项目专属控件的最小样式，其余控件全部留空，
+   由 "windows" 风格渲染器完全接管。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 节标题标签 ─────────────────────────────────────────────────────── */
+QLabel#sectionLabel {
+    color: #444444;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 6px 0 2px 0;
+    background: transparent;
+}
+
+/* ── 提示标签 ───────────────────────────────────────────────────────── */
+QLabel#hintLabel {
+    color: #555555;
+    font-size: 9pt;
+    background: transparent;
+    margin-bottom: 4px;
+}
+
+/* ── CATIA 连接状态指示器 ───────────────────────────────────────────── */
+QLabel#catiaStatusLabel { padding: 0 8px; font-size: 8.5pt; color: #555555; }
+QLabel#catiaStatusLabel[catiaConnected="true"]   { color: #1a6b1a; }
+QLabel#catiaStatusLabel[catiaConnected="false"]  { color: #cc2200; }
+QLabel#catiaStatusLabel[catiaConnected="broken"] { color: #996600; }
+
+/* ── 日志面板（等宽字体，windows 风格不自动设置）───────────────────── */
+QPlainTextEdit#logView {
+    font-family: @log_font_family;
+    font-size: @log_font_size;
+}
+QLabel#logPathLabel {
+    color: #666666;
+    font-size: 8.5pt;
+    background: transparent;
+}
+
+/* ── 主界面功能按钮高度（windows 风格默认高度偏小）────────────────── */
+QTabWidget#mainTabWidget QPushButton {
+    min-height: 28px;
+}
