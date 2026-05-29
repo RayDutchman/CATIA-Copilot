@@ -47,7 +47,7 @@ WINEVENT_OUTOFCONTEXT       = 0x0000
 TIMER_DEBOUNCE      = 43
 DEBOUNCE_INTERVAL   = 50   # ms
 TIMER_SCAN_VIEWS    = 44
-SCAN_VIEWS_INTERVAL = 100  # ms
+SCAN_VIEWS_INTERVAL = 3000  # ms
 TIMER_SIGINT        = 99
 
 # ── ctypes ────────────────────────────────────────────────────────────────
