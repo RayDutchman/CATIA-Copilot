@@ -335,6 +335,12 @@ class PlmWorkbench(QMainWindow):
         self.resize(1080, 740)
         self.setMinimumSize(860, 560)
 
+        # 恢复窗口几何（位置和尺寸）
+        s = QSettings(_S_ORG, _S_WB)
+        saved_geom = s.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+
         try:
             from catia_copilot.ui.theme_manager import theme_manager
             theme_manager.register(self)
@@ -371,6 +377,12 @@ class PlmWorkbench(QMainWindow):
         # 窗口首次显示后，把右侧"连接日志"高度对齐到左侧"PLM 连接配置"
         if hasattr(self, "_grp_cfg") and hasattr(self, "_grp_conn_log"):
             self._grp_conn_log.setFixedHeight(self._grp_cfg.sizeHint().height())
+
+    def closeEvent(self, event):  # noqa: N802
+        """关闭时保存窗口几何（位置和尺寸）。"""
+        s = QSettings(_S_ORG, _S_WB)
+        s.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def _read_conn(self) -> tuple[str, str, str, str]:
         s = QSettings(_S_ORG, _S_PLM_CFG)

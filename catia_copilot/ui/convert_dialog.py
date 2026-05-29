@@ -80,6 +80,11 @@ class FileConvertDialog(QDialog):
         self._last_output_dir  = self._settings.value("last_output_dir", "")
         self._is_stamp_dialog  = settings_key == "StampPartTemplate"
 
+        # 恢复窗口几何（位置和尺寸）
+        saved_geom = self._settings.value("geometry")
+        if saved_geom:
+            self.restoreGeometry(saved_geom)
+
         # Cache accepted extensions once so dropEvent doesn't re-parse the filter string.
         self._accepted_exts: set[str] = {
             m.group(1).lower() for m in re.finditer(r"\*(\.\w+)", file_filter)
@@ -428,3 +433,8 @@ class FileConvertDialog(QDialog):
                 f"已成功导出 {success_count} / {total} 个文件。",
             )
         self.accept()
+
+    def closeEvent(self, event):  # noqa: N802
+        """关闭时保存窗口几何（位置和尺寸）。"""
+        self._settings.setValue("geometry", self.saveGeometry())
+        super().closeEvent(event)
