@@ -986,11 +986,20 @@ class CATIAEmbedManager:
         """根据菜单项 ID 调用对应的回调函数。"""
         logger.debug("_dispatch_menu_item cmd=%d view_hwnd=%s", cmd, view_hwnd)
         
-        # 处理宏文件 ID（3000-3999）
+        # 处理宏文件 ID（3000-3999）：把路径存到实例变量，通过 run_macro_file 回调派发到主线程
         if 3000 <= cmd < 4000:
             macro_path = getattr(self, "_macro_id_map", {}).get(cmd)
             if macro_path:
-                self._run_macro_file(macro_path)
+                self._current_macro_path = macro_path   # 主线程回调读取
+                cb = self._callbacks.get("run_macro_file")
+                if cb is not None:
+                    try:
+                        cb()
+                    except Exception:
+                        logger.exception("run_macro_file callback 调用失败")
+                else:
+                    # 无回调时降级：直接在后台线程运行（仅当 COM 已初始化为 STA 时有效）
+                    self._run_macro_file(macro_path)
             return
         
         if cmd == MENU_POS_RESET:

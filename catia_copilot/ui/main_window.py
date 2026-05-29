@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
                 "nut_plate_asm":   self._open_nut_plate_asm_from_embed,
                 "open_related":    self._open_related_from_embed,
                 "run_macro":       self._open_run_macro_from_embed,
+                "run_macro_file":  self._run_macro_file_from_embed,
                 "close":           self._close_embed_from_panel,
             },
             anchor=_anchor,
@@ -513,20 +514,13 @@ class MainWindow(QMainWindow):
         )
         btn_mass_props.clicked.connect(self._open_mass_props_dialog)
 
-        btn_plm_sync = QPushButton("同步 BOM 到 PLM")
-        btn_plm_sync.setToolTip(
-            "将当前 CATIA 产品结构（BOM）同步到 DocdokuPLM 服务端，\n"
-            "自动创建零件、写入属性并上传 STEP 几何文件"
-        )
-        btn_plm_sync.clicked.connect(self._open_plm_sync_dialog)
-
         btn_plm_workbench = QPushButton("PLM 工作台")
         btn_plm_workbench.setToolTip(
             "打开 PLM 工作台——整合连接管理、增量同步、Tag 规则、产品注册与历史记录"
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_sync, btn_plm_workbench):
+        for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -819,6 +813,14 @@ class MainWindow(QMainWindow):
             dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             dlg.destroyed.connect(lambda _=None, a=attr: self._on_dialog_destroyed(a))
             setattr(self, attr, dlg)
+            
+            # setParent(None) 会重建原生窗口并重置位置，在此之后重新恢复几何，
+            # 确保对话框出现在用户上次关闭时的位置和尺寸
+            from PySide6.QtCore import QByteArray
+            if hasattr(dlg, "_settings"):
+                saved = dlg._settings.value("geometry")
+                if isinstance(saved, QByteArray) and not saved.isEmpty():
+                    dlg.restoreGeometry(saved)
         
         dlg.show()
         dlg.raise_()
@@ -1012,6 +1014,11 @@ class MainWindow(QMainWindow):
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("run_macro", view_hwnd)
 
+    def _run_macro_file_from_embed(self) -> None:
+        """嵌入面板菜单 → 直接运行指定宏文件（从后台线程回调，派发到主线程）。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("run_macro_file", view_hwnd)
+
     @Slot(str, int)
     def _handle_embed_action(self, action: str, view_hwnd: int) -> None:
         """处理嵌入面板回调信号（在主线程中执行）。
@@ -1039,6 +1046,7 @@ class MainWindow(QMainWindow):
             "nut_plate_asm":   self._do_open_nut_plate_asm,
             "open_related":    self._do_open_related,
             "run_macro":       self._do_open_run_macro,
+            "run_macro_file":  self._do_run_macro_file,
         }
         handler = action_map.get(action)
         if handler:
@@ -1122,6 +1130,15 @@ class MainWindow(QMainWindow):
     def _do_open_run_macro(self) -> None:
         """在主线程弹出运行宏菜单。"""
         self._show_macro_menu()
+
+    @Slot()
+    def _do_run_macro_file(self) -> None:
+        """在主线程直接运行嵌入面板选中的宏文件。"""
+        macro_path_str = getattr(self._embed_manager, "_current_macro_path", None)
+        if not macro_path_str:
+            logger.warning("_do_run_macro_file: 未找到宏文件路径")
+            return
+        self._run_macro(Path(macro_path_str))
 
     def _on_embed_position_changed(self, anchor: str, dx: int, dy: int) -> None:
         """
