@@ -44,6 +44,7 @@ from catia_copilot.ui.bom_edit_dialog import BomEditDialog
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
+from catia_copilot.ui.catia_sidebar import CATIASidebarManager
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,10 @@ class MainWindow(QMainWindow):
 
         # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
         theme_manager.register(self)
+
+        # CATIA 吸附边栏管理器（默认关闭，用户在"≡"页手动开启）
+        self._sidebar_manager = CATIASidebarManager(self)
+        self._sidebar_manager.sidebar_mode_changed.connect(self._on_sidebar_mode_changed)
 
     # ── CATIA 连接状态指示器 ──────────────────────────────────────────────
 
@@ -636,6 +641,14 @@ class MainWindow(QMainWindow):
         btn_log.clicked.connect(self._toggle_log_from_menu)
         layout.addWidget(btn_log)
 
+        self._btn_sidebar = QPushButton("吸附到 CATIA 侧边  ▶")
+        self._btn_sidebar.setToolTip(
+            "开启后，本窗口将自动贴靠在 CATIA V5 主窗口右侧并随其联动移动\n"
+            "（需要 CATIA V5 正在运行）"
+        )
+        self._btn_sidebar.clicked.connect(self._toggle_sidebar)
+        layout.addWidget(self._btn_sidebar)
+
         btn_diag = QPushButton("CATIA 连接诊断")
         btn_diag.setToolTip("显示 CATIA COM 连接的详细诊断信息")
         btn_diag.clicked.connect(self._show_catia_diagnostics)
@@ -741,6 +754,33 @@ class MainWindow(QMainWindow):
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
+
+    # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
+
+    def _toggle_sidebar(self) -> None:
+        """切换 CATIA 吸附边栏模式的开关。"""
+        if self._sidebar_manager.is_active or self._sidebar_manager._timer.isActive():
+            self._sidebar_manager.stop()
+            self._btn_sidebar.setText("吸附到 CATIA 侧边  ▶")
+            self.statusBar().showMessage("已关闭 CATIA 吸附模式", 3000)
+        else:
+            self._sidebar_manager.start()
+            self._btn_sidebar.setText("取消吸附  ✕")
+            self.statusBar().showMessage("已开启 CATIA 吸附模式，等待 CATIA V5 窗口…", 3000)
+
+    def _on_sidebar_mode_changed(self, active: bool) -> None:
+        """吸附状态改变时更新状态栏提示。"""
+        if active:
+            self.statusBar().showMessage("✔ 已吸附到 CATIA V5 右侧", 4000)
+        else:
+            self.statusBar().showMessage("CATIA 未检测到，等待中…", 3000)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        """用户手动调整宽度时同步记录，供吸附模式复用。"""
+        super().resizeEvent(event)
+        if not self._sidebar_manager.is_active:
+            # 非吸附状态下记住用户设置的宽度
+            self._sidebar_manager._sidebar_width = self.width()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         """主窗口关闭时，同时关闭所有通过 _show_dialog 打开的子窗口。
