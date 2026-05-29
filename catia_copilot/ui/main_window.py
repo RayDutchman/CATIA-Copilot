@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
-from PySide6.QtCore import Qt, QTimer, QRect
+from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal
 
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
@@ -45,12 +45,17 @@ from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
 from catia_copilot.ui.catia_sidebar import CATIASidebarManager
+from catia_copilot.ui.catia_embed import CATIAEmbedManager
 
 logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
     """主应用程序窗口。"""
+
+    # 嵌入面板回调信号（从后台线程 emit，自动投递到主线程）
+    # 参数：(action_key, view_hwnd)
+    _embed_action_signal = Signal(str, int)
 
     # 快速运行宏支持 CATScript（.catvbs / .catscript）和 VBA（.catvba）文件。
     _MACRO_EXTENSIONS: frozenset[str] = frozenset({".catvbs", ".catscript", ".catvba"})
@@ -60,6 +65,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
         self.setMinimumSize(540, 420)
+
+        # 连接嵌入面板回调信号到槽（必须在 _embed_manager 创建前）
+        self._embed_action_signal.connect(self._handle_embed_action)
 
         self._build_ui()
         self._build_connection_indicator()
@@ -71,6 +79,39 @@ class MainWindow(QMainWindow):
         # CATIA 吸附边栏管理器（默认关闭，用户在"≡"页手动开启）
         self._sidebar_manager = CATIASidebarManager(self)
         self._sidebar_manager.sidebar_mode_changed.connect(self._on_sidebar_mode_changed)
+
+        # CATIA 3D 视图嵌入管理器（默认关闭）
+        # 从 QSettings 读取上次保存的面板位置，首次使用时取模块默认值
+        from catia_copilot.ui.catia_embed import (
+            DEFAULT_ANCHOR, DEFAULT_ANCHOR_DX, DEFAULT_ANCHOR_DY,
+        )
+        _embed_settings = QSettings("CATIACopilot", "EmbedPanel")
+        _anchor    = _embed_settings.value("position/anchor",    DEFAULT_ANCHOR,    type=str)
+        _anchor_dx = _embed_settings.value("position/anchor_dx", DEFAULT_ANCHOR_DX, type=int)
+        _anchor_dy = _embed_settings.value("position/anchor_dy", DEFAULT_ANCHOR_DY, type=int)
+        self._embed_manager = CATIAEmbedManager(
+            callbacks={
+                "bom_edit":        self._open_bom_dialog_from_embed,
+                "bom_export":      self._open_export_bom_from_embed,
+                "mass_props":      self._open_mass_props_from_embed,
+                "plm_sync":        self._open_plm_sync_from_embed,
+                "plm_workbench":   self._open_plm_workbench_from_embed,
+                "export_pdf":      self._open_export_pdf_from_embed,
+                "export_stp":      self._open_export_stp_from_embed,
+                "drawing_new":     self._open_drawing_new_from_embed,
+                "drawing_refresh": self._open_drawing_refresh_from_embed,
+                "stamp_template":  self._open_stamp_template_from_embed,
+                "fastener_asm":    self._open_fastener_asm_from_embed,
+                "nut_plate_asm":   self._open_nut_plate_asm_from_embed,
+                "open_related":    self._open_related_from_embed,
+                "run_macro":       self._open_run_macro_from_embed,
+                "close":           self._close_embed_from_panel,
+            },
+            anchor=_anchor,
+            anchor_dx=_anchor_dx,
+            anchor_dy=_anchor_dy,
+            position_changed_callback=self._on_embed_position_changed,
+        )
 
     # ── CATIA 连接状态指示器 ──────────────────────────────────────────────
 
@@ -641,13 +682,14 @@ class MainWindow(QMainWindow):
         btn_log.clicked.connect(self._toggle_log_from_menu)
         layout.addWidget(btn_log)
 
-        self._btn_sidebar = QPushButton("吸附到 CATIA 侧边  ▶")
-        self._btn_sidebar.setToolTip(
-            "开启后，本窗口将自动贴靠在 CATIA V5 主窗口右侧并随其联动移动\n"
+        self._btn_embed = QPushButton("嵌入 3D 视图按钮  ▶")
+        self._btn_embed.setToolTip(
+            "开启后，在 CATIA V5 每个 3D 视图右上角显示功能菜单按钮\n"
+            "点击按钮可快速访问 BOM、导出、图纸、工具等功能\n"
             "（需要 CATIA V5 正在运行）"
         )
-        self._btn_sidebar.clicked.connect(self._toggle_sidebar)
-        layout.addWidget(self._btn_sidebar)
+        self._btn_embed.clicked.connect(self._toggle_embed)
+        layout.addWidget(self._btn_embed)
 
         btn_diag = QPushButton("CATIA 连接诊断")
         btn_diag.setToolTip("显示 CATIA COM 连接的详细诊断信息")
@@ -719,14 +761,8 @@ class MainWindow(QMainWindow):
     def _show_dialog(self, attr: str, factory: Callable[[], QDialog]) -> None:
         """以非模态方式打开对话框，若已存在则将其置于前台。
 
-        所有通过此方法打开的对话框均被设置为独立顶级窗口，使其在 Windows
-        任务栏中拥有独立条目并可单独最小化，同时仍与主窗口归属同一应用程序分组。
-
-        关键点：仅调用 setWindowFlags() 无法让对话框在任务栏独立显示，因为
-        dialog 仍持有 Qt 父窗口引用，Qt 在创建原生窗口时会将父窗口作为 Win32
-        "Owner 窗口"传给 CreateWindowEx。Windows 规定有 Owner 的窗口不会在
-        任务栏单独出现。必须通过 setParent(None, flags) 同时清除父引用并设置
-        窗口类型，确保原生窗口创建时无 Owner，从而获得独立的任务栏条目。
+        所有对话框均为独立顶级窗口，在任务栏有独立条目，始终浮在 CATIA 之前，
+        并通过定时器监听 CATIA 状态实现跟随最小化/还原。
 
         :param attr: 用于在 MainWindow 上缓存对话框实例的属性名。
         :param factory: 无参可调用对象，返回新的 QDialog 实例。
@@ -734,14 +770,12 @@ class MainWindow(QMainWindow):
         dlg = getattr(self, attr, None)
         if dlg is None:
             dlg = factory()
-            # setParent(None, flags) 同时：
-            #   1. 清除 Qt 父引用（使 Win32 原生窗口创建时无 Owner）
-            #   2. 设置 Window 类型和标准按钮标志
-            # 这是使对话框出现在任务栏的必要条件；单独调用 setWindowFlags()
-            # 无效，因为那不会断开已有的 Qt 父子关系和 Win32 Owner 关联。
+            
+            # 设置为独立顶级窗口，始终置顶
             dlg.setParent(
                 None,
                 Qt.WindowType.Window
+                | Qt.WindowType.WindowStaysOnTopHint
                 | Qt.WindowType.WindowTitleHint
                 | Qt.WindowType.WindowSystemMenuHint
                 | Qt.WindowType.WindowCloseButtonHint
@@ -751,9 +785,77 @@ class MainWindow(QMainWindow):
             dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             dlg.destroyed.connect(lambda _=None, a=attr: setattr(self, a, None))
             setattr(self, attr, dlg)
+        
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
+        
+        # 启动 CATIA 状态监听定时器（如果尚未启动）
+        self._start_catia_monitor()
+
+    def _start_catia_monitor(self) -> None:
+        """启动 CATIA 窗口状态监听定时器，实现对话框跟随 CATIA 最小化/还原。"""
+        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
+            return
+        
+        self._catia_monitor_timer = QTimer(self)
+        self._catia_monitor_timer.timeout.connect(self._check_catia_state)
+        self._catia_monitor_timer.start(500)  # 每 500ms 检查一次
+        self._catia_was_minimized = False
+        self._hidden_dialogs = set()  # 记录因 CATIA 最小化而隐藏的对话框
+        logger.debug("_start_catia_monitor: 已启动 CATIA 状态监听")
+    
+    def _check_catia_state(self) -> None:
+        """检查 CATIA 窗口状态，同步对话框的显示/隐藏。"""
+        try:
+            import win32gui
+            import win32con
+        except ImportError:
+            return
+        
+        # 查找 CATIA 主窗口
+        catia_hwnd = 0
+        def _find_catia(hwnd: int, _) -> bool:
+            nonlocal catia_hwnd
+            try:
+                if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
+                    catia_hwnd = hwnd
+                    return False
+            except Exception:
+                pass
+            return True
+        
+        try:
+            win32gui.EnumWindows(_find_catia, None)
+        except Exception:
+            pass
+        
+        if not catia_hwnd:
+            return
+        
+        # 检查 CATIA 是否最小化
+        is_minimized = win32gui.IsIconic(catia_hwnd)
+        
+        # 状态变化时同步所有对话框
+        if is_minimized != self._catia_was_minimized:
+            self._catia_was_minimized = is_minimized
+            
+            if is_minimized:
+                # CATIA 最小化：隐藏所有可见对话框，并记录它们
+                self._hidden_dialogs.clear()
+                for attr, value in vars(self).items():
+                    if attr.startswith("_dlg_") and isinstance(value, QDialog) and value.isVisible():
+                        value.hide()
+                        self._hidden_dialogs.add(attr)
+                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏对话框 {attr}")
+            else:
+                # CATIA 还原：恢复之前隐藏的对话框
+                for attr in list(self._hidden_dialogs):
+                    value = getattr(self, attr, None)
+                    if value is not None and isinstance(value, QDialog):
+                        value.show()
+                        logger.debug(f"_check_catia_state: CATIA 还原，显示对话框 {attr}")
+                self._hidden_dialogs.clear()
 
     # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
 
@@ -761,11 +863,9 @@ class MainWindow(QMainWindow):
         """切换 CATIA 吸附边栏模式的开关。"""
         if self._sidebar_manager.is_active or self._sidebar_manager._timer.isActive():
             self._sidebar_manager.stop()
-            self._btn_sidebar.setText("吸附到 CATIA 侧边  ▶")
             self.statusBar().showMessage("已关闭 CATIA 吸附模式", 3000)
         else:
             self._sidebar_manager.start()
-            self._btn_sidebar.setText("取消吸附  ✕")
             self.statusBar().showMessage("已开启 CATIA 吸附模式，等待 CATIA V5 窗口…", 3000)
 
     def _on_sidebar_mode_changed(self, active: bool) -> None:
@@ -775,6 +875,230 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("CATIA 未检测到，等待中…", 3000)
 
+    # ── CATIA 3D 视图嵌入 ─────────────────────────────────────────────────
+
+    def _toggle_embed(self) -> None:
+        """切换 CATIA 3D 视图嵌入面板的开关。"""
+        if self._embed_manager.is_active:
+            self._embed_manager.stop()
+            self._btn_embed.setText("嵌入 3D 视图按钮  \u25b6")
+            self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
+        else:
+            ok = self._embed_manager.start()
+            if ok:
+                self._btn_embed.setText("关闭嵌入按钮  \u2715")
+                self.statusBar().showMessage("\u2714 已在 CATIA 3D 视图中嵌入菜单面板", 4000)
+            else:
+                self.statusBar().showMessage("未检测到 CATIA V5，请先启动 CATIA", 4000)
+
+    # 以下四个方法均在 win32 后台线程中被调用，
+    # 通过 QTimer.singleShot(0, ...) 安全派发到 Qt 主线程。
+
+    def _open_bom_dialog_from_embed(self) -> None:
+        """嵌入面板菜单 → BOM 属性补全。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("bom_edit", view_hwnd)
+
+    def _open_export_bom_from_embed(self) -> None:
+        """嵌入面板菜单 → BOM 导出。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("bom_export", view_hwnd)
+
+    def _open_mass_props_from_embed(self) -> None:
+        """嵌入面板菜单 → 质量特性。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("mass_props", view_hwnd)
+
+    def _close_embed_from_panel(self) -> None:
+        """嵌入面板菜单 → 关闭面板（同步更新主窗口按钮文字）。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("close", view_hwnd)
+
+    def _open_plm_sync_from_embed(self) -> None:
+        """嵌入面板菜单 → 同步 BOM 到 PLM。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("plm_sync", view_hwnd)
+
+    def _open_plm_workbench_from_embed(self) -> None:
+        """嵌入面板菜单 → PLM 工作台。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("plm_workbench", view_hwnd)
+
+    def _open_export_pdf_from_embed(self) -> None:
+        """嵌入面板菜单 → CATDrawing → PDF。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("export_pdf", view_hwnd)
+
+    def _open_export_stp_from_embed(self) -> None:
+        """嵌入面板菜单 → CATPart/CATProduct → STP。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("export_stp", view_hwnd)
+
+    def _open_drawing_new_from_embed(self) -> None:
+        """嵌入面板菜单 → 新建图纸。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("drawing_new", view_hwnd)
+
+    def _open_drawing_refresh_from_embed(self) -> None:
+        """嵌入面板菜单 → 刷新图纸。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("drawing_refresh", view_hwnd)
+
+    def _open_stamp_template_from_embed(self) -> None:
+        """嵌入面板菜单 → 刷写零件模板。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("stamp_template", view_hwnd)
+
+    def _open_fastener_asm_from_embed(self) -> None:
+        """嵌入面板菜单 → 快速装配紧固件。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("fastener_asm", view_hwnd)
+
+    def _open_nut_plate_asm_from_embed(self) -> None:
+        """嵌入面板菜单 → 快速装配托板螺母。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("nut_plate_asm", view_hwnd)
+
+    def _open_related_from_embed(self) -> None:
+        """嵌入面板菜单 → 打开关联图纸/零件。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("open_related", view_hwnd)
+
+    def _open_run_macro_from_embed(self) -> None:
+        """嵌入面板菜单 → 运行宏…。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("run_macro", view_hwnd)
+
+    @Slot(str, int)
+    def _handle_embed_action(self, action: str, view_hwnd: int) -> None:
+        """处理嵌入面板回调信号（在主线程中执行）。
+        
+        Parameters
+        ----------
+        action : str
+            动作 key（如 "bom_edit"）
+        view_hwnd : int
+            触发该动作的 MDI 子窗口句柄（0 表示从主窗口按钮触发）
+        """
+        action_map = {
+            "bom_edit":        self._do_open_bom_dialog,
+            "bom_export":      self._do_open_export_bom,
+            "mass_props":      self._do_open_mass_props,
+            "close":           self._do_close_embed,
+            "plm_sync":        self._do_open_plm_sync,
+            "plm_workbench":   self._do_open_plm_workbench,
+            "export_pdf":      self._do_open_export_pdf,
+            "export_stp":      self._do_open_export_stp,
+            "drawing_new":     self._do_open_drawing_new,
+            "drawing_refresh": self._do_open_drawing_refresh,
+            "stamp_template":  self._do_open_stamp_template,
+            "fastener_asm":    self._do_open_fastener_asm,
+            "nut_plate_asm":   self._do_open_nut_plate_asm,
+            "open_related":    self._do_open_related,
+            "run_macro":       self._do_open_run_macro,
+        }
+        handler = action_map.get(action)
+        if handler:
+            handler()
+        else:
+            logger.warning("未知的嵌入面板动作: %s", action)
+
+    @Slot()
+    def _do_open_bom_dialog(self) -> None:
+        """在主线程打开 BomEditDialog。"""
+        self._open_bom_edit_dialog()
+
+    @Slot()
+    def _do_open_export_bom(self) -> None:
+        """在主线程打开 ExportBomDialog。"""
+        self._open_export_bom_dialog()
+
+    @Slot()
+    def _do_open_mass_props(self) -> None:
+        """在主线程打开 MassPropsDialog。"""
+        self._open_mass_props_dialog()
+
+    @Slot()
+    def _do_close_embed(self) -> None:
+        """在主线程停止嵌入管理器并更新按钮文字。"""
+        self._embed_manager.stop()
+        self._btn_embed.setText("嵌入 3D 视图按钮  \u25b6")
+        self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
+
+    @Slot()
+    def _do_open_plm_sync(self) -> None:
+        """在主线程打开 PLM 同步对话框。"""
+        self._open_plm_sync_dialog()
+
+    @Slot()
+    def _do_open_plm_workbench(self) -> None:
+        """在主线程打开 PLM 工作台。"""
+        self._open_plm_workbench()
+
+    @Slot()
+    def _do_open_export_pdf(self) -> None:
+        """在主线程打开 CATDrawing → PDF 对话框。"""
+        self._open_convert_drawing_dialog()
+
+    @Slot()
+    def _do_open_export_stp(self) -> None:
+        """在主线程打开 CATPart/CATProduct → STP 对话框。"""
+        self._open_convert_part_dialog()
+
+    @Slot()
+    def _do_open_drawing_new(self) -> None:
+        """在主线程打开新建图纸对话框。"""
+        self._open_generate_drawing_dialog_python()
+
+    @Slot()
+    def _do_open_drawing_refresh(self) -> None:
+        """在主线程打开刷新图纸对话框。"""
+        self._open_refresh_drawing_dialog_python()
+
+    @Slot()
+    def _do_open_stamp_template(self) -> None:
+        """在主线程打开刷写零件模板对话框。"""
+        self._open_stamp_part_template_dialog()
+
+    @Slot()
+    def _do_open_fastener_asm(self) -> None:
+        """在主线程运行快速装配紧固件宏。"""
+        self._open_fastener_assembly_dialog()
+
+    @Slot()
+    def _do_open_nut_plate_asm(self) -> None:
+        """在主线程运行快速装配托板螺母宏。"""
+        self._open_nut_plate_assembly_dialog()
+
+    @Slot()
+    def _do_open_related(self) -> None:
+        """在主线程打开关联图纸/零件。"""
+        self._open_related_file_for_active_doc()
+
+    @Slot()
+    def _do_open_run_macro(self) -> None:
+        """在主线程弹出运行宏菜单。"""
+        self._show_macro_menu()
+
+    def _on_embed_position_changed(self, anchor: str, dx: int, dy: int) -> None:
+        """
+        嵌入面板位置变化后的回调（在 win32 后台线程中调用）。
+        通过 QTimer.singleShot 派发到主线程写入 QSettings。
+        """
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(
+            0,
+            lambda: self._save_embed_position(anchor, dx, dy),
+        )
+
+    def _save_embed_position(self, anchor: str, dx: int, dy: int) -> None:
+        """在主线程将面板位置持久化到 QSettings。"""
+        s = QSettings("CATIACopilot", "EmbedPanel")
+        s.setValue("position/anchor",    anchor)
+        s.setValue("position/anchor_dx", dx)
+        s.setValue("position/anchor_dy", dy)
+        s.sync()
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         """用户手动调整宽度时同步记录，供吸附模式复用。"""
         super().resizeEvent(event)
@@ -783,15 +1107,29 @@ class MainWindow(QMainWindow):
             self._sidebar_manager._sidebar_width = self.width()
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        """主窗口关闭时，同时关闭所有通过 _show_dialog 打开的子窗口。
+        """主窗口关闭时，清理所有资源：对话框、嵌入面板、吸附边栏、定时器。
 
         由于子窗口通过 ``setParent(None, ...)`` 清除了 Qt 父引用（以获得独立
         的任务栏条目），Qt 的默认父子关闭机制对其无效，需在此手动关闭。
         所有子窗口均设有 ``WA_DeleteOnClose``，close() 会触发其销毁和清理。
         """
+        # 停止嵌入面板
+        if hasattr(self, "_embed_manager"):
+            self._embed_manager.stop()
+        
+        # 停止吸附边栏
+        if hasattr(self, "_sidebar_manager"):
+            self._sidebar_manager.stop()
+        
+        # 停止 CATIA 状态监听定时器
+        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
+            self._catia_monitor_timer.stop()
+        
+        # 关闭所有对话框
         for attr, value in list(vars(self).items()):
             if attr.startswith("_dlg_") and isinstance(value, QDialog):
                 value.close()
+        
         super().closeEvent(event)
 
     # ── 宏辅助方法 ────────────────────────────────────────────────────────
