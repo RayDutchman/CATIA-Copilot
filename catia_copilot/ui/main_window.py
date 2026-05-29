@@ -714,6 +714,11 @@ class MainWindow(QMainWindow):
         btn_about.clicked.connect(self._show_about)
         layout.addWidget(btn_about)
 
+        btn_template = QPushButton("模板对话框")
+        btn_template.setToolTip("打开空对话框模板（用于测试）")
+        btn_template.clicked.connect(self._open_template_dialog)
+        layout.addWidget(btn_template)
+
         layout.addStretch()
         return self._make_page(body)
 
@@ -759,6 +764,11 @@ class MainWindow(QMainWindow):
     def _show_help(self) -> None:
         """显示帮助文档对话框。"""
         self._show_dialog("_dlg_help", lambda: HelpDialog(self))
+
+    def _open_template_dialog(self) -> None:
+        """打开模板对话框。"""
+        from catia_copilot.ui.template_dialog import TemplateDialog
+        self._show_dialog("_dlg_template", lambda: TemplateDialog(self))
 
     # ── 非模态对话框管理 ──────────────────────────────────────────────────
 
