@@ -901,6 +901,7 @@ class CATIAEmbedManager:
 
         MF_STRING    = 0x0000
         MF_SEPARATOR = 0x0800
+        MF_POPUP     = 0x0010
 
         def append(menu, flags, item_id, text):
             ctypes.windll.user32.AppendMenuW(menu, flags, item_id, text)
@@ -921,7 +922,23 @@ class CATIAEmbedManager:
         append(hmenu, MF_STRING,    MENU_FASTENER_ASM,   "快速装配紧固件")
         append(hmenu, MF_STRING,    MENU_NUT_PLATE_ASM,  "快速装配托板螺母")
         append(hmenu, MF_STRING,    MENU_OPEN_RELATED,   "打开关联图纸/零件")
-        append(hmenu, MF_STRING,    MENU_RUN_MACRO,      "运行宏…")
+        
+        # 创建"运行宏"子菜单
+        macro_submenu = ctypes.windll.user32.CreatePopupMenu()
+        macro_files = self._get_macro_files()
+        self._macro_id_map = {}  # 临时映射：菜单ID → 宏文件路径
+        
+        if macro_files:
+            for idx, macro_path in enumerate(macro_files):
+                macro_id = 3000 + idx  # 动态ID范围 3000-3999
+                self._macro_id_map[macro_id] = str(macro_path)
+                append(macro_submenu, MF_STRING, macro_id, macro_path.name)
+        else:
+            append(macro_submenu, MF_STRING, 0, "（未找到宏文件）")
+            ctypes.windll.user32.EnableMenuItem(macro_submenu, 0, 0x0001)  # MF_GRAYED
+        
+        append(hmenu, MF_POPUP, macro_submenu, "运行宏")
+        
         append(hmenu, MF_SEPARATOR, 0,                   None)
         append(hmenu, MF_STRING,    MENU_POS_RESET,      "恢复默认位置")
         append(hmenu, MF_SEPARATOR, 0,                   None)
@@ -941,15 +958,41 @@ class CATIAEmbedManager:
             TPM_RETURNCMD | TPM_NONOTIFY,
             x, y, 0, self._host_hwnd, None,
         )
+        ctypes.windll.user32.DestroyMenu(macro_submenu)
         ctypes.windll.user32.DestroyMenu(hmenu)
 
         logger.debug("TrackPopupMenu 返回 cmd=%s view_hwnd=%s", cmd, view_hwnd)
         if cmd:
             self._dispatch_menu_item(cmd, view_hwnd)
 
+    def _get_macro_files(self):
+        """扫描宏文件夹，返回所有宏文件的 Path 列表。"""
+        from pathlib import Path
+        try:
+            from catia_copilot.utils import resource_path
+            macros_dir = resource_path("macros")
+            if not macros_dir.is_dir():
+                return []
+            
+            MACRO_EXTENSIONS = frozenset({".catvbs", ".catscript", ".catvba"})
+            return sorted(
+                f for f in macros_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in MACRO_EXTENSIONS
+            )
+        except Exception:
+            return []
+
     def _dispatch_menu_item(self, cmd: int, view_hwnd: int | None):
         """根据菜单项 ID 调用对应的回调函数。"""
         logger.debug("_dispatch_menu_item cmd=%d view_hwnd=%s", cmd, view_hwnd)
+        
+        # 处理宏文件 ID（3000-3999）
+        if 3000 <= cmd < 4000:
+            macro_path = getattr(self, "_macro_id_map", {}).get(cmd)
+            if macro_path:
+                self._run_macro_file(macro_path)
+            return
+        
         if cmd == MENU_POS_RESET:
             self._reset_position()
             return
@@ -968,7 +1011,6 @@ class CATIAEmbedManager:
             MENU_FASTENER_ASM:   "fastener_asm",
             MENU_NUT_PLATE_ASM:  "nut_plate_asm",
             MENU_OPEN_RELATED:   "open_related",
-            MENU_RUN_MACRO:      "run_macro",
             MENU_CLOSE:          "close",
         }
         key = mapping.get(cmd)
@@ -1000,6 +1042,17 @@ class CATIAEmbedManager:
         else:
             logger.debug("无回调 key=%s，降级子进程", key)
             self._launch_subprocess_fallback(key)
+
+    def _run_macro_file(self, macro_path: str):
+        """运行指定的宏文件。"""
+        from pathlib import Path
+        try:
+            from catia_copilot.catia.connection import get_catia_v5_application
+            app = get_catia_v5_application()
+            app.SystemService.ExecuteScript(str(Path(macro_path).resolve()))
+            logger.info(f"已运行宏: {macro_path}")
+        except Exception as e:
+            logger.exception(f"运行宏失败: {macro_path}")
 
     def _reset_position(self):
         """恢复默认锚点和偏移量，立即刷新面板，并持久化。"""

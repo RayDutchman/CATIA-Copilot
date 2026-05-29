@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
-from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal
+from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint
 
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
@@ -717,8 +717,11 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return self._make_page(body)
 
-    def _show_macro_menu(self) -> None:
-        """在「运行宏…」按钮下方弹出宏文件菜单。"""
+    def _show_macro_menu(self, pos: QPoint | None = None) -> None:
+        """在指定位置或「运行宏…」按钮下方弹出宏文件菜单。
+        
+        :param pos: 菜单弹出位置（全局坐标），None 时使用主窗口按钮位置
+        """
         macros_dir = self._macros_dir()
         macro_files: list[Path] = []
         if macros_dir.is_dir():
@@ -737,7 +740,8 @@ class MainWindow(QMainWindow):
             empty = menu.addAction("（未找到宏文件）")
             empty.setEnabled(False)
 
-        pos = self._btn_run_macro.mapToGlobal(self._btn_run_macro.rect().bottomLeft())
+        if pos is None:
+            pos = self._btn_run_macro.mapToGlobal(self._btn_run_macro.rect().bottomLeft())
         menu.exec(pos)
 
     def _toggle_log_window(self, checked: bool) -> None:
