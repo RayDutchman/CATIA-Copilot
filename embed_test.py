@@ -31,7 +31,7 @@ MARGIN_TOP   = 4     # 距 view 客户区顶部
 
 ID_BTN_BOM = 1001
 
-WM_APP_UPDATE = win32con.WM_APP + 1
+WM_APP_UPDATE = win32con.WM_APP + 1  # 保留但不再使用（直接在回调里更新）
 
 VIEW_CLASSES = (
     "CATFrmNavigGraphicWindow",
@@ -47,7 +47,7 @@ WINEVENT_OUTOFCONTEXT       = 0x0000
 TIMER_DEBOUNCE      = 43
 DEBOUNCE_INTERVAL   = 50   # ms
 TIMER_SCAN_VIEWS    = 44
-SCAN_VIEWS_INTERVAL = 500  # ms
+SCAN_VIEWS_INTERVAL = 100  # ms
 TIMER_SIGINT        = 99
 
 # ── ctypes ────────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ _state = {
     "host_hwnd":       None,
     "hook_handles":    [],
     "_cb_ref":         None,
-    "_update_pending": False,
+    "_update_pending": False,  # 保留字段，回调直接更新后不再使用
     "panels":          {},   # view_hwnd → panel_hwnd
     "hfont":           None,
 }
@@ -197,7 +197,7 @@ def create_panel_for_view(view_hwnd):
 
     panel_hwnd = win32gui.CreateWindow(
         "CATIACopilotPanel", "",
-        win32con.WS_CHILD | win32con.WS_CLIPSIBLINGS,
+        win32con.WS_CHILD | win32con.WS_CLIPSIBLINGS,  # 先隐藏，由 update_all_panels 决定显隐
         panel_x, panel_y, PANEL_W, PANEL_H,
         mdi_hwnd, 0, hinstance, None,
     )
@@ -225,19 +225,23 @@ def create_panel_for_view(view_hwnd):
     cls = win32gui.GetClassName(view_hwnd)
     print(f"  创建面板 view={view_hwnd}({cls}) panel={panel_hwnd} btn={btn_hwnd}")
     print(f"    MDI坐标=({panel_x},{panel_y})")
+    # 立即触发一次 update，决定是否显示
+    update_all_panels()
 
 
 def update_all_panels():
     """
-    更新所有面板位置和 Z 序。
-    每次都重新计算坐标并刷新 hWndInsertAfter=view_hwnd，
-    防止 CATIA 激活重排后面板被压到 view 下方。
+    更新所有面板：只显示当前 Z 序最顶的 view 对应的面板，其余隐藏。
+    对可见面板每次刷新坐标（view 可能移动/缩放）。
     """
     _state["_update_pending"] = False
     mdi_hwnd = _state["mdi_hwnd"]
     if not mdi_hwnd:
         return
+
+    top_view = _get_top_view(mdi_hwnd)
     dead = []
+
     for view_hwnd, panel_hwnd in list(_state["panels"].items()):
         if not win32gui.IsWindow(view_hwnd) or not win32gui.IsWindowVisible(view_hwnd):
             dead.append(view_hwnd)
@@ -247,21 +251,46 @@ def update_all_panels():
                 pass
             continue
         try:
-            panel_x, panel_y = calc_panel_pos(view_hwnd, mdi_hwnd)
-            # 每次都用 HWND_TOP 刷新 Z 序，保持面板在所有 MDI 子窗口最上层
-            win32gui.SetWindowPos(
-                panel_hwnd, win32con.HWND_TOP,
-                panel_x, panel_y, PANEL_W, PANEL_H,
-                win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE,
-            )
+            if view_hwnd == top_view:
+                panel_x, panel_y = calc_panel_pos(view_hwnd, mdi_hwnd)
+                win32gui.SetWindowPos(
+                    panel_hwnd, win32con.HWND_TOP,
+                    panel_x, panel_y, PANEL_W, PANEL_H,
+                    win32con.SWP_SHOWWINDOW | win32con.SWP_NOACTIVATE,
+                )
+            else:
+                win32gui.ShowWindow(panel_hwnd, win32con.SW_HIDE)
         except Exception as e:
             print(f"  update_all_panels 异常 view={view_hwnd}: {e}")
+
     for v in dead:
         del _state["panels"][v]
         print(f"  移除已关闭 view={v} 的面板")
 
 
+def _get_top_view(mdi_hwnd):
+    """
+    返回 MDIClient 中 Z 序最顶的可见 3D view（即当前激活/最前面的窗口）。
+    GW_CHILD 返回 Z 序最顶的子窗口，依次向后遍历找第一个 view。
+    """
+    hwnd = ctypes.windll.user32.GetWindow(mdi_hwnd, 5)  # GW_CHILD = 5
+    while hwnd:
+        cls = win32gui.GetClassName(hwnd)
+        if any(cls.startswith(vc) for vc in VIEW_CLASSES) and win32gui.IsWindowVisible(hwnd):
+            return hwnd
+        hwnd = ctypes.windll.user32.GetWindow(hwnd, 2)  # GW_HWNDNEXT = 2
+    return None
+
+
 def scan_new_views():
+    """扫描 MDI 下新出现的 view，为其创建面板。"""
+    mdi_hwnd = _state["mdi_hwnd"]
+    if not mdi_hwnd:
+        return
+    for v in _enum_views(mdi_hwnd):
+        if v not in _state["panels"]:
+            create_panel_for_view(v)
+
     mdi_hwnd = _state["mdi_hwnd"]
     if not mdi_hwnd:
         return
@@ -284,12 +313,8 @@ _WinEventProc = ctypes.WINFUNCTYPE(
 
 def _make_event_callback():
     def _callback(hHook, event, hwnd, idObject, idChild, dwThread, dwTime):
-        if _state["_update_pending"]:
-            return
-        host = _state["host_hwnd"]
-        if host:
-            _state["_update_pending"] = True
-            ctypes.windll.user32.PostMessageW(host, WM_APP_UPDATE, 0, 0)
+        # 直接在回调里更新（OUTOFCONTEXT 模式下回调在我们自己线程执行，不阻塞 CATIA）
+        update_all_panels()
     return _WinEventProc(_callback)
 
 # ── 字体 ──────────────────────────────────────────────────────────────────
@@ -306,21 +331,13 @@ def _create_ui_font():
 # ── 宿主窗口过程 ──────────────────────────────────────────────────────────
 
 def _host_wndproc(hwnd, msg, wparam, lparam):
-    if msg == WM_APP_UPDATE:
-        ctypes.windll.user32.SetTimer(hwnd, TIMER_DEBOUNCE, DEBOUNCE_INTERVAL, None)
-        return 0
-    elif msg == win32con.WM_TIMER:
-        if wparam == TIMER_DEBOUNCE:
-            ctypes.windll.user32.KillTimer(hwnd, TIMER_DEBOUNCE)
-            update_all_panels()
-            return 0
-        elif wparam == TIMER_SCAN_VIEWS:
+    if msg == win32con.WM_TIMER:
+        if wparam == TIMER_SCAN_VIEWS:
             scan_new_views()
             return 0
         elif wparam == TIMER_SIGINT:
             return 0
     elif msg == win32con.WM_DESTROY:
-        ctypes.windll.user32.KillTimer(hwnd, TIMER_DEBOUNCE)
         ctypes.windll.user32.KillTimer(hwnd, TIMER_SCAN_VIEWS)
         ctypes.windll.user32.KillTimer(hwnd, TIMER_SIGINT)
         for h in _state["hook_handles"]:
