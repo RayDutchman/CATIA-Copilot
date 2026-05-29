@@ -687,7 +687,7 @@ class BomEditDialog(QDialog):
             logger.error(f"Failed to load BOM for edit: {e}")
             QMessageBox.critical(
                 self, "加载失败",
-                f"加载BOM时出错：\n{e}\n\n请确保CATIA已启动。",
+                f"加载BOM时出错：\n{e}\n\n请确保 CATIA 已启动。",
             )
             self._load_btn.setEnabled(True)
             self._load_btn.setText("加载BOM")
@@ -1861,7 +1861,7 @@ class BomEditDialog(QDialog):
             self._finish_btn.setEnabled(True)
             QMessageBox.critical(
                 self, "写回失败",
-                f"写回CATIA时出错：\n{e}\n\n请确保CATIA已启动。",
+                f"写回CATIA时出错：\n{e}\n\n请确保 CATIA 已启动。",
             )
             return
         finally:

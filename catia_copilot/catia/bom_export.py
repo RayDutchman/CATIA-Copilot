@@ -163,7 +163,7 @@ def export_bom_to_excel(
                 active_full = application.ActiveDocument.FullName
             except Exception as e:
                 raise RuntimeError(
-                    "无法获取当前CATIA活动文档，请确保CATIA已打开CATProduct。"
+                    "无法获取当前CATIA活动文档，请确保 CATIA 已启动且有活动文档。"
                 ) from e
             src_name = Path(active_full)
             dest_dir = Path(output_folder).resolve() if output_folder else src_name.parent

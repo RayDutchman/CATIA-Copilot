@@ -348,7 +348,7 @@ class FileConvertDialog(QDialog):
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",
-                    f"无法从CATIA获取当前活动文档路径：\n{e}\n\n请确保CATIA已启动且有活动文档。",
+                    f"无法从CATIA获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
                 )
                 return
             files = [active_path]

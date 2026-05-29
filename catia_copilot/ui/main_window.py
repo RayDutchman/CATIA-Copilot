@@ -1233,7 +1233,7 @@ class MainWindow(QMainWindow):
             logger.error(f"宏执行失败 {macro_path.name}: {e}")
             QMessageBox.critical(
                 self, "宏执行失败",
-                f"运行宏时出错：\n{macro_path.name}\n\n{e}\n\n请确保CATIA已启动。",
+                f"运行宏时出错：\n{macro_path.name}\n\n{e}",
             )
 
     # ── Dialog launchers ───────────────────────────────────────────────────
@@ -1684,7 +1684,7 @@ class MainWindow(QMainWindow):
             logger.error(f"宏执行失败 {macro_path.name}: {e}")
             QMessageBox.critical(
                 self, "宏执行失败",
-                f"运行宏时出错：\n{macro_path.name}\n\n{e}\n\n请确保CATIA已启动。",
+                f"运行宏时出错：\n{macro_path.name}\n\n{e}",
             )
 
     # ── CATIA resource file helpers ────────────────────────────────────────

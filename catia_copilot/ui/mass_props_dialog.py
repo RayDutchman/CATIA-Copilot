@@ -1023,7 +1023,7 @@ class MassPropsDialog(QDialog):
             logger.error(f"加载质量特性失败: {e}")
             QMessageBox.critical(
                 self, "加载失败",
-                f"加载产品树时出错：\n{e}\n\n请确保CATIA已启动。",
+                f"加载产品树时出错：\n{e}\n\n请确保 CATIA 已启动。",
             )
             self._load_btn.setEnabled(True)
             self._load_btn.setText("加载")
@@ -1242,7 +1242,7 @@ class MassPropsDialog(QDialog):
             logger.error(f"追加活动文档质量特性失败: {e}")
             QMessageBox.critical(
                 self, "读取失败",
-                f"读取当前活动文档时出错：\n{e}\n\n请确保CATIA已启动且已打开目标产品。",
+                f"读取当前活动文档时出错：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
             )
             return
         finally:
