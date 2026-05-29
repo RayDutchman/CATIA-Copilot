@@ -783,7 +783,7 @@ class MainWindow(QMainWindow):
                 | Qt.WindowType.WindowMinimizeButtonHint,
             )
             dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-            dlg.destroyed.connect(lambda _=None, a=attr: setattr(self, a, None))
+            dlg.destroyed.connect(lambda _=None, a=attr: self._on_dialog_destroyed(a))
             setattr(self, attr, dlg)
         
         dlg.show()
@@ -792,6 +792,13 @@ class MainWindow(QMainWindow):
         
         # 启动 CATIA 状态监听定时器（如果尚未启动）
         self._start_catia_monitor()
+
+    def _on_dialog_destroyed(self, attr: str) -> None:
+        """对话框被销毁时的回调，清理引用和隐藏记录。"""
+        setattr(self, attr, None)
+        if hasattr(self, "_hidden_dialogs") and attr in self._hidden_dialogs:
+            self._hidden_dialogs.discard(attr)
+            logger.debug(f"_on_dialog_destroyed: 对话框 {attr} 已销毁，从隐藏列表中移除")
 
     def _start_catia_monitor(self) -> None:
         """启动 CATIA 窗口状态监听定时器，实现对话框跟随 CATIA 最小化/还原。"""
