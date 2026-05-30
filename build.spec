@@ -21,12 +21,27 @@ _ver = _re.search(
 ).group(1)
 _app_name = f"CATIA Copilot {_ver}"
 
+# ── pywin32 DLL 动态查找 ────────────────────────────────────────────────────
+# pywintypes / pythoncom DLL 位于 site-packages/pywin32_system32/，
+# PyInstaller 默认不会自动收集，必须手动声明为 binaries。
+# 文件名含 Python 版本号（如 pywintypes313.dll），动态构造避免硬编码。
+import sys as _sys, glob as _glob, os as _os
+_pyver = f"{_sys.version_info.major}{_sys.version_info.minor}"
+_site_pkgs = _os.path.join(_os.path.dirname(_sys.executable), 'Lib', 'site-packages')
+_pywin32_dir = _os.path.join(_site_pkgs, 'pywin32_system32')
+_pywin32_binaries = [
+    (dll, '.')
+    for dll in _glob.glob(_os.path.join(_pywin32_dir, '*.dll'))
+]
+if not _pywin32_binaries:
+    print(f"[warn] pywin32_system32 DLL not found in {_pywin32_dir}")
+
 block_cipher = None
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=_pywin32_binaries,
     datas=[
         ('resources', 'resources'),
         ('macros', 'macros'),
@@ -35,7 +50,12 @@ a = Analysis(
         ('catia_copilot/ui/style.qss', 'catia_copilot/ui'),
         ('catia_copilot', 'catia_copilot'),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        # qdarkstyle 通过 Qt 资源系统注册图标，PyInstaller 静态分析找不到这两个模块，
+        # 缺失时深色/浅色主题的图标（滚动条箭头、复选框等）会显示为空白。
+        'qdarkstyle.dark.darkstyle_rc',
+        'qdarkstyle.light.lightstyle_rc',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
