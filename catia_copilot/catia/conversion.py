@@ -91,7 +91,7 @@ def convert_drawing_to_pdf(
     progress_callback: Callable[[int, int], None] | None = None,
     update_before_export: bool = False,
 ) -> int:
-    """使用 pyCATIA 将 CATDrawing 文件转换为 PDF。
+    """使用 pyCATIA 将 CATDrawing 文件转换为 PDF 。
 
     如果 *prefix* 非空，则在输出文件名前添加前缀（除非文件名已包含该前缀）。
     如果 *suffix* 非空，则在文件名后添加后缀（除非文件名已包含该后缀）。

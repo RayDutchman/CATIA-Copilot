@@ -5,7 +5,7 @@
 - MassPropsDialog – 遍历产品树，展示每个零件实例的质量/重心/转动惯量，
                     支持：
                       • 手动编辑重量（等比缩放惯量，联动同型号零件）
-                      • 层级BOM / 汇总BOM 切换
+                      • 层级 BOM / 汇总 BOM 切换
                       • 重量单位 g/kg 独立选择
                       • 长度单位 mm/m 独立选择
                       • 惯量单位 g·mm²/g·m²/kg·mm²/kg·m² 独立选择（4 种）
@@ -144,16 +144,16 @@ def _fmt(value) -> str:
 class MassPropsDialog(QDialog):
     """重量、重心、惯量统计对话框。
 
-    - 遍历 CATProduct 树，每个节点（零件/产品/部件实例）单独显示一行（层级BOM模式）。
+    - 遍历 CATProduct 树，每个节点（零件/产品/部件实例）单独显示一行（层级 BOM 模式）。
       Weight / CogX / CogY / CogZ / Ixx–Iyz 均在根产品坐标系下显示，与装配位置有关。
-    - 汇总BOM模式：相同零件编号的零件实例合并为一行，并显示数量（Quantity）；
+    - 汇总 BOM 模式：相同零件编号的零件实例合并为一行，并显示数量（Quantity）；
       仅列出零件（不含产品和部件）；Weight / CogX / CogY / CogZ / Ixx–Iyz
       在零件自身坐标系下显示，与装配位置无关。
     - 仅零件节点的"重量"列可编辑；修改后等比缩放该行惯量，
       并同步更新所有相同零件编号的行（及 _rows 中全部同PN数据）。
     - 单位可在 kg/g 间切换（影响重量列与转动惯量列的显示和导出）。
     - 修改密度或重量后自动重新计算装配体总质量特性，汇总结果实时更新。
-    - "导出表格"将当前数据（含汇总行）写入 Excel。
+    - "导出表格"将当前数据（含汇总行）写入 Excel 。
     """
 
     def __init__(self, parent=None) -> None:
@@ -342,8 +342,8 @@ class MassPropsDialog(QDialog):
     def _build_columns(self) -> list[str]:
         """根据当前可见性设置和 BOM 模式，构建列名列表。
 
-        层级BOM：Level 在第 0 列（承载树形装饰线），# 在第 1 列。
-        汇总BOM：无 Level 列，# 在第 0 列（无装饰线需求），增加 Quantity 列。
+        层级 BOM ：Level 在第 0 列（承载树形装饰线），# 在第 1 列。
+        汇总 BOM ：无 Level 列，# 在第 0 列（无装饰线需求），增加 Quantity 列。
         """
         if self._summarize:
             base = ["#", "Type"]
@@ -438,7 +438,7 @@ class MassPropsDialog(QDialog):
         self._load_btn = QPushButton("加载")
         self._load_btn.clicked.connect(self._load_data)
         self._load_json_btn = QPushButton("载入已保存数据…")
-        self._load_json_btn.setToolTip("从之前保存的数据文件中载入质量特性（无需打开CATIA）")
+        self._load_json_btn.setToolTip("从之前保存的数据文件中载入质量特性（无需打开 CATIA）")
         self._load_json_btn.clicked.connect(self._load_data_from_json)
         self._append_data_btn = QPushButton("追加数据…")
         self._append_data_btn.setToolTip(
@@ -474,10 +474,10 @@ class MassPropsDialog(QDialog):
 
         # BOM 类型
         self._bom_type_group = QButtonGroup(self)
-        self._radio_hier = QRadioButton("层级BOM")
-        self._radio_summ = QRadioButton("汇总BOM")
+        self._radio_hier = QRadioButton("层级 BOM")
+        self._radio_summ = QRadioButton("汇总 BOM")
         self._radio_summ.setToolTip(
-            "汇总BOM：按零件编号合并同种零件，仅显示零件行。\n"
+            "汇总 BOM ：按零件编号合并同种零件，仅显示零件行。\n"
             "产品、部件、对称件不在此视图中显示。"
         )
         self._radio_summ.setMinimumHeight(24)
@@ -771,15 +771,15 @@ class MassPropsDialog(QDialog):
         btn_row.addStretch()
 
         self._save_json_btn = QPushButton("保存数据…")
-        self._save_json_btn.setToolTip("将当前行数据保存为数据文件，可在不打开CATIA的情况下重新载入")
+        self._save_json_btn.setToolTip("将当前行数据保存为数据文件，可在不打开 CATIA 的情况下重新载入")
         self._save_json_btn.setEnabled(False)
         self._save_json_btn.clicked.connect(self._save_data_to_json)
         btn_row.addWidget(self._save_json_btn)
 
         self._export_btn = QPushButton("导出表格")
         self._export_btn.setToolTip(
-            "将层级BOM数据（含汇总行）导出为 Excel（.xlsx）或 CSV 文件。\n"
-            "无论当前显示层级BOM还是汇总BOM，导出内容始终为层级BOM。"
+            "将层级 BOM 数据（含汇总行）导出为 Excel （.xlsx）或 CSV 文件。\n"
+            "无论当前显示层级 BOM 还是汇总 BOM ，导出内容始终为层级 BOM 。"
         )
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_table)
@@ -797,13 +797,13 @@ class MassPropsDialog(QDialog):
         """返回当前 BOM 模式对应的说明文字。"""
         if self._summarize:
             return (
-                "【汇总BOM】按零件编号合并，仅列出零件（不含产品、部件和对称件）。"
+                "【汇总 BOM】按零件编号合并，仅列出零件（不含产品、部件和对称件）。"
                 "Weight / CogX / CogY / CogZ / Ixx–Iyz "
                 "在零件自身坐标系下显示，与装配位置无关。"
                 "底部「汇总结果」在根产品坐标系下计算。"
             )
         return (
-            "【层级BOM】展示零件节点和产品/部件节点。"
+            "【层级 BOM】展示零件节点和产品/部件节点。"
             "Weight / CogX / CogY / CogZ / Ixx–Iyz "
             "在根产品坐标系下显示，与零件的装配位置有关。"
             "底部「汇总结果」在根产品坐标系下计算。"
@@ -817,7 +817,7 @@ class MassPropsDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择CATProduct文件",
+            self, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -993,7 +993,7 @@ class MassPropsDialog(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请先选择一个CATProduct文件。")
+                QMessageBox.warning(self, "未选择文件", "请先选择一个 CATProduct 文件。")
                 return
             if not Path(file_path).exists():
                 QMessageBox.warning(self, "文件不存在", f"文件不存在：\n{file_path}")
@@ -1092,10 +1092,10 @@ class MassPropsDialog(QDialog):
                 self, "部分零件测量失败",
                 f"有 {failed_count} 个零件节点无法完成质量特性测量（显示橙色背景）。\n\n"
                 "可能原因：\n"
-                "  • 零件文档无法加载到CATIA会话中\n"
+                "  • 零件文档无法加载到 CATIA 会话中\n"
                 f"  • 当前读取模式要求的 {_read_mode_desc} 保持测量不存在\n"
                 "  • 测量结果保存在产品中而非零件中\n\n"
-                "未能测量的零件不参与最终汇总计算。可以对其右键选择「在CATIA中打开」\n"
+                "未能测量的零件不参与最终汇总计算。可以对其右键选择「在 CATIA 中打开」\n"
                 "检查问题所在，然后右键选择「重新读取质量特性」。",
             )
 
@@ -1143,7 +1143,7 @@ class MassPropsDialog(QDialog):
             QMessageBox.critical(self, "保存失败", f"保存数据时出错：\n{e}")
 
     def _load_data_from_json(self) -> None:
-        """从压缩二进制数据文件载入行数据（无需 CATIA，_root_mp 由后处理重建）。"""
+        """从压缩二进制数据文件载入行数据（无需 CATIA ，_root_mp 由后处理重建）。"""
         src, _ = QFileDialog.getOpenFileName(
             self, "载入质量特性数据", "", "质量特性数据文件 (*.mpd)"
         )
@@ -1291,7 +1291,7 @@ class MassPropsDialog(QDialog):
         return result
 
     def _build_hierarchy_columns(self) -> list[str]:
-        """返回层级BOM的列名列表（导出时始终使用，与当前显示模式无关）。"""
+        """返回层级 BOM 的列名列表（导出时始终使用，与当前显示模式无关）。"""
         base = ["Level", "#", "Type"]
         for c in MASS_PROPS_HIDEABLE_COLUMNS:
             if c in self._visible_hideable_cols:
@@ -1301,7 +1301,7 @@ class MassPropsDialog(QDialog):
         return base
 
     def _get_hierarchy_rows(self) -> list[dict]:
-        """返回层级BOM行列表（导出时始终使用，与当前显示模式无关）。
+        """返回层级 BOM 行列表（导出时始终使用，与当前显示模式无关）。
 
         与 _get_display_rows() 的非汇总分支相同：包含所有节点（零件、产品、
         部件、对称件），使用根产品坐标系下的 COG / 惯量值。
@@ -1334,9 +1334,9 @@ class MassPropsDialog(QDialog):
         每个唯一 PN 保留第一次出现的未排除行数据（含 _rows 中的索引），
         Quantity = 该 PN 在 _rows 中未被排除的实例数量。
         被排除（_excluded=True）的实例不计入数量，
-        若某 PN 的全部实例均被排除，则该 PN 不出现在汇总BOM中。
-        对称件的重心/惯量依赖根产品坐标系（位置相关），无法在汇总BOM中有意义地
-        合并展示，故汇总BOM仅包含零件行，不含对称件。
+        若某 PN 的全部实例均被排除，则该 PN 不出现在汇总 BOM 中。
+        对称件的重心/惯量依赖根产品坐标系（位置相关），无法在汇总 BOM 中有意义地
+        合并展示，故汇总 BOM 仅包含零件行，不含对称件。
         """
         seen_pn: dict[str, dict] = {}    # pn → 首次出现的未排除规范行副本
         qty: dict[str, int] = {}
@@ -1509,14 +1509,14 @@ class MassPropsDialog(QDialog):
         return item
 
     def _populate_flat(self, display_rows: list[dict]) -> None:
-        """汇总BOM模式：所有行为顶级项（无树形层级）。"""
+        """汇总 BOM 模式：所有行为顶级项（无树形层级）。"""
         for di, row_data in enumerate(display_rows):
             rows_idx = row_data.get("_rows_idx", di)
             item = self._make_item(rows_idx, row_data)
             self._table.addTopLevelItem(item)
 
     def _populate_tree(self, display_rows: list[dict]) -> None:
-        """层级BOM模式：按 Level 构建树形结构。"""
+        """层级 BOM 模式：按 Level 构建树形结构。"""
         parent_stack: list[tuple[int, QTreeWidgetItem | None]] = [(-1, None)]
 
         for di, row_data in enumerate(display_rows):
@@ -1782,11 +1782,11 @@ class MassPropsDialog(QDialog):
         self._update_summary_labels(result)
 
     def _refresh_product_items(self) -> None:
-        """刷新树形表格中所有产品/部件行的显示值（仅层级BOM模式有效）。
+        """刷新树形表格中所有产品/部件行的显示值（仅层级 BOM 模式有效）。
 
         在 _calculate() 调用 recompute_product_rows() 更新 self._rows 后，
         调用本方法将新的汇总值写回对应的 QTreeWidgetItem，以保持表格与数据同步。
-        汇总BOM不含产品/部件行，故直接返回。
+        汇总 BOM 不含产品/部件行，故直接返回。
         """
         if self._summarize:
             return
@@ -2589,7 +2589,7 @@ class MassPropsDialog(QDialog):
         elif row_locked:
             if not_found:
                 bg  = c.ROW_NOT_FOUND_BG
-                tip = "该零件/装配体的文件未被CATIA检索到，行内容不可编辑。"
+                tip = "该零件/装配体的文件未被 CATIA 检索到，行内容不可编辑。"
             elif meas_failed:
                 bg  = c.ROW_MEAS_FAILED_BG
                 tip = "该零件的质量特性测量失败，行内容不可编辑。"
@@ -2665,7 +2665,7 @@ class MassPropsDialog(QDialog):
         act_copy_path.setEnabled(is_single and not is_mirror and bool(fp) and not no_file)
 
         # ── 在CATIA中打开（仅单选）───────────────────────────────────────
-        act_open_catia = menu.addAction("在CATIA中打开")
+        act_open_catia = menu.addAction("在 CATIA 中打开")
         catia_available = (
             is_single
             and not is_mirror
@@ -2794,7 +2794,7 @@ class MassPropsDialog(QDialog):
             open_catia_file(app.Documents, fp, foreground=True)
 
         except Exception as e:
-            QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")
+            QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")
 
     # ── 重新读取质量特性 ────────────────────────────────────────────────────
 

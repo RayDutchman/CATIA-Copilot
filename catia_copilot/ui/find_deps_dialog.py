@@ -5,14 +5,14 @@
 - FindDependenciesDialog – 对指定 CATIA 文件执行依赖查找，分三组策略：
 
   【正向查询】顺着引用关系走：
-    • find_dependencies：COM 打开目标文件，CATIA 自动级联加载所有被引用子文档
+    • find_dependencies： COM 打开目标文件， CATIA 自动级联加载所有被引用子文档
     • doc_file_links（仅 CATDrawing）：读图纸生成式视图链接，直接取被引用的零件/产品
 
   【反向查询】逆着引用关系溯源：
-    • find_reverse_dependencies：遍历已打开的 CATProduct/CATDrawing，
+    • find_reverse_dependencies：遍历已打开的 CATProduct/CATDrawing ，
       找出哪些文档引用了目标文件（CATPart 外部引用暂不支持）
 
-  【启发式补充】COM 链接断开时的文件名匹配策略：
+  【启发式补充】 COM 链接断开时的文件名匹配策略：
     • pn_param_open_docs/drws：在已打开文档中匹配 PartNumber 参数
     • pn_param_scan：在向上 N 级目录中按 PartNumber 参数扫描文件名
     • same_name_scan_dirs：按同名文件扫描
@@ -76,7 +76,7 @@ _HEURISTIC_HINTS: dict[str, str] = {
         "遍历已打开的零件/产品文档，找 PartNumber 参数等于图纸 PartNumber 的文件\n"
         "（仅对 CATDrawing 目标有效）",
     "pn_param_open_drws":
-        "遍历已打开的 CATDrawing，找 PartNumber 参数等于零件 PartNumber 的图纸\n"
+        "遍历已打开的 CATDrawing ，找 PartNumber 参数等于零件 PartNumber 的图纸\n"
         "（仅对 CATPart/CATProduct 目标有效）",
     "pn_param_scan_dirs":
         "向上扫描目录，找文件名等于图纸 PartNumber 参数的零件文件\n"
@@ -115,8 +115,8 @@ _ROLE_IS_HDR  = Qt.ItemDataRole.UserRole + 1   # 是否为节标题行（bool）
 class FindDependenciesDialog(QDialog):
     """双向依赖查找对话框。
 
-    • CATDrawing：引用的文档（COM）+ 被引用零件/产品（2A）
-    • CATPart/CATProduct：引用的文档（COM）+ 被引用图纸（2B）
+    • CATDrawing ：引用的文档（COM）+ 被引用零件/产品（2A）
+    • CATPart/CATProduct ：引用的文档（COM）+ 被引用图纸（2B）
     • 其他格式：仅引用的文档（COM）
     """
 
@@ -274,9 +274,9 @@ class FindDependenciesDialog(QDialog):
             return
         ext = Path(path).suffix.lower()
         if ext == _EXT_DRAWING:
-            text = "文件类型：CATDrawing — 将查找引用的文档（COM 链接）及被引用零件/产品（2A 策略）"
+            text = "文件类型： CATDrawing — 将查找引用的文档（COM 链接）及被引用零件/产品（2A 策略）"
         elif ext in _EXTS_PART:
-            text = "文件类型：CATPart/CATProduct — 将查找引用的文档（COM 链接）及被引用图纸（2B 策略）"
+            text = "文件类型： CATPart/CATProduct — 将查找引用的文档（COM 链接）及被引用图纸（2B 策略）"
         else:
             suffix = Path(path).suffix or "未知"
             text = f"文件类型：{suffix} — 仅查找引用的文档（COM 链接），不支持 2A/2B 策略"
@@ -332,9 +332,9 @@ class FindDependenciesDialog(QDialog):
         cb_com = QCheckBox("结构遍历（CATProduct / CATDrawing）")
         cb_com.setToolTip(
             "通过 CATIA COM 打开目标文件，按类型遍历引用结构：\n"
-            "• CATProduct：读直接子层（一级）Product.Products，\n"
+            "• CATProduct ：读直接子层（一级）Product.Products，\n"
             "  收集每个直接子件的文档路径\n"
-            "• CATDrawing：遍历生成式视图链接，收集关联的\n"
+            "• CATDrawing ：遍历生成式视图链接，收集关联的\n"
             "  零件/产品文档路径\n"
             "• 其他格式：退化为快照差值法，结果可能不完整"
         )
@@ -361,10 +361,10 @@ class FindDependenciesDialog(QDialog):
         cb_rev = QCheckBox("遍历已打开文档（CATProduct / CATDrawing）")
         cb_rev.setToolTip(
             "遍历已打开的文档，找出哪些文档引用了目标文件：\n"
-            "• CATProduct：读直接子层 Product.Products，\n"
+            "• CATProduct ：读直接子层 Product.Products，\n"
             "  检查目标是否在其中\n"
-            "• CATDrawing：遍历生成式视图链接，判断是否指向目标\n"
-            "• CATPart：外部引用暂不支持（COM 接口不可达）"
+            "• CATDrawing ：遍历生成式视图链接，判断是否指向目标\n"
+            "• CATPart ：外部引用暂不支持（COM 接口不可达）"
         )
         cb_rev.setChecked(self._load_cb_state("rev_open_docs", True))
         cb_rev.stateChanged.connect(
@@ -645,7 +645,7 @@ class FindDependenciesDialog(QDialog):
             except Exception:
                 pass
         except Exception as e:
-            QMessageBox.critical(self, "全部打开失败", f"无法连接 CATIA：\n{e}")
+            QMessageBox.critical(self, "全部打开失败", f"无法连接 CATIA ：\n{e}")
             return
         if errors:
             QMessageBox.warning(

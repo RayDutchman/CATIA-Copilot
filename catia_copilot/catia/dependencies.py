@@ -4,8 +4,8 @@ CATIA 依赖项查找器。
 提供：
 - find_dependencies()          – 正向查询：打开目标文件，遍历其引用结构，收集所有子文档路径
 - find_reverse_dependencies()  – 反向查询：遍历已打开文档，找出哪些文档引用了目标文件
-- find_part_for_drawing()      – 给定 CATDrawing，启发式查找对应的 CATPart/CATProduct（2A）
-- find_drawing_for_part()      – 给定 CATPart/CATProduct，启发式查找对应的 CATDrawing（2B）
+- find_part_for_drawing()      – 给定 CATDrawing ，启发式查找对应的 CATPart/CATProduct （2A）
+- find_drawing_for_part()      – 给定 CATPart/CATProduct ，启发式查找对应的 CATDrawing （2B）
 
 正向查询策略（find_dependencies）：
   CATProduct  – 通过 COM 打开后，只读直接子层（一级）的 Product.Products，
@@ -24,7 +24,7 @@ CATIA 依赖项查找器。
 启发式补充策略（DRAWING_SEARCH_STRATEGIES / PART_TO_DRAWING_STRATEGIES）：
   pn_param_open_docs     – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配
                            doc.Product.PartNumber == 该值
-  pn_param_open_drws     – 遍历已打开 CATDrawing，找 Parameters["PartNumber"]
+  pn_param_open_drws     – 遍历已打开 CATDrawing ，找 Parameters["PartNumber"]
                            == 零件 doc.Product.PartNumber 的图纸
   pn_param_scan_dirs     – 读图纸 Parameters["PartNumber"]，在向上 N 级目录中找
                            文件名（stem）== 该值的 .CATPart/.CATProduct
@@ -177,8 +177,8 @@ def find_reverse_dependencies(
 
     对每个已打开文档调用 :func:`find_dependencies` 获取其直接依赖列表，
     检查目标路径是否在其中：
-    - CATProduct：``find_dependencies`` 返回其直接子层零件/产品路径列表
-    - CATDrawing：``find_dependencies`` 返回其视图链接的零件/产品路径列表
+    - CATProduct ：``find_dependencies`` 返回其直接子层零件/产品路径列表
+    - CATDrawing ：``find_dependencies`` 返回其视图链接的零件/产品路径列表
     - CATPart 及其他格式：无可用 COM 接口，跳过不查询
 
     典型用途：想删除某个零件前，先查哪些已打开文档直接引用了它。
@@ -399,7 +399,7 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
     图纸须已在 CATIA 中打开，否则返回空列表。
     每个视图通过 view.GenerativeBehavior.Document 得到 Product 对象，
     再经 product.ReferenceProduct.Parent.FullName 取到文档绝对路径。
-    过滤出 .CATPart / .CATProduct，结果去重（保序）后返回。
+    过滤出 .CATPart / .CATProduct ，结果去重（保序）后返回。
     """
     from catia_copilot.catia.connection import get_catia_v5_application
 
@@ -484,7 +484,7 @@ def _find_part_by_stem_in_dirs(
     """在图纸向上 max_parent_levels 层的祖先目录整棵子树中查找文件名（stem）== stem 的零件文件。
 
     返回所有命中路径的列表，按路径深度由浅到深排序（越靠近祖先目录越优先）。
-    同深度内优先返回 .CATPart，其次 .CATProduct。
+    同深度内优先返回 .CATPart ，其次 .CATProduct 。
     """
     root = _get_ancestor_dir(drawing.parent, max_parent_levels)
     candidates: list[Path] = []
@@ -679,7 +679,7 @@ def _find_drawing_by_stem_in_dirs(
     stem: str,
     max_parent_levels: int,
 ) -> list[str]:
-    """在零件向上 max_parent_levels 层的祖先目录整棵子树中找 stem 相同的 .CATDrawing。
+    """在零件向上 max_parent_levels 层的祖先目录整棵子树中找 stem 相同的 .CATDrawing 。
 
     返回所有命中路径列表，按路径深度由浅到深排序（越靠近祖先目录越优先）。
     """
@@ -696,7 +696,7 @@ def _find_drawing_strip_prefix_in_dirs(
     part_stem: str,
     max_parent_levels: int,
 ) -> list[str]:
-    """在零件向上 max_parent_levels 层的祖先目录整棵子树中扫描 .CATDrawing，
+    """在零件向上 max_parent_levels 层的祖先目录整棵子树中扫描 .CATDrawing ，
     strip 图纸文件名前缀后与 part_stem 比较。
 
     返回所有命中路径列表，按路径深度由浅到深排序（越靠近祖先目录越优先）。
@@ -716,7 +716,7 @@ def _find_drawing_strip_prefix_in_dirs(
 
 
 def _find_drawings_via_part_link(part_path: str) -> list[str]:
-    """方法 5（2B）实现：遍历已打开的 CATDrawing，反查其生成式视图是否链接到 part_path。
+    """方法 5（2B）实现：遍历已打开的 CATDrawing ，反查其生成式视图是否链接到 part_path。
 
     对每张已打开图纸调用 _find_parts_via_file_links()，若结果中包含目标零件/产品路径，
     则将该图纸加入返回列表。

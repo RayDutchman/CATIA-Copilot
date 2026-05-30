@@ -2,7 +2,7 @@
 BOM 编辑对话框模块。
 
 提供：
-- BomEditDialog – 可编辑表格，用于完成 BOM 属性并通过 COM 写回 CATIA。
+- BomEditDialog – 可编辑表格，用于完成 BOM 属性并通过 COM 写回 CATIA 。
 """
 
 import copy
@@ -61,7 +61,7 @@ _MAX_HISTORY = 10  # 撤销/重做最大步数
 
 
 class BomEditDialog(QDialog):
-    """可编辑BOM表格，用于补全产品属性并通过COM写回CATIA。
+    """可编辑 BOM 表格，用于补全产品属性并通过 COM 写回 CATIA 。
 
     - 文件名 / 层级 / 类型 / 数量 为只读结构属性。
     - 零件编号 可编辑，带重复检测。
@@ -72,7 +72,7 @@ class BomEditDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("BOM属性补全")
+        self.setWindowTitle("BOM 属性补全")
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
         self.setWindowFlags(
@@ -165,12 +165,12 @@ class BomEditDialog(QDialog):
 
         file_row = QHBoxLayout()
         self._file_edit       = QLineEdit()
-        self._file_edit.setPlaceholderText("选择一个CATProduct文件...")
+        self._file_edit.setPlaceholderText("选择一个 CATProduct 文件...")
         self._file_edit.setReadOnly(True)
         self._file_browse_btn = QPushButton("浏览...")
         self._file_browse_btn.clicked.connect(self._browse_file)
-        self._load_btn        = QPushButton("加载BOM")
-        self._load_btn.setToolTip("从文件或当前活动文档加载BOM（F5）")
+        self._load_btn        = QPushButton("加载 BOM")
+        self._load_btn.setToolTip("从文件或当前活动文档加载 BOM （F5）")
         self._load_btn.clicked.connect(self._load_bom)
         file_row.addWidget(self._file_edit)
         file_row.addWidget(self._file_browse_btn)
@@ -182,7 +182,7 @@ class BomEditDialog(QDialog):
         groups_row.setSpacing(8)
 
         # ── 左侧：BOM类型与显示选项（紧凑分组）──────────────────────────────
-        display_group  = QGroupBox("BOM类型与显示选项")
+        display_group  = QGroupBox("BOM 类型与显示选项")
         display_layout = QVBoxLayout(display_group)
         display_layout.setSpacing(4)
         display_layout.setContentsMargins(8, 6, 8, 6)
@@ -190,8 +190,8 @@ class BomEditDialog(QDialog):
         # 第一行：单选按钮 + 汇总选项
         bom_type_row = QHBoxLayout()
         self._bom_type_btn_group = QButtonGroup(self)
-        self._radio_hierarchical = QRadioButton("层级BOM")
-        self._radio_summary_bom  = QRadioButton("汇总BOM")
+        self._radio_hierarchical = QRadioButton("层级 BOM")
+        self._radio_summary_bom  = QRadioButton("汇总 BOM")
         self._radio_hierarchical.setMinimumHeight(24)
         if self._summarize:
             self._radio_summary_bom.setChecked(True)
@@ -210,7 +210,7 @@ class BomEditDialog(QDialog):
 
         self._include_assemblies_chk = QCheckBox("包含产品和部件")
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总BOM中也会列出产品和部件（子装配体），而不仅限于零件。"
+            "勾选后，汇总 BOM 中也会列出产品和部件（子装配体），而不仅限于零件。"
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
@@ -343,7 +343,7 @@ class BomEditDialog(QDialog):
         btn_row.addWidget(self._rename_btn)
 
         self._rename_file_btn = QPushButton("另存为")
-        self._rename_file_btn.setToolTip("对选中文件执行另存为操作（通过CATIA另存为）")
+        self._rename_file_btn.setToolTip("对选中文件执行另存为操作（通过 CATIA 另存为）")
         self._rename_file_btn.setEnabled(False)
         self._rename_file_btn.clicked.connect(self._rename_selected_file)
         btn_row.addWidget(self._rename_file_btn)
@@ -373,7 +373,7 @@ class BomEditDialog(QDialog):
         btn_row.addStretch()
 
         self._export_btn = QPushButton("导出表格")
-        self._export_btn.setToolTip("将当前表格导出为 Excel（.xlsx）或 CSV 文件（Ctrl+E）")
+        self._export_btn.setToolTip("将当前表格导出为 Excel （.xlsx）或 CSV 文件（Ctrl+E）")
         self._export_btn.setEnabled(False)
         self._export_btn.setShortcut(QKeySequence("Ctrl+E"))
         self._export_btn.clicked.connect(self._export_table)
@@ -381,14 +381,14 @@ class BomEditDialog(QDialog):
 
         self._save_btn   = QPushButton("应用")
         self._save_btn.setEnabled(False)
-        self._save_btn.setToolTip("将修改写回CATIA，保持对话框不关闭（Ctrl+S）")
+        self._save_btn.setToolTip("将修改写回 CATIA ，保持对话框不关闭（Ctrl+S）")
         self._save_btn.setShortcut(QKeySequence("Ctrl+S"))
         self._save_btn.clicked.connect(self._apply_changes)
 
         self._finish_btn = QPushButton("完成")
         self._finish_btn.setDefault(True)
         self._finish_btn.setEnabled(False)
-        self._finish_btn.setToolTip("将修改写回CATIA，然后关闭对话框（Ctrl+Enter）")
+        self._finish_btn.setToolTip("将修改写回 CATIA ，然后关闭对话框（Ctrl+Enter）")
         self._finish_btn.setShortcut(QKeySequence("Ctrl+Return"))
         self._finish_btn.clicked.connect(self._finish_and_close)
 
@@ -635,7 +635,7 @@ class BomEditDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择CATProduct文件",
+            self, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -652,7 +652,7 @@ class BomEditDialog(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请先选择一个CATProduct文件。")
+                QMessageBox.warning(self, "未选择文件", "请先选择一个 CATProduct 文件。")
                 return
             if not Path(file_path).exists():
                 QMessageBox.warning(self, "文件不存在", f"文件不存在：\n{file_path}")
@@ -662,14 +662,14 @@ class BomEditDialog(QDialog):
         self._load_btn.setText("加载中…")
         QApplication.processEvents()
 
-        progress = QProgressDialog("正在加载BOM，请稍候…", None, 0, 0, self)
-        progress.setWindowTitle("加载BOM")
+        progress = QProgressDialog("正在加载 BOM ，请稍候…", None, 0, 0, self)
+        progress.setWindowTitle("加载 BOM")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            progress.setLabelText(f"正在加载BOM，请稍候… 已读取 {count} 个节点")
+            progress.setLabelText(f"正在加载 BOM ，请稍候… 已读取 {count} 个节点")
             progress.repaint()
             QApplication.processEvents()
 
@@ -687,16 +687,16 @@ class BomEditDialog(QDialog):
             logger.error(f"Failed to load BOM for edit: {e}")
             QMessageBox.critical(
                 self, "加载失败",
-                f"加载BOM时出错：\n{e}\n\n请确保 CATIA 已启动。",
+                f"加载 BOM 时出错：\n{e}\n\n请确保 CATIA 已启动。",
             )
             self._load_btn.setEnabled(True)
-            self._load_btn.setText("加载BOM")
+            self._load_btn.setText("加载 BOM")
             return
         finally:
             progress.close()
 
         self._load_btn.setEnabled(True)
-        self._load_btn.setText("重新加载BOM")
+        self._load_btn.setText("重新加载 BOM")
 
         # 始终保存原始层级行，以便之后切换显示模式
         self._raw_rows = rows
@@ -934,7 +934,7 @@ class BomEditDialog(QDialog):
                     item.setForeground(ci, grey)
                     item.setBackground(ci, bg)
                 tip = (
-                    "该零件/装配体的文件未被CATIA检索到，行内容不可编辑。"
+                    "该零件/装配体的文件未被 CATIA 检索到，行内容不可编辑。"
                     if not_found else
                     "该零件/装配体处于轻量化模式，无法读取属性。"
                 )
@@ -1182,7 +1182,7 @@ class BomEditDialog(QDialog):
                 QMessageBox.warning(
                     self, "零件编号含非法字符",
                     f"零件编号 \"{new_value}\" 含有非法字符。\n"
-                    "不允许：控制字符、非ASCII字符，以及Windows文件名禁用字符"
+                    "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
                     "（\\ / : * ? \" < > |）。",
                 )
                 self._is_updating = True
@@ -1349,7 +1349,7 @@ class BomEditDialog(QDialog):
     def _refresh_pns_appearance(self, pns: set[str]) -> None:
         """刷新指定零件编号对应所有行的已修改字段视觉标记。
 
-        已修改但未写回CATIA的字段：加粗 + 橙色前景（文本单元格）或橙色样式（下拉框）。
+        已修改但未写回 CATIA 的字段：加粗 + 橙色前景（文本单元格）或橙色样式（下拉框）。
         未修改字段：恢复默认外观。锁定行（文件未找到/轻量化）不受影响。
         """
         # 纯视觉更新（setFont/setForeground/setData role）会触发 itemChanged 信号，
@@ -1459,7 +1459,7 @@ class BomEditDialog(QDialog):
         if self._modified_keys:
             ret = QMessageBox.question(
                 self, "放弃修改",
-                "存在未写回CATIA的修改，是否放弃并关闭？",
+                "存在未写回 CATIA 的修改，是否放弃并关闭？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if ret != QMessageBox.StandardButton.Yes:
@@ -1476,7 +1476,7 @@ class BomEditDialog(QDialog):
         if self._modified_keys:
             ret = QMessageBox.question(
                 self, "放弃修改",
-                "存在未写回CATIA的修改，是否放弃并关闭？",
+                "存在未写回 CATIA 的修改，是否放弃并关闭？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if ret != QMessageBox.StandardButton.Yes:
@@ -1487,12 +1487,12 @@ class BomEditDialog(QDialog):
     # ── 写回CATIA ─────────────────────────────────────────────────────────────
 
     def _rename_by_part_number(self) -> None:
-        """通过CATIA另存为功能，将每个CATIA文件按零件编号改名。"""
+        """通过 CATIA 另存为功能，将每个 CATIA 文件按零件编号改名。"""
         if self._modified_keys:
             ret = QMessageBox.question(
                 self, "存在未回传的修改",
-                "检测到BOM属性尚未写回CATIA。\n\n"
-                "必须先将修改写回CATIA，才能确保零件编号与CATIA文件一致。\n\n"
+                "检测到 BOM 属性尚未写回 CATIA 。\n\n"
+                "必须先将修改写回 CATIA ，才能确保零件编号与 CATIA 文件一致。\n\n"
                 "是否立即执行写回？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -1528,7 +1528,7 @@ class BomEditDialog(QDialog):
             ) == QMessageBox.StandardButton.Yes
         )
 
-        QMessageBox.information(self, "请在CATIA中继续操作", "准备就绪，请在CATIA中确认后续操作。")
+        QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
         renamed_count = 0
 
@@ -1554,7 +1554,7 @@ class BomEditDialog(QDialog):
                 QMessageBox.warning(
                     self, "零件编号含非法字符",
                     f"零件编号 「{pn}」 含有非法字符。\n"
-                    "不允许：控制字符、非ASCII字符，以及Windows文件名禁用字符"
+                    "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
                     "（\\ / : * ? \" < > |）。\n请在表格中修改此零件编号后重试。",
                 )
                 continue
@@ -1585,7 +1585,7 @@ class BomEditDialog(QDialog):
                 if target_doc is None:
                     QMessageBox.warning(
                         self, "无法找到文档",
-                        f"无法在CATIA中找到或打开文档：\n{fp}",
+                        f"无法在 CATIA 中找到或打开文档：\n{fp}",
                     )
                     continue
 
@@ -1637,12 +1637,12 @@ class BomEditDialog(QDialog):
         if renamed_count > 0:
             QMessageBox.information(
                 self, "改名完成",
-                f"已成功将 {renamed_count} 个文件通过CATIA另存为功能改名。",
+                f"已成功将 {renamed_count} 个文件通过 CATIA 另存为功能改名。",
             )
             self._populate_table()
 
     def _rename_selected_file(self) -> None:
-        """通过CATIA另存为功能，对选中的单行BOM记录执行重命名或移动操作。"""
+        """通过 CATIA 另存为功能，对选中的单行 BOM 记录执行重命名或移动操作。"""
         selected_row_indices = {
             it.data(0, Qt.ItemDataRole.UserRole)
             for it in self._table.selectedItems()
@@ -1670,8 +1670,8 @@ class BomEditDialog(QDialog):
         if orig_pn in self._modified_keys:
             ret = QMessageBox.question(
                 self, "存在未写回的属性修改",
-                f"零件「{orig_pn}」的属性尚未写回CATIA。\n\n"
-                "必须先将修改写回CATIA，才能确保文件内容与表格一致。\n\n"
+                f"零件「{orig_pn}」的属性尚未写回 CATIA 。\n\n"
+                "必须先将修改写回 CATIA ，才能确保文件内容与表格一致。\n\n"
                 "是否立即执行写回？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -1700,7 +1700,7 @@ class BomEditDialog(QDialog):
             ) == QMessageBox.StandardButton.Yes
         )
 
-        QMessageBox.information(self, "请在CATIA中继续操作", "准备就绪，请在CATIA中确认后续操作。")
+        QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
         try:
             from catia_copilot.catia.connection import get_catia_v5_application as _get_catia
@@ -1723,8 +1723,8 @@ class BomEditDialog(QDialog):
             if target_doc is None:
                 QMessageBox.warning(
                     self, "无法找到文档",
-                    f"无法在CATIA中找到或打开文档：\n{fp}\n\n"
-                    "请确认该零件已在CATIA中打开。",
+                    f"无法在 CATIA 中找到或打开文档：\n{fp}\n\n"
+                    "请确认该零件已在 CATIA 中打开。",
                 )
                 return
 
@@ -1774,13 +1774,13 @@ class BomEditDialog(QDialog):
             QMessageBox.warning(self, "另存为失败", f"文件操作失败：\n{e}")
 
     def _write_back(self, *, close_on_success: bool) -> None:
-        """仅将已变更的字段写回CATIA。"""
+        """仅将已变更的字段写回 CATIA 。"""
         if self._use_active_chk.isChecked():
             file_path = None
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请选择一个CATProduct文件。")
+                QMessageBox.warning(self, "未选择文件", "请选择一个 CATProduct 文件。")
                 return
 
         # dirty_data 必须以 *当前* CATIA零件编号为键，
@@ -1840,14 +1840,14 @@ class BomEditDialog(QDialog):
         self._finish_btn.setEnabled(False)
         QApplication.processEvents()
 
-        progress = QProgressDialog("正在写回CATIA，请稍候…", None, 0, 0, self)
-        progress.setWindowTitle("写回CATIA")
+        progress = QProgressDialog("正在写回 CATIA ，请稍候…", None, 0, 0, self)
+        progress.setWindowTitle("写回 CATIA")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_node_written(count: int) -> None:
-            progress.setLabelText(f"正在写回CATIA，请稍候… 已处理 {count} 个节点")
+            progress.setLabelText(f"正在写回 CATIA ，请稍候… 已处理 {count} 个节点")
             progress.repaint()
             QApplication.processEvents()
 
@@ -1861,7 +1861,7 @@ class BomEditDialog(QDialog):
             self._finish_btn.setEnabled(True)
             QMessageBox.critical(
                 self, "写回失败",
-                f"写回CATIA时出错：\n{e}\n\n请确保 CATIA 已启动。",
+                f"写回 CATIA 时出错：\n{e}\n\n请确保 CATIA 已启动。",
             )
             return
         finally:
@@ -1886,29 +1886,29 @@ class BomEditDialog(QDialog):
         if close_on_success:
             QMessageBox.information(
                 self, "完成",
-                "BOM属性已成功写回CATIA，请在CATIA中手动保存文件。",
+                "BOM 属性已成功写回 CATIA ，请在 CATIA 中手动保存文件。",
             )
             self.accept()
         else:
             QMessageBox.information(
                 self, "应用成功",
-                "BOM属性已成功写回CATIA，请在CATIA中手动保存文件。",
+                "BOM 属性已成功写回 CATIA ，请在 CATIA 中手动保存文件。",
             )
 
     # ── 导出表格 ──────────────────────────────────────────────────────────────
 
     def _export_table(self) -> None:
-        """将当前显示的BOM表格导出为 Excel 或 CSV 文件。"""
+        """将当前显示的 BOM 表格导出为 Excel 或 CSV 文件。"""
         if not self._bom_loaded or not self._rows:
-            QMessageBox.warning(self, "无数据", "请先加载BOM。")
+            QMessageBox.warning(self, "无数据", "请先加载 BOM 。")
             return
 
         # 若存在未写回的编辑，表格内容与CATIA不一致，导出前必须先写回
         if self._modified_keys:
             ret = QMessageBox.question(
                 self, "存在未写回的修改",
-                "检测到BOM属性尚未写回CATIA，导出前应保持表格与CATIA一致。\n\n"
-                "是否立即将修改写回CATIA，再继续导出？",
+                "检测到 BOM 属性尚未写回 CATIA ，导出前应保持表格与 CATIA 一致。\n\n"
+                "是否立即将修改写回 CATIA ，再继续导出？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if ret != QMessageBox.StandardButton.Yes:
@@ -1920,7 +1920,7 @@ class BomEditDialog(QDialog):
 
         # 根据根产品零件编号建议默认文件名（格式：<零件编号>_BOM 或 <零件编号>_汇总BOM）
         # 始终从原始层级行的第一行取根产品零件编号，不受当前汇总/层级显示模式影响
-        suffix_hint = "_汇总BOM" if self._summarize else "_BOM"
+        suffix_hint = "_汇总 BOM" if self._summarize else "_BOM"
         root_pn = str(self._raw_rows[0].get("Part Number", "")).strip() if self._raw_rows else ""
         # 去除 Windows 文件名中不合法的字符（本工具目标平台为 Windows）
         invalid_chars = r'\/:*?"<>|'
@@ -1941,9 +1941,9 @@ class BomEditDialog(QDialog):
 
         dest, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "导出BOM表格",
+            "导出 BOM 表格",
             initial_name,
-            "Excel工作簿 (*.xlsx);;CSV文件 (*.csv)",
+            "Excel 工作簿 (*.xlsx);;CSV 文件 (*.csv)",
         )
         if not dest:
             return
@@ -2019,7 +2019,7 @@ class BomEditDialog(QDialog):
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
         msg = QMessageBox(self)
         msg.setWindowTitle("导出成功")
-        msg.setText(f"BOM已成功导出：\n{dest_path}")
+        msg.setText(f"BOM 已成功导出：\n{dest_path}")
         msg.setIcon(QMessageBox.Icon.Information)
         open_file_btn   = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
         open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
@@ -2053,7 +2053,7 @@ class BomEditDialog(QDialog):
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "汇总BOM" if self._summarize else "BOM"
+        ws.title = "汇总 BOM" if self._summarize else "BOM"
 
         center      = Alignment(horizontal="center", vertical="center")
         header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
@@ -2112,7 +2112,7 @@ class BomEditDialog(QDialog):
         cols: list[str],
         rows: list[dict],
     ) -> None:
-        """将 *rows* 写入 *dest* 路径的 UTF-8 CSV 文件（带BOM头）。"""
+        """将 *rows* 写入 *dest* 路径的 UTF-8 CSV 文件（带 BOM 头）。"""
         import csv
 
         with open(dest, "w", newline="", encoding="utf-8-sig") as f:
@@ -2123,16 +2123,16 @@ class BomEditDialog(QDialog):
         logger.info(f"BOM table exported (csv) -> {dest}")
 
     def _apply_changes(self) -> None:
-        """将修改写回CATIA，保持对话框不关闭。"""
+        """将修改写回 CATIA ，保持对话框不关闭。"""
         self._write_back(close_on_success=False)
     def _finish_and_close(self) -> None:
-        """将修改写回CATIA，然后关闭对话框。"""
+        """将修改写回 CATIA ，然后关闭对话框。"""
         self._write_back(close_on_success=True)
 
     # ── 右键上下文菜单 ────────────────────────────────────────────────────────
 
     def _on_tree_context_menu(self, pos) -> None:
-        """显示右键点击的BOM行对应的上下文菜单。
+        """显示右键点击的 BOM 行对应的上下文菜单。
 
         若关联文件内嵌了缩略图，则在菜单顶部以非交互式图片控件展示。
         """
@@ -2215,7 +2215,7 @@ class BomEditDialog(QDialog):
         # ── 在CATIA中打开 ─────────────────────────────────────────────────────
         # 仅当文件在磁盘上存在且不是损坏/轻量化引用时启用。
         # 部件行共享父产品的文件路径，因此也排除在外。
-        act_open_catia = menu.addAction("在CATIA中打开")
+        act_open_catia = menu.addAction("在 CATIA 中打开")
         catia_available = (
             not is_component and not not_found and not unreadable
             and fp_path is not None and fp_path.exists()
@@ -2273,4 +2273,4 @@ class BomEditDialog(QDialog):
             open_catia_file(app.Documents, fp, foreground=True)
 
         except Exception as e:
-            QMessageBox.warning(self, "在CATIA中打开失败", f"无法在CATIA中打开文件：\n{e}")
+            QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")

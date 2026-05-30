@@ -3,7 +3,7 @@
 
 提供：
 - FileConvertDialog – 可复用的"选择文件 → 执行转换函数"工作流对话框。
-  用于工程图转PDF、零件转STEP以及模板刷写。
+  用于工程图转 PDF 、零件转 STEP 以及模板刷写。
 
 支持将文件拖放到文件列表，并在转换期间显示 QProgressBar。
 """
@@ -217,7 +217,7 @@ class FileConvertDialog(QDialog):
                 saved_update = saved_update.lower() == "true"
             self._update_checkbox = QCheckBox("更新图纸后再输出")
             self._update_checkbox.setToolTip(
-                "导出PDF前先强制更新CATDrawing中每一页的所有视图，"
+                "导出 PDF 前先强制更新 CATDrawing 中每一页的所有视图，"
                 "确保导出结果与最新模型状态一致。"
             )
             self._update_checkbox.setChecked(saved_update)
@@ -348,7 +348,7 @@ class FileConvertDialog(QDialog):
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",
-                    f"无法从CATIA获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
+                    f"无法从 CATIA 获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
                 )
                 return
             files = [active_path]

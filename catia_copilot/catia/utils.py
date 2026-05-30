@@ -65,7 +65,7 @@ def open_catia_file(documents, file_path: str, foreground: bool = False):
             doc = documents.Open(file_path)
             if doc is None:
                 raise RuntimeError(
-                    f"documents.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}"
+                    f"documents.Open() 返回 None， CATIA 可能无法打开该文件：{file_path}"
                 )
     else:
         # 未在集合中：直接 Open
@@ -74,7 +74,7 @@ def open_catia_file(documents, file_path: str, foreground: bool = False):
         logger.debug(f"open_catia_file: Open 返回 {doc}")
         if doc is None:
             raise RuntimeError(
-                f"documents.Open() 返回 None，CATIA 可能无法打开该文件：{file_path}"
+                f"documents.Open() 返回 None， CATIA 可能无法打开该文件：{file_path}"
             )
 
     if foreground:

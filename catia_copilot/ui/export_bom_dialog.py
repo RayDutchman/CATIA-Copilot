@@ -2,7 +2,7 @@
 BOM 导出对话框。
 
 提供：
-- ExportBomDialog – 用于选择 CATProduct、选择列并将 BOM 导出到 Excel 的对话框。
+- ExportBomDialog – 用于选择 CATProduct 、选择列并将 BOM 导出到 Excel 的对话框。
 """
 
 import logging
@@ -34,7 +34,7 @@ class ExportBomDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("从CATProduct导出BOM")
+        self.setWindowTitle("从 CATProduct 导出 BOM")
         self.setMinimumSize(560, 580)
 
         self._settings        = QSettings("CATIACompanion", "ExportBOMDialog")
@@ -70,7 +70,7 @@ class ExportBomDialog(QDialog):
         src_group  = QGroupBox("数据来源")
         src_layout = QVBoxLayout(src_group)
         self._src_btn_group = QButtonGroup(self)
-        self._radio_active  = QRadioButton("使用当前CATIA活动文档")
+        self._radio_active  = QRadioButton("使用当前 CATIA 活动文档")
         self._radio_file    = QRadioButton("选择文件:")
         if self._use_active_doc:
             self._radio_active.setChecked(True)
@@ -83,7 +83,7 @@ class ExportBomDialog(QDialog):
         file_row = QHBoxLayout()
         file_row.addWidget(self._radio_file)
         self._file_edit       = QLineEdit()
-        self._file_edit.setPlaceholderText("选择一个CATProduct文件...")
+        self._file_edit.setPlaceholderText("选择一个 CATProduct 文件...")
         self._file_edit.setReadOnly(True)
         self._file_browse_btn = QPushButton("浏览...")
         self._file_browse_btn.clicked.connect(self._browse_file)
@@ -131,7 +131,7 @@ class ExportBomDialog(QDialog):
             self._folder_browse_btn.setEnabled(True)
 
         # ── BOM type + summary options (combined group) ─────────────────────
-        bom_opts_group  = QGroupBox("BOM类型与汇总选项")
+        bom_opts_group  = QGroupBox("BOM 类型与汇总选项")
         bom_opts_group.setMinimumHeight(60)  # Prevent height jumping when switching BOM types
         bom_opts_layout = QVBoxLayout(bom_opts_group)
         bom_opts_layout.setSpacing(4)
@@ -140,8 +140,8 @@ class ExportBomDialog(QDialog):
         # Single row: radio buttons + inline summary options
         bom_type_row = QHBoxLayout()
         self._bom_type_btn_group = QButtonGroup(self)
-        self._radio_hierarchical = QRadioButton("层级BOM")
-        self._radio_summary      = QRadioButton("汇总BOM")
+        self._radio_hierarchical = QRadioButton("层级 BOM")
+        self._radio_summary      = QRadioButton("汇总 BOM")
         if self._summarize:
             self._radio_summary.setChecked(True)
         else:
@@ -159,7 +159,7 @@ class ExportBomDialog(QDialog):
 
         self._include_assemblies_chk = QCheckBox("包含产品和部件（子装配体）")
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总BOM中也会列出产品和部件（子装配体），而不仅限于零件。"
+            "勾选后，汇总 BOM 中也会列出产品和部件（子装配体），而不仅限于零件。"
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
@@ -179,8 +179,8 @@ class ExportBomDialog(QDialog):
         fmt_group  = QGroupBox("输出格式")
         fmt_layout = QHBoxLayout(fmt_group)
         self._fmt_btn_group  = QButtonGroup(self)
-        self._radio_xlsx     = QRadioButton("Excel工作簿 (.xlsx)")
-        self._radio_csv      = QRadioButton("CSV文件 (.csv)")
+        self._radio_xlsx     = QRadioButton("Excel 工作簿 (.xlsx)")
+        self._radio_csv      = QRadioButton("CSV 文件 (.csv)")
         self._fmt_btn_group.addButton(self._radio_xlsx)
         self._fmt_btn_group.addButton(self._radio_csv)
         if self._output_format == "csv":
@@ -320,7 +320,7 @@ class ExportBomDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择CATProduct文件",
+            self, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -411,7 +411,7 @@ class ExportBomDialog(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请选择一个CATProduct文件。")
+                QMessageBox.warning(self, "未选择文件", "请选择一个 CATProduct 文件。")
                 return
 
         selected_cols = [
@@ -435,15 +435,15 @@ class ExportBomDialog(QDialog):
                 return
 
         summarize = self._radio_summary.isChecked()
-        label_text = "正在导出汇总BOM，请稍候…" if summarize else "正在导出BOM，请稍候…"
+        label_text = "正在导出汇总 BOM ，请稍候…" if summarize else "正在导出 BOM ，请稍候…"
         progress = QProgressDialog(label_text, None, 0, 0, self)
-        progress.setWindowTitle("导出汇总BOM" if summarize else "导出BOM")
+        progress.setWindowTitle("导出汇总 BOM" if summarize else "导出 BOM")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            base = "正在导出汇总BOM，请稍候…" if summarize else "正在导出BOM，请稍候…"
+            base = "正在导出汇总 BOM ，请稍候…" if summarize else "正在导出 BOM ，请稍候…"
             progress.setLabelText(f"{base} 已读取 {count} 个节点")
             progress.repaint()
             QApplication.processEvents()
@@ -461,7 +461,7 @@ class ExportBomDialog(QDialog):
             )
         except Exception as e:
             progress.close()
-            QMessageBox.critical(self, "导出失败", f"导出BOM时出错：\n{e}")
+            QMessageBox.critical(self, "导出失败", f"导出 BOM 时出错：\n{e}")
             return
         finally:
             progress.close()
@@ -470,15 +470,15 @@ class ExportBomDialog(QDialog):
         if dest_path is not None:
             self._show_export_success(dest_path)
         else:
-            fmt_label = "CSV文件" if self._output_format == "csv" else "Excel文件"
-            QMessageBox.information(self, "导出成功", f"BOM已成功导出为{fmt_label}。")
+            fmt_label = "CSV 文件" if self._output_format == "csv" else "Excel 文件"
+            QMessageBox.information(self, "导出成功", f"BOM 已成功导出为{fmt_label}。")
         self.accept()
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
         msg = QMessageBox(self)
         msg.setWindowTitle("导出成功")
-        msg.setText(f"BOM已成功导出：\n{dest_path}")
+        msg.setText(f"BOM 已成功导出：\n{dest_path}")
         msg.setIcon(QMessageBox.Icon.Information)
         open_file_btn   = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
         open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)

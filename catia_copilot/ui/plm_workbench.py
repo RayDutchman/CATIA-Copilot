@@ -3,7 +3,7 @@ PLM 工作台主窗口。
 
 独立非模态 QMainWindow，通过 QTabWidget 整合所有 PLM 对接功能：
   Tab 1 - 连接：配置与测试 PLM 服务端连接
-  Tab 2 - 同步：BOM 预览 + 增量同步（附件上传可选）
+  Tab 2 - 同步： BOM 预览 + 增量同步（附件上传可选）
   Tab 3 - 标签：Tag 管理与自动映射规则
   Tab 4 - 历史：最近 20 次同步记录
 
@@ -275,7 +275,7 @@ class _SyncWorker(QThread):
         在 checkin 前执行以确保零件处于 checked-out 状态。此方法保留以兼容旧引用。"""
 
     def _export_stp(self, catpart_path: str, pn: str) -> str | None:
-        """已废弃：STP 导出已迁移至 sync.py _do_update_and_checkin。此方法保留以兼容旧引用。"""
+        """已废弃： STP 导出已迁移至 sync.py _do_update_and_checkin。此方法保留以兼容旧引用。"""
         return None
 
 
@@ -635,7 +635,7 @@ class PlmWorkbench(QMainWindow):
         self._chk_upload_drw_file = QCheckBox("上传图纸原文件")
         self._chk_upload_catpart.setToolTip("将 CATPart / CATProduct 原始文件作为附件上传到 PLM")
         self._chk_upload_stp.setToolTip(
-            "将 CATPart 导出为 STP 几何文件并上传；PLM 将异步转换为 OBJ 以供三维预览。\n"
+            "将 CATPart 导出为 STP 几何文件并上传； PLM 将异步转换为 OBJ 以供三维预览。\n"
             "勾选后可设置转换等待超时时间。"
         )
         self._chk_upload_drw_pdf.setToolTip(
@@ -643,7 +643,7 @@ class PlmWorkbench(QMainWindow):
             "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
         )
         self._chk_upload_drw_file.setToolTip(
-            "将对应的 CATDrawing 原文件作为附件上传到 PLM。\n"
+            "将对应的 CATDrawing 原文件作为附件上传到 PLM 。\n"
             "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
         )
         chk_row2.addWidget(self._chk_upload_catpart)
@@ -663,7 +663,7 @@ class PlmWorkbench(QMainWindow):
         self._spn_conversion_timeout.setSingleStep(30)
         self._spn_conversion_timeout.setFixedWidth(80)
         self._spn_conversion_timeout.setToolTip(
-            "上传 STP 文件后，PLM 会异步转换为 OBJ 以供三维预览。\n"
+            "上传 STP 文件后， PLM 会异步转换为 OBJ 以供三维预览。\n"
             "此处设置等待转换完成的最长时间（秒）。\n"
             "若转换未完成就 Check-in，geometry 将被服务端丢弃，前端显示'无转换'。\n"
             "建议保持默认值 120 秒；若转换服务较慢可适当增大。\n"
@@ -1114,7 +1114,7 @@ class PlmWorkbench(QMainWindow):
                 self, "BOM 包含部件，无法同步",
                 f"当前 BOM 包含以下\u201c部件\u201d节点，无法同步：\n\n{names}\n\n"
                 "部件是 CATIA 的嵌入式子装配，没有独立文件，不对应 PLM 零件实体。\n"
-                "请在 CATIA 中将其转换为独立产品（CATProduct）后重新读取 BOM。",
+                "请在 CATIA 中将其转换为独立产品（CATProduct）后重新读取 BOM 。",
             )
             return
 
@@ -1137,7 +1137,7 @@ class PlmWorkbench(QMainWindow):
                 "以下 CATIA 文档存在未保存问题（见各条目说明）：\n"
                 "  • 从未保存到磁盘：该零件的属性与几何体完全无法上传\n"
                 "  • 有未提交修改：将上传磁盘上的旧版本，本次修改不会包含在内\n\n"
-                "建议先切换到 CATIA，保存所有文件后再同步。",
+                "建议先切换到 CATIA ，保存所有文件后再同步。",
                 dlg,
             )
             warn_lbl.setWordWrap(True)

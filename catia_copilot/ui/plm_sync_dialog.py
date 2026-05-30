@@ -238,9 +238,9 @@ def _save_plm_config(cfg: dict) -> None:
 # ── 后台工作线程 ──────────────────────────────────────────────────────────────
 
 class _SyncWorker(QThread):
-    """在后台线程中依次完成：BOM 提取（COM，须在调用线程完成）→ PLM 同步。
+    """在后台线程中依次完成： BOM 提取（COM ，须在调用线程完成）→ PLM 同步。
 
-    注意：CATIA COM 调用必须在创建该线程的主线程中完成，因此 BOM 提取
+    注意： CATIA COM 调用必须在创建该线程的主线程中完成，因此 BOM 提取
     在 run() 之前的 prepare() 中执行，run() 中只做纯网络操作。
     """
 
@@ -256,7 +256,7 @@ class _SyncWorker(QThread):
         self._bom_root = None
 
     def prepare(self) -> bool:
-        """在主线程中提取 BOM（COM 调用）。返回 False 表示失败。"""
+        """在主线程中提取 BOM （COM 调用）。返回 False 表示失败。"""
         from catia_copilot.plm.sync import extract_bom
 
         self.log_line.emit("正在读取 CATIA BOM……")
@@ -269,14 +269,14 @@ class _SyncWorker(QThread):
             return False
 
         if self._bom_root is None:
-            self.finished_err.emit("未找到活动的 CATIA 文档，请先在 CATIA 中打开 CATProduct。")
+            self.finished_err.emit("未找到活动的 CATIA 文档，请先在 CATIA 中打开 CATProduct 。")
             return False
 
         self.log_line.emit(f"BOM 根节点：{self._bom_root.part_number}")
         return True
 
     def run(self) -> None:
-        """后台线程：登录 PLM → 同步 BOM。"""
+        """后台线程：登录 PLM → 同步 BOM 。"""
         from catia_copilot.plm.api_client import PlmApiClient, PlmApiError
         from catia_copilot.plm.sync import sync_bom_to_plm
 
@@ -380,7 +380,7 @@ class PlmSyncDialog(QDialog):
         layout.addWidget(cfg_group)
 
         # ── 状态标签 ──────────────────────────────────────────────────────────
-        self._status_label = QLabel('点击"开始同步"将当前 CATIA 产品结构同步到 DocdokuPLM。')
+        self._status_label = QLabel('点击"开始同步"将当前 CATIA 产品结构同步到 DocdokuPLM 。')
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 

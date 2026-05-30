@@ -311,7 +311,7 @@ def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
         application = get_catia_v5_application()
         documents   = application.Documents
     except Exception as exc:
-        logger.warning(f"check_unsaved_docs：无法连接 CATIA，跳过 Document.Saved 检查 — {exc}")
+        logger.warning(f"check_unsaved_docs：无法连接 CATIA ，跳过 Document.Saved 检查 — {exc}")
         return result  # 至少返回第一段结果
 
     # 构建 resolved_path → doc 的映射

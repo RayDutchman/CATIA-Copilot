@@ -218,8 +218,8 @@ class MainWindow(QMainWindow):
                 # 本程序管理员，CATIA 普通用户
                 lines += [
                     "",
-                    "<b>根本原因：</b>本程序以<b>管理员</b>权限运行，CATIA 以<b>普通用户</b>"
-                    "权限运行。Windows UAC 隔离机制导致管理员进程无法看到普通用户进程注册的"
+                    "<b>根本原因：</b>本程序以<b>管理员</b>权限运行， CATIA 以<b>普通用户</b>"
+                    "权限运行。 Windows UAC 隔离机制导致管理员进程无法看到普通用户进程注册的"
                     " ROT 对象。",
                     "<b>解决方案：</b>以<b>普通用户身份（不提权）</b>直接运行本程序。",
                 ]
@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
                 lines += [
                     "",
                     "<b>根本原因：</b>CATIA 进程存在，但所有 COM 连接方式均失败。"
-                    "最常见原因：CATIA 以<b>管理员</b>权限运行，而本程序以<b>普通用户</b>"
+                    "最常见原因： CATIA 以<b>管理员</b>权限运行，而本程序以<b>普通用户</b>"
                     "权限运行（UAC ROT 隔离）。",
                     "<b>解决方案：</b>将 CATIA 改为<b>普通用户</b>权限运行（取消「以管理员身份运行」），"
                     "使两侧权限级别一致。",
@@ -704,7 +704,7 @@ class MainWindow(QMainWindow):
         self._btn_embed.setObjectName("toggleButton")
         self._btn_embed.setToolTip(
             "开启后，在 CATIA V5 每个 3D 视图右上角显示功能菜单按钮\n"
-            "点击按钮可快速访问 BOM、导出、图纸、工具等功能\n"
+            "点击按钮可快速访问 BOM 、导出、图纸、工具等功能\n"
             "（需要 CATIA V5 正在运行）"
         )
         self._btn_embed.clicked.connect(self._toggle_embed)
@@ -1029,7 +1029,7 @@ class MainWindow(QMainWindow):
         self._embed_action_signal.emit("close", view_hwnd)
 
     def _open_plm_sync_from_embed(self) -> None:
-        """嵌入面板菜单 → 同步 BOM 到 PLM。"""
+        """嵌入面板菜单 → 同步 BOM 到 PLM 。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("plm_sync", view_hwnd)
 
@@ -1039,12 +1039,12 @@ class MainWindow(QMainWindow):
         self._embed_action_signal.emit("plm_workbench", view_hwnd)
 
     def _open_export_pdf_from_embed(self) -> None:
-        """嵌入面板菜单 → CATDrawing → PDF。"""
+        """嵌入面板菜单 → CATDrawing → PDF 。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("export_pdf", view_hwnd)
 
     def _open_export_stp_from_embed(self) -> None:
-        """嵌入面板菜单 → CATPart/CATProduct → STP。"""
+        """嵌入面板菜单 → CATPart/CATProduct → STP 。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("export_stp", view_hwnd)
 
@@ -1322,10 +1322,10 @@ class MainWindow(QMainWindow):
     def _open_convert_part_dialog(self) -> None:
         self._show_dialog("_dlg_convert_part", lambda: FileConvertDialog(
             parent=self,
-            title="将CATPart/CATProduct导出为STP",
-            file_label="已选CATPart/CATProduct文件:",
+            title="将 CATPart/CATProduct 导出为 STP",
+            file_label="已选 CATPart/CATProduct 文件:",
             file_filter="*.CATPart *.CATProduct (*.CATPart *.CATProduct);;All Files (*)",
-            no_files_msg="请至少选择一个CATPart或CATProduct文件。",
+            no_files_msg="请至少选择一个 CATPart 或 CATProduct 文件。",
             conversion_fn=convert_part_to_step,
             settings_key="CATPart",
             show_prefix_option=True,
@@ -1336,17 +1336,17 @@ class MainWindow(QMainWindow):
     def _open_convert_drawing_dialog(self) -> None:
         self._show_dialog("_dlg_convert_drawing", lambda: FileConvertDialog(
             parent=self,
-            title="将CATDrawing导出为PDF",
-            file_label="已选CATDrawing文件:",
+            title="将 CATDrawing 导出为 PDF",
+            file_label="已选 CATDrawing 文件:",
             file_filter="*.CATDrawing (*.CATDrawing);;All Files (*)",
-            no_files_msg="请至少选择一个CATDrawing文件。",
+            no_files_msg="请至少选择一个 CATDrawing 文件。",
             conversion_fn=convert_drawing_to_pdf,
             settings_key="CATDrawing",
             show_prefix_option=True,
             prefix="DR_",
             show_update_option=True,
             note=(
-                "如果用于导出的CATDrawing有多页，请将CATIA设置为"
+                "如果用于导出的 CATDrawing 有多页，请将 CATIA 设置为"
                 "\u201c将多页文档保存在单向量文件中\u201d"
                 "（工具->选项->常规->兼容性->图形格式->导出（另存为））"
             ),
@@ -1379,9 +1379,9 @@ class MainWindow(QMainWindow):
         self._show_dialog("_dlg_stamp_template", lambda: FileConvertDialog(
             parent=self,
             title="刷写零件模板",
-            file_label="已选CATPart文件:",
+            file_label="已选 CATPart 文件:",
             file_filter="*.CATPart (*.CATPart);;All Files (*)",
-            no_files_msg="请至少选择一个CATPart文件。",
+            no_files_msg="请至少选择一个 CATPart 文件。",
             conversion_fn=apply_part_template,
             settings_key="StampPartTemplate",
             show_active_doc_option=True,
@@ -1397,7 +1397,7 @@ class MainWindow(QMainWindow):
     def _open_related_file_for_active_doc(self) -> None:
         """根据当前活跃文档类型，自动查找并打开关联文件。
 
-        - CATPart / CATProduct → 启发式查找对应 CATDrawing（文件名/PartNumber 匹配）
+        - CATPart / CATProduct → 启发式查找对应 CATDrawing （文件名/PartNumber 匹配）
         - CATDrawing → 正向查询（COM 视图链接）+ 启发式查找对应 CATPart / CATProduct
         - 其他格式 → 提示不支持
         """
@@ -1430,7 +1430,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-            empty_msg  = f"未能找到对应的 CATDrawing。\n\n零件：{Path(full_name).name}"
+            empty_msg  = f"未能找到对应的 CATDrawing 。\n\n零件：{Path(full_name).name}"
             pick_title = "选择要打开的图纸"
 
         elif ext(".catdrawing",):
@@ -1446,14 +1446,14 @@ class MainWindow(QMainWindow):
                 pass
 
             empty_msg  = (
-                f"未能找到对应的 CATPart 或 CATProduct。\n\n图纸：{Path(full_name).name}"
+                f"未能找到对应的 CATPart 或 CATProduct 。\n\n图纸：{Path(full_name).name}"
             )
             pick_title = "选择要打开的零件/产品"
 
         else:
             QMessageBox.information(
                 self, "不支持的文档类型",
-                f"当前活跃文档不是 CATPart / CATProduct / CATDrawing：\n{full_name}",
+                f"当前活跃文档不是 CATPart / CATProduct / CATDrawing ：\n{full_name}",
             )
             return
 
@@ -1795,8 +1795,8 @@ class MainWindow(QMainWindow):
         catia_root = detect_catia_root()
         if catia_root:
             reply = QMessageBox.question(
-                self, "检测到CATIA安装",
-                f"检测到CATIA安装路径：\n{catia_root}\n\n是否使用该目录？",
+                self, "检测到 CATIA 安装",
+                f"检测到 CATIA 安装路径：\n{catia_root}\n\n是否使用该目录？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
@@ -1805,7 +1805,7 @@ class MainWindow(QMainWindow):
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
                 self,
-                "选择CATIA安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
                 "",
             )
             if not catia_root:
@@ -1869,8 +1869,8 @@ class MainWindow(QMainWindow):
         catia_root = detect_catia_root()
         if catia_root:
             reply = QMessageBox.question(
-                self, "检测到CATIA安装",
-                f"检测到CATIA安装路径：\n{catia_root}\n\n是否使用该目录？",
+                self, "检测到 CATIA 安装",
+                f"检测到 CATIA 安装路径：\n{catia_root}\n\n是否使用该目录？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
@@ -1879,7 +1879,7 @@ class MainWindow(QMainWindow):
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
                 self,
-                "选择CATIA安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
                 "",
             )
             if not catia_root:
@@ -1908,7 +1908,7 @@ class MainWindow(QMainWindow):
         if not dest_dir.exists():
             QMessageBox.critical(
                 self, "文件夹未找到",
-                f"目标文件夹不存在：\n{dest_dir}\n\n请检查您的CATIA安装。",
+                f"目标文件夹不存在：\n{dest_dir}\n\n请检查您的 CATIA 安装。",
             )
             return
 

@@ -27,9 +27,9 @@
 -----------
 依次读取 CATIA SPA "测量惯量 + 保持测量" 写入的 "惯量包络体.1" 至
 "惯量包络体.{MAX_INERTIA_INDEX}" 保持测量参数，在零件级按平行轴定理汇总后存储：
-  惯量包络体.N\\质量    → 质量，CATIA 原始单位 kg（已为 SI，直接存储）
-  惯量包络体.N\\Gx/Gy/Gz → 重心坐标，CATIA 原始单位 mm（÷1000 换算为 m 后存储）
-  惯量包络体.N\\IoxG/IoyG/IozG/IxyG/IxzG/IyzG → 转动惯量分量，CATIA 原始单位 kg·m²（已为 SI，直接存储）
+  惯量包络体.N\\质量    → 质量， CATIA 原始单位 kg（已为 SI，直接存储）
+  惯量包络体.N\\Gx/Gy/Gz → 重心坐标， CATIA 原始单位 mm（÷1000 换算为 m 后存储）
+  惯量包络体.N\\IoxG/IoyG/IozG/IxyG/IxzG/IyzG → 转动惯量分量， CATIA 原始单位 kg·m²（已为 SI，直接存储）
 
 单位制（内部存储，全程 SI）
 --------------------------
@@ -287,7 +287,7 @@ def _read_keep_inertia_params(
                     [ixy_si, iyy_si, iyz_si],
                     [ixz_si, iyz_si, izz_si],
                 ],
-                "density": density_raw,  # None：无密度参数；-1.0：CATIA 报材料不统一；>0：kg/m³
+                "density": density_raw,  # None：无密度参数；-1.0： CATIA 报材料不统一；>0：kg/m³
             })
 
         if not measurements:
@@ -1084,7 +1084,7 @@ def collect_mass_props_rows(
             "Iyz":          inertia[1][2] if mp else None,
             "_filepath":    filepath,
             "_placement":   abs_mat4,   # 零件局部坐标系 → 根产品坐标系的 4×4 变换矩阵
-            "_not_found":   not_found,  # True：CATIA 无法解析文件引用（路径丢失）
+            "_not_found":   not_found,  # True： CATIA 无法解析文件引用（路径丢失）
             "_no_file":     no_file,    # True：路径有效但文件尚未保存到磁盘
             "_unreadable":  not is_readable,
             "_meas_failed": meas_failed,  # True：零件文档可访问但惯量包络体参数不存在

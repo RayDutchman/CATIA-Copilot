@@ -53,7 +53,7 @@ def export_bom_to_excel(
     summarize:
         When ``True`` the hierarchical BOM is collapsed into a flat summary
         (unique parts with cumulative quantities) before writing.
-        The output filename will have the suffix ``_汇总BOM`` instead of
+        The output filename will have the suffix ``_汇总 BOM`` instead of
         ``_BOM``.
     summary_include_assemblies:
         Passed to :func:`~catia_copilot.catia.bom_collect.flatten_bom_to_summary`.
@@ -83,7 +83,7 @@ def export_bom_to_excel(
     if summarize:
         columns = [c for c in columns if c != "Level"]
 
-    bom_suffix = "_汇总BOM" if summarize else "_BOM"
+    bom_suffix = "_汇总 BOM" if summarize else "_BOM"
     use_csv = output_format.lower() == "csv"
 
     caa         = get_catia_v5_application()
@@ -163,7 +163,7 @@ def export_bom_to_excel(
                 active_full = application.ActiveDocument.FullName
             except Exception as e:
                 raise RuntimeError(
-                    "无法获取当前CATIA活动文档，请确保 CATIA 已启动且有活动文档。"
+                    "无法获取当前 CATIA 活动文档，请确保 CATIA 已启动且有活动文档。"
                 ) from e
             src_name = Path(active_full)
             dest_dir = Path(output_folder).resolve() if output_folder else src_name.parent
@@ -184,7 +184,7 @@ def export_bom_to_excel(
             else:
                 wb   = openpyxl.Workbook()
                 ws   = wb.active
-                ws.title = "汇总BOM" if summarize else "BOM"
+                ws.title = "汇总 BOM" if summarize else "BOM"
                 _write_sheet(ws, rows)
                 wb.save(dest)
             written_paths.append(dest)
@@ -204,8 +204,8 @@ def export_bom_to_excel(
                 from PySide6.QtWidgets import QMessageBox
                 reply = QMessageBox.question(
                     None, "文件正在使用",
-                    f"该文件当前在Excel中已打开：\n{dest}\n\n"
-                    "请在Excel中关闭该文件，然后点击【重试】，或点击【取消】以中止。",
+                    f"该文件当前在 Excel 中已打开：\n{dest}\n\n"
+                    "请在 Excel 中关闭该文件，然后点击【重试】，或点击【取消】以中止。",
                     QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel,
                 )
                 if reply == QMessageBox.StandardButton.Cancel:
@@ -243,7 +243,7 @@ def export_bom_to_excel(
         else:
             wb       = openpyxl.Workbook()
             ws       = wb.active
-            ws.title = "汇总BOM" if summarize else "BOM"
+            ws.title = "汇总 BOM" if summarize else "BOM"
             _write_sheet(ws, rows)
             wb.save(dest)
         written_paths.append(dest)

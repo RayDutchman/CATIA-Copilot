@@ -23,7 +23,7 @@ def write_bom_to_catia(
     custom_columns: list[str],
     progress_callback: Callable[[int], None] | None = None,
 ) -> None:
-    """通过 COM 将编辑后的 BOM 属性写回 CATIA。
+    """通过 COM 将编辑后的 BOM 属性写回 CATIA 。
 
     参数：
         file_path: 已编辑的 ``.CATProduct`` 文件路径，或 ``None`` 使用当前活动的 CATIA
@@ -33,7 +33,7 @@ def write_bom_to_catia(
         custom_columns: 用户自定义属性的列名（通过 ``UserRefProperties`` 写入）
         progress_callback: 可选的回调函数，在遍历期间访问每个节点后调用，传入当前节点计数。
                           可抛出异常以中止。遍历顺序为后序（子节点在父节点之前），
-                          因此较深层级在父级之前写入 CATIA。
+                          因此较深层级在父级之前写入 CATIA 。
     """
     from catia_copilot.catia.connection import get_catia_v5_application
 

@@ -285,7 +285,7 @@ class CATIAEmbedManager:
 
     def start(self) -> bool:
         """
-        查找 CATIA，在后台线程启动嵌入逻辑。
+        查找 CATIA ，在后台线程启动嵌入逻辑。
 
         Returns
         -------
@@ -556,7 +556,7 @@ class CATIAEmbedManager:
     def _win_event_callback(self, hHook, event, hwnd, idObject, idChild, dwThread, dwTime):
         """
         OUTOFCONTEXT 回调：在我们自己的线程执行，直接刷新面板位置。
-        不注入 CATIA 进程，不阻塞 CATIA。
+        不注入 CATIA 进程，不阻塞 CATIA 。
 
         EVENT_OBJECT_SHOW 时额外调用 _scan_new_views：
         MDI 子窗口最大化会导致旧 view（CATFrmNavigGraphicWindow）隐藏、
@@ -607,7 +607,7 @@ class CATIAEmbedManager:
         self._panels[view_hwnd] = panel_hwnd
         cls = win32gui.GetClassName(view_hwnd)
         logger.debug(
-            "创建面板 view=%d(%s) panel=%d btn=%d MDI坐标=(%d,%d)",
+            "创建面板 view=%d(%s) panel=%d btn=%d MDI 坐标=(%d,%d)",
             view_hwnd, cls, panel_hwnd, btn_hwnd, panel_x, panel_y,
         )
         self._update_all_panels()
