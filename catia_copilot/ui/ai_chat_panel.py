@@ -302,33 +302,36 @@ class ChatScrollArea(QScrollArea):
 # ---------------------------------------------------------------------------
 
 class AISettingsDialog(QDialog):
-    """AI 配置对话框：API Base / Key / Model / System Prompt 等。"""
+    """
+    AI 运行时参数对话框。
+
+    Provider / API Key / 模型列表 通过直接编辑 ai_config.json 管理
+    （格式与 Standard-Agent-Server 的 models_config.json 相同）。
+    此对话框只管理运行时参数：temperature / max_tool_rounds / timeout。
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("AI 助手设置")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(420)
         self._cfg = ai_config.load()
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
+        # 配置文件路径提示
+        cfg_path = ai_config.get_config_path()
+        hint = QLabel(
+            f"Provider / API Key / 模型列表 请直接编辑：\n{cfg_path}\n"
+            f"（格式参考 ai_config.example.json）"
+        )
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self._api_base = QLineEdit(self._cfg.get("api_base", ""))
-        self._api_base.setPlaceholderText("https://api.openai.com/v1")
-        form.addRow("API Base URL:", self._api_base)
-
-        self._api_key = QLineEdit(self._cfg.get("api_key", ""))
-        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key.setPlaceholderText("sk-...")
-        form.addRow("API Key:", self._api_key)
-
-        self._model = QLineEdit(self._cfg.get("model", "gpt-4o"))
-        self._model.setPlaceholderText("gpt-4o / claude-3-5-sonnet / deepseek-chat ...")
-        form.addRow("模型:", self._model)
 
         self._temperature = QDoubleSpinBox()
         self._temperature.setRange(0.0, 2.0)
@@ -350,21 +353,6 @@ class AISettingsDialog(QDialog):
 
         layout.addLayout(form)
 
-        # System Prompt
-        layout.addWidget(QLabel("System Prompt:"))
-        self._system_prompt = QTextEdit()
-        self._system_prompt.setPlainText(self._cfg.get("system_prompt", ""))
-        self._system_prompt.setMinimumHeight(100)
-        layout.addWidget(self._system_prompt)
-
-        # 配置文件路径提示
-        cfg_path = ai_config.get_config_path()
-        hint = QLabel(f"配置保存至：{cfg_path}")
-        hint.setStyleSheet("color: gray; font-size: 11px;")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
-        # 按钮
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -373,15 +361,11 @@ class AISettingsDialog(QDialog):
         layout.addWidget(buttons)
 
     def _save_and_accept(self):
-        cfg = {
-            "api_base":       self._api_base.text().strip(),
-            "api_key":        self._api_key.text().strip(),
-            "model":          self._model.text().strip(),
-            "temperature":    self._temperature.value(),
-            "max_tool_rounds": self._max_rounds.value(),
-            "timeout":        self._timeout.value(),
-            "system_prompt":  self._system_prompt.toPlainText(),
-        }
+        # 只更新运行时参数，保留 providers 等字段不变
+        cfg = ai_config.load()
+        cfg["temperature"]    = self._temperature.value()
+        cfg["max_tool_rounds"] = self._max_rounds.value()
+        cfg["timeout"]        = self._timeout.value()
         try:
             ai_config.save(cfg)
         except Exception as e:
@@ -436,12 +420,23 @@ class AIChatPanel(QWidget):
 
         layout.addWidget(QLabel("模型:"))
 
-        self._model_edit = QLineEdit()
-        self._model_edit.setFixedWidth(180)
-        self._model_edit.setPlaceholderText("gpt-4o")
+        self._model_combo = QComboBox()
+        self._model_combo.setFixedWidth(200)
+        self._model_combo.setEditable(True)  # 允许手动输入
         cfg = ai_config.load()
-        self._model_edit.setText(cfg.get("model", "gpt-4o"))
-        layout.addWidget(self._model_edit)
+        model_ids = ai_config.list_model_ids(cfg)
+        default_model = ai_config.get_default_model_id(cfg)
+        if model_ids:
+            self._model_combo.addItems(model_ids)
+        else:
+            self._model_combo.addItem(default_model)
+        # 选中默认模型
+        idx = self._model_combo.findText(default_model)
+        if idx >= 0:
+            self._model_combo.setCurrentIndex(idx)
+        else:
+            self._model_combo.setCurrentText(default_model)
+        layout.addWidget(self._model_combo)
 
         layout.addStretch()
 
@@ -518,10 +513,10 @@ class AIChatPanel(QWidget):
 
         # 构建对话历史
         cfg = ai_config.load()
-        # 用工具栏中的模型覆盖配置
-        model_text = self._model_edit.text().strip()
-        if model_text:
-            cfg["model"] = model_text
+        # 用工具栏中选中的模型覆盖默认模型
+        selected_model = self._model_combo.currentText().strip()
+        if selected_model:
+            cfg["default_model"] = selected_model
 
         if not self._messages:
             # 首次对话，插入 system prompt
@@ -679,9 +674,20 @@ class AIChatPanel(QWidget):
     def _open_settings(self):
         dlg = AISettingsDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # 刷新工具栏模型显示
+            # 重新加载配置，刷新模型下拉框
             cfg = ai_config.load()
-            self._model_edit.setText(cfg.get("model", "gpt-4o"))
+            model_ids = ai_config.list_model_ids(cfg)
+            default_model = ai_config.get_default_model_id(cfg)
+            self._model_combo.clear()
+            if model_ids:
+                self._model_combo.addItems(model_ids)
+            else:
+                self._model_combo.addItem(default_model)
+            idx = self._model_combo.findText(default_model)
+            if idx >= 0:
+                self._model_combo.setCurrentIndex(idx)
+            else:
+                self._model_combo.setCurrentText(default_model)
 
     def stop_agent(self):
         """主窗口关闭时调用，停止后台线程。"""
