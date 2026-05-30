@@ -4,6 +4,49 @@
 
 ---
 
+## [1.9.0] — 2026-05-30
+
+### 新增 — 界面与交互
+
+- **CATIA 3D 视图嵌入菜单**：在 CATIA V5 每个 3D 视图右上角嵌入功能菜单按钮，可快速访问所有功能；支持拖拽定位、锚点吸附、位置持久化；菜单按工作台/导出/图纸/工具分区，与主菜单结构一致。
+- **原生主题（CATIA 风格）**：新增第三套主题，使用 Qt `windows` 风格渲染器，外观与 CATIA V5 界面一致；主题切换改为下拉菜单（深色 / 浅色 / 原生）。
+- **对话框跟随 CATIA 最小化/还原**：CATIA 最小化时所有对话框自动隐藏，还原时恢复原位置和尺寸（包含用户运行时调整的几何）。
+- **嵌入按钮 Toggle 样式**：嵌入 3D 视图按钮改为可选中的 Toggle 按钮，选中时蓝色高亮；启用状态持久化，重启后自动恢复。
+
+### 新增 — 功能
+
+- **查找指向的文档**（原"查找所有依赖项"）：通过 CATIA COM 查找文件的所有引用文档，支持多种查找策略。
+- **在图纸/零件间切换**（原"打开当前文档的关联图纸/零件"）：自动判断当前活跃文档类型，双向查找关联文档。
+
+### 重构 — 主菜单结构
+
+- Tab 重命名与重组：导出 / 工作台 / 图纸 / 工具 / ≡（原 导出 / BOM / 图纸 / 工具 / ≡）
+- 工作台 Tab：BOM 工作台、质量特性工作台、PLM 工作台
+- 导出 Tab：从产品导出 BOM（从 BOM Tab 移入）、从图纸导出 PDF、从产品/零件导出 STP
+- 工具 Tab：合并原「零件与装配」和「分析」section 为「功能」section；运行宏从 ≡ 移入
+- 新增 `_ACTION_LABELS` 类变量字典，嵌入菜单和主菜单按钮共用，消除硬编码不一致
+
+### 重构 — 功能命名统一
+
+- 所有对话框标题与主菜单按钮名称完全一致：BOM 工作台、质量特性工作台、从产品导出 BOM、从图纸导出 PDF、从产品/零件导出 STP、查找指向的文档
+- 中文与专有名词（BOM / CATIA / CATPart / CATProduct / CATDrawing / COM / Excel 等）之间统一加空格
+
+### 修复
+
+- 修复 `application.Visible = True` 导致 CATIA 最大化窗口变为普通窗口的问题：新增 `safe_set_visible()` 函数，设置前保存窗口状态，设置后恢复最大化。
+- 修复 `bring_catia_to_foreground` 的 `SW_RESTORE` 问题：添加 `IsIconic` 检查，只在最小化时才恢复。
+- 修复对话框几何持久化：`setParent(None)` 重建原生窗口后重新调用 `restoreGeometry`；CATIA 最小化前用 `saveGeometry()` 保存运行时几何，还原时精确恢复。
+- 修复所有对话框缺少窗口几何持久化的问题（`ExportBomDialog`、`FindDependenciesDialog`、`HelpDialog`、`PlmSyncDialog`、`PlmWorkbench`、`FileConvertDialog`）。
+- 修复嵌入菜单「运行宏」在 Win32 后台线程直接调用 COM 导致静默失败的问题：通过 Signal 派发到 Qt 主线程，复用主窗口 `_run_macro()`。
+- 修复主窗口「运行宏」按钮菜单消失的问题：`clicked` 信号的 `bool` 参数被误传给 `pos` 参数，改用 `lambda` 隔离。
+
+### 工程 — 构建
+
+- `build.spec` 新增 `pywin32_system32` DLL 动态打包（`pywintypes` / `pythoncom`），缺失时所有 COM 操作会崩溃。
+- `build.spec` 新增 `qdarkstyle` 的两个 rc 模块到 `hiddenimports`，缺失时深色/浅色主题图标显示为空白。
+
+---
+
 ## [1.8.0] — 2026-05-21
 
 ### 新增 — BOM
