@@ -919,11 +919,11 @@ class CATIAEmbedManager:
 
         # ── 工作台 ────────────────────────────────────────────────────
         append(hmenu, MF_STRING,    MENU_BOM_EDIT,       label("bom_edit",        "BOM 工作台"))
-        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      "从产品导出 BOM"))
         append(hmenu, MF_STRING,    MENU_MASS_PROPS,     label("mass_props",      "质量特性工作台"))
         append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   "PLM 工作台"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
         # ── 导出 ──────────────────────────────────────────────────────
+        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      "从产品导出 BOM"))
         append(hmenu, MF_STRING,    MENU_EXPORT_PDF,     label("export_pdf",      "从图纸导出 PDF"))
         append(hmenu, MF_STRING,    MENU_EXPORT_STP,     label("export_stp",      "从产品/零件导出 STP"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
