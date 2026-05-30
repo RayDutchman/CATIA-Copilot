@@ -12,8 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 APP_NAME    = "CATIA Copilot"
-APP_VERSION = "1.8.0"
-APP_DATE    = "2026-05-21"
+APP_VERSION = "1.9.0"
+APP_DATE    = "2026-05-30"
 APP_AUTHOR  = "CHEN Weibo"
 APP_CONTACT = "thucwb@gmail.com"
 
@@ -22,18 +22,20 @@ ABOUT_TEXT = f"""{APP_NAME} v{APP_VERSION}
 一款面向工程团队的 CATIA V5 效率工具。
 
 主要功能：
-  • CATDrawing 批量导出 PDF
-  • CATPart / CATProduct 批量导出 STEP
-  • CATProduct BOM 导出到 Excel
-  • BOM 属性在线编辑与回写 CATIA
-  • 重量、重心、转动惯量统计（质量特性汇总）
-  • 新建图纸（从模板生成 CATDrawing）
-  • 刷新图纸（同步零件属性到图纸参数）
-  • CATIA 宏脚本快捷运行
-  • 紧固件快速装配（VBA 宏批量装配）
-  • 托板螺母快速装配（VBA 宏批量装配）
-  • 零件模板刷写（添加标准用户自定义属性）
+  • 从图纸导出 PDF（CATDrawing 批量导出）
+  • 从产品/零件导出 STP（CATPart / CATProduct 批量导出）
+  • 从产品导出 BOM（导出至 Excel）
+  • BOM 工作台（在线编辑属性并写回 CATIA）
+  • 质量特性工作台（质量/重心/转动惯量统计与汇总）
+  • PLM 工作台（连接管理、增量同步、Tag 规则）
+  • 新建图纸 / 刷新图纸（从模板生成或同步 CATDrawing）
+  • 刷写零件模板（添加标准用户自定义属性）
+  • 紧固件 / 托板螺母快速装配（VBA 宏批量装配）
+  • 在图纸/零件间切换（自动查找关联文档）
+  • 查找指向的文档（COM 依赖分析）
+  • 运行宏（快捷运行 .catvbs / .catscript / .catvba）
   • 字体文件 / ISO.xml 标准文件一键部署
+  • CATIA 3D 视图嵌入菜单（快速访问所有功能）
   • COM 连接诊断（自动检测连接状态与异常）
 
 ─────────────────────────────────────────

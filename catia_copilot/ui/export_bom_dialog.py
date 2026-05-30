@@ -34,7 +34,7 @@ class ExportBomDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("从 CATProduct 导出 BOM")
+        self.setWindowTitle("从产品导出 BOM")
         self.setMinimumSize(560, 580)
 
         self._settings        = QSettings("CATIACompanion", "ExportBOMDialog")

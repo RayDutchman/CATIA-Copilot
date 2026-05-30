@@ -158,7 +158,7 @@ class MassPropsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("重量、重心、惯量统计")
+        self.setWindowTitle("质量特性工作台")
         self.setMinimumSize(1100, 650)
         self.resize(1300, 750)
 
@@ -683,16 +683,17 @@ class MassPropsDialog(QDialog):
         left_g.setSpacing(4)
         left_g.setContentsMargins(0, 0, 0, 0)
 
-        left_g.addWidget(_sec_lbl("总重量"), 0, 0)
+        left_g.addWidget(_sec_lbl("总重量"), 0, 0, 1, 2)
+        left_g.addWidget(_fld_lbl("m"), 1, 0)
         self._edit_weight = _val_edit()
-        left_g.addWidget(self._edit_weight, 0, 1)
+        left_g.addWidget(self._edit_weight, 1, 1)
 
-        left_g.addWidget(_sec_lbl("重心 (G)"), 1, 0, 1, 2)
+        left_g.addWidget(_sec_lbl("重心 (G)"), 2, 0, 1, 2)
         for r, (text, attr) in enumerate([("Gx", "_edit_cx"), ("Gy", "_edit_cy"), ("Gz", "_edit_cz")]):
-            left_g.addWidget(_fld_lbl(text), r + 2, 0)
+            left_g.addWidget(_fld_lbl(text), r + 3, 0)
             edit = _val_edit()
             setattr(self, attr, edit)
-            left_g.addWidget(edit, r + 2, 1)
+            left_g.addWidget(edit, r + 3, 1)
         left_g.setRowStretch(left_g.rowCount(), 1)
         summary_h.addWidget(left_w, 0, Qt.AlignmentFlag.AlignBottom)
 
@@ -830,7 +831,7 @@ class MassPropsDialog(QDialog):
 
     def _update_title(self) -> None:
         """在标题栏末尾追加 ' *' 表示有未保存到磁盘的编辑；清除则恢复原标题。"""
-        base = "重量、重心、惯量统计"
+        base = "质量特性工作台"
         self.setWindowTitle(f"{base} *" if self._is_dirty else base)
 
     # ── 搜索筛选 ───────────────────────────────────────────────────────────

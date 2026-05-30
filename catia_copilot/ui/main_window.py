@@ -62,19 +62,19 @@ class MainWindow(QMainWindow):
 
     # 功能动作的显示名称，嵌入菜单和主菜单按钮共用，避免硬编码不一致
     _ACTION_LABELS: dict[str, str] = {
-        "bom_edit":        "BOM 属性补全",
-        "bom_export":      "从 CATProduct 导出 BOM",
-        "mass_props":      "重量、重心、惯量统计",
+        "bom_edit":        "BOM 工作台",
+        "bom_export":      "从产品导出 BOM",
+        "mass_props":      "质量特性工作台",
         "plm_workbench":   "PLM 工作台",
-        "export_pdf":      "CATDrawing → PDF",
-        "export_stp":      "CATPart/CATProduct → STP",
+        "export_pdf":      "从图纸导出 PDF",
+        "export_stp":      "从产品/零件导出 STP",
         "drawing_new":     "新建图纸 (Python)",
         "drawing_refresh": "刷新图纸 (Python)",
         "stamp_template":  "刷写零件模板",
         "fastener_asm":    "快速装配紧固件",
         "nut_plate_asm":   "快速装配托板螺母",
-        "open_related":    "打开当前文档的关联图纸/零件",
-        "find_deps":       "查找所有依赖项",
+        "open_related":    "在图纸/零件间切换",
+        "find_deps":       "查找指向的文档",
         "run_macro":       "运行宏…",
     }
 
@@ -362,11 +362,11 @@ class MainWindow(QMainWindow):
         # ── Tab 分页内容区 ──────────────────────────────────────────────────
         self._tab_widget = QTabWidget()
         self._tab_widget.setObjectName("mainTabWidget")  # 专属样式：Tab 标题 padding + 按钮高度
-        self._tab_widget.addTab(self._build_export_page(), "导出")   # 0
-        self._tab_widget.addTab(self._build_bom_page(),    "BOM")    # 1
-        self._tab_widget.addTab(self._build_drawing_page(), "图纸")  # 2
-        self._tab_widget.addTab(self._build_tools_page(),  "工具")   # 3
-        self._tab_widget.addTab(self._build_more_page(),   "≡")      # 4
+        self._tab_widget.addTab(self._build_workbench_page(), "工作台")  # 0
+        self._tab_widget.addTab(self._build_export_page(),    "导出")    # 1
+        self._tab_widget.addTab(self._build_drawing_page(),   "图纸")    # 2
+        self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
+        self._tab_widget.addTab(self._build_more_page(),      "≡")       # 4
 
         # ── 嵌入式日志面板（位于 Tab 下方、状态栏上方）─────────────────────
         self._log_panel = self._build_log_panel()
@@ -489,43 +489,14 @@ class MainWindow(QMainWindow):
 
     # ── 导出页面 ───────────────────────────────────────────────────────────
 
-    def _build_export_page(self) -> QWidget:
-        """构建"导出"功能页。"""
+    def _build_workbench_page(self) -> QWidget:
+        """构建"工作台"功能页。"""
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
-        layout.addWidget(self._make_section_label("文件导出"))
-
-        btn_drawing = QPushButton(self._ACTION_LABELS["export_pdf"])
-        btn_drawing.setToolTip("将 CATDrawing 文件批量导出为 PDF")
-        btn_drawing.clicked.connect(self._open_convert_drawing_dialog)
-
-        btn_part = QPushButton(self._ACTION_LABELS["export_stp"])
-        btn_part.setToolTip("将 CATPart 或 CATProduct 文件批量导出为 STEP")
-        btn_part.clicked.connect(self._open_convert_part_dialog)
-
-        for btn in (btn_drawing, btn_part):
-            layout.addWidget(btn)
-
-        layout.addStretch()
-        return self._make_page(body)
-
-    # ── BOM 页面 ───────────────────────────────────────────────────────────
-
-    def _build_bom_page(self) -> QWidget:
-        """构建"BOM"功能页。"""
-        body = QWidget()
-        layout = QVBoxLayout(body)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(6)
-
-        layout.addWidget(self._make_section_label("物料清单"))
-
-        btn_bom_export = QPushButton(self._ACTION_LABELS["bom_export"])
-        btn_bom_export.setToolTip("从 CATProduct 导出 BOM 到 Excel 文件")
-        btn_bom_export.clicked.connect(self._open_export_bom_dialog)
+        layout.addWidget(self._make_section_label("工作台"))
 
         btn_bom_edit = QPushButton(self._ACTION_LABELS["bom_edit"])
         btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并写回 CATIA")
@@ -543,7 +514,36 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        for btn in (btn_bom_export, btn_bom_edit, btn_mass_props, btn_plm_workbench):
+        for btn in (btn_bom_edit, btn_mass_props, btn_plm_workbench):
+            layout.addWidget(btn)
+
+        layout.addStretch()
+        return self._make_page(body)
+
+    # ── 导出页面 ───────────────────────────────────────────────────────────
+
+    def _build_export_page(self) -> QWidget:
+        """构建"导出"功能页。"""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(6)
+
+        layout.addWidget(self._make_section_label("导出"))
+
+        btn_bom_export = QPushButton(self._ACTION_LABELS["bom_export"])
+        btn_bom_export.setToolTip("从 CATProduct 导出 BOM 到 Excel 文件")
+        btn_bom_export.clicked.connect(self._open_export_bom_dialog)
+
+        btn_drawing = QPushButton(self._ACTION_LABELS["export_pdf"])
+        btn_drawing.setToolTip("将 CATDrawing 文件批量导出为 PDF")
+        btn_drawing.clicked.connect(self._open_convert_drawing_dialog)
+
+        btn_part = QPushButton(self._ACTION_LABELS["export_stp"])
+        btn_part.setToolTip("将 CATPart 或 CATProduct 文件批量导出为 STEP")
+        btn_part.clicked.connect(self._open_convert_part_dialog)
+
+        for btn in (btn_bom_export, btn_drawing, btn_part):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -618,13 +618,12 @@ class MainWindow(QMainWindow):
 
         layout.addSpacing(4)
 
-        # ── 零件与装配 ────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("零件与装配"))
+        # ── 功能 ──────────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("功能"))
 
         btn_stamp = QPushButton(self._ACTION_LABELS["stamp_template"])
         btn_stamp.setToolTip("为选中的 CATPart 添加标准用户自定义属性")
         btn_stamp.clicked.connect(self._open_stamp_part_template_dialog)
-
         layout.addWidget(btn_stamp)
 
         # 快速装配：两个按钮并排
@@ -633,27 +632,13 @@ class MainWindow(QMainWindow):
         btn_fastener = QPushButton(self._ACTION_LABELS["fastener_asm"])
         btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
         btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
-
         btn_nut = QPushButton(self._ACTION_LABELS["nut_plate_asm"])
         btn_nut.setToolTip("在装配体中连续放置托板螺母实例")
         btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
-
         asm_row.addWidget(btn_fastener)
         asm_row.addWidget(btn_nut)
         layout.addLayout(asm_row)
 
-        layout.addSpacing(4)
-
-        # ── 分析工具 ──────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("分析"))
-
-        btn_deps = QPushButton(self._ACTION_LABELS["find_deps"])
-        btn_deps.setToolTip("通过 CATIA COM 查找文件的所有引用文档")
-        btn_deps.clicked.connect(self._open_find_dependencies_dialog)
-
-        layout.addWidget(btn_deps)
-
-        # 图纸 ↔ 零件/产品 互相查找（单按钮，自动判断当前文档类型）
         btn_open_related = QPushButton(self._ACTION_LABELS["open_related"])
         btn_open_related.setToolTip(
             "自动判断当前活跃文档类型：\n"
@@ -663,33 +648,33 @@ class MainWindow(QMainWindow):
         btn_open_related.clicked.connect(self._open_related_file_for_active_doc)
         layout.addWidget(btn_open_related)
 
+        btn_deps = QPushButton(self._ACTION_LABELS["find_deps"])
+        btn_deps.setToolTip("通过 CATIA COM 查找文件的所有引用文档")
+        btn_deps.clicked.connect(self._open_find_dependencies_dialog)
+        layout.addWidget(btn_deps)
+
+        # 「运行宏…」按钮，点击后弹出 QMenu 列出宏文件
+        self._btn_run_macro = QPushButton(self._ACTION_LABELS["run_macro"])
+        self._btn_run_macro.setToolTip("选择并运行一个宏文件")
+        self._btn_run_macro.clicked.connect(lambda: self._show_macro_menu())
+        layout.addWidget(self._btn_run_macro)
+
+        btn_macro_folder = QPushButton("打开宏文件夹")
+        btn_macro_folder.setToolTip("在资源管理器中打开 macros 目录")
+        btn_macro_folder.clicked.connect(self._open_macros_folder)
+        layout.addWidget(btn_macro_folder)
+
         layout.addStretch()
         return self._make_page(body)
 
     # ── 更多页面 ───────────────────────────────────────────────────────────
 
     def _build_more_page(self) -> QWidget:
-        """构建"≡"功能页（宏、日志、诊断、主题、帮助）。"""
+        """构建"≡"功能页（视图、帮助）。"""
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
-
-        # ── 宏 ────────────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("宏"))
-
-        self._btn_macro_open_folder = QPushButton("打开宏文件夹")
-        self._btn_macro_open_folder.setToolTip("在资源管理器中打开 macros 目录")
-        self._btn_macro_open_folder.clicked.connect(self._open_macros_folder)
-        layout.addWidget(self._btn_macro_open_folder)
-
-        # 「运行宏…」单按钮，点击后弹出 QMenu 列出宏文件
-        self._btn_run_macro = QPushButton("运行宏…")
-        self._btn_run_macro.setToolTip("选择并运行一个宏文件")
-        self._btn_run_macro.clicked.connect(lambda: self._show_macro_menu())
-        layout.addWidget(self._btn_run_macro)
-
-        layout.addSpacing(4)
 
         # ── 视图 ──────────────────────────────────────────────────────
         layout.addWidget(self._make_section_label("视图"))
@@ -1301,7 +1286,7 @@ class MainWindow(QMainWindow):
     def _open_convert_part_dialog(self) -> None:
         self._show_dialog("_dlg_convert_part", lambda: FileConvertDialog(
             parent=self,
-            title="将 CATPart/CATProduct 导出为 STP",
+            title="从产品/零件导出 STP",
             file_label="已选 CATPart/CATProduct 文件:",
             file_filter="*.CATPart *.CATProduct (*.CATPart *.CATProduct);;All Files (*)",
             no_files_msg="请至少选择一个 CATPart 或 CATProduct 文件。",
@@ -1315,7 +1300,7 @@ class MainWindow(QMainWindow):
     def _open_convert_drawing_dialog(self) -> None:
         self._show_dialog("_dlg_convert_drawing", lambda: FileConvertDialog(
             parent=self,
-            title="将 CATDrawing 导出为 PDF",
+            title="从图纸导出 PDF",
             file_label="已选 CATDrawing 文件:",
             file_filter="*.CATDrawing (*.CATDrawing);;All Files (*)",
             no_files_msg="请至少选择一个 CATDrawing 文件。",

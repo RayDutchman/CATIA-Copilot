@@ -122,7 +122,7 @@ class FindDependenciesDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("查找依赖项")
+        self.setWindowTitle("查找指向的文档")
         self.setMinimumSize(800, 580)
         self.resize(1000, 660)
 
