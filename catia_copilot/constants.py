@@ -347,3 +347,22 @@ PART_TO_DRAWING_STRATEGIES: list[str] = [
     "strip_prefix_scan_dirs",
     "doc_file_links",
 ]
+
+# ---------------------------------------------------------------------------
+# AI Agent 相关常量
+# ---------------------------------------------------------------------------
+
+# 配置文件名（保存在项目根目录，已加入 .gitignore）
+AI_CONFIG_FILENAME = "ai_config.json"
+
+# 默认 API 地址（OpenAI 兼容接口）
+AI_DEFAULT_API_BASE = "https://api.openai.com/v1"
+
+# 默认模型
+AI_DEFAULT_MODEL = "gpt-4o"
+
+# 单次对话最多工具调用轮数（防止死循环）
+AI_MAX_TOOL_ROUNDS = 20
+
+# 聊天面板 Tab 标签
+AI_TAB_LABEL = "AI 助手"
