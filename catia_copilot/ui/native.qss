@@ -48,3 +48,8 @@ QLabel#logPathLabel {
 QTabWidget#mainTabWidget QPushButton {
     min-height: 28px;
 }
+/* Toggle 按钮：选中时蓝色高亮 */
+QPushButton#toggleButton:checked {
+    background-color: #346792;
+    color: #ffffff;
+}

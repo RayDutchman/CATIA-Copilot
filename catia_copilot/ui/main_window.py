@@ -114,6 +114,10 @@ class MainWindow(QMainWindow):
             position_changed_callback=self._on_embed_position_changed,
         )
 
+        # 恢复嵌入面板的上次启用状态（_build_ui 已完成，按钮已存在）
+        if _embed_settings.value("active", False, type=bool):
+            self._toggle_embed()
+
     # ── CATIA 连接状态指示器 ──────────────────────────────────────────────
 
     def _build_connection_indicator(self) -> None:
@@ -676,7 +680,9 @@ class MainWindow(QMainWindow):
         btn_log.clicked.connect(self._toggle_log_from_menu)
         layout.addWidget(btn_log)
 
-        self._btn_embed = QPushButton("嵌入 3D 视图按钮  ▶")
+        self._btn_embed = QPushButton("嵌入 3D 视图按钮")
+        self._btn_embed.setCheckable(True)
+        self._btn_embed.setObjectName("toggleButton")
         self._btn_embed.setToolTip(
             "开启后，在 CATIA V5 每个 3D 视图右上角显示功能菜单按钮\n"
             "点击按钮可快速访问 BOM、导出、图纸、工具等功能\n"
@@ -924,16 +930,20 @@ class MainWindow(QMainWindow):
 
     def _toggle_embed(self) -> None:
         """切换 CATIA 3D 视图嵌入面板的开关。"""
+        _s = QSettings("CATIACopilot", "EmbedPanel")
         if self._embed_manager.is_active:
             self._embed_manager.stop()
-            self._btn_embed.setText("嵌入 3D 视图按钮  \u25b6")
+            self._btn_embed.setChecked(False)
             self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
+            _s.setValue("active", False)
         else:
             ok = self._embed_manager.start()
             if ok:
-                self._btn_embed.setText("关闭嵌入按钮  \u2715")
-                self.statusBar().showMessage("\u2714 已在 CATIA 3D 视图中嵌入菜单面板", 4000)
+                self._btn_embed.setChecked(True)
+                self.statusBar().showMessage("✔ 已在 CATIA 3D 视图中嵌入菜单面板", 4000)
+                _s.setValue("active", True)
             else:
+                self._btn_embed.setChecked(False)
                 self.statusBar().showMessage("未检测到 CATIA V5，请先启动 CATIA", 4000)
 
     # 以下四个方法均在 win32 后台线程中被调用，
@@ -1071,9 +1081,10 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _do_close_embed(self) -> None:
-        """在主线程停止嵌入管理器并更新按钮文字。"""
+        """在主线程停止嵌入管理器并更新按钮状态。"""
         self._embed_manager.stop()
-        self._btn_embed.setText("嵌入 3D 视图按钮  \u25b6")
+        self._btn_embed.setChecked(False)
+        QSettings("CATIACopilot", "EmbedPanel").setValue("active", False)
         self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
 
     @Slot()

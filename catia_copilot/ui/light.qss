@@ -89,6 +89,15 @@ QTabWidget#mainTabWidget QTabBar::tab {
 QTabWidget#mainTabWidget QPushButton {
     min-height: 30px;
 }
+/* Toggle 按钮：选中时蓝色高亮，视觉上区别于普通按钮 */
+QPushButton#toggleButton:checked {
+    background-color: #346792;
+    color: #ffffff;
+    border: 1px solid #2a5578;
+}
+QPushButton#toggleButton:checked:hover {
+    background-color: #3d7aab;
+}
 
 /* ── 标题栏 caption 按钮（≡ / 最小化 / 最大化）Win11 原生规格 ───── */
 QPushButton#titleBarMoreBtn,
