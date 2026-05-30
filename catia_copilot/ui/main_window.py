@@ -824,11 +824,11 @@ class MainWindow(QMainWindow):
         if dlg is None:
             dlg = factory()
             
-            # 设置为独立顶级窗口（不加 WindowStaysOnTopHint，改用 Win32 Owner 机制
-            # 使对话框只浮于 CATIA 之上，而不是浮于所有窗口之上）
+            # 设置为独立顶级窗口，始终置顶（WindowStaysOnTopHint 使对话框浮于所有窗口之上）
             dlg.setParent(
                 None,
                 Qt.WindowType.Window
+                | Qt.WindowType.WindowStaysOnTopHint
                 | Qt.WindowType.WindowTitleHint
                 | Qt.WindowType.WindowSystemMenuHint
                 | Qt.WindowType.WindowCloseButtonHint
@@ -849,9 +849,6 @@ class MainWindow(QMainWindow):
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-        
-        # show() 之后设置 CATIA 为 Win32 Owner（show 会重建原生窗口，必须在之后设置）
-        self._set_catia_as_owner(dlg)
         
         # 启动 CATIA 状态监听定时器（如果尚未启动）
         self._start_catia_monitor()
@@ -886,29 +883,9 @@ class MainWindow(QMainWindow):
         return catia_hwnd
 
     def _set_catia_as_owner(self, dlg) -> None:
-        """将 CATIA 主窗口设为对话框的 Win32 Owner。
-
-        Owner 关系使对话框只浮于 CATIA 之上（不浮于其他应用），
-        并跟随 CATIA 最小化/还原。必须在 show() 之后调用，
-        因为 show() 会重建原生窗口并重置 Owner。
-        """
-        import ctypes
-        catia_hwnd = self._get_catia_hwnd()
-        if not catia_hwnd:
-            return
-        try:
-            dlg_hwnd = int(dlg.winId())
-            GWLP_HWNDPARENT = -8
-            ctypes.windll.user32.SetWindowLongPtrW(dlg_hwnd, GWLP_HWNDPARENT, catia_hwnd)
-            # 刷新 z-order，使对话框立即浮于 CATIA 之上
-            import win32gui, win32con
-            SWP_NOMOVE = 0x0002
-            SWP_NOSIZE = 0x0001
-            SWP_NOACTIVATE = 0x0010
-            win32gui.SetWindowPos(dlg_hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
-                                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
-        except Exception as e:
-            logger.debug(f"_set_catia_as_owner: {e}")
+        """已废弃：Win32 Owner 机制在已显示窗口上修改 GWLP_HWNDPARENT 属于未定义行为，
+        会导致多对话框场景下崩溃。保留方法签名避免调用方报错，实际不执行任何操作。"""
+        pass
 
     def _start_catia_monitor(self) -> None:
         """启动 CATIA 窗口状态监听定时器，实现对话框跟随 CATIA 最小化/还原。"""
@@ -960,8 +937,6 @@ class MainWindow(QMainWindow):
                             saved = value._settings.value("geometry")
                             if isinstance(saved, QByteArray) and not saved.isEmpty():
                                 value.restoreGeometry(saved)
-                        # 重新设置 Owner（hide/show 可能重置 Win32 Owner）
-                        self._set_catia_as_owner(value)
                         logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr}")
                     else:
                         logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在 (value={value})")
