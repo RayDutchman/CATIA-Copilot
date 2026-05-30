@@ -1,0 +1,42 @@
+# 统一行尾符：文本文件存储为 LF，Windows 工作区自动转换为 CRLF
+# 这样无论 core.autocrlf 如何设置，行为都一致
+
+# 默认：所有文本文件 LF
+* text=auto eol=lf
+
+# Python / 配置 / 文档 — 明确 LF
+*.py        text eol=lf
+*.pyw       text eol=lf
+*.qss       text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.json      text eol=lf
+*.toml      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+*.spec      text eol=lf
+*.svg       text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.xml       text eol=lf
+*.catvbs    text eol=lf
+*.catscript text eol=lf
+
+# 二进制文件 — 不做行尾转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.bmp   binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.7z    binary
+*.exe   binary
+*.dll   binary
+*.pyd   binary
+*.pyc   binary
