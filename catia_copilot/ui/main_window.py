@@ -32,6 +32,7 @@ from catia_copilot.constants import (
     FONT_FILE_PATH,
     ISO_XML_FILE_PATH,
     CRACK_DIR_PATH,
+    AI_TAB_LABEL,
 )
 from catia_copilot.utils import resource_path, detect_catia_root, check_catia_connection, diagnose_catia_connection
 from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
@@ -367,6 +368,11 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._build_drawing_page(),   "图纸")    # 2
         self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
         self._tab_widget.addTab(self._build_more_page(),      "≡")       # 4
+
+        # AI 助手 Tab（延迟导入，避免启动时加载 AI 模块影响速度）
+        from catia_copilot.ui.ai_chat_panel import AIChatPanel
+        self._ai_chat_panel = AIChatPanel()
+        self._tab_widget.addTab(self._ai_chat_panel, AI_TAB_LABEL)       # 5
 
         # ── 嵌入式日志面板（位于 Tab 下方、状态栏上方）─────────────────────
         self._log_panel = self._build_log_panel()
@@ -1225,6 +1231,10 @@ class MainWindow(QMainWindow):
         # 停止吸附边栏
         if hasattr(self, "_sidebar_manager"):
             self._sidebar_manager.stop()
+        
+        # 停止 AI Agent（如果正在运行）
+        if hasattr(self, "_ai_chat_panel"):
+            self._ai_chat_panel.stop_agent()
         
         # 停止 CATIA 状态监听定时器
         if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
