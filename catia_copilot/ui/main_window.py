@@ -914,16 +914,9 @@ class MainWindow(QMainWindow):
         # 检查 CATIA 是否最小化
         is_minimized = win32gui.IsIconic(catia_hwnd)
         
-        # 状态变化时同步所有对话框和主窗口
+        # 状态变化时同步所有对话框（主窗口完全独立，不跟随 CATIA 最小化/还原）
         if is_minimized != self._catia_was_minimized:
             self._catia_was_minimized = is_minimized
-            
-            if is_minimized:
-                # 主窗口也跟着最小化，这样任务栏只需点一次 CATIA 就能恢复所有窗口
-                self.showMinimized()
-            else:
-                # CATIA 还原时恢复主窗口
-                self.showNormal()
             
             if is_minimized:
                 # CATIA 最小化：hide 前先保存每个对话框的当前几何，再隐藏
