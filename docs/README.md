@@ -20,9 +20,13 @@
 
 | 文档 | 说明 |
 |------|------|
-| [PLM_WORKBENCH_PLAN.md](PLM_WORKBENCH_PLAN.md) | PLM 工作台设计方案（v1.9.0 规划） |
+| [PLM_WORKBENCH_PLAN.md](PLM_WORKBENCH_PLAN.md) | PLM 工作台设计方案 |
 | [PLM_ISSUES.md](PLM_ISSUES.md) | PLM 集成已知问题记录（PLM-01 ~ PLM-07） |
 | [CATIA_COM_CONNECTION_ISSUE.md](CATIA_COM_CONNECTION_ISSUE.md) | CATIA COM 连接问题排查记录 |
+| [EMBED_PANEL.md](EMBED_PANEL.md) | CATIA 3D 视图嵌入面板实现文档 |
+| [PLAN_TRAY_AUTOSTART.md](PLAN_TRAY_AUTOSTART.md) | 托盘化与开机自启计划 |
+| [THEMING.md](THEMING.md) | 主题系统实现说明 |
+| [DEPENDENSIES.md](DEPENDENSIES.md) | CATIA 文件依赖关系调研笔记 |
 
 ---
 
@@ -142,7 +146,7 @@
 
 ### 关键信息标记
 
-- **版本号**：`v1.8.0`、`v1.9.0`（带 `v` 前缀）
+- **版本号**：`v1.9.0`（带 `v` 前缀）
 - **问题编号**：`PLM-01`、`PLM-06`（大写前缀 + 连字符 + 数字）
 - **文件路径**：`catia_copilot/constants.py:274`（相对路径 + 冒号 + 行号）
 - **配置项**：`` `PRESET_USER_REF_PROPERTIES` ``（反引号包裹）
