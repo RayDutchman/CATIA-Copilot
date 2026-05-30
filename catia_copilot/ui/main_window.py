@@ -896,7 +896,8 @@ class MainWindow(QMainWindow):
         self._catia_monitor_timer.timeout.connect(self._check_catia_state)
         self._catia_monitor_timer.start(500)  # 每 500ms 检查一次
         self._catia_was_minimized = False
-        self._hidden_dialogs = set()  # 记录因 CATIA 最小化而隐藏的对话框
+        self._hidden_dialogs: set[str] = set()       # 因 CATIA 最小化而隐藏的对话框属性名
+        self._dialog_geometries: dict[str, bytes] = {}  # hide 前保存的几何，key = attr
         logger.debug("_start_catia_monitor: 已启动 CATIA 状态监听")
     
     def _check_catia_state(self) -> None:
@@ -913,34 +914,44 @@ class MainWindow(QMainWindow):
         # 检查 CATIA 是否最小化
         is_minimized = win32gui.IsIconic(catia_hwnd)
         
-        # 状态变化时同步所有对话框
+        # 状态变化时同步所有对话框和主窗口
         if is_minimized != self._catia_was_minimized:
             self._catia_was_minimized = is_minimized
             
             if is_minimized:
-                # CATIA 最小化：隐藏所有可见对话框，并记录它们
+                # 主窗口也跟着最小化，这样任务栏只需点一次 CATIA 就能恢复所有窗口
+                self.showMinimized()
+            else:
+                # CATIA 还原时恢复主窗口
+                self.showNormal()
+            
+            if is_minimized:
+                # CATIA 最小化：hide 前先保存每个对话框的当前几何，再隐藏
                 self._hidden_dialogs.clear()
+                self._dialog_geometries.clear()
                 for attr, value in vars(self).items():
                     if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)) and value.isVisible():
+                        # saveGeometry() 返回 QByteArray，转为 bytes 存储
+                        self._dialog_geometries[attr] = bytes(value.saveGeometry())
                         value.hide()
                         self._hidden_dialogs.add(attr)
                         logger.debug(f"_check_catia_state: CATIA 最小化，隐藏窗口 {attr}")
             else:
-                # CATIA 还原：恢复之前隐藏的对话框
-                from PySide6.QtCore import QByteArray
+                # CATIA 还原：恢复之前隐藏的对话框，并还原 hide 前的几何
                 for attr in list(self._hidden_dialogs):
                     value = getattr(self, attr, None)
                     if value is not None and isinstance(value, (QDialog, QMainWindow)):
                         value.show()
-                        # show() 后重新恢复几何（hide/show 可能导致位置重置）
-                        if hasattr(value, "_settings"):
-                            saved = value._settings.value("geometry")
-                            if isinstance(saved, QByteArray) and not saved.isEmpty():
-                                value.restoreGeometry(saved)
+                        # 优先用 hide 前保存的几何（包含用户刚调整的位置/尺寸）
+                        geom = self._dialog_geometries.get(attr)
+                        if geom:
+                            from PySide6.QtCore import QByteArray
+                            value.restoreGeometry(QByteArray(geom))
                         logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr}")
                     else:
                         logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在 (value={value})")
                 self._hidden_dialogs.clear()
+                self._dialog_geometries.clear()
 
     # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
 
