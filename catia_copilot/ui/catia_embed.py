@@ -92,6 +92,7 @@ MENU_FASTENER_ASM   = 2031   # 快速装配紧固件
 MENU_NUT_PLATE_ASM  = 2032   # 快速装配托板螺母
 MENU_OPEN_RELATED   = 2033   # 打开关联图纸/零件
 MENU_RUN_MACRO      = 2034   # 运行宏…
+MENU_FIND_DEPS      = 2035   # 查找所有依赖项
 
 # 面板控制
 MENU_POS_RESET      = 2019   # 恢复默认位置
@@ -906,22 +907,32 @@ class CATIAEmbedManager:
         def append(menu, flags, item_id, text):
             ctypes.windll.user32.AppendMenuW(menu, flags, item_id, text)
 
-        append(hmenu, MF_STRING,    MENU_BOM_EDIT,       "BOM 属性补全")
-        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     "BOM 导出")
-        append(hmenu, MF_STRING,    MENU_MASS_PROPS,     "质量特性")
-        append(hmenu, MF_STRING,    MENU_PLM_SYNC,       "同步 BOM 到 PLM")
-        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  "PLM 工作台")
+        # 从主窗口的 _ACTION_LABELS 读取文字，保持与主菜单一致
+        try:
+            from catia_copilot.ui.main_window import MainWindow
+            L = MainWindow._ACTION_LABELS
+        except Exception:
+            L = {}
+
+        def label(key: str, fallback: str) -> str:
+            return L.get(key, fallback)
+
+        append(hmenu, MF_STRING,    MENU_BOM_EDIT,       label("bom_edit",        "BOM 属性补全"))
+        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      "从 CATProduct 导出 BOM"))
+        append(hmenu, MF_STRING,    MENU_MASS_PROPS,     label("mass_props",      "重量、重心、惯量统计"))
+        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   "PLM 工作台"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
-        append(hmenu, MF_STRING,    MENU_EXPORT_PDF,     "CATDrawing → PDF")
-        append(hmenu, MF_STRING,    MENU_EXPORT_STP,     "CATPart/CATProduct → STP")
+        append(hmenu, MF_STRING,    MENU_EXPORT_PDF,     label("export_pdf",      "CATDrawing → PDF"))
+        append(hmenu, MF_STRING,    MENU_EXPORT_STP,     label("export_stp",      "CATPart/CATProduct → STP"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
-        append(hmenu, MF_STRING,    MENU_DRAWING_NEW,    "新建图纸")
-        append(hmenu, MF_STRING,    MENU_DRAWING_REFRESH, "刷新图纸")
+        append(hmenu, MF_STRING,    MENU_DRAWING_NEW,    label("drawing_new",     "新建图纸 (Python)"))
+        append(hmenu, MF_STRING,    MENU_DRAWING_REFRESH, label("drawing_refresh", "刷新图纸 (Python)"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
-        append(hmenu, MF_STRING,    MENU_STAMP_TEMPLATE, "刷写零件模板")
-        append(hmenu, MF_STRING,    MENU_FASTENER_ASM,   "快速装配紧固件")
-        append(hmenu, MF_STRING,    MENU_NUT_PLATE_ASM,  "快速装配托板螺母")
-        append(hmenu, MF_STRING,    MENU_OPEN_RELATED,   "打开关联图纸/零件")
+        append(hmenu, MF_STRING,    MENU_STAMP_TEMPLATE, label("stamp_template",  "刷写零件模板"))
+        append(hmenu, MF_STRING,    MENU_FASTENER_ASM,   label("fastener_asm",    "快速装配紧固件"))
+        append(hmenu, MF_STRING,    MENU_NUT_PLATE_ASM,  label("nut_plate_asm",   "快速装配托板螺母"))
+        append(hmenu, MF_STRING,    MENU_OPEN_RELATED,   label("open_related",    "打开当前文档的关联图纸/零件"))
+        append(hmenu, MF_STRING,    MENU_FIND_DEPS,      label("find_deps",       "查找所有依赖项"))
         
         # 创建"运行宏"子菜单
         macro_submenu = ctypes.windll.user32.CreatePopupMenu()
@@ -1007,7 +1018,6 @@ class CATIAEmbedManager:
             MENU_BOM_EDIT:       "bom_edit",
             MENU_BOM_EXPORT:     "bom_export",
             MENU_MASS_PROPS:     "mass_props",
-            MENU_PLM_SYNC:       "plm_sync",
             MENU_PLM_WORKBENCH:  "plm_workbench",
             MENU_EXPORT_PDF:     "export_pdf",
             MENU_EXPORT_STP:     "export_stp",
@@ -1017,6 +1027,7 @@ class CATIAEmbedManager:
             MENU_FASTENER_ASM:   "fastener_asm",
             MENU_NUT_PLATE_ASM:  "nut_plate_asm",
             MENU_OPEN_RELATED:   "open_related",
+            MENU_FIND_DEPS:      "find_deps",
             MENU_CLOSE:          "close",
         }
         key = mapping.get(cmd)

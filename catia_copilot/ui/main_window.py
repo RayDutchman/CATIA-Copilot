@@ -60,6 +60,24 @@ class MainWindow(QMainWindow):
     # 快速运行宏支持 CATScript（.catvbs / .catscript）和 VBA（.catvba）文件。
     _MACRO_EXTENSIONS: frozenset[str] = frozenset({".catvbs", ".catscript", ".catvba"})
 
+    # 功能动作的显示名称，嵌入菜单和主菜单按钮共用，避免硬编码不一致
+    _ACTION_LABELS: dict[str, str] = {
+        "bom_edit":        "BOM 属性补全",
+        "bom_export":      "从 CATProduct 导出 BOM",
+        "mass_props":      "重量、重心、惯量统计",
+        "plm_workbench":   "PLM 工作台",
+        "export_pdf":      "CATDrawing → PDF",
+        "export_stp":      "CATPart/CATProduct → STP",
+        "drawing_new":     "新建图纸 (Python)",
+        "drawing_refresh": "刷新图纸 (Python)",
+        "stamp_template":  "刷写零件模板",
+        "fastener_asm":    "快速装配紧固件",
+        "nut_plate_asm":   "快速装配托板螺母",
+        "open_related":    "打开当前文档的关联图纸/零件",
+        "find_deps":       "查找所有依赖项",
+        "run_macro":       "运行宏…",
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -104,6 +122,7 @@ class MainWindow(QMainWindow):
                 "fastener_asm":    self._open_fastener_asm_from_embed,
                 "nut_plate_asm":   self._open_nut_plate_asm_from_embed,
                 "open_related":    self._open_related_from_embed,
+                "find_deps":       self._open_find_deps_from_embed,
                 "run_macro":       self._open_run_macro_from_embed,
                 "run_macro_file":  self._run_macro_file_from_embed,
                 "close":           self._close_embed_from_panel,
@@ -479,11 +498,11 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._make_section_label("文件导出"))
 
-        btn_drawing = QPushButton("CATDrawing  →  PDF")
+        btn_drawing = QPushButton(self._ACTION_LABELS["export_pdf"])
         btn_drawing.setToolTip("将 CATDrawing 文件批量导出为 PDF")
         btn_drawing.clicked.connect(self._open_convert_drawing_dialog)
 
-        btn_part = QPushButton("CATPart / CATProduct  →  STP")
+        btn_part = QPushButton(self._ACTION_LABELS["export_stp"])
         btn_part.setToolTip("将 CATPart 或 CATProduct 文件批量导出为 STEP")
         btn_part.clicked.connect(self._open_convert_part_dialog)
 
@@ -504,21 +523,21 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._make_section_label("物料清单"))
 
-        btn_bom_export = QPushButton("从 CATProduct 导出 BOM")
+        btn_bom_export = QPushButton(self._ACTION_LABELS["bom_export"])
         btn_bom_export.setToolTip("从 CATProduct 导出 BOM 到 Excel 文件")
         btn_bom_export.clicked.connect(self._open_export_bom_dialog)
 
-        btn_bom_edit = QPushButton("BOM 属性补全")
+        btn_bom_edit = QPushButton(self._ACTION_LABELS["bom_edit"])
         btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并写回 CATIA")
         btn_bom_edit.clicked.connect(self._open_bom_edit_dialog)
 
-        btn_mass_props = QPushButton("重量、重心、惯量统计")
+        btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
             "遍历产品树，读取零件质量/重心/转动惯量，计算装配体总质量特性并导出"
         )
         btn_mass_props.clicked.connect(self._open_mass_props_dialog)
 
-        btn_plm_workbench = QPushButton("PLM 工作台")
+        btn_plm_workbench = QPushButton(self._ACTION_LABELS["plm_workbench"])
         btn_plm_workbench.setToolTip(
             "打开 PLM 工作台——整合连接管理、增量同步、Tag 规则、产品注册与历史记录"
         )
@@ -542,11 +561,11 @@ class MainWindow(QMainWindow):
         # Python 实现版本（新）
         layout.addWidget(self._make_section_label("工程图纸 (Python 实现)"))
 
-        btn_new_py = QPushButton("新建图纸 (Python)")
+        btn_new_py = QPushButton(self._ACTION_LABELS["drawing_new"])
         btn_new_py.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸 - Python 实现版本")
         btn_new_py.clicked.connect(self._open_generate_drawing_dialog_python)
 
-        btn_refresh_py = QPushButton("刷新图纸 (Python)")
+        btn_refresh_py = QPushButton(self._ACTION_LABELS["drawing_refresh"])
         btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- Python 实现版本")
         btn_refresh_py.clicked.connect(self._open_refresh_drawing_dialog_python)
 
@@ -602,7 +621,7 @@ class MainWindow(QMainWindow):
         # ── 零件与装配 ────────────────────────────────────────────────
         layout.addWidget(self._make_section_label("零件与装配"))
 
-        btn_stamp = QPushButton("刷写零件模板")
+        btn_stamp = QPushButton(self._ACTION_LABELS["stamp_template"])
         btn_stamp.setToolTip("为选中的 CATPart 添加标准用户自定义属性")
         btn_stamp.clicked.connect(self._open_stamp_part_template_dialog)
 
@@ -611,11 +630,11 @@ class MainWindow(QMainWindow):
         # 快速装配：两个按钮并排
         asm_row = QHBoxLayout()
         asm_row.setSpacing(6)
-        btn_fastener = QPushButton("快速装配紧固件")
+        btn_fastener = QPushButton(self._ACTION_LABELS["fastener_asm"])
         btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
         btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
 
-        btn_nut = QPushButton("快速装配托板螺母")
+        btn_nut = QPushButton(self._ACTION_LABELS["nut_plate_asm"])
         btn_nut.setToolTip("在装配体中连续放置托板螺母实例")
         btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
 
@@ -628,14 +647,14 @@ class MainWindow(QMainWindow):
         # ── 分析工具 ──────────────────────────────────────────────────
         layout.addWidget(self._make_section_label("分析"))
 
-        btn_deps = QPushButton("查找所有依赖项（未实现）")
+        btn_deps = QPushButton(self._ACTION_LABELS["find_deps"])
         btn_deps.setToolTip("通过 CATIA COM 查找文件的所有引用文档")
         btn_deps.clicked.connect(self._open_find_dependencies_dialog)
 
         layout.addWidget(btn_deps)
 
         # 图纸 ↔ 零件/产品 互相查找（单按钮，自动判断当前文档类型）
-        btn_open_related = QPushButton("打开当前文档的关联图纸/零件")
+        btn_open_related = QPushButton(self._ACTION_LABELS["open_related"])
         btn_open_related.setToolTip(
             "自动判断当前活跃文档类型：\n"
             "• CATPart / CATProduct → 查找对应 CATDrawing\n"
@@ -1019,6 +1038,11 @@ class MainWindow(QMainWindow):
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("open_related", view_hwnd)
 
+    def _open_find_deps_from_embed(self) -> None:
+        """嵌入面板菜单 → 查找所有依赖项。"""
+        view_hwnd = self._embed_manager._current_view_hwnd or 0
+        self._embed_action_signal.emit("find_deps", view_hwnd)
+
     def _open_run_macro_from_embed(self) -> None:
         """嵌入面板菜单 → 运行宏…。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
@@ -1055,6 +1079,7 @@ class MainWindow(QMainWindow):
             "fastener_asm":    self._do_open_fastener_asm,
             "nut_plate_asm":   self._do_open_nut_plate_asm,
             "open_related":    self._do_open_related,
+            "find_deps":       self._do_open_find_deps,
             "run_macro":       self._do_open_run_macro,
             "run_macro_file":  self._do_run_macro_file,
         }
@@ -1136,6 +1161,11 @@ class MainWindow(QMainWindow):
     def _do_open_related(self) -> None:
         """在主线程打开关联图纸/零件。"""
         self._open_related_file_for_active_doc()
+
+    @Slot()
+    def _do_open_find_deps(self) -> None:
+        """在主线程打开查找所有依赖项对话框。"""
+        self._open_find_dependencies_dialog()
 
     @Slot()
     def _do_open_run_macro(self) -> None:
