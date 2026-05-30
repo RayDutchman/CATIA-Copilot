@@ -303,35 +303,80 @@ class ChatScrollArea(QScrollArea):
 
 class AISettingsDialog(QDialog):
     """
-    AI 运行时参数对话框。
+    AI 配置对话框。
 
-    Provider / API Key / 模型列表 通过直接编辑 ai_config.json 管理
-    （格式与 Standard-Agent-Server 的 models_config.json 相同）。
-    此对话框只管理运行时参数：temperature / max_tool_rounds / timeout。
+    包含：API Base URL、API Key、刷新模型列表、运行时参数。
+    刷新模型列表时调用 fetch_models_from_api 并将结果写入 ai_config.json。
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("AI 助手设置")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(480)
         self._cfg = ai_config.load()
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+        layout.setSpacing(8)
 
         # 配置文件路径提示
         cfg_path = ai_config.get_config_path()
-        hint = QLabel(
-            f"Provider / API Key / 模型列表 请直接编辑：\n{cfg_path}\n"
-            f"（格式参考 ai_config.example.json）"
-        )
+        hint = QLabel(f"配置文件：{cfg_path}")
         hint.setStyleSheet("color: gray; font-size: 11px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        # 获取当前 provider 配置（只支持单个 provider，多 provider 直接编辑 json）
+        providers = self._cfg.get("providers", {})
+        first_provider = next(iter(providers.values()), {})
+
+        self._api_base = QLineEdit(first_provider.get("api_base", "https://api.openai.com"))
+        self._api_base.setPlaceholderText("https://api.openai.com")
+        form.addRow("API Base URL:", self._api_base)
+
+        self._api_key = QLineEdit(first_provider.get("api_key", ""))
+        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key.setPlaceholderText("sk-...")
+        form.addRow("API Key:", self._api_key)
+
+        # 模型列表区域
+        models_label = QLabel("模型列表:")
+        models_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        models_row = QHBoxLayout()
+        models_row.setSpacing(4)
+
+        self._models_list = QLineEdit()
+        current_models = [m["id"] for m in first_provider.get("models", [])]
+        self._models_list.setText(", ".join(current_models))
+        self._models_list.setPlaceholderText("点击刷新自动获取...")
+        self._models_list.setReadOnly(True)
+        models_row.addWidget(self._models_list, 1)
+
+        self._fetch_btn = QPushButton("刷新")
+        self._fetch_btn.setFixedWidth(50)
+        self._fetch_btn.setToolTip("从 API 拉取模型列表")
+        self._fetch_btn.clicked.connect(self._fetch_models)
+        models_row.addWidget(self._fetch_btn)
+
+        form.addRow(models_label, models_row)
+
+        # 默认模型
+        self._default_model = QComboBox()
+        self._default_model.setEditable(True)
+        self._default_model.addItems(current_models)
+        default_id = self._cfg.get("default_model", "")
+        idx = self._default_model.findText(default_id)
+        if idx >= 0:
+            self._default_model.setCurrentIndex(idx)
+        else:
+            self._default_model.setCurrentText(default_id)
+        form.addRow("默认模型:", self._default_model)
 
         self._temperature = QDoubleSpinBox()
         self._temperature.setRange(0.0, 2.0)
@@ -353,6 +398,11 @@ class AISettingsDialog(QDialog):
 
         layout.addLayout(form)
 
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet("color: gray; font-size: 11px;")
+        self._status_label.setWordWrap(True)
+        layout.addWidget(self._status_label)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -360,12 +410,99 @@ class AISettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _save_and_accept(self):
-        # 只更新运行时参数，保留 providers 等字段不变
+    def _fetch_models(self):
+        """从 API 拉取模型列表，写入配置并刷新 UI。"""
+        api_base = self._api_base.text().strip().rstrip("/")
+        api_key = self._api_key.text().strip()
+        if not api_base or not api_key:
+            self._status_label.setText("请先填写 API Base URL 和 API Key")
+            return
+
+        self._fetch_btn.setEnabled(False)
+        self._fetch_btn.setText("...")
+        self._status_label.setText("正在拉取模型列表...")
+
+        # 同步调用（对话框小操作，不需要异步）
+        from catia_copilot.ai.config import fetch_models_from_api
+        models = fetch_models_from_api(api_base, api_key, timeout=15)
+
+        self._fetch_btn.setEnabled(True)
+        self._fetch_btn.setText("刷新")
+
+        if not models:
+            self._status_label.setText("未获取到模型，请检查 API Base URL 和 API Key")
+            return
+
+        model_ids = [m["id"] for m in models]
+        self._models_list.setText(", ".join(model_ids))
+        self._status_label.setText(f"已获取 {len(models)} 个模型")
+
+        # 刷新默认模型下拉框
+        current_default = self._default_model.currentText()
+        self._default_model.clear()
+        self._default_model.addItems(model_ids)
+        idx = self._default_model.findText(current_default)
+        if idx >= 0:
+            self._default_model.setCurrentIndex(idx)
+        elif model_ids:
+            self._default_model.setCurrentIndex(0)
+
+        # 将模型列表存入配置（即时写入，不等点 OK）
+        self._persist_models(api_base, api_key, models)
+
+    def _persist_models(self, api_base: str, api_key: str, models: list):
+        """将 provider 信息和模型列表写入 ai_config.json。"""
         cfg = ai_config.load()
-        cfg["temperature"]    = self._temperature.value()
+        providers = cfg.get("providers", {})
+
+        # 找到已有 provider 或创建新的
+        if providers:
+            provider_key = next(iter(providers))
+            provider = providers[provider_key]
+        else:
+            provider_key = "default"
+            provider = {"name": "Default"}
+            providers[provider_key] = provider
+
+        provider["api_base"] = api_base
+        provider["api_key"] = api_key
+        provider["models"] = models
+        cfg["providers"] = providers
+        if not cfg.get("default_provider"):
+            cfg["default_provider"] = provider_key
+
+        try:
+            ai_config.save(cfg)
+        except Exception as e:
+            logger.error("写入模型列表失败：%s", e)
+
+    def _save_and_accept(self):
+        api_base = self._api_base.text().strip().rstrip("/")
+        api_key = self._api_key.text().strip()
+        default_model = self._default_model.currentText().strip()
+
+        cfg = ai_config.load()
+        providers = cfg.get("providers", {})
+
+        if providers:
+            provider_key = next(iter(providers))
+            provider = providers[provider_key]
+        else:
+            provider_key = "default"
+            provider = {"name": "Default", "models": []}
+            providers[provider_key] = provider
+
+        provider["api_base"] = api_base
+        provider["api_key"] = api_key
+        cfg["providers"] = providers
+        if not cfg.get("default_provider"):
+            cfg["default_provider"] = provider_key
+
+        cfg["default_model"]   = default_model
+        cfg["temperature"]     = self._temperature.value()
         cfg["max_tool_rounds"] = self._max_rounds.value()
-        cfg["timeout"]        = self._timeout.value()
+        cfg["timeout"]         = self._timeout.value()
+
         try:
             ai_config.save(cfg)
         except Exception as e:
@@ -422,21 +559,16 @@ class AIChatPanel(QWidget):
 
         self._model_combo = QComboBox()
         self._model_combo.setFixedWidth(200)
-        self._model_combo.setEditable(True)  # 允许手动输入
-        cfg = ai_config.load()
-        model_ids = ai_config.list_model_ids(cfg)
-        default_model = ai_config.get_default_model_id(cfg)
-        if model_ids:
-            self._model_combo.addItems(model_ids)
-        else:
-            self._model_combo.addItem(default_model)
-        # 选中默认模型
-        idx = self._model_combo.findText(default_model)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
-        else:
-            self._model_combo.setCurrentText(default_model)
+        self._model_combo.setEditable(True)
+        self._refresh_model_combo()
         layout.addWidget(self._model_combo)
+
+        # 刷新模型列表按鈕
+        self._refresh_btn = QPushButton("↻")
+        self._refresh_btn.setFixedWidth(28)
+        self._refresh_btn.setToolTip("从 API 刷新模型列表")
+        self._refresh_btn.clicked.connect(self._refresh_models_from_api)
+        layout.addWidget(self._refresh_btn)
 
         layout.addStretch()
 
@@ -451,6 +583,68 @@ class AIChatPanel(QWidget):
         layout.addWidget(self._settings_btn)
 
         return bar
+
+    def _refresh_model_combo(self):
+        """从配置文件重新填充模型下拉框。"""
+        cfg = ai_config.load()
+        model_ids = ai_config.list_model_ids(cfg)
+        default_model = ai_config.get_default_model_id(cfg)
+        self._model_combo.clear()
+        if model_ids:
+            self._model_combo.addItems(model_ids)
+        else:
+            self._model_combo.addItem(default_model)
+        idx = self._model_combo.findText(default_model)
+        if idx >= 0:
+            self._model_combo.setCurrentIndex(idx)
+        else:
+            self._model_combo.setCurrentText(default_model)
+
+    def _refresh_models_from_api(self):
+        """从 API 拉取模型列表，写入配置并刷新下拉框。"""
+        from catia_copilot.ai.config import fetch_models_from_api
+
+        cfg = ai_config.load()
+        providers = cfg.get("providers", {})
+        if not providers:
+            self._show_status("请先在设置中配置 API Base URL 和 API Key")
+            return
+
+        provider = next(iter(providers.values()))
+        api_base = provider.get("api_base", "").rstrip("/")
+        api_key = provider.get("api_key", "")
+        if not api_base or not api_key:
+            self._show_status("请先在设置中配置 API Base URL 和 API Key")
+            return
+
+        self._refresh_btn.setEnabled(False)
+        self._refresh_btn.setText("...")
+
+        models = fetch_models_from_api(api_base, api_key, timeout=15)
+
+        self._refresh_btn.setEnabled(True)
+        self._refresh_btn.setText("↻")
+
+        if not models:
+            self._show_status("未获取到模型，请检查设置")
+            return
+
+        # 写入配置
+        provider_key = next(iter(providers))
+        cfg["providers"][provider_key]["models"] = models
+        try:
+            ai_config.save(cfg)
+        except Exception as e:
+            logger.error("写入模型列表失败：%s", e)
+
+        self._refresh_model_combo()
+        self._show_status(f"已刷新，获取到 {len(models)} 个模型")
+
+    def _show_status(self, msg: str):
+        """在聊天区显示一条系统提示消息。"""
+        w = AIMessageWidget()
+        w.set_final_text(f"*{msg}*")
+        self._insert_widget(w)
 
     def _build_chat_area(self) -> QWidget:
         self._scroll = ChatScrollArea()
@@ -674,20 +868,8 @@ class AIChatPanel(QWidget):
     def _open_settings(self):
         dlg = AISettingsDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            # 重新加载配置，刷新模型下拉框
-            cfg = ai_config.load()
-            model_ids = ai_config.list_model_ids(cfg)
-            default_model = ai_config.get_default_model_id(cfg)
-            self._model_combo.clear()
-            if model_ids:
-                self._model_combo.addItems(model_ids)
-            else:
-                self._model_combo.addItem(default_model)
-            idx = self._model_combo.findText(default_model)
-            if idx >= 0:
-                self._model_combo.setCurrentIndex(idx)
-            else:
-                self._model_combo.setCurrentText(default_model)
+            # 设置对话框已将变更写入配置，直接刷新下拉框
+            self._refresh_model_combo()
 
     def stop_agent(self):
         """主窗口关闭时调用，停止后台线程。"""
