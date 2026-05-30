@@ -6,21 +6,43 @@
 
 ## [1.9.0] — 2026-05-30
 
-### 新增 — 界面与交互
+### 新增 — CATIA 3D 视图嵌入面板
 
-- **CATIA 3D 视图嵌入菜单**：在 CATIA V5 每个 3D 视图右上角嵌入功能菜单按钮，可快速访问所有功能；支持拖拽定位、锚点吸附、位置持久化；菜单按工作台/导出/图纸/工具分区，与主菜单结构一致。
-- **原生主题（CATIA 风格）**：新增第三套主题，使用 Qt `windows` 风格渲染器，外观与 CATIA V5 界面一致；主题切换改为下拉菜单（深色 / 浅色 / 原生）。
-- **对话框跟随 CATIA 最小化/还原**：CATIA 最小化时所有对话框自动隐藏，还原时恢复原位置和尺寸（包含用户运行时调整的几何）。
-- **嵌入按钮 Toggle 样式**：嵌入 3D 视图按钮改为可选中的 Toggle 按钮，选中时蓝色高亮；启用状态持久化，重启后自动恢复。
+- **嵌入菜单按钮**：在 CATIA V5 每个 3D 视图右上角嵌入 Win32 原生功能菜单按钮，可快速访问所有功能；支持拖拽定位、锚点吸附（TR/TL/BR/BL）、位置持久化（`QSettings`）。
+- **菜单分区**：嵌入菜单按工作台 / 导出 / 图纸 / 工具分区，与主菜单结构完全一致；菜单文字从 `_ACTION_LABELS` 读取，不硬编码。
+- **Toggle 按钮**：嵌入 3D 视图按钮改为可选中的 Toggle 按钮，选中时蓝色高亮；启用状态持久化，重启后自动恢复。
+- **宏子菜单**：嵌入菜单中「运行宏」改为子菜单，直接列出宏文件，点击即运行；通过 Signal 派发到 Qt 主线程执行，不在 Win32 后台线程直接调用 COM。
+
+### 新增 — 图纸功能 Python 改写
+
+- **新建图纸 (Python)**：新增 `drawing_operations.py` 核心模块，实现 `generate_drawing()` 从 CATPart/CATProduct 生成新图纸；解决 `win32com CDispatch` 类型检测问题（`get_document_type()`）。
+- **刷新图纸 (Python)**：实现 `refresh_drawing()` 将图纸参数与对应零件/装配体同步（零件编号、术语、版本及自定义属性）；保留 VBScript 版本用于对比。
+
+### 新增 — 主题
+
+- **原生主题（CATIA 风格）**：新增第三套主题，使用 Qt `windows` 风格渲染器，外观与 CATIA V5 界面一致；`native.qss` 只保留项目专属控件样式，其余全部由 Windows 经典风格渲染器接管。
+- **主题切换下拉菜单**：主题切换按钮改为下拉菜单（深色 / 浅色 / 原生），带勾选状态；`toggle()` 改为三态循环，新增 `set_theme(name)` 方法。
+
+### 新增 — 对话框行为
+
+- **对话框跟随 CATIA 最小化/还原**：500ms 定时器检测 `IsIconic(catia_hwnd)`，CATIA 最小化时所有对话框自动隐藏（`hide()` 前 `saveGeometry()` 保存运行时几何），还原时精确恢复位置和尺寸。
+- **主窗口独立**：主窗口不跟随 CATIA 最小化，完全由用户自主管理。
+- **空对话框模板**：新增 `template_dialog.py`，包含几何持久化、主题跟随等标准行为，作为新建对话框的参考模板。
 
 ### 新增 — 功能
 
-- **查找指向的文档**（原"查找所有依赖项"）：通过 CATIA COM 查找文件的所有引用文档，支持多种查找策略。
-- **在图纸/零件间切换**（原"打开当前文档的关联图纸/零件"）：自动判断当前活跃文档类型，双向查找关联文档。
+- **查找指向的文档**（原「查找所有依赖项」）：重构为支持多种查找策略的双向依赖分析对话框；支持 COM 结构遍历、doc_file_links、启发式文件名匹配、反向遍历已打开文档等策略；策略可通过 checkbox 独立开关。
+- **在图纸/零件间切换**（原「打开当前文档的关联图纸/零件」）：将原来的两个按钮合并为单按钮，自动判断当前活跃文档类型，双向查找关联文档。
+
+### 新增 — PLM 工作台
+
+- **两阶段同步**：拆分上传选项（STP 几何文件、CATDrawing 附件），完善 BOM 采集与位置同步逻辑；批量 checkin、转换等待 UI 实时反馈、进度计数修复。
+- **Cloudflare 公网访问修复**：修复公网经 Cloudflare 时 `urllib` 被 403 拦截的问题，添加 UA 头绕过。
+- **PLM-08 记录**：记录 Cloudflare UA 403 问题及修复方案（`docs/PLM_ISSUES.md`）。
 
 ### 重构 — 主菜单结构
 
-- Tab 重命名与重组：导出 / 工作台 / 图纸 / 工具 / ≡（原 导出 / BOM / 图纸 / 工具 / ≡）
+- Tab 重命名与重组：工作台 / 导出 / 图纸 / 工具 / ≡（原 导出 / BOM / 图纸 / 工具 / ≡）
 - 工作台 Tab：BOM 工作台、质量特性工作台、PLM 工作台
 - 导出 Tab：从产品导出 BOM（从 BOM Tab 移入）、从图纸导出 PDF、从产品/零件导出 STP
 - 工具 Tab：合并原「零件与装配」和「分析」section 为「功能」section；运行宏从 ≡ 移入
@@ -31,19 +53,34 @@
 - 所有对话框标题与主菜单按钮名称完全一致：BOM 工作台、质量特性工作台、从产品导出 BOM、从图纸导出 PDF、从产品/零件导出 STP、查找指向的文档
 - 中文与专有名词（BOM / CATIA / CATPart / CATProduct / CATDrawing / COM / Excel 等）之间统一加空格
 
-### 修复
+### 修复 — CATIA COM
 
 - 修复 `application.Visible = True` 导致 CATIA 最大化窗口变为普通窗口的问题：新增 `safe_set_visible()` 函数，设置前保存窗口状态，设置后恢复最大化。
 - 修复 `bring_catia_to_foreground` 的 `SW_RESTORE` 问题：添加 `IsIconic` 检查，只在最小化时才恢复。
+- 提取 `open_catia_file()` 和 `bring_catia_to_foreground()` 到 `catia/utils.py`，三处打开文件逻辑统一调用；修复 `Path.resolve()` 在 Windows 环境下的路径污染问题。
+
+### 修复 — UI
+
 - 修复对话框几何持久化：`setParent(None)` 重建原生窗口后重新调用 `restoreGeometry`；CATIA 最小化前用 `saveGeometry()` 保存运行时几何，还原时精确恢复。
 - 修复所有对话框缺少窗口几何持久化的问题（`ExportBomDialog`、`FindDependenciesDialog`、`HelpDialog`、`PlmSyncDialog`、`PlmWorkbench`、`FileConvertDialog`）。
-- 修复嵌入菜单「运行宏」在 Win32 后台线程直接调用 COM 导致静默失败的问题：通过 Signal 派发到 Qt 主线程，复用主窗口 `_run_macro()`。
 - 修复主窗口「运行宏」按钮菜单消失的问题：`clicked` 信号的 `bool` 参数被误传给 `pos` 参数，改用 `lambda` 隔离。
+- 修复 QSS 主界面 Tab 标题 padding 和功能按钮高度（padding 调整为 13px，min-height 调整为 30px）。
+- 修复 `QComboBox` 设置 `NoFocus` 防止抢走树焦点导致已选行高亮消失。
+- 修复 BOM 树 branch hover-on-selected 颜色割裂；统一三处表头行高为 `_ROW_HEIGHT`。
+- 修复 hover 其他行时选中行着色消失：覆盖 `item:selected:!active` 规则保持选中色稳定。
+- 修复查找依赖项路径大小写比对、`PartNumber` 参数查找大小写比对；消除 `doc_file_links` 正常视图的误导性日志。
+
+### 修复 — 宏
+
+- `fastener_assembly.catvba` / `nut_plate_assembly.catvba`：更新 VBA 宏文件（`.catvba` 二进制格式），移除旧的 `.txt` 用户窗体文本文件。
+- `revert SelectElement3 → SelectElement2`：回退宏中的 SelectElement 版本，修复兼容性问题。
 
 ### 工程 — 构建
 
 - `build.spec` 新增 `pywin32_system32` DLL 动态打包（`pywintypes` / `pythoncom`），缺失时所有 COM 操作会崩溃。
 - `build.spec` 新增 `qdarkstyle` 的两个 rc 模块到 `hiddenimports`，缺失时深色/浅色主题图标显示为空白。
+- `build.spec` 版本号通过正则解析 `constants.py` 自动同步，无需手动维护。
+- 新增 `.gitattributes`，统一行尾符为 LF，解决跨平台编辑器导致的虚假 diff 问题。
 
 ---
 
