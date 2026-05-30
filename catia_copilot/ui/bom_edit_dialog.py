@@ -72,7 +72,7 @@ class BomEditDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("BOM 属性补全")
+        self.setWindowTitle("BOM 工作台")
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
         self.setWindowFlags(

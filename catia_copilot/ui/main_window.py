@@ -1286,7 +1286,7 @@ class MainWindow(QMainWindow):
     def _open_convert_part_dialog(self) -> None:
         self._show_dialog("_dlg_convert_part", lambda: FileConvertDialog(
             parent=self,
-            title="将 CATPart/CATProduct 导出为 STP",
+            title="从产品/零件导出 STP",
             file_label="已选 CATPart/CATProduct 文件:",
             file_filter="*.CATPart *.CATProduct (*.CATPart *.CATProduct);;All Files (*)",
             no_files_msg="请至少选择一个 CATPart 或 CATProduct 文件。",
@@ -1300,7 +1300,7 @@ class MainWindow(QMainWindow):
     def _open_convert_drawing_dialog(self) -> None:
         self._show_dialog("_dlg_convert_drawing", lambda: FileConvertDialog(
             parent=self,
-            title="将 CATDrawing 导出为 PDF",
+            title="从图纸导出 PDF",
             file_label="已选 CATDrawing 文件:",
             file_filter="*.CATDrawing (*.CATDrawing);;All Files (*)",
             no_files_msg="请至少选择一个 CATDrawing 文件。",
