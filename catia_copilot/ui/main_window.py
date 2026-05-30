@@ -824,11 +824,11 @@ class MainWindow(QMainWindow):
         if dlg is None:
             dlg = factory()
             
-            # 设置为独立顶级窗口，始终置顶
+            # 设置为独立顶级窗口（不加 WindowStaysOnTopHint，改用 Win32 Owner 机制
+            # 使对话框只浮于 CATIA 之上，而不是浮于所有窗口之上）
             dlg.setParent(
                 None,
                 Qt.WindowType.Window
-                | Qt.WindowType.WindowStaysOnTopHint
                 | Qt.WindowType.WindowTitleHint
                 | Qt.WindowType.WindowSystemMenuHint
                 | Qt.WindowType.WindowCloseButtonHint
@@ -839,8 +839,7 @@ class MainWindow(QMainWindow):
             dlg.destroyed.connect(lambda _=None, a=attr: self._on_dialog_destroyed(a))
             setattr(self, attr, dlg)
             
-            # setParent(None) 会重建原生窗口并重置位置，在此之后重新恢复几何，
-            # 确保对话框出现在用户上次关闭时的位置和尺寸
+            # setParent(None) 会重建原生窗口并重置位置，在此之后重新恢复几何
             from PySide6.QtCore import QByteArray
             if hasattr(dlg, "_settings"):
                 saved = dlg._settings.value("geometry")
@@ -851,6 +850,9 @@ class MainWindow(QMainWindow):
         dlg.raise_()
         dlg.activateWindow()
         
+        # show() 之后设置 CATIA 为 Win32 Owner（show 会重建原生窗口，必须在之后设置）
+        self._set_catia_as_owner(dlg)
+        
         # 启动 CATIA 状态监听定时器（如果尚未启动）
         self._start_catia_monitor()
 
@@ -860,6 +862,53 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_hidden_dialogs") and attr in self._hidden_dialogs:
             self._hidden_dialogs.discard(attr)
             logger.debug(f"_on_dialog_destroyed: 对话框 {attr} 已销毁，从隐藏列表中移除")
+
+    def _get_catia_hwnd(self) -> int:
+        """查找 CATIA V5 主窗口句柄，未找到返回 0。"""
+        try:
+            import win32gui
+        except ImportError:
+            return 0
+        catia_hwnd = 0
+        def _find(hwnd: int, _) -> bool:
+            nonlocal catia_hwnd
+            try:
+                if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
+                    catia_hwnd = hwnd
+                    return False
+            except Exception:
+                pass
+            return True
+        try:
+            win32gui.EnumWindows(_find, None)
+        except Exception:
+            pass
+        return catia_hwnd
+
+    def _set_catia_as_owner(self, dlg) -> None:
+        """将 CATIA 主窗口设为对话框的 Win32 Owner。
+
+        Owner 关系使对话框只浮于 CATIA 之上（不浮于其他应用），
+        并跟随 CATIA 最小化/还原。必须在 show() 之后调用，
+        因为 show() 会重建原生窗口并重置 Owner。
+        """
+        import ctypes
+        catia_hwnd = self._get_catia_hwnd()
+        if not catia_hwnd:
+            return
+        try:
+            dlg_hwnd = int(dlg.winId())
+            GWLP_HWNDPARENT = -8
+            ctypes.windll.user32.SetWindowLongPtrW(dlg_hwnd, GWLP_HWNDPARENT, catia_hwnd)
+            # 刷新 z-order，使对话框立即浮于 CATIA 之上
+            import win32gui, win32con
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            win32gui.SetWindowPos(dlg_hwnd, win32con.HWND_TOP, 0, 0, 0, 0,
+                                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        except Exception as e:
+            logger.debug(f"_set_catia_as_owner: {e}")
 
     def _start_catia_monitor(self) -> None:
         """启动 CATIA 窗口状态监听定时器，实现对话框跟随 CATIA 最小化/还原。"""
@@ -877,27 +926,10 @@ class MainWindow(QMainWindow):
         """检查 CATIA 窗口状态，同步对话框的显示/隐藏。"""
         try:
             import win32gui
-            import win32con
         except ImportError:
             return
         
-        # 查找 CATIA 主窗口
-        catia_hwnd = 0
-        def _find_catia(hwnd: int, _) -> bool:
-            nonlocal catia_hwnd
-            try:
-                if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("CATIA V5"):
-                    catia_hwnd = hwnd
-                    return False
-            except Exception:
-                pass
-            return True
-        
-        try:
-            win32gui.EnumWindows(_find_catia, None)
-        except Exception:
-            pass
-        
+        catia_hwnd = self._get_catia_hwnd()
         if not catia_hwnd:
             return
         
@@ -915,16 +947,24 @@ class MainWindow(QMainWindow):
                     if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)) and value.isVisible():
                         value.hide()
                         self._hidden_dialogs.add(attr)
-                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏窗口 {attr} (type={type(value).__name__})")
+                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏窗口 {attr}")
             else:
                 # CATIA 还原：恢复之前隐藏的对话框
+                from PySide6.QtCore import QByteArray
                 for attr in list(self._hidden_dialogs):
                     value = getattr(self, attr, None)
                     if value is not None and isinstance(value, (QDialog, QMainWindow)):
                         value.show()
-                        logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr} (type={type(value).__name__})")
+                        # show() 后重新恢复几何（hide/show 可能导致位置重置）
+                        if hasattr(value, "_settings"):
+                            saved = value._settings.value("geometry")
+                            if isinstance(saved, QByteArray) and not saved.isEmpty():
+                                value.restoreGeometry(saved)
+                        # 重新设置 Owner（hide/show 可能重置 Win32 Owner）
+                        self._set_catia_as_owner(value)
+                        logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr}")
                     else:
-                        logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在或类型错误 (value={value})")
+                        logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在 (value={value})")
                 self._hidden_dialogs.clear()
 
     # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
