@@ -3,8 +3,10 @@
 # How to build:
 #   pyinstaller build.spec
 #
-# Output: dist/CATIA Copilot/
-# The executable is placed in dist/CATIA Copilot/ and all supporting files
+# Output: ../CATIA-Copilot-dist/CATIA Copilot <version>/
+# 打包产物输出到项目上一级目录的 CATIA-Copilot-dist/ 文件夹，
+# 避免 dist/ 污染项目目录。
+# The executable is placed there and all supporting files
 # (resources/, macros/, catia_copilot/, etc.) are placed inside the default
 # _internal/ subdirectory alongside it.
 #
@@ -21,11 +23,17 @@ _ver = _re.search(
 ).group(1)
 _app_name = f"CATIA Copilot {_ver}"
 
+# 打包输出目录：项目上一级的 CATIA-Copilot-dist/
+# spec 文件所在目录即项目根目录，用 SPECPATH 获取（PyInstaller 内置变量）
+import os as _os
+_project_root = SPECPATH  # noqa: F821  — PyInstaller 在执行 spec 时注入此变量
+_dist_root = _os.path.normpath(_os.path.join(_project_root, '..', 'CATIA-Copilot-dist'))
+
 # ── pywin32 DLL 动态查找 ────────────────────────────────────────────────────
 # pywintypes / pythoncom DLL 位于 site-packages/pywin32_system32/，
 # PyInstaller 默认不会自动收集，必须手动声明为 binaries。
 # 文件名含 Python 版本号（如 pywintypes313.dll），动态构造避免硬编码。
-import sys as _sys, glob as _glob, os as _os
+import sys as _sys, glob as _glob
 _pyver = f"{_sys.version_info.major}{_sys.version_info.minor}"
 _site_pkgs = _os.path.join(_os.path.dirname(_sys.executable), 'Lib', 'site-packages')
 _pywin32_dir = _os.path.join(_site_pkgs, 'pywin32_system32')
@@ -120,14 +128,13 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name=_app_name,
+    distpath=_dist_root,
 )
 
 # ── 打包后清理：删除不需要的大文件 ─────────────────────────────────────────────
 # 必须在 COLLECT 之后执行，否则目录尚不存在。
-import os as _os
-import shutil as _shutil
 
-_dist = _os.path.join('dist', _app_name, '_internal')
+_dist = _os.path.join(_dist_root, _app_name, '_internal')
 
 # 1. opengl32sw.dll：Qt 软件渲染回退，桌面环境有系统 OpenGL 不需要（-20M）
 _opengl_sw = _os.path.join(_dist, 'PySide6', 'opengl32sw.dll')

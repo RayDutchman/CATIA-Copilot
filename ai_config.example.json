@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "openai": {
+      "name": "OpenAI",
+      "api_base": "https://api.openai.com",
+      "api_key": "YOUR_API_KEY_HERE",
+      "models": [
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o",
+          "supports_tools": true,
+          "max_tokens": 8192
+        }
+      ]
+    }
+  },
+  "default_provider": "openai",
+  "default_model": "gpt-4o"
+}

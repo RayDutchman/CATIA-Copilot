@@ -1,4 +1,4 @@
-"""
+﻿"""
 主应用程序窗口模块。
 
 提供：
@@ -32,6 +32,7 @@ from catia_copilot.constants import (
     FONT_FILE_PATH,
     ISO_XML_FILE_PATH,
     CRACK_DIR_PATH,
+    AI_TAB_LABEL,
 )
 from catia_copilot.utils import resource_path, detect_catia_root, check_catia_connection, diagnose_catia_connection
 from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
@@ -93,6 +94,10 @@ class MainWindow(QMainWindow):
 
         # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
         theme_manager.register(self)
+        # register 之后 _manual 才从 QSettings 加载完毕，同步更新按钮文字
+        self._btn_theme.setText(
+            f"主题：{self._THEME_LABELS.get(theme_manager.current_mode(), '深色')}  ▾"
+        )
 
         # CATIA 吸附边栏管理器（默认关闭，用户在"≡"页手动开启）
         self._sidebar_manager = CATIASidebarManager(self)
@@ -366,7 +371,13 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._build_export_page(),    "导出")    # 1
         self._tab_widget.addTab(self._build_drawing_page(),   "图纸")    # 2
         self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
-        self._tab_widget.addTab(self._build_more_page(),      "≡")       # 4
+
+        # AI 助手 Tab（延迟导入，避免启动时加载 AI 模块影响速度）
+        from catia_copilot.ui.ai_chat_panel import AIChatPanel
+        self._ai_chat_panel = AIChatPanel()
+        self._tab_widget.addTab(self._ai_chat_panel, AI_TAB_LABEL)       # 4
+
+        self._tab_widget.addTab(self._build_more_page(),      "≡")       # 5
 
         # ── 嵌入式日志面板（位于 Tab 下方、状态栏上方）─────────────────────
         self._log_panel = self._build_log_panel()
@@ -1226,6 +1237,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_sidebar_manager"):
             self._sidebar_manager.stop()
         
+        # 停止 AI Agent（如果正在运行）
+        if hasattr(self, "_ai_chat_panel"):
+            self._ai_chat_panel.stop_agent()
+        
         # 停止 CATIA 状态监听定时器
         if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
             self._catia_monitor_timer.stop()
@@ -1430,7 +1445,7 @@ class MainWindow(QMainWindow):
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
             from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.catia.utils import open_catia_file
+            from catia_copilot.utils import open_catia_file
             try:
                 app = get_catia_v5_application()
                 open_catia_file(app.Documents, chosen, foreground=True)

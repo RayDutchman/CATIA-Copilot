@@ -1,28 +1,29 @@
-# 统一行尾符：文本文件存储为 LF，Windows 工作区自动转换为 CRLF
-# 这样无论 core.autocrlf 如何设置，行为都一致
+# 统一行尾符：文本文件存储为 CRLF（Windows 原生开发环境）
+# core.autocrlf=true 保持默认，commit 时 CRLF→CRLF，checkout 时 CRLF→CRLF
+# 无论 opencode / VSCode / 其他工具写入 LF 还是 CRLF，commit 时统一转为 CRLF
 
-# 默认：所有文本文件 LF
-* text=auto eol=lf
+# 默认：所有文本文件 CRLF
+* text=auto eol=crlf
 
-# Python / 配置 / 文档 — 明确 LF
-*.py        text eol=lf
-*.pyw       text eol=lf
-*.qss       text eol=lf
-*.md        text eol=lf
-*.txt       text eol=lf
-*.json      text eol=lf
-*.toml      text eol=lf
-*.yaml      text eol=lf
-*.yml       text eol=lf
-*.cfg       text eol=lf
-*.ini       text eol=lf
-*.spec      text eol=lf
-*.svg       text eol=lf
-*.html      text eol=lf
-*.css       text eol=lf
-*.xml       text eol=lf
-*.catvbs    text eol=lf
-*.catscript text eol=lf
+# Python / 配置 / 文档 — 明确 CRLF
+*.py        text eol=crlf
+*.pyw       text eol=crlf
+*.qss       text eol=crlf
+*.md        text eol=crlf
+*.txt       text eol=crlf
+*.json      text eol=crlf
+*.toml      text eol=crlf
+*.yaml      text eol=crlf
+*.yml       text eol=crlf
+*.cfg       text eol=crlf
+*.ini       text eol=crlf
+*.spec      text eol=crlf
+*.svg       text eol=crlf
+*.html      text eol=crlf
+*.css       text eol=crlf
+*.xml       text eol=crlf
+*.catvbs    text eol=crlf
+*.catscript text eol=crlf
 
 # 二进制文件 — 不做行尾转换
 *.png   binary

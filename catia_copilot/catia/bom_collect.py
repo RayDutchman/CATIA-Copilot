@@ -1,4 +1,4 @@
-"""
+﻿"""
 BOM 数据收集辅助模块。
 
 提供：
@@ -265,7 +265,7 @@ def collect_bom_rows(
         _traverse(root_product, rows, level=0)
         return rows
 
-    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
     target_doc = open_catia_file(documents, file_path)
     root_product = target_doc.Product
     rows = []

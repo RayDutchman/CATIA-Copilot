@@ -1,4 +1,4 @@
-"""
+﻿"""
 查找依赖项对话框。
 
 提供：
@@ -631,7 +631,7 @@ class FindDependenciesDialog(QDialog):
         errors: list[str] = []
         try:
             from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.catia.utils import open_catia_file
+            from catia_copilot.utils import open_catia_file
             app = get_catia_v5_application()
             for p in paths:
                 try:
@@ -640,7 +640,7 @@ class FindDependenciesDialog(QDialog):
                     errors.append(f"{Path(p).name}: {e}")
             # 全部打开后置前台一次
             try:
-                from catia_copilot.catia.utils import bring_catia_to_foreground
+                from catia_copilot.utils import bring_catia_to_foreground
                 bring_catia_to_foreground()
             except Exception:
                 pass
@@ -656,7 +656,7 @@ class FindDependenciesDialog(QDialog):
     def _open_in_catia(self, fp: str) -> None:
         try:
             from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.catia.utils import open_catia_file
+            from catia_copilot.utils import open_catia_file
             app = get_catia_v5_application()
             open_catia_file(app.Documents, fp, foreground=True)
         except Exception as e:

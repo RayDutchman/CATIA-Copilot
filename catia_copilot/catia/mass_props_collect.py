@@ -1,4 +1,4 @@
-"""
+﻿"""
 重量、重心、惯量统计数据收集模块。
 
 提供：
@@ -1134,7 +1134,7 @@ def collect_mass_props_rows(
 
     src = file_path
 
-    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
     target_doc = open_catia_file(documents, src)
 
     root_product = target_doc.Product

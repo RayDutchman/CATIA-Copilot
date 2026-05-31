@@ -128,3 +128,83 @@ MIRROR_BG            = _LIGHT.MIRROR_BG
 
 # ── 树控件层级连接线颜色（向后兼容，取浅色主题值）────────────────────────────
 WIDGET_LINE_COLOR = _LIGHT.WIDGET_LINE_COLOR
+
+
+# ===========================================================================
+# AI 聊天面板颜色令牌
+# ===========================================================================
+
+@dataclass(frozen=True)
+class ChatColors:
+    """AI 聊天面板的颜色令牌，深色/浅色各一个实例。
+
+    颜色值均为 ``"#rrggbb"`` 字符串，供 QSS / QPainter 直接使用。
+    """
+    # 用户消息气泡
+    user_bg:       str
+    user_fg:       str
+    # AI 消息气泡
+    ai_bg:         str
+    ai_fg:         str
+    ai_border:     str   # 气泡细边框，增强与背景的区分
+    # 工具调用卡片
+    tool_bg:       str
+    tool_fg:       str
+    tool_border:   str
+    progress_fg:   str
+    # 侧边栏
+    sidebar_bg:    str
+    sidebar_fg:    str
+    sidebar_sel:   str
+    sidebar_hover: str
+    # Splitter handle
+    handle_bg:     str   # handle 整体背景（与侧边栏融合）
+    handle_hover:  str   # 箭头区域 hover 背景
+    handle_fg:     str   # 箭头文字颜色
+
+
+_CHAT_DARK = ChatColors(
+    user_bg       = "#1e3a5f",
+    user_fg       = "#e8f0fe",
+    ai_bg         = "#1e2d3d",   # 比 qdarkstyle 背景(#19232D)亮，带蓝调，有明显区分
+    ai_fg         = "#dce8f0",
+    ai_border     = "#2e4a62",   # 细边框，进一步勾勒气泡边界
+    tool_bg       = "#1a2a1a",
+    tool_fg       = "#a0d0a0",
+    tool_border   = "#3a5a3a",
+    progress_fg   = "#808080",
+    sidebar_bg    = "#1e1e1e",
+    sidebar_fg    = "#cccccc",
+    sidebar_sel   = "#2d5a9e",
+    sidebar_hover = "#2a2a2a",
+    handle_bg     = "#252525",
+    handle_hover  = "#3a3a3a",
+    handle_fg     = "#888888",
+)
+
+_CHAT_LIGHT = ChatColors(
+    user_bg       = "#dce8ff",
+    user_fg       = "#1a1a2e",
+    ai_bg         = "#eef2f7",   # 带蓝调的浅灰，在白色背景上有明显区分
+    ai_fg         = "#1a1a1a",
+    ai_border     = "#c8d8e8",   # 浅蓝灰细边框
+    tool_bg       = "#f0fff0",
+    tool_fg       = "#2e7d32",
+    tool_border   = "#a5d6a7",
+    progress_fg   = "#757575",
+    sidebar_bg    = "#f0f0f0",
+    sidebar_fg    = "#333333",
+    sidebar_sel   = "#cce0ff",
+    sidebar_hover = "#e0e0e0",
+    handle_bg     = "#e4e4e4",
+    handle_hover  = "#c8c8c8",
+    handle_fg     = "#666666",
+)
+
+
+def get_chat_colors(mode: str) -> ChatColors:
+    """根据主题模式返回 AI 聊天面板颜色集。
+
+    :param mode: "dark" 或 "light"（其他值等同于 "light"）
+    """
+    return _CHAT_DARK if mode == "dark" else _CHAT_LIGHT
