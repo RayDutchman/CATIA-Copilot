@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA Copilot AI Agent 工具定义模块。
 
 将现有 catia/ 层的函数包装为 OpenAI function calling 格式：
@@ -136,7 +136,7 @@ def tool_diagnose_catia_connection(**_kwargs) -> str:
 
 def tool_open_catia_file(file_path: str, foreground: bool = True, **_kwargs) -> str:
     from catia_copilot.utils import get_catia_v5_com_dispatch
-    from catia_copilot.catia.utils import open_catia_file
+    from catia_copilot.utils import open_catia_file
     app = get_catia_v5_com_dispatch()
     if app is None:
         return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)

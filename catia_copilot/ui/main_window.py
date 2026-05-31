@@ -1,4 +1,4 @@
-"""
+﻿"""
 主应用程序窗口模块。
 
 提供：
@@ -1445,7 +1445,7 @@ class MainWindow(QMainWindow):
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
             from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.catia.utils import open_catia_file
+            from catia_copilot.utils import open_catia_file
             try:
                 app = get_catia_v5_application()
                 open_catia_file(app.Documents, chosen, foreground=True)

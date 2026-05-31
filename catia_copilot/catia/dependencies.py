@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA 依赖项查找器。
 
 提供：
@@ -86,7 +86,7 @@ def find_dependencies(
     - 路径比对使用小写，以兼容 Windows 文件系统大小写不敏感的特性。
     """
     from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
 
     target_lower = target_path.lower()
     ext_lower    = Path(target_path).suffix.lower()

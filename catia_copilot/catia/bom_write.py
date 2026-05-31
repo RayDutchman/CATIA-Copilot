@@ -1,4 +1,4 @@
-"""
+﻿"""
 BOM 写回 CATIA 模块。
 
 提供：
@@ -210,7 +210,7 @@ def write_bom_to_catia(
         return
 
     src = file_path
-    from catia_copilot.catia.utils import open_catia_file  # noqa: PLC0415
+    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
     target_doc = open_catia_file(documents, src)
 
     root_product = target_doc.Product
