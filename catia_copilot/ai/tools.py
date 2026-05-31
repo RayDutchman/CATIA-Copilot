@@ -55,9 +55,18 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 **文档属性**
 - get_document_properties：读取单个文档的标准属性（Part Number / Revision / Nomenclature 等）和用户自定义属性。file_path 传 null 读取活动文档。
-- set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source；user_defined 支持任意自定义属性（不存在时自动创建）。
+- set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source；user_defined 只能使用预设字段（见下方约束）。
 - 与 write_bom_to_catia 的区别：write_bom_to_catia 遍历整棵产品树批量写回；set_document_properties 只操作单个已打开文档，适合精确修改单个零件。
 - 修改属性后若不传 save=true，需手动调用 save_catia_document 保存。
+
+**用户自定义属性约束（重要）**
+- user_defined 的键必须来自以下预设列表，不得自行创建新字段名：
+  零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注
+- 部分字段有固定可选值，必须严格使用，不得填写列表以外的值：
+  - 设计状态：草稿 / 冻结 / 发布 / 废弃
+  - 存货类别：物料-复材件 / 物料-金属件 / 物料-标准件 / 物料-非标件 / 物料-钣金件 / 物料-塑胶件 / 物料-橡胶件 / 物料-电子件 / 物料-泡沫 / 物料-软包 / 物料-辅材 / 物料-组件 / 物料-虚拟件 / 半成品-组件 / 成品-整机
+- 其余字段（零件类型、材料、重量、物料编码、规格型号、备注）为自由文本，无固定可选值。
+- 用户要求写入不在预设列表中的字段名时，必须先告知用户该字段不在预设范围内，并询问确认后再执行。
 
 **文件系统**
 - read_file / write_file 仅支持文本格式（txt/csv/json/md 等），不支持 CATPart/xlsx 等二进制文件。
@@ -609,12 +618,47 @@ def tool_set_document_properties(
     """
     from catia_copilot.utils import get_catia_v5_com_dispatch
     from catia_copilot.catia.document import set_document_properties
+    from catia_copilot.constants import (
+        PRESET_USER_REF_PROPERTIES,
+        PRESET_USER_REF_PROPERTY_OPTIONS,
+    )
 
     if not standard and not user_defined:
         return json.dumps(
             {"error": "standard 和 user_defined 不能同时为空，请至少提供一个要写入的属性"},
             ensure_ascii=False,
         )
+
+    # --- 校验 user_defined 字段名和枚举值 ---
+    if user_defined:
+        preset_set = set(PRESET_USER_REF_PROPERTIES)
+        invalid_keys = [k for k in user_defined if k not in preset_set]
+        if invalid_keys:
+            return json.dumps(
+                {
+                    "error": (
+                        f"user_defined 包含不在预设列表中的字段名：{invalid_keys}。"
+                        f"允许的字段名：{PRESET_USER_REF_PROPERTIES}。"
+                        "请告知用户该字段不在预设范围内，并询问确认后再执行。"
+                    )
+                },
+                ensure_ascii=False,
+            )
+        invalid_values = {}
+        for k, v in user_defined.items():
+            allowed = PRESET_USER_REF_PROPERTY_OPTIONS.get(k)
+            if allowed and v not in allowed:
+                invalid_values[k] = {"value": v, "allowed": allowed}
+        if invalid_values:
+            return json.dumps(
+                {
+                    "error": (
+                        f"user_defined 包含不合法的枚举值：{invalid_values}。"
+                        "请使用 allowed 列表中的值。"
+                    )
+                },
+                ensure_ascii=False,
+            )
 
     # 解析目标路径：null → 活动文档
     if file_path is None:
@@ -1659,12 +1703,18 @@ tools_schema: list[dict[str, Any]] = [
                 "file_path 为 null 时操作当前活动文档。"
                 "standard 支持的键：Part Number、Nomenclature、Revision、Definition、Source。"
                 "Description 为只读，传入会被忽略。"
-                "user_defined 中不存在的属性会自动创建（CreateString）。"
                 "save=true 时写入后立即保存文档；默认 false，需手动调用 save_catia_document。"
                 "返回字段：written_standard（已写入的标准属性列表）、"
                 "written_user_defined（已写入的自定义属性列表）、"
                 "skipped（跳过的属性列表）、saved（是否已保存）。"
-                "典型用途：批量更新零件版本号、修改命名规范、写入自定义属性。"
+                "【重要】user_defined 的键必须来自预设列表："
+                "零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。"
+                "不得自行创建预设列表以外的字段名。"
+                "设计状态的合法值：草稿 / 冻结 / 发布 / 废弃。"
+                "存货类别的合法值：物料-复材件 / 物料-金属件 / 物料-标准件 / 物料-非标件 / "
+                "物料-钣金件 / 物料-塑胶件 / 物料-橡胶件 / 物料-电子件 / 物料-泡沫 / "
+                "物料-软包 / 物料-辅材 / 物料-组件 / 物料-虚拟件 / 半成品-组件 / 成品-整机。"
+                "用户要求写入不在预设列表中的字段名时，必须先告知用户并询问确认。"
             ),
             "parameters": {
                 "type": "object",
@@ -1690,8 +1740,12 @@ tools_schema: list[dict[str, Any]] = [
                         "type": "object",
                         "description": (
                             "要写入的用户自定义属性字典。"
-                            "属性不存在时自动创建。"
-                            "例：{\"Material\": \"Steel\", \"Surface\": \"镀锌\"}"
+                            "键必须来自预设列表：零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。"
+                            "设计状态合法值：草稿 / 冻结 / 发布 / 废弃。"
+                            "存货类别合法值：物料-复材件 / 物料-金属件 / 物料-标准件 / 物料-非标件 / "
+                            "物料-钣金件 / 物料-塑胶件 / 物料-橡胶件 / 物料-电子件 / 物料-泡沫 / "
+                            "物料-软包 / 物料-辅材 / 物料-组件 / 物料-虚拟件 / 半成品-组件 / 成品-整机。"
+                            "例：{\"设计状态\": \"冻结\", \"存货类别\": \"物料-金属件\", \"材料\": \"Q235\"}"
                         ),
                         "additionalProperties": {"type": "string"},
                     },
