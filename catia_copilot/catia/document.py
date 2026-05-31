@@ -371,8 +371,8 @@ def set_document_properties(
     standard:
         要写入的标准属性字典。支持的键：
         ``Part Number``、``Nomenclature``、``Revision``、
-        ``Definition``、``Source``。
-        ``Description`` 在 CATIA 中为只读，传入会被忽略并记录警告。
+        ``Definition``、``Source``、``Description``。
+        ``Description`` 通过 COM 属性 ``DescriptionRef`` 写入，经实测可写。
     user_defined:
         要写入的用户自定义属性字典。属性不存在时自动创建（CreateString）。
     save:
@@ -404,8 +404,6 @@ def set_document_properties(
     """
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    _READONLY_STANDARD = {"Description"}  # DescriptionRef 在 CATIA 中只读
-
     get_catia_v5_application()  # 确认 CATIA 已连接，未连接时抛出 RuntimeError
     doc = find_open_document(file_path)
     if doc is None:
@@ -426,11 +424,6 @@ def set_document_properties(
 
     # --- 写入标准属性 ---
     for name, value in (standard or {}).items():
-        if name in _READONLY_STANDARD:
-            logger.warning("set_document_properties: %s 为只读属性，已跳过", name)
-            skipped.append(name)
-            continue
-
         com_attr = PRODUCT_ATTR_WRITE_MAP.get(name)
         if com_attr is None:
             logger.warning("set_document_properties: 未知标准属性 %s，已跳过", name)

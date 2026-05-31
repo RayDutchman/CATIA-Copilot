@@ -127,8 +127,8 @@ PRESET_USER_REF_PROPERTY_OPTIONS: dict[str, list[str]] = {
 # 这两个 map 是 bom_collect / bom_write / document 模块的共同数据源，
 # 集中在此处维护，避免各模块各自定义导致不一致。
 #
-# PRODUCT_ATTR_READ_MAP  — 可读属性（含 Description，通过 DescriptionRef 读取）
-# PRODUCT_ATTR_WRITE_MAP — 可写属性（不含 Description，DescriptionRef 在 CATIA 中只读）
+# PRODUCT_ATTR_READ_MAP  — 可读属性（含 Description，通过 DescriptionRef 读写）
+# PRODUCT_ATTR_WRITE_MAP — 可写属性（含 Description，通过 DescriptionRef 写入）
 # ---------------------------------------------------------------------------
 
 PRODUCT_ATTR_READ_MAP: dict[str, str] = {
@@ -137,7 +137,7 @@ PRODUCT_ATTR_READ_MAP: dict[str, str] = {
     "Revision":     "Revision",
     "Definition":   "Definition",
     "Source":       "Source",
-    "Description":  "DescriptionRef",   # 引用产品的描述字段，只读
+    "Description":  "DescriptionRef",   # 引用产品的描述字段，通过 DescriptionRef 读写
 }
 
 PRODUCT_ATTR_WRITE_MAP: dict[str, str] = {
@@ -146,7 +146,7 @@ PRODUCT_ATTR_WRITE_MAP: dict[str, str] = {
     "Revision":     "Revision",
     "Definition":   "Definition",
     "Source":       "Source",
-    # Description/DescriptionRef 在 CATIA V5 COM 中为只读，不列入
+    "Description":  "DescriptionRef",   # 经实测可写，通过 DescriptionRef 赋值
 }
 
 # ---------------------------------------------------------------------------
