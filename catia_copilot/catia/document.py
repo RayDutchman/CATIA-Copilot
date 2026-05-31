@@ -7,10 +7,8 @@ CATIA 单文档操作模块。
 公开接口：
   find_open_document(file_path)          – 在已打开文档中按路径查找 COM 文档对象
   rename_document(file_path, new_pn, …)  – 通过 CATIA SaveAs 将文档另存为新文件名
-
-后续可扩展：
-  get_document_properties(…)             – 读取单个文档的属性（标准 + 用户自定义）
-  set_document_properties(…)             – 写入单个文档的属性
+  get_document_properties(file_path)     – 读取单个文档的属性（标准 + 用户自定义）
+  set_document_properties(file_path, …) – 写入单个文档的属性
 """
 
 from __future__ import annotations
@@ -196,3 +194,348 @@ def rename_document(
 
     logger.info("rename_document: %s -> %s", src.name, Path(new_fp).name)
     return new_fp, False  # was_skipped_by_user = False
+
+
+# ---------------------------------------------------------------------------
+# 文档属性读写
+# ---------------------------------------------------------------------------
+
+# CATIA Product/Part 对象的内置可读属性（COM 属性名）
+# Description 通过 DescriptionRef 读取（引用产品的描述字段）
+_READABLE_ATTRS: dict[str, str] = {
+    "Part Number":   "PartNumber",
+    "Nomenclature":  "Nomenclature",
+    "Revision":      "Revision",
+    "Definition":    "Definition",
+    "Source":        "Source",
+    "Description":   "DescriptionRef",
+}
+
+# Source 枚举值 → 显示字符串（与 bom_collect 保持一致）
+_SOURCE_TO_DISPLAY: dict[int, str] = {0: "Unknown", 1: "Made", 2: "Bought"}
+_SOURCE_FROM_DISPLAY: dict[str, int] = {v: k for k, v in _SOURCE_TO_DISPLAY.items()}
+
+# 内置可写属性（Description/DescriptionRef 在 CATIA 中为只读，不列入）
+_WRITABLE_ATTRS: dict[str, str] = {
+    "Part Number":  "PartNumber",
+    "Nomenclature": "Nomenclature",
+    "Revision":     "Revision",
+    "Definition":   "Definition",
+    "Source":       "Source",
+}
+
+
+def _get_product_from_doc(doc):
+    """从 COM 文档对象中提取 Product 对象（CATPart / CATProduct 均适用）。
+
+    - CATProduct：直接返回 doc.Product
+    - CATPart：通过 doc.Part 的 ReferenceProduct 获取（若可用），否则返回 None
+    - CATDrawing 等：返回 None（无 Product 概念）
+    """
+    # CATProduct
+    try:
+        return doc.Product
+    except Exception:
+        pass
+    # CATPart — Part 对象本身不是 Product，但可通过 ReferenceProduct 访问
+    try:
+        return doc.Part.ReferenceProduct
+    except Exception:
+        pass
+    return None
+
+
+def get_document_properties(
+    file_path: str,
+) -> dict:
+    """读取 CATIA 文档的属性，包括标准属性和用户自定义属性。
+
+    参数
+    ----
+    file_path:
+        目标文档的完整路径。文档必须已在 CATIA 中打开。
+
+    返回
+    ----
+    包含以下键的字典：
+
+    ``standard``
+        标准属性字典，键为属性名（如 ``"Part Number"``、``"Revision"``），
+        值为字符串。包含：Part Number、Nomenclature、Revision、Definition、
+        Source、Description。
+
+    ``user_defined``
+        用户自定义属性字典，键为属性名，值为字符串。
+        读取失败的属性会被静默跳过。
+
+    ``file_path``
+        文档的完整路径（来自 COM ``FullName``）。
+
+    ``doc_type``
+        文档类型：``"PartDocument"``、``"ProductDocument"``、
+        ``"DrawingDocument"`` 或 ``"Other"``。
+
+    异常
+    ----
+    ``FileNotFoundError``
+        文档未在 CATIA 中打开。
+    ``RuntimeError``
+        CATIA 未连接，或文档类型不支持属性读取（如 CATDrawing）。
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+
+    _EXT_TYPE = {
+        ".catpart":    "PartDocument",
+        ".catproduct": "ProductDocument",
+        ".catdrawing": "DrawingDocument",
+    }
+
+    app = get_catia_v5_application()
+    doc = find_open_document(file_path)
+    if doc is None:
+        raise FileNotFoundError(
+            f"文档未在 CATIA 中打开：{file_path}\n"
+            "请先用 open_catia_file 打开该文档。"
+        )
+
+    full_name = doc.FullName
+    ext       = Path(full_name).suffix.lower()
+    doc_type  = _EXT_TYPE.get(ext, "Other")
+
+    product = _get_product_from_doc(doc)
+    if product is None:
+        raise RuntimeError(
+            f"文档类型 {doc_type} 不支持属性读取（无 Product 对象）。"
+        )
+
+    # --- 读取标准属性 ---
+    standard: dict[str, str] = {}
+    for display_name, com_attr in _READABLE_ATTRS.items():
+        # 优先从 ReferenceProduct 读，回退到 product 本身
+        targets = []
+        try:
+            targets.append(product.ReferenceProduct)
+        except Exception:
+            pass
+        targets.append(product)
+
+        for target in targets:
+            try:
+                raw = getattr(target, com_attr)
+                if raw is None:
+                    continue
+                if display_name == "Source":
+                    standard[display_name] = _SOURCE_TO_DISPLAY.get(int(raw), str(raw))
+                else:
+                    standard[display_name] = str(raw)
+                break
+            except Exception:
+                pass
+        else:
+            standard[display_name] = ""
+
+    # --- 读取用户自定义属性 ---
+    user_defined: dict[str, str] = {}
+    targets = []
+    try:
+        targets.append(product.ReferenceProduct)
+    except Exception:
+        pass
+    targets.append(product)
+
+    for target in targets:
+        try:
+            props = target.UserRefProperties
+            for i in range(1, props.Count + 1):
+                try:
+                    p = props.Item(i)
+                    name = p.Name
+                    if name not in user_defined:
+                        val = p.Value
+                        user_defined[name] = str(val) if val is not None else ""
+                except Exception:
+                    pass
+            break  # 成功读取后不再尝试下一个 target
+        except Exception:
+            pass
+
+    logger.debug(
+        "get_document_properties: %s — %d standard, %d user_defined",
+        Path(full_name).name, len(standard), len(user_defined),
+    )
+    return {
+        "file_path":    full_name,
+        "doc_type":     doc_type,
+        "standard":     standard,
+        "user_defined": user_defined,
+    }
+
+
+def set_document_properties(
+    file_path: str,
+    standard: dict[str, str] | None = None,
+    user_defined: dict[str, str] | None = None,
+    save: bool = False,
+) -> dict:
+    """写入 CATIA 文档的属性。
+
+    参数
+    ----
+    file_path:
+        目标文档的完整路径。文档必须已在 CATIA 中打开。
+    standard:
+        要写入的标准属性字典。支持的键：
+        ``Part Number``、``Nomenclature``、``Revision``、
+        ``Definition``、``Source``。
+        ``Description`` 在 CATIA 中为只读，传入会被忽略并记录警告。
+    user_defined:
+        要写入的用户自定义属性字典。属性不存在时自动创建（CreateString）。
+    save:
+        写入完成后是否立即保存文档（调用 ``doc.Save()``）。
+        默认 False，由调用方决定何时保存。
+
+    返回
+    ----
+    包含以下键的字典：
+
+    ``written_standard``
+        成功写入的标准属性名列表。
+
+    ``written_user_defined``
+        成功写入的用户自定义属性名列表。
+
+    ``skipped``
+        被跳过的属性名列表（只读属性或写入失败）。
+
+    ``saved``
+        是否执行了保存操作。
+
+    异常
+    ----
+    ``FileNotFoundError``
+        文档未在 CATIA 中打开。
+    ``RuntimeError``
+        CATIA 未连接，或文档类型不支持属性写入。
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+
+    _READONLY_STANDARD = {"Description"}  # DescriptionRef 在 CATIA 中只读
+
+    get_catia_v5_application()  # 确认 CATIA 已连接，未连接时抛出 RuntimeError
+    doc = find_open_document(file_path)
+    if doc is None:
+        raise FileNotFoundError(
+            f"文档未在 CATIA 中打开：{file_path}\n"
+            "请先用 open_catia_file 打开该文档。"
+        )
+
+    product = _get_product_from_doc(doc)
+    if product is None:
+        raise RuntimeError(
+            "文档类型不支持属性写入（无 Product 对象）。"
+        )
+
+    written_standard:     list[str] = []
+    written_user_defined: list[str] = []
+    skipped:              list[str] = []
+
+    # --- 写入标准属性 ---
+    for name, value in (standard or {}).items():
+        if name in _READONLY_STANDARD:
+            logger.warning("set_document_properties: %s 为只读属性，已跳过", name)
+            skipped.append(name)
+            continue
+
+        com_attr = _WRITABLE_ATTRS.get(name)
+        if com_attr is None:
+            logger.warning("set_document_properties: 未知标准属性 %s，已跳过", name)
+            skipped.append(name)
+            continue
+
+        # 优先写 ReferenceProduct，回退到 product 本身
+        targets = []
+        try:
+            targets.append(product.ReferenceProduct)
+        except Exception:
+            pass
+        targets.append(product)
+
+        written = False
+        for target in targets:
+            try:
+                if name == "Source":
+                    int_val = _SOURCE_FROM_DISPLAY.get(value, None)
+                    if int_val is None:
+                        try:
+                            int_val = int(value)
+                        except (ValueError, TypeError):
+                            int_val = 0
+                    setattr(target, com_attr, int_val)
+                elif name == "Part Number":
+                    target.PartNumber = value
+                else:
+                    setattr(target, com_attr, value)
+                written = True
+                break
+            except Exception as e:
+                logger.debug("set_document_properties: 写 %s 到 %s 失败: %s", name, target, e)
+
+        if written:
+            written_standard.append(name)
+        else:
+            skipped.append(name)
+
+    # --- 写入用户自定义属性 ---
+    targets = []
+    try:
+        targets.append(product.ReferenceProduct)
+    except Exception:
+        pass
+    targets.append(product)
+
+    for name, value in (user_defined or {}).items():
+        written = False
+        # 先尝试更新已有属性
+        for target in targets:
+            try:
+                target.UserRefProperties.Item(name).Value = value
+                written = True
+                break
+            except Exception:
+                pass
+        # 属性不存在则创建
+        if not written:
+            for target in targets:
+                try:
+                    target.UserRefProperties.CreateString(name, value)
+                    written = True
+                    break
+                except Exception:
+                    pass
+
+        if written:
+            written_user_defined.append(name)
+        else:
+            skipped.append(name)
+            logger.warning("set_document_properties: 无法写入用户属性 %s", name)
+
+    # --- 可选保存 ---
+    saved = False
+    if save:
+        try:
+            doc.Save()
+            saved = True
+            logger.info("set_document_properties: 已保存 %s", Path(file_path).name)
+        except Exception as e:
+            logger.warning("set_document_properties: 保存失败 %s: %s", file_path, e)
+
+    logger.info(
+        "set_document_properties: %s — standard=%s, user_defined=%s, skipped=%s",
+        Path(file_path).name, written_standard, written_user_defined, skipped,
+    )
+    return {
+        "written_standard":     written_standard,
+        "written_user_defined": written_user_defined,
+        "skipped":              skipped,
+        "saved":                saved,
+    }
