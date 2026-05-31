@@ -2264,13 +2264,9 @@ class BomEditDialog(QDialog):
             logger.warning(f"Failed to open path in Explorer: {exc}")
 
     def _open_in_catia(self, fp: str) -> None:
-        """通过 COM 在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
+        """在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia  # noqa: PLC0415
-            from catia_copilot.utils import open_catia_file  # noqa: PLC0415
-
-            app = _get_catia()
-            open_catia_file(app.Documents, fp, foreground=True)
-
+            from catia_copilot.catia.connection import open_document  # noqa: PLC0415
+            open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")

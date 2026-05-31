@@ -1444,11 +1444,9 @@ class MainWindow(QMainWindow):
         # 4. 单结果直接打开；多结果弹选择框
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
-            from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.utils import open_catia_file
+            from catia_copilot.catia.connection import open_document
             try:
-                app = get_catia_v5_application()
-                open_catia_file(app.Documents, chosen, foreground=True)
+                open_document(chosen, foreground=True)
             except Exception as e:
                 QMessageBox.critical(
                     self, "打开文件失败",

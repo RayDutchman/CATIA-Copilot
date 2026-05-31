@@ -289,15 +289,21 @@ class FindDependenciesDialog(QDialog):
     def _resolve_target(self) -> str | None:
         if self._use_active_chk.isChecked():
             try:
-                from catia_copilot.catia.connection import get_catia_v5_application
-                app  = get_catia_v5_application()
-                return app.ActiveDocument.FullName
+                from catia_copilot.catia.connection import get_active_document_path
+                active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",
                     f"无法从 CATIA 获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
                 )
                 return None
+            if active_path is None:
+                QMessageBox.warning(
+                    self, "无活动文档",
+                    "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。",
+                )
+                return None
+            return active_path
         target = self._target_edit.text().strip()
         if not target:
             QMessageBox.warning(self, "未选择目标文件", "请先选择一个目标 CATIA 文件。")
@@ -630,17 +636,15 @@ class FindDependenciesDialog(QDialog):
         paths = self._iter_result_paths()
         errors: list[str] = []
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.utils import open_catia_file
-            app = get_catia_v5_application()
+            from catia_copilot.catia.connection import open_document
+            from catia_copilot.utils import bring_catia_to_foreground
             for p in paths:
                 try:
-                    open_catia_file(app.Documents, p)
+                    open_document(p)
                 except Exception as e:
                     errors.append(f"{Path(p).name}: {e}")
             # 全部打开后置前台一次
             try:
-                from catia_copilot.utils import bring_catia_to_foreground
                 bring_catia_to_foreground()
             except Exception:
                 pass
@@ -655,10 +659,8 @@ class FindDependenciesDialog(QDialog):
 
     def _open_in_catia(self, fp: str) -> None:
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.utils import open_catia_file
-            app = get_catia_v5_application()
-            open_catia_file(app.Documents, fp, foreground=True)
+            from catia_copilot.catia.connection import open_document
+            open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.critical(
                 self, "打开失败",
