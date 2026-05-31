@@ -257,7 +257,7 @@ class FindDependenciesDialog(QDialog):
         last      = self._settings.value("last_target", "")
         start_dir = str(Path(last).parent) if last else ""
         file, _   = QFileDialog.getOpenFileName(
-            None, "选择目标 CATIA 文件", start_dir,
+            self, "选择目标 CATIA 文件", start_dir,
             "CATIA 文件 (*.CATPart *.CATProduct *.CATDrawing);;所有文件 (*)",
         )
         if file:

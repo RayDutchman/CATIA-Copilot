@@ -98,7 +98,7 @@ class _FileRenameDialog(QDialog):
 
     def _browse_dir(self) -> None:
         d = QFileDialog.getExistingDirectory(
-            None, "选择目标目录",
+            self, "选择目标目录",
             self._dir_edit.text() or str(self._p.parent),
         )
         if d:

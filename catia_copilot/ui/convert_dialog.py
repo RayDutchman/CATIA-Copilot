@@ -287,7 +287,7 @@ class FileConvertDialog(QDialog):
 
     def _browse_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
-            None, "选择文件", self._last_browse_dir, self._file_filter
+            self, "选择文件", self._last_browse_dir, self._file_filter
         )
         if files:
             self._last_browse_dir = str(Path(files[0]).parent)
@@ -325,7 +325,7 @@ class FileConvertDialog(QDialog):
 
     def _browse_output_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            None, "选择输出文件夹", self._last_output_dir
+            self, "选择输出文件夹", self._last_output_dir
         )
         if folder:
             self._folder_edit.setText(folder)

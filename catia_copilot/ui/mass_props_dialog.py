@@ -818,7 +818,7 @@ class MassPropsDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            None, "选择 CATProduct 文件",
+            self, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -1126,7 +1126,7 @@ class MassPropsDialog(QDialog):
         default_path = str(Path(default_dir) / default_name) if default_dir else default_name
 
         dest, _ = QFileDialog.getSaveFileName(
-            None, "保存质量特性数据", default_path, "质量特性数据文件 (*.mpd)"
+            self, "保存质量特性数据", default_path, "质量特性数据文件 (*.mpd)"
         )
         if not dest:
             return
@@ -1146,7 +1146,7 @@ class MassPropsDialog(QDialog):
     def _load_data_from_json(self) -> None:
         """从压缩二进制数据文件载入行数据（无需 CATIA ，_root_mp 由后处理重建）。"""
         src, _ = QFileDialog.getOpenFileName(
-            None, "载入质量特性数据", "", "质量特性数据文件 (*.mpd)"
+            self, "载入质量特性数据", "", "质量特性数据文件 (*.mpd)"
         )
         if not src:
             return
@@ -1172,7 +1172,7 @@ class MassPropsDialog(QDialog):
             QMessageBox.warning(self, "无基础数据", "请先加载基础产品数据，再追加分总成数据。")
             return
         srcs, _ = QFileDialog.getOpenFileNames(
-            None, "追加质量特性数据", self._last_browse_dir,
+            self, "追加质量特性数据", self._last_browse_dir,
             "质量特性数据文件 (*.mpd)"
         )
         if not srcs:
@@ -1890,7 +1890,7 @@ class MassPropsDialog(QDialog):
         default_path = str(Path(default_dir) / f"{default_stem}.xlsx") if default_dir else f"{default_stem}.xlsx"
 
         dest, _ = QFileDialog.getSaveFileName(
-            None, "导出质量特性表格",
+            self, "导出质量特性表格",
             default_path,
             "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)",
         )
@@ -1917,7 +1917,7 @@ class MassPropsDialog(QDialog):
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
-        msg = QMessageBox(None)
+        msg = QMessageBox(self)
         msg.setWindowTitle("导出成功")
         msg.setText(f"文件已成功导出：\n{dest_path}")
         msg.setIcon(QMessageBox.Icon.Information)
