@@ -41,10 +41,6 @@ from catia_copilot.constants import (
 from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
 from catia_copilot.catia.bom_write import write_bom_to_catia
 from catia_copilot.utils import read_catia_thumbnail
-from catia_copilot.ui.bom_catia_helpers import (
-    _is_catia_com_error,
-    _find_catia_doc_by_path,
-)
 from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem, _ROW_HEIGHT
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.ui_colors import (
@@ -1530,25 +1526,9 @@ class BomEditDialog(QDialog):
 
         QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
+        from catia_copilot.catia.document import rename_document  # noqa: PLC0415
+
         renamed_count = 0
-
-        # 性能优化：一次性构建文档缓存，避免重复扫描
-        from catia_copilot.catia.connection import get_catia_v5_application as _get_catia
-        caa         = _get_catia()
-        application = caa
-        application.Visible = True
-        documents   = application.Documents
-
-        # 缓存：文件路径 → 文档对象
-        doc_cache: dict[Path, object] = {}
-        for i in range(1, documents.Count + 1):
-            try:
-                doc = documents.Item(i)
-                doc_path = Path(doc.FullName).resolve()
-                doc_cache[doc_path] = doc
-            except Exception:
-                pass
-
         for fp, pn in reversed(to_rename):
             if not PART_NUMBER_VALID_PATTERN.fullmatch(pn):
                 QMessageBox.warning(
@@ -1562,77 +1542,33 @@ class BomEditDialog(QDialog):
             if not Path(fp).exists():
                 continue
 
-            ext    = Path(fp).suffix
-            new_fp = str(Path(fp).parent / (pn + ext))
-            target_existed_before = Path(new_fp).exists()
+            new_fp = str(Path(fp).parent / (pn + Path(fp).suffix))
 
             try:
-                src = Path(fp).resolve()
-
-                # 使用缓存快速查找
-                target_doc = doc_cache.get(src)
-                if target_doc is None:
-                    documents.Open(str(src))
-                    candidate = documents.Item(documents.Count)
-                    target_doc = (
-                        candidate
-                        if Path(candidate.FullName).resolve() == src
-                        else _find_catia_doc_by_path(documents, src)
-                    )
-                    if target_doc:
-                        doc_cache[src] = target_doc
-
-                if target_doc is None:
-                    QMessageBox.warning(
-                        self, "无法找到文档",
-                        f"无法在 CATIA 中找到或打开文档：\n{fp}",
-                    )
-                    continue
-
-                target_doc.SaveAs(new_fp)
-
-                if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
-                    try:
-                        os.remove(fp)
-                    except Exception as del_err:
-                        logger.warning(f"Failed to delete old file {fp}: {del_err}")
-
-                for row in self._rows:
-                    if str(row.get("_filepath", "")) == fp:
-                        row["_filepath"] = new_fp
-                        row["Filename"]  = pn
-                for row in self._raw_rows:
-                    if str(row.get("_filepath", "")) == fp:
-                        row["_filepath"] = new_fp
-                        row["Filename"]  = pn
-                renamed_count += 1
-
-                # 用新路径更新缓存
-                if Path(new_fp).resolve() != src:
-                    doc_cache[Path(new_fp).resolve()] = target_doc
-                    if src in doc_cache:
-                        del doc_cache[src]
-
-            except Exception as e:
-                # 仅在以下所有条件成立时将异常视为用户主动取消：
-                #   1. 异常来自CATIA COM层（pywintypes.com_error）——
-                #      这是用户在CATIA自身另存为对话框中点击"取消"或"否"时
-                #      CATIA抛出的异常，而非操作系统级别的失败。
-                #   2. 源文件仍然完好。
-                #   3. 目标文件要么在操作前就已存在，要么从未被创建。
-                # 其他任何异常（OSError、PermissionError、磁盘空间不足等非COM错误）
-                # 均应作为真正的失败弹出提示。
-                if _is_catia_com_error(e) and Path(fp).exists() and (
-                    target_existed_before or not Path(new_fp).exists()
-                ):
+                new_fp, skipped = rename_document(fp, pn, delete_old=delete_old)
+                if skipped:
                     logger.info(
-                        f"SaveAs skipped for {Path(fp).name} "
-                        "(user cancelled or declined overwrite in CATIA)"
+                        "SaveAs skipped for %s (user cancelled)", Path(fp).name
                     )
                     continue
+            except FileNotFoundError as e:
+                QMessageBox.warning(self, "无法找到文档", str(e))
+                continue
+            except Exception as e:
                 QMessageBox.warning(
                     self, "另存为失败", f"文件「{Path(fp).name}」另存为失败：\n{e}"
                 )
+                continue
+
+            for row in self._rows:
+                if str(row.get("_filepath", "")) == fp:
+                    row["_filepath"] = new_fp
+                    row["Filename"]  = pn
+            for row in self._raw_rows:
+                if str(row.get("_filepath", "")) == fp:
+                    row["_filepath"] = new_fp
+                    row["Filename"]  = pn
+            renamed_count += 1
 
         if renamed_count > 0:
             QMessageBox.information(
@@ -1702,76 +1638,39 @@ class BomEditDialog(QDialog):
 
         QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
+        from catia_copilot.catia.document import rename_document  # noqa: PLC0415
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _get_catia
-            caa         = _get_catia()
-            application = caa
-            application.Visible = True
-            documents   = application.Documents
-            src         = Path(fp).resolve()
-
-            target_doc = _find_catia_doc_by_path(documents, src)
-            if target_doc is None and file_on_disk:
-                documents.Open(str(src))
-                candidate  = documents.Item(documents.Count)
-                target_doc = (
-                    candidate
-                    if Path(candidate.FullName).resolve() == src
-                    else _find_catia_doc_by_path(documents, src)
-                )
-
-            if target_doc is None:
-                QMessageBox.warning(
-                    self, "无法找到文档",
-                    f"无法在 CATIA 中找到或打开文档：\n{fp}\n\n"
-                    "请确认该零件已在 CATIA 中打开。",
-                )
-                return
-
-            target_doc.SaveAs(new_fp)
-
-            if delete_old and Path(fp).resolve() != Path(new_fp).resolve():
-                try:
-                    os.remove(fp)
-                except Exception as del_err:
-                    logger.warning(f"Failed to delete old file {fp}: {del_err}")
-
-            new_stem = Path(new_fp).stem
-            for row in self._rows:
-                if str(row.get("_filepath", "")) == fp:
-                    row["_filepath"] = new_fp
-                    row["Filename"]  = new_stem
-            for row in self._raw_rows:
-                if str(row.get("_filepath", "")) == fp:
-                    row["_filepath"] = new_fp
-                    row["Filename"]  = new_stem
-            self._populate_table()
-            QMessageBox.information(
-                self, "操作成功",
-                f"文件已成功另存为：\n{new_fp}",
+            new_fp, skipped = rename_document(
+                fp, Path(new_fp).stem,
+                delete_old=delete_old,
+                target_path=new_fp,
             )
-
-        except Exception as e:
-            # 仅在以下所有条件成立时将异常视为用户主动取消：
-            #   1. 异常来自CATIA COM层（pywintypes.com_error）——
-            #      这是用户在CATIA自身另存为对话框中点击"取消"或"否"时抛出的，
-            #      而非操作系统级别的失败。
-            #   2. 源文件仍然完好（或本来就未在磁盘上）。
-            #   3. 目标文件要么在操作前就已存在，要么从未被创建。
-            # 其他任何异常（OSError、PermissionError、磁盘空间不足等非COM错误）
-            # 均应作为真正的失败弹出提示。
-            source_intact = not file_on_disk or Path(fp).exists()
-            if _is_catia_com_error(e) and source_intact and (
-                target_existed_before or not Path(new_fp).exists()
-            ):
-                # 用户很可能在CATIA另存为对话框中点击了"取消"或"否"——
-                # 视为主动跳过，不弹出错误对话框
+            if skipped:
                 logger.info(
-                    f"SaveAs skipped for {Path(fp).name} "
-                    f"(user cancelled or declined overwrite in CATIA; exception: {e})"
+                    "SaveAs skipped for %s (user cancelled)", Path(fp).name
                 )
                 return
+        except FileNotFoundError as e:
+            QMessageBox.warning(self, "无法找到文档", str(e))
+            return
+        except Exception as e:
             QMessageBox.warning(self, "另存为失败", f"文件操作失败：\n{e}")
+            return
+
+        new_stem = Path(new_fp).stem
+        for row in self._rows:
+            if str(row.get("_filepath", "")) == fp:
+                row["_filepath"] = new_fp
+                row["Filename"]  = new_stem
+        for row in self._raw_rows:
+            if str(row.get("_filepath", "")) == fp:
+                row["_filepath"] = new_fp
+                row["Filename"]  = new_stem
+        self._populate_table()
+        QMessageBox.information(
+            self, "操作成功",
+            f"文件已成功另存为：\n{new_fp}",
+        )
 
     def _write_back(self, *, close_on_success: bool) -> None:
         """仅将已变更的字段写回 CATIA 。"""
