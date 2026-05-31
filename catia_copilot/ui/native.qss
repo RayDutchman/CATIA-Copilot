@@ -53,3 +53,30 @@ QPushButton#toggleButton:checked {
     background-color: #346792;
     color: #ffffff;
 }
+
+/* ── AI 聊天面板：布局容器圆角清零 ──────────────────────────────────────── */
+QWidget#ChatArea,
+QWidget#ToolbarWrapper,
+QWidget#ToolbarBar,
+QWidget#InputArea {
+  border-radius: 0px;
+}
+QWidget#SidebarHeader,
+QWidget#SidebarBottom {
+  border: none;
+  border-radius: 0px;
+}
+SessionSidebar QListWidget#SessionList {
+  border: none;
+  border-radius: 0px;
+}
+SessionSidebar QListWidget#SessionList::item {
+  border-radius: 0px;
+}
+QSplitter#InputSplitter {
+  border-radius: 0px;
+}
+QSplitter#InputSplitter::handle {
+  border-radius: 0px;
+  image: none;
+}

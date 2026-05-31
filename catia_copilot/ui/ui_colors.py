@@ -157,6 +157,8 @@ class ChatColors:
     sidebar_fg:    str
     sidebar_sel:   str
     sidebar_hover: str
+    # 分隔线（侧边栏标题/底部、toolbar 底部）
+    divider:       str
     # Splitter handle
     handle_bg:     str   # handle 整体背景（与侧边栏融合）
     handle_hover:  str   # 箭头区域 hover 背景
@@ -173,13 +175,14 @@ _CHAT_DARK = ChatColors(
     tool_fg       = "#a0d0a0",
     tool_border   = "#3a5a3a",
     progress_fg   = "#808080",
-    sidebar_bg    = "#1e1e1e",
-    sidebar_fg    = "#cccccc",
-    sidebar_sel   = "#2d5a9e",
-    sidebar_hover = "#2a2a2a",
-    handle_bg     = "#252525",
-    handle_hover  = "#3a3a3a",
-    handle_fg     = "#888888",
+    sidebar_bg    = "#19232D",   # 与 qdarkstyle 主背景一致，消除色调冲突
+    sidebar_fg    = "#DFE1E2",   # qdarkstyle 标准文字色
+    sidebar_sel   = "#346792",   # qdarkstyle 选中色
+    sidebar_hover = "#37414F",   # qdarkstyle hover 色
+    divider       = "#37414F",   # qdarkstyle 边框/分隔色
+    handle_bg     = "#293544",   # qdarkstyle 次背景
+    handle_hover  = "#37414F",
+    handle_fg     = "#9DA9B5",   # qdarkstyle 次要文字色
 )
 
 _CHAT_LIGHT = ChatColors(
@@ -192,13 +195,14 @@ _CHAT_LIGHT = ChatColors(
     tool_fg       = "#2e7d32",
     tool_border   = "#a5d6a7",
     progress_fg   = "#757575",
-    sidebar_bg    = "#f0f0f0",
-    sidebar_fg    = "#333333",
-    sidebar_sel   = "#cce0ff",
-    sidebar_hover = "#e0e0e0",
-    handle_bg     = "#e4e4e4",
-    handle_hover  = "#c8c8c8",
-    handle_fg     = "#666666",
+    sidebar_bg    = "#FAFAFA",   # 与 qdarkstyle light 主背景一致
+    sidebar_fg    = "#19232D",   # qdarkstyle light 标准文字色
+    sidebar_sel   = "#DAEDFF",   # qdarkstyle light 选中色
+    sidebar_hover = "#D2D5D8",   # qdarkstyle light hover 色
+    divider       = "#C0C4C8",   # qdarkstyle light 边框/分隔色
+    handle_bg     = "#F0F2F3",   # qdarkstyle light 次背景
+    handle_hover  = "#C0C4C8",
+    handle_fg     = "#555555",
 )
 
 
