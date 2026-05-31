@@ -222,3 +222,38 @@ QTableView::item:selected:!active {
   background-color: #9FCBFF;
 }
 QTreeView:branch:selected:!active { background-color: #9FCBFF; }
+
+/* ── AI 聊天面板：输入区垂直 splitter handle ─────────────────────────── */
+/* qdarkstyle light 给 QSplitter 设置了 #C0C4C8，输入区 splitter 应融入背景 */
+QSplitter#InputSplitter {
+  background-color: #FAFAFA;
+  border-radius: 0px;
+}
+QSplitter#InputSplitter::handle {
+  background-color: #C0C4C8;
+  border: none;
+  border-radius: 0px;
+  image: none;
+}
+
+/* ── AI 聊天面板：布局容器圆角清零 ──────────────────────────────────────── */
+/* qdarkstyle 有 QWidget { border-radius: 4px } 全局规则，导致布局容器在    */
+/* QSplitter 背景上出现圆角漏色。用 objectName 选择器精确清零。              */
+QWidget#ChatArea,
+QWidget#ToolbarWrapper,
+QWidget#ToolbarBar,
+QWidget#InputArea {
+  border-radius: 0px;
+}
+QWidget#SidebarHeader,
+QWidget#SidebarBottom {
+  border: none;
+  border-radius: 0px;
+}
+SessionSidebar QListWidget#SessionList {
+  border: none;
+  border-radius: 0px;
+}
+SessionSidebar QListWidget#SessionList::item {
+  border-radius: 0px;
+}

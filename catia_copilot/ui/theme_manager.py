@@ -179,7 +179,7 @@ class ThemeManager:
         return self._current_mode()
 
     def _current_mode(self) -> str:
-        if self._manual:
+        if self._manual is not None:
             return self._manual
         scheme = QGuiApplication.styleHints().colorScheme()
         return "dark" if scheme == Qt.ColorScheme.Dark else "light"

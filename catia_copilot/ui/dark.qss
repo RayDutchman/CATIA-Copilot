@@ -222,3 +222,40 @@ QTableView::item:selected:!active {
   background-color: #346792;
 }
 QTreeView:branch:selected:!active { background-color: #346792; }
+
+/* ── AI 聊天面板：输入区垂直 splitter handle ─────────────────────────── */
+/* qdarkstyle 给 QSplitter 设置了 #455364 蓝色，输入区 splitter 应融入背景 */
+QSplitter#InputSplitter {
+  background-color: #19232D;
+  border-radius: 0px;
+}
+QSplitter#InputSplitter::handle {
+  background-color: #37414F;
+  border: none;
+  border-radius: 0px;
+  image: none;
+}
+
+/* ── AI 聊天面板：布局容器圆角清零 ──────────────────────────────────────── */
+/* qdarkstyle 有 QWidget { border-radius: 4px } 全局规则，导致布局容器在    */
+/* QSplitter 背景上出现圆角漏色。用 objectName 选择器精确清零。              */
+QWidget#ChatArea,
+QWidget#ToolbarWrapper,
+QWidget#ToolbarBar,
+QWidget#InputArea {
+  border-radius: 0px;
+}
+/* 侧边栏标题栏和底部区域：同时清除 qdarkstyle 加的黑色边框 */
+QWidget#SidebarHeader,
+QWidget#SidebarBottom {
+  border: none;
+  border-radius: 0px;
+}
+/* 侧边栏会话列表：去掉 qdarkstyle 给 QListView 加的圆角和边框 */
+SessionSidebar QListWidget#SessionList {
+  border: none;
+  border-radius: 0px;
+}
+SessionSidebar QListWidget#SessionList::item {
+  border-radius: 0px;
+}

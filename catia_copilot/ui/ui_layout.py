@@ -35,7 +35,6 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Tuple
 
 
 @dataclass(frozen=True)
@@ -47,23 +46,24 @@ class _Layout:
     SIDEBAR_DEFAULT_WIDTH:   int   = 220   # 侧边栏展开时的默认宽度（px）
 
     # ── 侧边栏 ────────────────────────────────────────────────────────────────
-    SIDEBAR_HEADER_HEIGHT:   int   = 36    # 顶部标题栏高度（px）
-    SIDEBAR_HEADER_MARGINS:  Tuple = (8, 2, 8, 2)   # 标题栏 layout margins (left,top,right,bottom)
+    SIDEBAR_HEADER_HEIGHT:   int   = 40    # 顶部标题栏高度（px）
+    SIDEBAR_HEADER_MARGINS:  tuple = (8, 2, 8, 2)   # 标题栏 layout margins (left,top,right,bottom)
     SIDEBAR_HEADER_SPACING:  int   = 4     # 标题栏内控件间距（px）
     SIDEBAR_DIVIDER_HEIGHT:  int   = 1     # 标题栏与列表之间分隔线高度（px）
     SIDEBAR_LIST_SPACING:    int   = 1     # 会话列表项之间的间距（px）
-    SIDEBAR_BOTTOM_HEIGHT:   int   = 48    # 底部"新对话"按钮区高度（px）
-    SIDEBAR_BOTTOM_MARGINS:  Tuple = (8, 4, 8, 4)   # 底部区域 layout margins
-    SIDEBAR_NEW_BTN_HEIGHT:  int   = 32    # "新对话"按钮高度（px）
+    SIDEBAR_BOTTOM_HEIGHT:   int   = 52    # 底部"新对话"按钮区高度（px）
+    SIDEBAR_BOTTOM_MARGINS:  tuple = (8, 0, 8, 2)   # 底部区域 layout margins
+    SIDEBAR_NEW_BTN_HEIGHT:  int   = 30    # "新对话"按钮高度（px）
 
     # ── 工具栏（toolbar） ─────────────────────────────────────────────────────
     # toolbar 是 chat_area 顶部的一行，包含会话标题、模型选择、设置按钮
-    TOOLBAR_HEIGHT:          int   = 36    # toolbar 固定高度（px）
-    TOOLBAR_MARGINS:         Tuple = (8, 2, 8, 2)   # toolbar layout margins (left,top,right,bottom)
+    TOOLBAR_HEIGHT:          int   = 40    # toolbar 固定高度（px）
+    TOOLBAR_DIVIDER_HEIGHT:  int   = 1     # toolbar 底部分隔线高度（px）
+    TOOLBAR_MARGINS:         tuple = (8, 2, 8, 2)   # toolbar layout margins (left,top,right,bottom)
     TOOLBAR_SPACING:         int   = 4     # toolbar 内控件间距（px）
     SESSION_TITLE_WIDTH:     int   = 120   # 会话名 QLabel 固定宽度（px），超出用省略号
     TITLE_FONT_SIZE:         int   = 13    # 会话名字体大小（px）
-    ICON_BTN_SIZE:           Tuple = (28, 28)   # 铅笔/齿轮图标按钮尺寸 (width, height)
+    ICON_BTN_SIZE:           tuple = (28, 28)   # 铅笔/齿轮图标按钮尺寸 (width, height)
     ICON_BTN_FONT_SIZE:      int   = 15    # 图标按钮字体大小（px，用于 emoji 图标）
     ICON_BTN_RADIUS:         int   = 4     # 图标按钮 hover 圆角半径（px）
     MODEL_COMBO_MIN_CHARS:   int   = 16    # 模型下拉框最小字符宽度（字符数）
@@ -76,7 +76,7 @@ class _Layout:
     # 与输入框的 INPUT_MARGINS.left=8 对齐，视觉上形成一致的内边距。
     # 各消息 widget 自身的 left/right margins 在此基础上叠加，
     # 用于实现靠左/靠右的气泡效果（AI 靠左、用户靠右）。
-    CHAT_MARGINS:            Tuple = (8, 8, 8, 8)   # (left=8, top=8, right=8, bottom=8)
+    CHAT_MARGINS:            tuple = (8, 8, 8, 8)   # (left=8, top=8, right=8, bottom=8)
     CHAT_SPACING:            int   = 6     # 相邻消息 widget 之间的垂直间距（px）
 
     # ── 用户消息气泡（UserMessageWidget） ────────────────────────────────────
@@ -84,7 +84,7 @@ class _Layout:
     # layout margins 在 CHAT_MARGINS 基础上叠加，决定气泡在 widget 内的位置。
     # left=40 留出大量左侧空白，使气泡视觉上靠右对齐。
     # right=0：右边缘已由 CHAT_MARGINS.right=8 提供，此处不再叠加。
-    USER_MSG_MARGINS:        Tuple = (40, 4, 0, 4)  # (left=40大留白, top=4, right=0, bottom=4)
+    USER_MSG_MARGINS:        tuple = (40, 4, 0, 4)  # (left=40大留白, top=4, right=0, bottom=4)
     USER_MSG_FONT_SIZE:      int   = 13    # 用户消息字体大小（px）
     USER_MSG_PADDING:        str   = "8px 12px"  # QLabel QSS padding（上下 8px，左右 12px）
     USER_MSG_RADIUS:         int   = 8     # 气泡圆角半径（px）
@@ -94,7 +94,7 @@ class _Layout:
     # layout margins 在 CHAT_MARGINS 基础上叠加，决定气泡在 widget 内的位置。
     # left=0：左边缘已由 CHAT_MARGINS.left=8 提供，此处不再叠加。
     # right=40 留出大量右侧空白，使气泡视觉上靠左对齐。
-    AI_MSG_MARGINS:          Tuple = (0, 4, 40, 4)  # (left=0, top=4, right=40大留白, bottom=4)
+    AI_MSG_MARGINS:          tuple = (0, 4, 40, 4)  # (left=0, top=4, right=40大留白, bottom=4)
     AI_MSG_FONT_SIZE:        int   = 13    # AI 消息字体大小（px）
     AI_MSG_PADDING_V:        int   = 6     # QTextBrowser QSS 上下 padding（px），影响高度计算
     AI_MSG_PADDING_H:        int   = 10    # QTextBrowser QSS 左右 padding（px）
@@ -103,19 +103,24 @@ class _Layout:
 
     # ── 工具调用卡片（ToolCallWidget） ───────────────────────────────────────
     # ToolCallWidget 是 QFrame(StyledPanel)，有圆角边框背景。
-    # 卡片本身距聊天区域左边缘由 CHAT_MARGINS.left 统一控制（同其他消息 widget）。
+    # Qt 没有直接的 widget 外边距 API，通过在 _insert_widget 里包一层
+    # QWidget wrapper 并设置 layout margins 来实现卡片外框到聊天区域的间距。
+    #
+    # TOOL_CARD_OUTER_MARGINS：卡片外框到聊天区域边缘的外边距（wrapper layout margins）。
+    #   right=40 与 AI 气泡的 right 留白对齐，使卡片不撑满整行。
+    TOOL_CARD_OUTER_MARGINS: tuple = (0, 2, 40, 2)  # (left=0, top=2, right=40与AI气泡对齐, bottom=2)
     #
     # TOOL_CARD_MARGINS：卡片内部 QVBoxLayout 的 margins，
     #   控制卡片边框到内部内容（标题行、展开内容）的内边距。
-    TOOL_CARD_MARGINS:       Tuple = (8, 4, 8, 4)   # (left=8, top=4, right=8, bottom=4)
+    TOOL_CARD_MARGINS:       tuple = (4, 4, 4, 4)   # (left=4, top=4, right=4, bottom=4)
     TOOL_CARD_SPACING:       int   = 2     # 标题行与展开内容之间的间距（px）
     TOOL_CARD_HEADER_SPACING: int  = 4     # 标题行内：折叠箭头与标题文字之间的间距（px）
-    TOOL_CARD_TOGGLE_SIZE:   Tuple = (16, 16)   # 折叠/展开箭头按钮尺寸 (width, height)
-    TOOL_CARD_RADIUS:        int   = 6     # 卡片圆角半径（px）
+    TOOL_CARD_TOGGLE_SIZE:   tuple = (16, 16)   # 折叠/展开箭头按钮尺寸 (width, height)
+    TOOL_CARD_RADIUS:        int   = 8     # 卡片圆角半径（px）
     #
     # TOOL_CARD_CONTENT_MARGINS：展开后内容区域（_content_widget）的 layout margins，
-    #   left=20 使内容相对于标题行缩进，视觉上形成层级感。
-    TOOL_CARD_CONTENT_MARGINS: Tuple = (0, 2, 0, 2)  # (left=0缩进, top=2, right=0, bottom=2)
+    #   left=0：内容与标题行左对齐（无额外缩进）。
+    TOOL_CARD_CONTENT_MARGINS: tuple = (0, 2, 0, 2)  # (left=0, top=2, right=0, bottom=2)
     TOOL_CARD_CONTENT_SPACING: int = 2    # 内容区域内各子 widget 之间的间距（px）
     TOOL_CARD_RESULT_MAX_HEIGHT: int = 200  # 结果文本框最大高度（px），超出后出现滚动条
     TOOL_CARD_TITLE_FONT_SIZE: int = 12    # 标题行字体大小（px）
@@ -125,10 +130,10 @@ class _Layout:
     # ── 输入区（input_area） ──────────────────────────────────────────────────
     # input_area 是 chat_area 底部的一行，包含文本输入框和发送按钮。
     # left=8 使输入框左边缘与 AI 消息气泡左边缘对齐（AI_MSG_MARGINS.left=8）。
-    INPUT_MARGINS:           Tuple = (8, 4, 8, 4)   # (left=8, top=4, right=8, bottom=4)
+    INPUT_MARGINS:           tuple = (8, 8, 8, 6)   # (left=8, top=8, right=8, bottom=6)
     INPUT_SPACING:           int   = 6     # 输入框与发送按钮之间的间距（px）
-    INPUT_BOX_HEIGHT:        int   = 72    # 输入框固定高度（px）
-    SEND_BTN_SIZE:           Tuple = (60, 60)   # 发送按钮尺寸 (width, height)
+    INPUT_BOX_HEIGHT:        int   = 72    # 输入框默认高度（px），用户可通过 splitter 调整
+    SEND_BTN_SIZE:           tuple = (60, 60)   # 发送按钮尺寸 (width, height)
 
     # ── Splitter handle 绘制 ──────────────────────────────────────────────────
     HANDLE_BTN_HEIGHT:       int   = 40    # handle 中央箭头按钮的可点击区域高度（px）
