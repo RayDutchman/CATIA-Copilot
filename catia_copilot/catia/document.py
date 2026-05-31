@@ -17,7 +17,16 @@ import logging
 import os
 from pathlib import Path
 
+from catia_copilot.constants import (
+    PRODUCT_ATTR_READ_MAP,
+    PRODUCT_ATTR_WRITE_MAP,
+)
+
 logger = logging.getLogger(__name__)
+
+# Source 枚举值 ↔ 显示字符串（与 bom_collect 保持一致）
+_SOURCE_TO_DISPLAY: dict[int, str] = {0: "Unknown", 1: "Made", 2: "Bought"}
+_SOURCE_FROM_DISPLAY: dict[str, int] = {v: k for k, v in _SOURCE_TO_DISPLAY.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -200,30 +209,6 @@ def rename_document(
 # 文档属性读写
 # ---------------------------------------------------------------------------
 
-# CATIA Product/Part 对象的内置可读属性（COM 属性名）
-# Description 通过 DescriptionRef 读取（引用产品的描述字段）
-_READABLE_ATTRS: dict[str, str] = {
-    "Part Number":   "PartNumber",
-    "Nomenclature":  "Nomenclature",
-    "Revision":      "Revision",
-    "Definition":    "Definition",
-    "Source":        "Source",
-    "Description":   "DescriptionRef",
-}
-
-# Source 枚举值 → 显示字符串（与 bom_collect 保持一致）
-_SOURCE_TO_DISPLAY: dict[int, str] = {0: "Unknown", 1: "Made", 2: "Bought"}
-_SOURCE_FROM_DISPLAY: dict[str, int] = {v: k for k, v in _SOURCE_TO_DISPLAY.items()}
-
-# 内置可写属性（Description/DescriptionRef 在 CATIA 中为只读，不列入）
-_WRITABLE_ATTRS: dict[str, str] = {
-    "Part Number":  "PartNumber",
-    "Nomenclature": "Nomenclature",
-    "Revision":     "Revision",
-    "Definition":   "Definition",
-    "Source":       "Source",
-}
-
 
 def _get_product_from_doc(doc):
     """从 COM 文档对象中提取 Product 对象（CATPart / CATProduct 均适用）。
@@ -310,7 +295,7 @@ def get_document_properties(
 
     # --- 读取标准属性 ---
     standard: dict[str, str] = {}
-    for display_name, com_attr in _READABLE_ATTRS.items():
+    for display_name, com_attr in PRODUCT_ATTR_READ_MAP.items():
         # 优先从 ReferenceProduct 读，回退到 product 本身
         targets = []
         try:
@@ -446,7 +431,7 @@ def set_document_properties(
             skipped.append(name)
             continue
 
-        com_attr = _WRITABLE_ATTRS.get(name)
+        com_attr = PRODUCT_ATTR_WRITE_MAP.get(name)
         if com_attr is None:
             logger.warning("set_document_properties: 未知标准属性 %s，已跳过", name)
             skipped.append(name)

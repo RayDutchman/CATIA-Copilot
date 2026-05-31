@@ -61,20 +61,15 @@ def collect_bom_rows(
         traversal (e.g. when the user cancels).
     """
     from catia_copilot.catia.connection import get_catia_v5_application
+    from catia_copilot.constants import PRODUCT_ATTR_READ_MAP
 
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
     CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
 
     # win32com Product 对象的内置属性（CamelCase COM 属性名）
-    # Description → DescriptionRef（引用产品的描述，属性对话框里填写的值）
-    DIRECT_ATTR_MAP: dict[str, str] = {
-        "Nomenclature": "Nomenclature",
-        "Revision":     "Revision",
-        "Definition":   "Definition",
-        "Source":       "Source",
-        "Description":  "DescriptionRef",
-    }
+    # 集中定义在 constants.PRODUCT_ATTR_READ_MAP，此处直接引用
+    DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
 
     def _get_prop(product, name: str) -> str:
         attr = DIRECT_ATTR_MAP.get(name)
@@ -307,7 +302,6 @@ def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
 
     # ── 第二段：有效 _filepath 文件，通过 COM 检查 Document.Saved ─────────────
     try:
-        from catia_copilot.catia.connection import get_catia_v5_application
         application = get_catia_v5_application()
         documents   = application.Documents
     except Exception as exc:

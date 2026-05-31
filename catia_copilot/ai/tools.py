@@ -55,7 +55,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 **文档属性**
 - get_document_properties：读取单个文档的标准属性（Part Number / Revision / Nomenclature 等）和用户自定义属性。file_path 传 null 读取活动文档。
-- set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source；user_defined 只能使用预设字段（见下方约束）。
+- set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source（Description 为只读，传入会被忽略）；user_defined 只能使用预设字段（见下方约束）。
 - 与 write_bom_to_catia 的区别：write_bom_to_catia 遍历整棵产品树批量写回；set_document_properties 只操作单个已打开文档，适合精确修改单个零件。
 - 修改属性后若不传 save=true，需手动调用 save_catia_document 保存。
 
@@ -1704,7 +1704,6 @@ tools_schema: list[dict[str, Any]] = [
                 "standard 支持的键：Part Number、Nomenclature、Revision、Definition、Source。"
                 "Description 为只读，传入会被忽略。"
                 "save=true 时写入后立即保存文档；默认 false，需手动调用 save_catia_document。"
-                "返回字段：written_standard（已写入的标准属性列表）、"
                 "written_user_defined（已写入的自定义属性列表）、"
                 "skipped（跳过的属性列表）、saved（是否已保存）。"
                 "【重要】user_defined 的键必须来自预设列表："
@@ -1731,6 +1730,7 @@ tools_schema: list[dict[str, Any]] = [
                         "description": (
                             "要写入的标准属性字典。"
                             "支持的键：Part Number、Nomenclature、Revision、Definition、Source。"
+                            "Description 为只读，传入会被忽略。"
                             "Source 的合法值：Unknown、Made、Bought。"
                             "例：{\"Revision\": \"B\", \"Nomenclature\": \"支架\"}"
                         ),

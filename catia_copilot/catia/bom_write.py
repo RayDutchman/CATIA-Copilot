@@ -36,18 +36,15 @@ def write_bom_to_catia(
                           因此较深层级在父级之前写入 CATIA 。
     """
     from catia_copilot.catia.connection import get_catia_v5_application
+    from catia_copilot.constants import PRODUCT_ATTR_WRITE_MAP
 
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
     CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
 
     # win32com Product 对象的可写内置属性（CamelCase COM 属性名）
-    WRITABLE_DIRECT: dict[str, str] = {
-        "Nomenclature": "Nomenclature",
-        "Revision":     "Revision",
-        "Definition":   "Definition",
-        "Source":       "Source",
-    }
+    # 集中定义在 constants.PRODUCT_ATTR_WRITE_MAP，此处直接引用
+    WRITABLE_DIRECT = PRODUCT_ATTR_WRITE_MAP
 
     def _set_prop(product, name: str, value: str) -> None:
         attr = WRITABLE_DIRECT.get(name)

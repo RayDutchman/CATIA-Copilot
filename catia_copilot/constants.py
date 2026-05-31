@@ -121,6 +121,35 @@ PRESET_USER_REF_PROPERTY_OPTIONS: dict[str, list[str]] = {
 }
 
 # ---------------------------------------------------------------------------
+# CATIA COM 属性映射
+#
+# 将 BOM 列名（用户可见的显示名）映射到 win32com Product 对象的 COM 属性名。
+# 这两个 map 是 bom_collect / bom_write / document 模块的共同数据源，
+# 集中在此处维护，避免各模块各自定义导致不一致。
+#
+# PRODUCT_ATTR_READ_MAP  — 可读属性（含 Description，通过 DescriptionRef 读取）
+# PRODUCT_ATTR_WRITE_MAP — 可写属性（不含 Description，DescriptionRef 在 CATIA 中只读）
+# ---------------------------------------------------------------------------
+
+PRODUCT_ATTR_READ_MAP: dict[str, str] = {
+    "Part Number":  "PartNumber",
+    "Nomenclature": "Nomenclature",
+    "Revision":     "Revision",
+    "Definition":   "Definition",
+    "Source":       "Source",
+    "Description":  "DescriptionRef",   # 引用产品的描述字段，只读
+}
+
+PRODUCT_ATTR_WRITE_MAP: dict[str, str] = {
+    "Part Number":  "PartNumber",
+    "Nomenclature": "Nomenclature",
+    "Revision":     "Revision",
+    "Definition":   "Definition",
+    "Source":       "Source",
+    # Description/DescriptionRef 在 CATIA V5 COM 中为只读，不列入
+}
+
+# ---------------------------------------------------------------------------
 # BOM standard columns
 # ---------------------------------------------------------------------------
 
