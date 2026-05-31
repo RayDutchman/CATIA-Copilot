@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
 
         html = "<br/>".join(lines)
 
-        msg = QMessageBox(self)
+        msg = QMessageBox(None)
         msg.setWindowTitle("CATIA 连接诊断")
         msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setText(html)
@@ -1828,7 +1828,7 @@ class MainWindow(QMainWindow):
 
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
-                self,
+                None,
                 "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
                 "",
             )
@@ -1902,7 +1902,7 @@ class MainWindow(QMainWindow):
 
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
-                self,
+                None,
                 "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
                 "",
             )

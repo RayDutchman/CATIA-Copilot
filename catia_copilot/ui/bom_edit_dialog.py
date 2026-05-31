@@ -631,7 +631,7 @@ class BomEditDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择 CATProduct 文件",
+            None, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -1839,7 +1839,7 @@ class BomEditDialog(QDialog):
                 initial_name = base_name
 
         dest, selected_filter = QFileDialog.getSaveFileName(
-            self,
+            None,
             "导出 BOM 表格",
             initial_name,
             "Excel 工作簿 (*.xlsx);;CSV 文件 (*.csv)",
@@ -1916,7 +1916,7 @@ class BomEditDialog(QDialog):
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
-        msg = QMessageBox(self)
+        msg = QMessageBox(None)
         msg.setWindowTitle("导出成功")
         msg.setText(f"BOM 已成功导出：\n{dest_path}")
         msg.setIcon(QMessageBox.Icon.Information)

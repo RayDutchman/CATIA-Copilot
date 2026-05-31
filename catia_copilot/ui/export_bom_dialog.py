@@ -320,7 +320,7 @@ class ExportBomDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择 CATProduct 文件",
+            None, "选择 CATProduct 文件",
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -331,7 +331,7 @@ class ExportBomDialog(QDialog):
 
     def _browse_output_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "选择输出文件夹", self._last_output_dir
+            None, "选择输出文件夹", self._last_output_dir
         )
         if folder:
             self._folder_edit.setText(folder)
@@ -476,7 +476,7 @@ class ExportBomDialog(QDialog):
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
-        msg = QMessageBox(self)
+        msg = QMessageBox(None)
         msg.setWindowTitle("导出成功")
         msg.setText(f"BOM 已成功导出：\n{dest_path}")
         msg.setIcon(QMessageBox.Icon.Information)
