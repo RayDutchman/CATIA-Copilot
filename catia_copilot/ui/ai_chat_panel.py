@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import json
 import logging
+import traceback
+import uuid
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QEvent, Slot, QEasingCurve
-from PySide6.QtGui import QTextCursor, QPainter, QColor
+from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Slot, QTimer
+from PySide6.QtGui import QColor, QPainter, QPalette, QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QTextEdit, QTextBrowser,
@@ -35,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from catia_copilot.ui.theme_manager import theme_signal, theme_manager
 from catia_copilot.ui.ui_colors import get_chat_colors
+from catia_copilot.ui.ui_layout import L
 from catia_copilot.ai import config as ai_config
 from catia_copilot.ai.agent import AgentWorker
 from catia_copilot.ai.tools import tools_map
@@ -71,7 +74,7 @@ class UserMessageWidget(QFrame):
     def _build_ui(self):
         self.setFrameShape(QFrame.Shape.NoFrame)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(40, 4, 8, 4)
+        layout.setContentsMargins(*L.USER_MSG_MARGINS)
 
         self._label = QLabel(self._text)
         self._label.setWordWrap(True)
@@ -89,7 +92,8 @@ class UserMessageWidget(QFrame):
         bg, fg = chat_colors().user_bg, chat_colors().user_fg
         self._label.setStyleSheet(
             f"QLabel {{ background-color: {bg}; color: {fg}; "
-            f"border-radius: 8px; padding: 8px 12px; font-size: 13px; }}"
+            f"border-radius: {L.USER_MSG_RADIUS}px; padding: {L.USER_MSG_PADDING}; "
+            f"font-size: {L.USER_MSG_FONT_SIZE}px; }}"
         )
 
     @Slot(str)
@@ -101,6 +105,53 @@ class UserMessageWidget(QFrame):
 # 消息 Widget：AI 回复
 # ---------------------------------------------------------------------------
 
+class _AutoHeightBrowser(QTextBrowser):
+    """
+    高度随内容自动撑开的 QTextBrowser，不出现内部滚动条。
+
+    原理：重写 sizeHint() / minimumSizeHint()，在里面按当前宽度重新排版文档
+    并返回准确高度。内容或宽度变化时调用 updateGeometry() 通知布局系统重新
+    询问 sizeHint()，由布局系统驱动高度更新，不需要手动 setFixedHeight。
+
+    这是 Qt 官方推荐的"自动高度文本编辑器"做法，比手动计算 setFixedHeight
+    更稳健：高度计算逻辑只在一处，布局系统负责何时应用。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.document().contentsChanged.connect(self.updateGeometry)
+
+    def _doc_height(self) -> int:
+        """按当前 viewport 宽度排版，返回文档所需高度（含 padding）。"""
+        vw = self.viewport().width()
+        if vw <= 0:
+            return self.minimumHeight()
+        doc = self.document()
+        # 保存原始 pageSize，计算完后恢复，避免影响后续渲染
+        old_size = doc.pageSize()
+        doc.setPageSize(QSizeF(vw, 1e9))
+        h = int(doc.size().height())
+        doc.setPageSize(old_size)
+        # 加上 QSS padding 上下各 AI_MSG_PADDING_V px
+        return h + 2 * L.AI_MSG_PADDING_V
+
+    def sizeHint(self):
+        # 宽度返回 0，由布局系统（Expanding policy）决定；只约束高度
+        return QSizeF(0, max(self._doc_height(), L.AI_MSG_MIN_HEIGHT)).toSize()
+
+    def minimumSizeHint(self):
+        # 最小宽度也为 0，允许窗口任意缩小而不溢出
+        return QSizeF(0, max(self._doc_height(), L.AI_MSG_MIN_HEIGHT)).toSize()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # 宽度变化时通知布局重新询问 sizeHint（窗口缩放场景）
+        self.updateGeometry()
+
+
 class AIMessageWidget(QFrame):
     """AI 回复消息，左对齐，支持流式追加和 Markdown 渲染。"""
 
@@ -111,30 +162,36 @@ class AIMessageWidget(QFrame):
         super().__init__(parent)
         self._buffer = ""
         self._token_count = 0
+        # 标记是否已被插入聊天布局，用于懒插入判断
+        self._inserted = False
         self._build_ui()
         # 初始隐藏：等第一个 token 到来再显示，避免空 widget 占位产生空白
-        self.hide()
+        self._set_visible(False)
         theme_signal.theme_changed.connect(self._on_theme_changed)
+
+    def _set_visible(self, visible: bool) -> None:
+        """显示/隐藏，同时切换 SizePolicy 让布局在隐藏时不保留空间。"""
+        if visible:
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)  # Qt QWIDGETSIZE_MAX
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            self.show()
+        else:
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self.setFixedHeight(0)
+            self.hide()
 
     def _build_ui(self):
         self.setFrameShape(QFrame.Shape.NoFrame)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 40, 4)
+        layout.setContentsMargins(*L.AI_MSG_MARGINS)
 
-        self._browser = QTextBrowser()
+        self._browser = _AutoHeightBrowser()
         self._browser.setOpenExternalLinks(True)
         self._browser.setReadOnly(True)
         self._browser.setFrameShape(QFrame.Shape.NoFrame)
-        self._browser.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
-        )
-        self._browser.document().contentsChanged.connect(self._adjust_height)
         layout.addWidget(self._browser)
         self._apply_style()
-
-    def _adjust_height(self):
-        doc_height = int(self._browser.document().size().height())
-        self._browser.setFixedHeight(max(doc_height + 8, 40))
 
     def append_token(self, token: str):
         """流式追加 token。
@@ -144,7 +201,7 @@ class AIMessageWidget(QFrame):
         其余时间直接 insertPlainText 追加，平衡渲染质量与性能。
         """
         if not self._buffer:
-            self.show()
+            self._set_visible(True)
 
         self._buffer += token
         self._token_count += 1
@@ -163,16 +220,16 @@ class AIMessageWidget(QFrame):
     def set_final_text(self, text: str):
         """流式结束后（或工具调用前），用 Markdown 重新渲染完整内容。"""
         self._buffer = text
-        self.show()
+        self._set_visible(True)
         self._browser.setMarkdown(text)
-        self._adjust_height()
 
     def _apply_style(self):
         bg, fg = chat_colors().ai_bg, chat_colors().ai_fg
         self._browser.setStyleSheet(
             f"QTextBrowser {{ background-color: {bg}; color: {fg}; "
-            f"border-radius: 8px; padding: 6px 10px; "
-            f"font-size: 13px; border: none; }}"
+            f"border-radius: {L.AI_MSG_RADIUS}px; "
+            f"padding: {L.AI_MSG_PADDING_V}px {L.AI_MSG_PADDING_H}px; "
+            f"font-size: {L.AI_MSG_FONT_SIZE}px; border: none; }}"
         )
 
     @Slot(str)
@@ -198,15 +255,15 @@ class ToolCallWidget(QFrame):
     def _build_ui(self):
         self.setFrameShape(QFrame.Shape.StyledPanel)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 4, 8, 4)
-        outer.setSpacing(2)
+        outer.setContentsMargins(*L.TOOL_CARD_MARGINS)
+        outer.setSpacing(L.TOOL_CARD_SPACING)
 
         header = QHBoxLayout()
-        header.setSpacing(4)
+        header.setSpacing(L.TOOL_CARD_HEADER_SPACING)
 
         self._toggle_btn = QToolButton()
         self._toggle_btn.setText("▶")
-        self._toggle_btn.setFixedSize(16, 16)
+        self._toggle_btn.setFixedSize(*L.TOOL_CARD_TOGGLE_SIZE)
         self._toggle_btn.clicked.connect(self._toggle)
 
         try:
@@ -227,8 +284,8 @@ class ToolCallWidget(QFrame):
 
         self._content_widget = QWidget()
         content_layout = QVBoxLayout(self._content_widget)
-        content_layout.setContentsMargins(20, 2, 0, 2)
-        content_layout.setSpacing(2)
+        content_layout.setContentsMargins(*L.TOOL_CARD_CONTENT_MARGINS)
+        content_layout.setSpacing(L.TOOL_CARD_CONTENT_SPACING)
 
         self._progress_label = QLabel()
         self._progress_label.setWordWrap(True)
@@ -237,7 +294,7 @@ class ToolCallWidget(QFrame):
         self._result_browser = QTextBrowser()
         self._result_browser.setReadOnly(True)
         self._result_browser.setFrameShape(QFrame.Shape.NoFrame)
-        self._result_browser.setMaximumHeight(200)
+        self._result_browser.setMaximumHeight(L.TOOL_CARD_RESULT_MAX_HEIGHT)
         content_layout.addWidget(self._result_browser)
 
         self._content_widget.setVisible(False)
@@ -245,6 +302,12 @@ class ToolCallWidget(QFrame):
         self._apply_style()
 
     def _toggle(self):
+        """切换展开/折叠状态。
+
+        ChatScrollArea 的"接近底部才跟随"逻辑自动处理 scroll 位置：
+          - 用户在底部时折叠/展开，scroll 跟随
+          - 用户滚上去看历史时折叠/展开，scroll 不跟随，位置保持不变
+        """
         self._expanded = not self._expanded
         self._content_widget.setVisible(self._expanded)
         self._toggle_btn.setText("▼" if self._expanded else "▶")
@@ -254,14 +317,13 @@ class ToolCallWidget(QFrame):
         self._progress_label.setText((current + "\n" + msg).strip() if current else msg)
 
     def set_result(self, result: str):
+        """填入工具调用结果，保持折叠状态（不自动展开）。"""
         try:
             parsed = json.loads(result)
             formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
         except Exception:
             formatted = result
         self._result_browser.setPlainText(formatted)
-        if not self._expanded:
-            self._toggle()
 
     def _apply_style(self):
         bg = chat_colors().tool_bg
@@ -270,19 +332,20 @@ class ToolCallWidget(QFrame):
         prog_fg = chat_colors().progress_fg
         self.setStyleSheet(
             f"QFrame {{ background-color: {bg}; border: 1px solid {border}; "
-            f"border-radius: 6px; }}"
+            f"border-radius: {L.TOOL_CARD_RADIUS}px; }}"
         )
         self._title_label.setStyleSheet(
-            f"QLabel {{ color: {fg}; font-size: 12px; font-weight: bold; "
-            f"background: transparent; border: none; }}"
+            f"QLabel {{ color: {fg}; font-size: {L.TOOL_CARD_TITLE_FONT_SIZE}px; "
+            f"font-weight: bold; background: transparent; border: none; }}"
         )
         self._progress_label.setStyleSheet(
-            f"QLabel {{ color: {prog_fg}; font-size: 11px; "
+            f"QLabel {{ color: {prog_fg}; font-size: {L.TOOL_CARD_PROGRESS_FONT_SIZE}px; "
             f"background: transparent; border: none; }}"
         )
         self._result_browser.setStyleSheet(
             f"QTextBrowser {{ background: transparent; color: {fg}; "
-            f"font-size: 11px; font-family: monospace; border: none; }}"
+            f"font-size: {L.TOOL_CARD_RESULT_FONT_SIZE}px; "
+            f"font-family: monospace; border: none; }}"
         )
 
     @Slot(str)
@@ -291,17 +354,46 @@ class ToolCallWidget(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# 聊天容器（消息 widget 的父容器）
+# ---------------------------------------------------------------------------
+
+class _ChatContainer(QWidget):
+    """
+    聊天消息容器。
+
+    重写 minimumSizeHint() 返回零宽度，使 QScrollArea（widgetResizable=True）
+    能将容器宽度收缩到 viewport 宽度，而不被子 widget 的最小宽度撑开。
+    这样主窗口可以任意缩小，内容随宽度折行，不会溢出右边界。
+    """
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        return hint.__class__(0, hint.height())
+
+
+# ---------------------------------------------------------------------------
 # 滚动区域（自动滚底）
 # ---------------------------------------------------------------------------
 
 class ChatScrollArea(QScrollArea):
-    """聊天消息滚动区域，布局变化时自动滚到底部。"""
+    """聊天消息滚动区域。
+
+    布局变化时，只有当滚动条已经在底部附近（距底部 ≤ _SNAP_THRESHOLD px）
+    才自动跟随滚到底部。这样：
+      - 流式输出时用户未手动滚动，scroll 在底部，自动跟随
+      - 用户手动滚上去看历史，scroll 不在底部，不自动跟随
+      - 折叠/展开工具卡片时，若用户在底部则跟随，否则保持位置不变
+    不需要任何外部开关，也不存在竞态问题。
+    """
+
+    # 距底部多少像素以内视为"在底部"
+    _SNAP_THRESHOLD = 8
 
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.LayoutRequest:
-            self.verticalScrollBar().setValue(
-                self.verticalScrollBar().maximum()
-            )
+            sb = self.verticalScrollBar()
+            if sb.maximum() - sb.value() <= self._SNAP_THRESHOLD:
+                sb.setValue(sb.maximum())
         return super().event(event)
 
 
@@ -430,29 +522,41 @@ class AISettingsDialog(QDialog):
         self._fetch_btn.setText("...")
         self._set_status("正在拉取模型列表...")
 
+        from PySide6.QtCore import QThread
         from catia_copilot.ai.config import fetch_models_from_api
-        models = fetch_models_from_api(api_base, api_key, timeout=15)
 
-        self._fetch_btn.setEnabled(True)
-        self._fetch_btn.setText("刷新模型列表")
+        class _FetchThread(QThread):
+            def __init__(self, base, key, parent=None):
+                super().__init__(parent)
+                self.base, self.key = base, key
+                self.result = []
 
-        if not models:
-            self._set_status("未获取到模型，请检查 API Base URL 和 API Key", error=True)
-            return
+            def run(self):
+                self.result = fetch_models_from_api(self.base, self.key, timeout=15)
 
-        model_ids = [m["id"] for m in models]
-        self._set_status(f"已获取 {len(models)} 个模型")
+        self._fetch_thread = _FetchThread(api_base, api_key, self)
 
-        current = self._model_combo.currentText()
-        self._model_combo.clear()
-        self._model_combo.addItems(model_ids)
-        idx = self._model_combo.findText(current)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
-        elif model_ids:
-            self._model_combo.setCurrentIndex(0)
+        def _on_done():
+            models = self._fetch_thread.result
+            self._fetch_btn.setEnabled(True)
+            self._fetch_btn.setText("刷新模型列表")
+            if not models:
+                self._set_status("未获取到模型，请检查 API Base URL 和 API Key", error=True)
+                return
+            model_ids = [m["id"] for m in models]
+            self._set_status(f"已获取 {len(models)} 个模型")
+            current = self._model_combo.currentText()
+            self._model_combo.clear()
+            self._model_combo.addItems(model_ids)
+            idx = self._model_combo.findText(current)
+            if idx >= 0:
+                self._model_combo.setCurrentIndex(idx)
+            elif model_ids:
+                self._model_combo.setCurrentIndex(0)
+            self._persist_models(api_base, api_key, models)
 
-        self._persist_models(api_base, api_key, models)
+        self._fetch_thread.finished.connect(_on_done)
+        self._fetch_thread.start()
 
     def _test_connection(self):
         import urllib.request as _req
@@ -469,36 +573,54 @@ class AISettingsDialog(QDialog):
         self._test_btn.setText("...")
         self._set_status("正在测试...")
 
-        url = f"{api_base}/v1/chat/completions"
-        body = _json.dumps({
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
-            "max_tokens": 10,
-            "stream": False,
-        }).encode("utf-8")
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
-        t0 = _time.time()
-        try:
-            request = _req.Request(url, data=body, headers=headers, method="POST")
-            with _req.urlopen(request, timeout=30) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-            elapsed = _time.time() - t0
-            reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            usage = data.get("usage", {})
-            tokens = usage.get("total_tokens", "?")
-            self._set_status(
-                f"测试通过 ✔  耗时 {elapsed:.1f}s，消耗 {tokens} tokens，"
-                f"回复：「{reply[:40]}」"
-            )
-        except Exception as e:
-            elapsed = _time.time() - t0
-            self._set_status(f"测试失败 ✖  {elapsed:.1f}s：{str(e)[:80]}", error=True)
-        finally:
+        from PySide6.QtCore import QThread
+
+        class _TestThread(QThread):
+            def __init__(self, base, key, mdl, parent=None):
+                super().__init__(parent)
+                self.base, self.key, self.mdl = base, key, mdl
+                self.status_msg = ""
+                self.success = False
+
+            def run(self):
+                url = f"{self.base}/v1/chat/completions"
+                body = _json.dumps({
+                    "model": self.mdl,
+                    "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
+                    "max_tokens": 10,
+                    "stream": False,
+                }).encode("utf-8")
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.key}",
+                }
+                t0 = _time.time()
+                try:
+                    request = _req.Request(url, data=body, headers=headers, method="POST")
+                    with _req.urlopen(request, timeout=30) as resp:
+                        data = _json.loads(resp.read().decode("utf-8"))
+                    elapsed = _time.time() - t0
+                    reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    tokens = data.get("usage", {}).get("total_tokens", "?")
+                    self.status_msg = (
+                        f"测试通过 ✔  耗时 {elapsed:.1f}s，消耗 {tokens} tokens，"
+                        f"回复：「{reply[:40]}」"
+                    )
+                    self.success = True
+                except Exception as e:
+                    elapsed = _time.time() - t0
+                    self.status_msg = f"测试失败 ✖  {elapsed:.1f}s：{str(e)[:80]}"
+                    self.success = False
+
+        self._test_thread = _TestThread(api_base, api_key, model, self)
+
+        def _on_done():
             self._test_btn.setEnabled(True)
             self._test_btn.setText("测试连接")
+            self._set_status(self._test_thread.status_msg, error=not self._test_thread.success)
+
+        self._test_thread.finished.connect(_on_done)
+        self._test_thread.start()
 
     def _set_status(self, msg: str, error: bool = False):
         color = "#c0392b" if error else "gray"
@@ -572,8 +694,8 @@ class _CollapseHandle(QSplitterHandle):
     拖动 handle 其余区域仍可调整宽度。
     """
 
-    _BTN_H = 40   # 箭头按钮区域高度
-    _W     = 14   # handle 宽度
+    _BTN_H = L.HANDLE_BTN_HEIGHT   # 箭头按钮区域高度
+    _W     = L.SPLITTER_HANDLE_WIDTH  # handle 宽度
 
     def __init__(self, orientation, parent):
         super().__init__(orientation, parent)
@@ -590,7 +712,6 @@ class _CollapseHandle(QSplitterHandle):
 
     def _arrow_rect(self):
         """返回箭头按钮区域的 QRect（垂直居中）。"""
-        from PySide6.QtCore import QRect
         cy = self.height() // 2
         return QRect(0, cy - self._BTN_H // 2, self._W, self._BTN_H)
 
@@ -636,8 +757,9 @@ class _CollapseHandle(QSplitterHandle):
         if sp is None:
             return
         if self._is_collapsed():
-            # 展开：恢复到默认宽度 220
-            sp.setSizes([220, sp.width() - 220 - self._W])
+            # 展开：恢复到默认宽度
+            w = L.SIDEBAR_DEFAULT_WIDTH
+            sp.setSizes([w, sp.width() - w - self._W])
         else:
             # 折叠：左侧宽度设为 0
             sp.setSizes([0, sp.width()])
@@ -662,9 +784,6 @@ class SessionSidebar(QWidget):
     宽度由 AISplitter 控制，不再自行管理动画。
     """
 
-    # 侧边栏默认宽度（splitter 初始化时使用）
-    EXPANDED_WIDTH = 220
-
     def __init__(self, session_manager: SessionManager, parent=None):
         super().__init__(parent)
         self._sm = session_manager
@@ -679,25 +798,25 @@ class SessionSidebar(QWidget):
 
         # 顶部标题栏
         header = QWidget()
-        header.setFixedHeight(40)
+        header.setFixedHeight(L.SIDEBAR_HEADER_HEIGHT)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 8, 0)
-        header_layout.setSpacing(4)
+        header_layout.setContentsMargins(*L.SIDEBAR_HEADER_MARGINS)
+        header_layout.setSpacing(L.SIDEBAR_HEADER_SPACING)
         title_lbl = QLabel("会话列表")
-        title_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
+        title_lbl.setStyleSheet(f"font-weight: bold; font-size: {L.TITLE_FONT_SIZE}px;")
         header_layout.addWidget(title_lbl, 1)
         layout.addWidget(header)
 
         # 分隔线
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setFixedHeight(1)
+        line.setFixedHeight(L.SIDEBAR_DIVIDER_HEIGHT)
         layout.addWidget(line)
 
         # 会话列表
         self._list = QListWidget()
         self._list.setFrameShape(QFrame.Shape.NoFrame)
-        self._list.setSpacing(1)
+        self._list.setSpacing(L.SIDEBAR_LIST_SPACING)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._list.itemClicked.connect(self._on_item_clicked)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -706,11 +825,11 @@ class SessionSidebar(QWidget):
 
         # 底部"新对话"按钮
         bottom = QWidget()
-        bottom.setFixedHeight(48)
+        bottom.setFixedHeight(L.SIDEBAR_BOTTOM_HEIGHT)
         bottom_layout = QHBoxLayout(bottom)
-        bottom_layout.setContentsMargins(8, 4, 8, 4)
+        bottom_layout.setContentsMargins(*L.SIDEBAR_BOTTOM_MARGINS)
         self._new_btn = QPushButton("新对话")
-        self._new_btn.setFixedHeight(32)
+        self._new_btn.setFixedHeight(L.SIDEBAR_NEW_BTN_HEIGHT)
         bottom_layout.addWidget(self._new_btn)
         layout.addWidget(bottom)
 
@@ -719,7 +838,6 @@ class SessionSidebar(QWidget):
     def _apply_style(self):
         c = chat_colors()
         # 用 QPalette 设置背景色，比 QSS 类名选择器在 QSplitter 内更可靠
-        from PySide6.QtGui import QPalette
         pal = self.palette()
         pal.setColor(QPalette.ColorRole.Window, QColor(c.sidebar_bg))
         self.setPalette(pal)
@@ -917,8 +1035,7 @@ def _check_workspace(args: dict, workspace: str | None) -> str | None:
     """
     if workspace is None:
         return None
-    from pathlib import Path as _Path
-    ws = _Path(workspace).resolve()
+    ws = Path(workspace).resolve()
     for key in _PATH_KEYS:
         val = args.get(key)
         paths = [val] if isinstance(val, str) else (val if isinstance(val, list) else [])
@@ -926,7 +1043,7 @@ def _check_workspace(args: dict, workspace: str | None) -> str | None:
             if p is None:
                 continue
             try:
-                if not _Path(p).resolve().is_relative_to(ws):
+                if not Path(p).resolve().is_relative_to(ws):
                     return (
                         f"路径超出工作空间限制：\n{p}\n"
                         f"（工作空间：{workspace}）"
@@ -964,6 +1081,9 @@ class AIChatPanel(QWidget):
         self._worker: AgentWorker | None = None
         self._current_ai_widget: AIMessageWidget | None = None
         self._current_tool_widget: ToolCallWidget | None = None
+        # 当前正在执行的工具调用信息（用于写入 session messages）
+        # 格式：{"tool_call_id": str, "name": str, "arguments": str}
+        self._pending_tool_call: dict | None = None
         self._build_ui()
         # 启动时重建历史消息 widget
         if self._current_session is not None:
@@ -980,7 +1100,7 @@ class AIChatPanel(QWidget):
         # QSplitter：左侧边栏 + 右主区，handle 上有折叠/展开箭头
         self._splitter = AISplitter(Qt.Orientation.Horizontal)
         self._splitter.setChildrenCollapsible(True)
-        self._splitter.setHandleWidth(14)
+        self._splitter.setHandleWidth(L.SPLITTER_HANDLE_WIDTH)
 
         # 左侧边栏
         self._sidebar = SessionSidebar(self._sm, self._splitter)
@@ -1009,29 +1129,32 @@ class AIChatPanel(QWidget):
 
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(36)
+        bar.setFixedHeight(L.TOOLBAR_HEIGHT)
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(4)
+        layout.setContentsMargins(*L.TOOLBAR_MARGINS)
+        layout.setSpacing(L.TOOLBAR_SPACING)
 
-        # 会话标题：固定宽度 120px，elidedText 在 _update_session_title 里计算
+        # 会话标题：固定宽度，elidedText 在 _update_session_title 里计算
         self._session_title = QLabel()
-        self._session_title.setFixedWidth(120)
-        self._session_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self._session_title.setFixedWidth(L.SESSION_TITLE_WIDTH)
+        self._session_title.setStyleSheet(
+            f"font-weight: bold; font-size: {L.TITLE_FONT_SIZE}px;"
+        )
         self._session_title.setCursor(Qt.CursorShape.PointingHandCursor)
         self._session_title.mousePressEvent = lambda _: self._rename_current_session()
         layout.addWidget(self._session_title)
 
         # 图标按钮公共样式
         _icon_style = (
-            "QPushButton { border: none; background: transparent; "
-            "font-size: 15px; padding: 0px; }"
-            "QPushButton:hover { background: rgba(128,128,128,40); border-radius: 4px; }"
+            f"QPushButton {{ border: none; background: transparent; "
+            f"font-size: {L.ICON_BTN_FONT_SIZE}px; padding: 0px; }}"
+            f"QPushButton:hover {{ background: rgba(128,128,128,40); "
+            f"border-radius: {L.ICON_BTN_RADIUS}px; }}"
         )
 
         # 铅笔图标（重命名）
         rename_btn = QPushButton("✏")
-        rename_btn.setFixedSize(28, 28)
+        rename_btn.setFixedSize(*L.ICON_BTN_SIZE)
         rename_btn.setToolTip("重命名会话")
         rename_btn.setStyleSheet(_icon_style)
         rename_btn.clicked.connect(self._rename_current_session)
@@ -1039,7 +1162,7 @@ class AIChatPanel(QWidget):
 
         # ⚙ 会话设置按钮
         self._session_cfg_btn = QPushButton("⚙")
-        self._session_cfg_btn.setFixedSize(28, 28)
+        self._session_cfg_btn.setFixedSize(*L.ICON_BTN_SIZE)
         self._session_cfg_btn.setToolTip("会话设置")
         self._session_cfg_btn.setStyleSheet(_icon_style)
         self._session_cfg_btn.clicked.connect(self._open_session_config)
@@ -1047,21 +1170,20 @@ class AIChatPanel(QWidget):
 
         layout.addStretch()
 
-        # 模型 ComboBox：可编辑模式（setEditable(True)）下 Qt 会独立计算下拉列表宽度，
-        # 不受控件宽度限制，模型名不会被截断；只读模式在 Windows 下有此 bug。
+        # 模型 ComboBox：可编辑模式下 Qt 独立计算下拉列表宽度，模型名不会被截断
         self._model_combo = QComboBox()
         self._model_combo.setEditable(True)
         self._model_combo.setSizeAdjustPolicy(
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
-        self._model_combo.setMinimumContentsLength(16)
-        self._model_combo.setMaximumWidth(200)
+        self._model_combo.setMinimumContentsLength(L.MODEL_COMBO_MIN_CHARS)
+        self._model_combo.setMaximumWidth(L.MODEL_COMBO_MAX_WIDTH)
         self._refresh_model_combo()
         layout.addWidget(self._model_combo)
 
         # ⚙ 全局设置：用 QToolButton 避免继承主窗口 Tab QSS
         self._settings_btn = QToolButton()
-        self._settings_btn.setText("⚙ 设置")
+        self._settings_btn.setText("⚙ 全局设置")
         self._settings_btn.setToolTip("全局 AI 设置（API Key、默认模型、Temperature 等）")
         self._settings_btn.clicked.connect(self._open_settings)
         layout.addWidget(self._settings_btn)
@@ -1077,10 +1199,10 @@ class AIChatPanel(QWidget):
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self._chat_container = QWidget()
+        self._chat_container = _ChatContainer()
         self._chat_layout = QVBoxLayout(self._chat_container)
-        self._chat_layout.setContentsMargins(8, 8, 8, 8)
-        self._chat_layout.setSpacing(6)
+        self._chat_layout.setContentsMargins(*L.CHAT_MARGINS)
+        self._chat_layout.setSpacing(L.CHAT_SPACING)
         self._chat_layout.addStretch()
 
         self._scroll.setWidget(self._chat_container)
@@ -1089,17 +1211,17 @@ class AIChatPanel(QWidget):
     def _build_input_area(self) -> QWidget:
         area = QWidget()
         layout = QHBoxLayout(area)
-        layout.setContentsMargins(8, 4, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(*L.INPUT_MARGINS)
+        layout.setSpacing(L.INPUT_SPACING)
 
         self._input_box = QTextEdit()
-        self._input_box.setFixedHeight(72)
+        self._input_box.setFixedHeight(L.INPUT_BOX_HEIGHT)
         self._input_box.setPlaceholderText("输入消息... (Ctrl+Enter 发送，Enter 换行)")
         self._input_box.installEventFilter(self)
         layout.addWidget(self._input_box, 1)
 
         self._send_btn = QPushButton("发送")
-        self._send_btn.setFixedSize(60, 60)
+        self._send_btn.setFixedSize(*L.SEND_BTN_SIZE)
         self._send_btn.clicked.connect(self._send_message)
         layout.addWidget(self._send_btn)
 
@@ -1209,28 +1331,66 @@ class AIChatPanel(QWidget):
                 item.widget().deleteLater()
         self._current_ai_widget = None
         self._current_tool_widget = None
+        self._pending_tool_call = None
 
     def _rebuild_chat_widgets(self):
-        """根据当前会话的 messages 重建聊天区 widget（只重建最近 30 条可见消息）。"""
+        """根据当前会话的 messages 重建聊天区 widget。"""
         self._clear_chat_widgets()
         messages = self._current_session.messages
-        # 过滤出 user/assistant 消息（跳过 system/tool）
-        visible = [
-            m for m in messages
-            if m.get("role") in ("user", "assistant")
-            and m.get("content")
-        ]
-        # 只重建最近 30 条，避免大量历史消息导致卡顿
-        for msg in visible[-30:]:
+
+        # 建立 tool_call_id → tool 结果的映射，供重建 ToolCallWidget 时填入结果
+        tool_results: dict[str, str] = {}
+        for m in messages:
+            if m.get("role") == "tool":
+                tool_results[m.get("tool_call_id", "")] = m.get("content", "")
+
+        # 过滤出需要渲染的消息（跳过 system），只取最近 60 条原始消息
+        visible = [m for m in messages if m.get("role") != "system"][-60:]
+
+        for msg in visible:
             role = msg.get("role")
-            content = msg.get("content") or ""
+
             if role == "user":
-                w = UserMessageWidget(content)
-                self._insert_widget(w)
+                content = msg.get("content") or ""
+                if content:
+                    w = UserMessageWidget(content, self._chat_container)
+                    self._insert_widget(w)
+
             elif role == "assistant":
-                w = AIMessageWidget()
-                w.set_final_text(content)
-                self._insert_widget(w)
+                tool_calls = msg.get("tool_calls")
+                content = msg.get("content") or ""
+
+                # 先渲染 assistant 文字（若有）
+                if content.strip():
+                    w = AIMessageWidget(self._chat_container)
+                    w.set_final_text(content)
+                    self._insert_widget(w)
+
+                # 再渲染工具调用卡片（若有），默认折叠，填入已有结果
+                if tool_calls:
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        name = fn.get("name", "")
+                        args = fn.get("arguments", "")
+                        tc_id = tc.get("id", "")
+                        card = ToolCallWidget(name, args, self._chat_container)
+                        result = tool_results.get(tc_id, "")
+                        if result:
+                            # 直接填入结果但保持折叠状态
+                            try:
+                                parsed = json.loads(result)
+                                formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
+                            except Exception:
+                                formatted = result
+                            card._result_browser.setPlainText(formatted)
+                        self._insert_widget(card)
+
+            # role == "tool" 已通过 tool_results 映射处理，不单独渲染
+
+        # 重建完成后滚到底部
+        QTimer.singleShot(0, lambda: self._scroll.verticalScrollBar().setValue(
+            self._scroll.verticalScrollBar().maximum()
+        ))
 
     # ── 模型下拉框 ────────────────────────────────────────────────────────────
 
@@ -1248,11 +1408,6 @@ class AIChatPanel(QWidget):
             self._model_combo.setCurrentIndex(idx)
         else:
             self._model_combo.setCurrentText(default_model)
-
-    def _show_status(self, msg: str):
-        w = AIMessageWidget()
-        w.set_final_text(f"*{msg}*")
-        self._insert_widget(w)
 
     # ── 设置对话框 ────────────────────────────────────────────────────────────
 
@@ -1373,7 +1528,7 @@ class AIChatPanel(QWidget):
                 cfg["temperature"] = session_temp
 
         # 创建 AI 消息占位 widget
-        self._current_ai_widget = AIMessageWidget()
+        self._current_ai_widget = AIMessageWidget(self._chat_container)
         self._insert_widget(self._current_ai_widget)
 
         # 启动 AgentWorker
@@ -1396,11 +1551,48 @@ class AIChatPanel(QWidget):
     @Slot(str)
     def _on_token(self, token: str):
         if self._current_ai_widget:
+            # 懒插入：工具调用后创建的占位 widget 在第一个 token 到来时才插入布局
+            if not self._current_ai_widget._inserted:
+                self._insert_widget(self._current_ai_widget)
             self._current_ai_widget.append_token(token)
 
     @Slot(str, str)
     def _on_tool_started(self, tool_name: str, args_str: str):
-        self._current_tool_widget = ToolCallWidget(tool_name, args_str)
+        # 工具调用开始前，先把 AI 已输出的文字 buffer 写入 session 并渲染
+        # （保证 session 里 assistant content 在 assistant tool_calls 之前）
+        if self._current_ai_widget and self._current_ai_widget._buffer.strip():
+            buf = self._current_ai_widget._buffer
+            self._current_ai_widget.set_final_text(buf)
+            if self._current_session is not None:
+                self._current_session.messages.append(
+                    {"role": "assistant", "content": buf}
+                )
+        # 无论有无 buffer，当前 ai_widget 使命结束，置 None
+        # （_on_tool_finished 会创建新的占位 widget）
+        self._current_ai_widget = None
+
+        # 生成本次工具调用的 id（用于 session messages 的 tool_call_id）
+        tool_call_id = "call_" + uuid.uuid4().hex[:8]
+        self._pending_tool_call = {
+            "tool_call_id": tool_call_id,
+            "name": tool_name,
+            "arguments": args_str,
+        }
+        # 写入 assistant(tool_calls) 消息到 session
+        if self._current_session is not None:
+            self._current_session.messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": args_str},
+                }],
+            })
+
+        self._current_tool_widget = ToolCallWidget(
+            tool_name, args_str, self._chat_container
+        )
         self._insert_widget(self._current_tool_widget)
 
     @Slot(str)
@@ -1414,12 +1606,18 @@ class AIChatPanel(QWidget):
             self._current_tool_widget.set_result(result)
         self._current_tool_widget = None
 
-        if self._current_ai_widget and self._current_ai_widget._buffer.strip():
-            self._current_ai_widget.set_final_text(self._current_ai_widget._buffer)
-        self._current_ai_widget = None
+        # 写入 tool 结果消息到 session
+        if self._current_session is not None and self._pending_tool_call is not None:
+            self._current_session.messages.append({
+                "role": "tool",
+                "tool_call_id": self._pending_tool_call["tool_call_id"],
+                "content": result,
+            })
+        self._pending_tool_call = None
 
-        self._current_ai_widget = AIMessageWidget()
-        self._insert_widget(self._current_ai_widget)
+        # _on_tool_started 已处理并清空了 _current_ai_widget，
+        # 这里创建新的占位 widget 等待下一轮 AI 文字（懒插入）
+        self._current_ai_widget = AIMessageWidget(self._chat_container)
 
     @Slot()
     def _on_turn_finished(self):
@@ -1428,15 +1626,28 @@ class AIChatPanel(QWidget):
     @Slot(str)
     def _on_all_done(self, final_text: str):
         if self._current_ai_widget:
-            self._current_ai_widget.set_final_text(final_text)
+            if final_text.strip():
+                # 懒插入：若 widget 尚未插入布局，先插入再渲染
+                if not self._current_ai_widget._inserted:
+                    self._insert_widget(self._current_ai_widget)
+                self._current_ai_widget.set_final_text(final_text)
+            else:
+                # 无文字：无论是否已插入，都清理掉（已插入的是空 widget，隐藏即可）
+                if not self._current_ai_widget._inserted:
+                    self._current_ai_widget.deleteLater()
+                # 已插入但无文字：_set_visible(False) 让它不占空间
+                else:
+                    self._current_ai_widget._set_visible(False)
             self._current_ai_widget = None
 
-        # 追加 assistant 消息到会话历史
+        # 追加 assistant 消息到会话历史（空文字不写入，避免部分模型报错）
         if self._current_session is not None:
-            self._current_session.messages.append({"role": "assistant", "content": final_text})
-            # 实时保存
+            if final_text.strip():
+                self._current_session.messages.append(
+                    {"role": "assistant", "content": final_text}
+                )
+            # 无论有无文字都保存：本轮可能有 tool 消息需要持久化
             self._sm.save_session(self._current_session)
-            # 刷新侧边栏（updated_at 已更新）
             self._sidebar.refresh(self._current_session.session_id)
 
         self._send_btn.setEnabled(True)
@@ -1444,11 +1655,13 @@ class AIChatPanel(QWidget):
 
     @Slot(str)
     def _on_error(self, error_msg: str):
-        err_widget = AIMessageWidget()
+        err_widget = AIMessageWidget(self._chat_container)
         err_widget.set_final_text(f"**错误：** {error_msg}")
         self._insert_widget(err_widget)
 
         self._current_ai_widget = None
+        self._current_tool_widget = None
+        self._pending_tool_call = None
         # 保存会话（即使出错也保留已有历史）
         if self._current_session is not None:
             self._sm.save_session(self._current_session)
@@ -1497,7 +1710,6 @@ class AIChatPanel(QWidget):
         try:
             result = tool_fn(**args)
         except Exception as e:
-            import traceback
             result = json.dumps(
                 {"error": str(e), "traceback": traceback.format_exc()},
                 ensure_ascii=False,
@@ -1508,13 +1720,16 @@ class AIChatPanel(QWidget):
     # ── UI 辅助 ───────────────────────────────────────────────────────────────
 
     def _add_user_message(self, text: str):
-        widget = UserMessageWidget(text)
+        widget = UserMessageWidget(text, self._chat_container)
         self._insert_widget(widget)
 
     def _insert_widget(self, widget: QWidget):
         """在 stretch 之前插入消息 widget。"""
         count = self._chat_layout.count()
         self._chat_layout.insertWidget(count - 1, widget)
+        # 标记 AIMessageWidget 已插入，供懒插入判断使用
+        if isinstance(widget, AIMessageWidget):
+            widget._inserted = True
 
     def _clear_chat(self):
         """清空当前会话的聊天记录和对话历史。"""
