@@ -146,6 +146,7 @@ class ChatColors:
     # AI 消息气泡
     ai_bg:         str
     ai_fg:         str
+    ai_border:     str   # 气泡细边框，增强与背景的区分
     # 工具调用卡片
     tool_bg:       str
     tool_fg:       str
@@ -165,8 +166,9 @@ class ChatColors:
 _CHAT_DARK = ChatColors(
     user_bg       = "#1e3a5f",
     user_fg       = "#e8f0fe",
-    ai_bg         = "#2a2a2a",
-    ai_fg         = "#e0e0e0",
+    ai_bg         = "#1e2d3d",   # 比 qdarkstyle 背景(#19232D)亮，带蓝调，有明显区分
+    ai_fg         = "#dce8f0",
+    ai_border     = "#2e4a62",   # 细边框，进一步勾勒气泡边界
     tool_bg       = "#1a2a1a",
     tool_fg       = "#a0d0a0",
     tool_border   = "#3a5a3a",
@@ -183,8 +185,9 @@ _CHAT_DARK = ChatColors(
 _CHAT_LIGHT = ChatColors(
     user_bg       = "#dce8ff",
     user_fg       = "#1a1a2e",
-    ai_bg         = "#f5f5f5",
+    ai_bg         = "#eef2f7",   # 带蓝调的浅灰，在白色背景上有明显区分
     ai_fg         = "#1a1a1a",
+    ai_border     = "#c8d8e8",   # 浅蓝灰细边框
     tool_bg       = "#f0fff0",
     tool_fg       = "#2e7d32",
     tool_border   = "#a5d6a7",

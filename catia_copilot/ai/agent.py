@@ -42,7 +42,7 @@ class AgentWorker(QThread):
 
     # ── 向 UI 推送的信号 ────────────────────────────────────────────
     token_received   = Signal(str)       # 流式 token
-    tool_started     = Signal(str, str)  # 工具调用开始（工具名, JSON 参数）
+    tool_started     = Signal(str, str, str)  # 工具调用开始（工具名, JSON 参数, tool_call_id）
     tool_progress    = Signal(str)       # 工具执行进度
     tool_finished    = Signal(str, str)  # 工具调用完成（工具名, 结果）
     turn_finished    = Signal()          # 一轮 LLM 回复完成
@@ -136,7 +136,7 @@ class AgentWorker(QThread):
                 if self._stop:
                     self.error_occurred.emit("已取消")
                     return
-                self.tool_started.emit(tc["name"], tc["arguments"])
+                self.tool_started.emit(tc["name"], tc["arguments"], tc["id"])
                 result_str = self._request_tool_execution(tc["name"], tc["arguments"], tc["id"])
                 self.tool_finished.emit(tc["name"], result_str)
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": result_str})

@@ -94,6 +94,10 @@ class MainWindow(QMainWindow):
 
         # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
         theme_manager.register(self)
+        # register 之后 _manual 才从 QSettings 加载完毕，同步更新按钮文字
+        self._btn_theme.setText(
+            f"主题：{self._THEME_LABELS.get(theme_manager.current_mode(), '深色')}  ▾"
+        )
 
         # CATIA 吸附边栏管理器（默认关闭，用户在"≡"页手动开启）
         self._sidebar_manager = CATIASidebarManager(self)
