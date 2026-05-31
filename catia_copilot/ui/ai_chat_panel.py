@@ -1544,7 +1544,12 @@ class AIChatPanel(QWidget):
           3. 最近 max_context_messages 条对话历史（system 不计入）
         """
         cfg = ai_config.load()
-        sys_prompt = cfg.get("system_prompt", "")
+        sys_prompt = cfg.get("system_prompt", "").strip()
+
+        # 用户未配置 system_prompt 时，使用内置默认值
+        if not sys_prompt:
+            from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT
+            sys_prompt = DEFAULT_SYSTEM_PROMPT
 
         # 注入全局记忆
         if _MEMORY_PATH.exists():
