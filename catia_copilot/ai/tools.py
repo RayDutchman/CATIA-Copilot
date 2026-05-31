@@ -98,13 +98,16 @@ def tool_open_catia_file(file_path: str, foreground: bool = True, **_kwargs) -> 
 # --- 4. collect_bom ---
 
 def tool_collect_bom(
-    file_path: str,
+    file_path: str | None = None,
     columns: list[str] | None = None,
     custom_columns: list[str] | None = None,
+    summarize: bool = False,
+    include_assemblies: bool = False,
+    sort_column: str | None = None,
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.bom_collect import collect_bom_rows
+    from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
     from catia_copilot.constants import BOM_DEFAULT_COLUMNS
 
     cols = columns or BOM_DEFAULT_COLUMNS
@@ -120,6 +123,11 @@ def tool_collect_bom(
         {k: v for k, v in row.items() if k not in _INTERNAL}
         for row in rows
     ]
+
+    # summarize=True 时折叠为平面汇总（去重 + 累计数量）
+    if summarize:
+        clean_rows = flatten_bom_to_summary(clean_rows, include_assemblies, sort_column)
+
     return json.dumps(
         {"row_count": len(clean_rows), "rows": clean_rows},
         ensure_ascii=False,
@@ -130,11 +138,13 @@ def tool_collect_bom(
 # --- 5. export_bom_to_excel ---
 
 def tool_export_bom_to_excel(
-    file_paths: list[str],
+    file_paths: list[str | None],
     output_folder: str | None = None,
     columns: list[str] | None = None,
     custom_columns: list[str] | None = None,
     summarize: bool = False,
+    summary_include_assemblies: bool = False,
+    summary_sort_column: str | None = None,
     output_format: str = "xlsx",
     progress_signal=None,
     **_kwargs,
@@ -149,6 +159,8 @@ def tool_export_bom_to_excel(
         custom_columns=custom_columns,
         row_progress_callback=cb,
         summarize=summarize,
+        summary_include_assemblies=summary_include_assemblies,
+        summary_sort_column=summary_sort_column,
         output_format=output_format,
     )
     return json.dumps(
@@ -160,8 +172,8 @@ def tool_export_bom_to_excel(
 # --- 6. write_bom_to_catia ---
 
 def tool_write_bom_to_catia(
-    file_path: str,
-    pn_data: dict[str, dict[str, str]],
+    file_path: str | None = None,
+    pn_data: dict[str, dict[str, str]] = None,
     custom_columns: list[str] | None = None,
     progress_signal=None,
     **_kwargs,
@@ -265,9 +277,10 @@ def tool_find_reverse_dependencies(
 # --- 11. collect_mass_props ---
 
 def tool_collect_mass_props(
-    file_path: str,
+    file_path: str | None = None,
     read_mode: str = "all",
     skip_hidden: bool = False,
+    summary_only: bool = False,
     progress_signal=None,
     **_kwargs,
 ) -> str:
@@ -288,6 +301,18 @@ def tool_collect_mass_props(
         {k: v for k, v in row.items() if k not in _INTERNAL}
         for row in rows
     ]
+
+    # summary_only=True 时只返回根节点（Level==0）的质量特性摘要
+    if summary_only:
+        root_rows = [r for r in clean_rows if r.get("Level") == 0]
+        if root_rows:
+            r = root_rows[0]
+            summary = {k: r.get(k) for k in (
+                "Weight", "CogX", "CogY", "CogZ",
+                "Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz",
+            )}
+            return json.dumps(summary, ensure_ascii=False, default=str)
+        # 根节点不存在时退化为完整返回
     return json.dumps(
         {"row_count": len(clean_rows), "rows": clean_rows},
         ensure_ascii=False,
@@ -386,6 +411,169 @@ def tool_apply_part_template(
     )
 
 
+# --- 15. get_open_documents ---
+
+def tool_get_open_documents(**_kwargs) -> str:
+    """返回当前 CATIA 中所有已打开文档的完整路径列表及活动文档路径。"""
+    from catia_copilot.utils import get_catia_v5_com_dispatch
+
+    app = get_catia_v5_com_dispatch()
+    if app is None:
+        return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+
+    # 文档类型通过后缀判断（大小写不敏感）
+    _EXT_TYPE = {
+        ".catpart":    "PartDocument",
+        ".catproduct": "ProductDocument",
+        ".catdrawing": "DrawingDocument",
+    }
+
+    open_docs: list[dict] = []
+    try:
+        docs = app.Documents
+        for i in range(1, docs.Count + 1):
+            try:
+                doc = docs.Item(i)
+                path = doc.FullName
+                ext  = path.lower().rsplit(".", 1)[-1]
+                doc_type = _EXT_TYPE.get(f".{ext}", "Other")
+                open_docs.append({
+                    "name": doc.Name,
+                    "path": path,
+                    "type": doc_type,
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    active_path: str | None = None
+    try:
+        active_path = app.ActiveDocument.FullName
+    except Exception:
+        pass  # 无活动文档时正常
+
+    return json.dumps(
+        {"active_document": active_path, "open_documents": open_docs},
+        ensure_ascii=False,
+    )
+
+
+# --- 16. save_catia_document ---
+
+def tool_save_catia_document(
+    file_path: str | None = None,
+    **_kwargs,
+) -> str:
+    """保存 CATIA 文档。file_path 为 null 时保存当前活动文档。"""
+    from catia_copilot.utils import get_catia_v5_com_dispatch
+
+    app = get_catia_v5_com_dispatch()
+    if app is None:
+        return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+
+    try:
+        if file_path is None:
+            doc = app.ActiveDocument
+        else:
+            docs = app.Documents
+            doc = None
+            file_path_lower = file_path.lower()
+            for i in range(1, docs.Count + 1):
+                try:
+                    d = docs.Item(i)
+                    if d.FullName.lower() == file_path_lower:
+                        doc = d
+                        break
+                except Exception:
+                    continue
+            if doc is None:
+                return json.dumps(
+                    {"error": f"文档未在 CATIA 中打开：{file_path}"},
+                    ensure_ascii=False,
+                )
+        saved_path = doc.FullName
+        doc.Save()
+        return json.dumps({"success": True, "saved_path": saved_path}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+# --- 19. update_memory ---
+
+def tool_update_memory(
+    content: str,
+    mode: str = "append",
+    **_kwargs,
+) -> str:
+    """
+    更新全局长期记忆文件（memory.md）。
+    AI 在发现值得跨会话记住的信息时主动调用，
+    例如用户的零件编号规范、常用目录路径、偏好设置等。
+
+    mode:
+      "append"  — 追加到文件末尾（默认）
+      "prepend" — 插入到文件开头
+      "replace" — 完全替换文件内容
+    """
+    from pathlib import Path as _Path
+
+    # memory.md 位于项目根目录（此文件在 catia_copilot/ai/tools.py）
+    memory_path = _Path(__file__).parent.parent.parent / "memory.md"
+
+    try:
+        if mode == "replace":
+            memory_path.write_text(content, encoding="utf-8")
+        elif mode == "prepend":
+            existing = memory_path.read_text(encoding="utf-8") if memory_path.exists() else ""
+            memory_path.write_text(content + "\n\n" + existing, encoding="utf-8")
+        else:  # append（默认）
+            existing = memory_path.read_text(encoding="utf-8") if memory_path.exists() else ""
+            sep = "\n\n" if existing and not existing.endswith("\n\n") else ""
+            memory_path.write_text(existing + sep + content, encoding="utf-8")
+        return json.dumps({"success": True, "mode": mode}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+# --- 17. find_part_for_drawing ---
+
+def tool_find_part_for_drawing(
+    drawing_path: str,
+    strategies: list[str] | None = None,
+    max_parent_levels: int = 2,
+    **_kwargs,
+) -> str:
+    """给定 CATDrawing 路径，启发式查找对应的 CATPart/CATProduct 文件路径列表。"""
+    from catia_copilot.catia.dependencies import find_part_for_drawing
+
+    matches = find_part_for_drawing(
+        drawing_path,
+        strategies=strategies,
+        max_parent_levels=max_parent_levels,
+    )
+    return json.dumps({"matches": matches}, ensure_ascii=False)
+
+
+# --- 18. find_drawing_for_part ---
+
+def tool_find_drawing_for_part(
+    part_path: str,
+    strategies: list[str] | None = None,
+    max_parent_levels: int = 2,
+    **_kwargs,
+) -> str:
+    """给定 CATPart/CATProduct 路径，启发式查找对应的 CATDrawing 文件路径列表。"""
+    from catia_copilot.catia.dependencies import find_drawing_for_part
+
+    matches = find_drawing_for_part(
+        part_path,
+        strategies=strategies,
+        max_parent_levels=max_parent_levels,
+    )
+    return json.dumps({"matches": matches}, ensure_ascii=False)
+
+
 # ---------------------------------------------------------------------------
 # 工具注册表
 # ---------------------------------------------------------------------------
@@ -407,6 +595,11 @@ tools_map: dict[str, Callable] = {
     "generate_drawing":            tool_generate_drawing,
     "refresh_drawing":             tool_refresh_drawing,
     "apply_part_template":         tool_apply_part_template,
+    "get_open_documents":          tool_get_open_documents,
+    "save_catia_document":         tool_save_catia_document,
+    "find_part_for_drawing":       tool_find_part_for_drawing,
+    "find_drawing_for_part":       tool_find_drawing_for_part,
+    "update_memory":               tool_update_memory,
 }
 
 # 发给 LLM 的 JSON Schema 列表
@@ -460,7 +653,7 @@ tools_schema: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "file_path": {
-                        "type": "string",
+                        "type": ["string", "null"],
                         "description": "CATProduct 文件路径，传 null 使用当前活动文档",
                     },
                     "columns": {
@@ -472,6 +665,18 @@ tools_schema: list[dict[str, Any]] = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "额外的用户自定义属性列名列表",
+                    },
+                    "summarize": {
+                        "type": "boolean",
+                        "description": "是否折叠为平面汇总（去重 + 累计数量），默认 false",
+                    },
+                    "include_assemblies": {
+                        "type": "boolean",
+                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                    },
+                    "sort_column": {
+                        "type": ["string", "null"],
+                        "description": "汇总模式下的排序列名，默认按 Part Number 排序（仅在 summarize=true 时生效）",
                     },
                 },
                 "required": [],
@@ -488,7 +693,7 @@ tools_schema: list[dict[str, Any]] = [
                 "properties": {
                     "file_paths": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": {"type": ["string", "null"]},
                         "description": "CATProduct 文件路径列表（传 [null] 使用当前活动文档）",
                     },
                     "output_folder": {
@@ -503,6 +708,14 @@ tools_schema: list[dict[str, Any]] = [
                     "summarize": {
                         "type": "boolean",
                         "description": "是否导出汇总模式（去重+累计数量），默认 false",
+                    },
+                    "summary_include_assemblies": {
+                        "type": "boolean",
+                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                    },
+                    "summary_sort_column": {
+                        "type": ["string", "null"],
+                        "description": "汇总模式下的排序列名，默认按 Part Number 排序（仅在 summarize=true 时生效）",
                     },
                     "output_format": {
                         "type": "string",
@@ -523,7 +736,7 @@ tools_schema: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "file_path": {
-                        "type": "string",
+                        "type": ["string", "null"],
                         "description": "CATProduct 文件路径，传 null 使用当前活动文档",
                     },
                     "pn_data": {
@@ -540,7 +753,7 @@ tools_schema: list[dict[str, Any]] = [
                         "description": "用户自定义属性列名列表",
                     },
                 },
-                "required": ["file_path", "pn_data"],
+                "required": ["pn_data"],
             },
         },
     },
@@ -658,7 +871,7 @@ tools_schema: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "file_path": {
-                        "type": "string",
+                        "type": ["string", "null"],
                         "description": "CATProduct 文件路径，传 null 使用当前活动文档",
                     },
                     "read_mode": {
@@ -669,6 +882,10 @@ tools_schema: list[dict[str, Any]] = [
                     "skip_hidden": {
                         "type": "boolean",
                         "description": "是否跳过隐藏零件，默认 false",
+                    },
+                    "summary_only": {
+                        "type": "boolean",
+                        "description": "为 true 时只返回根节点（整体）的质量/重心/惯量摘要，减少 token 消耗，默认 false",
                     },
                 },
                 "required": [],
@@ -697,7 +914,10 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "property_values": {
                         "type": "object",
-                        "description": "属性名到属性值的映射，例如 {物料编码: ABC-001, 材料: 铝合金}",
+                        "description": (
+                            "属性名到属性值的映射，例如 {物料编码: ABC-001, 材料: 铝合金}。"
+                            "不提供或留空时，保留 CATIA 文档中已有的属性值，不做修改。"
+                        ),
                         "additionalProperties": {"type": "string"},
                     },
                 },
@@ -750,6 +970,140 @@ tools_schema: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["file_paths"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_open_documents",
+            "description": (
+                "返回当前 CATIA 中所有已打开文档的完整路径列表及活动文档路径。"
+                "AI 在需要知道当前打开了哪些文件时应首先调用此工具。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_catia_document",
+            "description": "保存 CATIA 文档。file_path 为 null 时保存当前活动文档。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": ["string", "null"],
+                        "description": "要保存的文档完整路径，传 null 保存当前活动文档",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_part_for_drawing",
+            "description": (
+                "给定 CATDrawing 路径，启发式查找对应的 CATPart/CATProduct 文件路径列表。"
+                "按优先级依次尝试多种策略（PartNumber 参数匹配、同名文件扫描等）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "drawing_path": {
+                        "type": "string",
+                        "description": "CATDrawing 文件的完整路径",
+                    },
+                    "strategies": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "pn_param_open_docs",
+                                "pn_param_scan_dirs",
+                                "same_name_scan_dirs",
+                                "strip_prefix_scan_dirs",
+                                "doc_file_links",
+                            ],
+                        },
+                        "description": "要使用的查找策略列表，默认使用全部策略",
+                    },
+                    "max_parent_levels": {
+                        "type": "integer",
+                        "description": "目录向上搜索的最大层级数，默认 2",
+                    },
+                },
+                "required": ["drawing_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_drawing_for_part",
+            "description": (
+                "给定 CATPart/CATProduct 路径，启发式查找对应的 CATDrawing 文件路径列表。"
+                "按优先级依次尝试多种策略（PartNumber 参数匹配、同名文件扫描等）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "part_path": {
+                        "type": "string",
+                        "description": "CATPart 或 CATProduct 文件的完整路径",
+                    },
+                    "strategies": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "pn_param_open_drws",
+                                "pn_param_scan_drws",
+                                "same_name_scan_dirs",
+                                "strip_prefix_scan_dirs",
+                                "doc_file_links",
+                            ],
+                        },
+                        "description": "要使用的查找策略列表，默认使用全部策略",
+                    },
+                    "max_parent_levels": {
+                        "type": "integer",
+                        "description": "目录向上搜索的最大层级数，默认 2",
+                    },
+                },
+                "required": ["part_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_memory",
+            "description": (
+                "更新全局长期记忆文件（memory.md）。"
+                "当发现值得跨会话记住的信息时调用，"
+                "例如用户的零件编号规范、常用目录路径、偏好设置等。"
+                "记忆内容会在后续所有会话中自动注入 system prompt。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "要写入的内容（Markdown 格式）",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["append", "prepend", "replace"],
+                        "description": (
+                            "写入模式：append=追加到末尾（默认），"
+                            "prepend=插入到开头，replace=完全替换"
+                        ),
+                    },
+                },
+                "required": ["content"],
             },
         },
     },

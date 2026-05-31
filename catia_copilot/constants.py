@@ -366,3 +366,12 @@ AI_MAX_TOOL_ROUNDS = 20
 
 # 聊天面板 Tab 标签
 AI_TAB_LABEL = "AI 助手"
+
+# 会话存储目录名（项目根目录下，已加入 .gitignore）
+AI_SESSIONS_DIR = "ai_sessions"
+
+# 全局长期记忆文件名（项目根目录下，已加入 .gitignore）
+AI_MEMORY_FILENAME = "memory.md"
+
+# 发给 LLM 的最近消息数上限（system 消息不计入，0 = 不限制）
+AI_MAX_CONTEXT_MESSAGES = 100
