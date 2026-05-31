@@ -340,15 +340,20 @@ class FileConvertDialog(QDialog):
         )
 
         if use_active:
-            # Resolve the path of the current CATIA active document
+            # 从 CATIA 获取当前活动文档路径
             try:
-                from catia_copilot.catia.connection import get_catia_v5_application as _catia
-                _caa = _catia()
-                active_path = _caa.ActiveDocument.FullName
+                from catia_copilot.catia.connection import get_active_document_path
+                active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(
                     self, "无法获取活动文档",
                     f"无法从 CATIA 获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
+                )
+                return
+            if active_path is None:
+                QMessageBox.warning(
+                    self, "无活动文档",
+                    "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。",
                 )
                 return
             files = [active_path]

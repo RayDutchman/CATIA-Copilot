@@ -139,30 +139,9 @@ MainWindow (通过 Signal)
 - Win32 消息循环在后台线程运行，不阻塞 Qt 主线程
 - 回调通过 `Signal` 机制从后台线程安全派发到 Qt 主线程
 - 使用 `QTimer.singleShot` 或 `Signal.emit` 进行线程间通信
+- COM 调用必须在 Qt 主线程（STA）执行，不能在后台线程直接调用
 
-#### 7. 对话框行为
-
-**最终方案**：所有对话框添加 `Qt.WindowType.WindowStaysOnTopHint` 标志。
-
-**效果**：
-- 对话框始终浮在 CATIA 之前，不会被遮挡
-- 对话框有独立的任务栏条目
-- 用户可以手动最小化对话框
-- 无论从主窗口按钮还是嵌入面板触发，行为一致
-
-**实现**：
-```python
-dlg.setParent(
-    None,
-    Qt.WindowType.Window
-    | Qt.WindowType.WindowStaysOnTopHint  # 关键标志
-    | Qt.WindowType.WindowTitleHint
-    | Qt.WindowType.WindowSystemMenuHint
-    | Qt.WindowType.WindowCloseButtonHint
-    | Qt.WindowType.WindowMaximizeButtonHint
-    | Qt.WindowType.WindowMinimizeButtonHint,
-)
-```
+详见 [DIALOG_BEHAVIOR.md](DIALOG_BEHAVIOR.md)。
 
 ## 走过的弯路
 
@@ -190,28 +169,9 @@ dlg.setParent(
 
 ### 3. 对话框显隐逻辑
 
-**尝试 1**：对话框绑定到 MDI 子窗口，切换时自动隐藏/显示
-- **问题**：
-  - 对话框被自动最小化（Windows 认为切换到了另一个应用）
-  - 实现复杂，需要维护 `_view_dialogs` 映射和切换逻辑
-- **放弃**：用户体验差，实现复杂
+对话框的窗口行为（置顶、跟随 CATIA 最小化、几何持久化、已知问题）已独立成专题文档。
 
-**尝试 2**：对话框作为 MainWindow 的子窗口 + `WindowStaysOnTopHint`
-- **问题**：
-  - 对话框始终浮在 CATIA 之前（用户无法点击 CATIA）
-  - 主窗口隐藏时对话框也隐藏
-- **放弃**：用户体验差
-
-**尝试 3**：通过 Win32 API 设置对话框的 Owner 为 MDI 子窗口
-- **问题**：`SetWindowLong(GWL_HWNDPARENT)` 无效，对话框仍被最小化
-- **放弃**：技术方案不可行
-
-**最终方案**：所有对话框统一添加 `WindowStaysOnTopHint`
-- **成功**：
-  - 对话框始终浮在 CATIA 之前，不会被遮挡
-  - 用户可以手动最小化对话框
-  - 实现极简，只改一行代码
-  - 用户体验一致
+详见 [DIALOG_BEHAVIOR.md](DIALOG_BEHAVIOR.md)。
 
 ### 4. 菜单弹出
 
@@ -322,14 +282,13 @@ SCAN_VIEWS_INTERVAL = 3000  # 扫描新 view 的间隔（毫秒）
 1. **快速访问**：无需切换到主窗口，直接在 3D 视图中访问功能
 2. **位置可调**：用户可以拖拽面板到四个角落，位置持久化
 3. **多文档支持**：每个 3D 视图都有自己的面板，自动管理
-4. **对话框置顶**：对话框始终浮在 CATIA 之前，不会被遮挡
-5. **行为一致**：无论从哪里触发，对话框行为完全一致
+4. **行为一致**：无论从主窗口按钮还是嵌入面板触发，对话框行为完全一致
 
 ### 注意事项
 
 1. **面板只在活动 view 显示**：切换到其他 view 时，面板自动隐藏/显示
 2. **对话框是单例**：同一个对话框只创建一次，重复点击会激活已有对话框
-3. **对话框置顶**：对话框始终浮在最前面，用户需要手动最小化
+3. **对话框置顶行为**：见 [DIALOG_BEHAVIOR.md](DIALOG_BEHAVIOR.md)
 
 ## 未来改进方向
 
@@ -362,7 +321,7 @@ SCAN_VIEWS_INTERVAL = 3000  # 扫描新 view 的间隔（毫秒）
 3. **锚点系统**：四角吸附 + 偏移量（灵活可调）
 4. **多视图管理**：Z 序检测 + WinEventHook（自动管理）
 5. **线程模型**：后台线程 + Signal（线程安全）
-6. **对话框行为**：统一添加 `WindowStaysOnTopHint`（简单一致）
+6. **对话框行为**：见 [DIALOG_BEHAVIOR.md](DIALOG_BEHAVIOR.md)
 
 这个方案的核心优势是**简单**：
 - 代码量少（~1000 行）
@@ -372,6 +331,6 @@ SCAN_VIEWS_INTERVAL = 3000  # 扫描新 view 的间隔（毫秒）
 
 ---
 
-**文档版本**：1.0  
-**最后更新**：2026-05-30  
+**文档版本**：1.1  
+**最后更新**：2026-05-31  
 **作者**：CATIA Copilot 开发团队

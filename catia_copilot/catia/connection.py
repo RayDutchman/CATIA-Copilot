@@ -147,3 +147,41 @@ def get_catia_v5_application():
 
     return com_obj
 
+
+def get_active_document_path() -> str | None:
+    """返回当前活动文档的完整路径。
+
+    无活动文档时返回 None（不抛异常）。
+    CATIA 未连接时抛出 RuntimeError（与 get_catia_v5_application 一致）。
+
+    典型用法::
+
+        path = get_active_document_path()
+        if path is None:
+            # 提示用户先在 CATIA 中打开文档
+            ...
+    """
+    app = get_catia_v5_application()
+    try:
+        return app.ActiveDocument.FullName
+    except Exception:
+        return None
+
+
+def open_document(file_path: str, foreground: bool = False) -> None:
+    """在 CATIA 中打开指定文件，已打开则激活。
+
+    封装 ``get_catia_v5_application`` + ``utils.open_catia_file``，
+    调用方无需自行获取 app 对象，也无需同时 import 两个模块。
+
+    参数
+    ----
+    file_path:
+        要打开的 CATIA 文件完整路径（CATPart / CATProduct / CATDrawing）。
+    foreground:
+        是否将 CATIA 窗口切换到前台，默认 False。
+    """
+    from catia_copilot.utils import open_catia_file
+    app = get_catia_v5_application()
+    open_catia_file(app.Documents, file_path, foreground=foreground)
+

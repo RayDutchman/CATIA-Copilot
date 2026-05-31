@@ -142,6 +142,11 @@ class MainWindow(QMainWindow):
         if _embed_settings.value("active", False, type=bool):
             self._toggle_embed()
 
+        # 读取对话框置顶偏好（默认开启），初始化按钮状态
+        _mw_settings = QSettings("CATIACopilot", "MainWindow")
+        self._dlg_topmost: bool = _mw_settings.value("dlg_topmost", True, type=bool)
+        self._btn_dlg_topmost.setChecked(self._dlg_topmost)
+
     # ── CATIA 连接状态指示器 ──────────────────────────────────────────────
 
     def _build_connection_indicator(self) -> None:
@@ -706,6 +711,16 @@ class MainWindow(QMainWindow):
         self._btn_embed.clicked.connect(self._toggle_embed)
         layout.addWidget(self._btn_embed)
 
+        self._btn_dlg_topmost = QPushButton("对话框置顶")
+        self._btn_dlg_topmost.setCheckable(True)
+        self._btn_dlg_topmost.setObjectName("toggleButton")
+        self._btn_dlg_topmost.setToolTip(
+            "开启：功能对话框始终浮于其他窗口之上\n"
+            "关闭：对话框与普通窗口平级，CATIA 弹窗可正常显示在前台"
+        )
+        self._btn_dlg_topmost.clicked.connect(self._toggle_dlg_topmost)
+        layout.addWidget(self._btn_dlg_topmost)
+
         btn_diag = QPushButton("CATIA 连接诊断")
         btn_diag.setToolTip("显示 CATIA COM 连接的详细诊断信息")
         btn_diag.clicked.connect(self._show_catia_diagnostics)
@@ -810,8 +825,8 @@ class MainWindow(QMainWindow):
     def _show_dialog(self, attr: str, factory: Callable[[], QDialog]) -> None:
         """以非模态方式打开对话框，若已存在则将其置于前台。
 
-        所有对话框均为独立顶级窗口，在任务栏有独立条目，始终浮在 CATIA 之前，
-        并通过定时器监听 CATIA 状态实现跟随最小化/还原。
+        所有对话框均为独立顶级窗口，在任务栏有独立条目。
+        是否置顶由 self._dlg_topmost 控制（用户可在 ≡ 页切换）。
 
         :param attr: 用于在 MainWindow 上缓存对话框实例的属性名。
         :param factory: 无参可调用对象，返回新的 QDialog 实例。
@@ -819,33 +834,34 @@ class MainWindow(QMainWindow):
         dlg = getattr(self, attr, None)
         if dlg is None:
             dlg = factory()
-            
-            # 设置为独立顶级窗口，始终置顶（WindowStaysOnTopHint 使对话框浮于所有窗口之上）
-            dlg.setParent(
-                None,
+
+            base_flags = (
                 Qt.WindowType.Window
-                | Qt.WindowType.WindowStaysOnTopHint
                 | Qt.WindowType.WindowTitleHint
                 | Qt.WindowType.WindowSystemMenuHint
                 | Qt.WindowType.WindowCloseButtonHint
                 | Qt.WindowType.WindowMaximizeButtonHint
-                | Qt.WindowType.WindowMinimizeButtonHint,
+                | Qt.WindowType.WindowMinimizeButtonHint
             )
+            if self._dlg_topmost:
+                base_flags |= Qt.WindowType.WindowStaysOnTopHint
+
+            dlg.setParent(None, base_flags)
             dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             dlg.destroyed.connect(lambda _=None, a=attr: self._on_dialog_destroyed(a))
             setattr(self, attr, dlg)
-            
+
             # setParent(None) 会重建原生窗口并重置位置，在此之后重新恢复几何
             from PySide6.QtCore import QByteArray
             if hasattr(dlg, "_settings"):
                 saved = dlg._settings.value("geometry")
                 if isinstance(saved, QByteArray) and not saved.isEmpty():
                     dlg.restoreGeometry(saved)
-        
+
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-        
+
         # 启动 CATIA 状态监听定时器（如果尚未启动）
         self._start_catia_monitor()
 
@@ -855,6 +871,37 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_hidden_dialogs") and attr in self._hidden_dialogs:
             self._hidden_dialogs.discard(attr)
             logger.debug(f"_on_dialog_destroyed: 对话框 {attr} 已销毁，从隐藏列表中移除")
+
+    def _toggle_dlg_topmost(self) -> None:
+        """切换对话框置顶开关，立即对所有已开对话框生效，并持久化。"""
+        self._dlg_topmost = self._btn_dlg_topmost.isChecked()
+        QSettings("CATIACopilot", "MainWindow").setValue("dlg_topmost", self._dlg_topmost)
+        # 对所有已开对话框立即生效（Win32 方式，无闪烁）
+        for attr, value in vars(self).items():
+            if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)):
+                self._apply_topmost(value)
+        msg = "对话框已设为置顶" if self._dlg_topmost else "对话框已取消置顶"
+        self.statusBar().showMessage(msg, 3000)
+
+    def _apply_topmost(self, dlg) -> None:
+        """用 Win32 API 直接修改窗口的 WS_EX_TOPMOST 标志，无需 show()，无闪烁。
+
+        HWND_TOPMOST   (-1)：设置为置顶（WS_EX_TOPMOST）
+        HWND_NOTOPMOST (-2)：取消置顶
+        """
+        try:
+            import ctypes
+            import win32gui
+            import win32con
+            hwnd = int(dlg.winId())
+            SWP_NOMOVE    = 0x0002
+            SWP_NOSIZE    = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            insert_after = win32con.HWND_TOPMOST if self._dlg_topmost else win32con.HWND_NOTOPMOST
+            win32gui.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0,
+                                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        except Exception as e:
+            logger.debug(f"_apply_topmost: {e}")
 
     def _get_catia_hwnd(self) -> int:
         """查找 CATIA V5 主窗口句柄，未找到返回 0。"""
@@ -1444,11 +1491,9 @@ class MainWindow(QMainWindow):
         # 4. 单结果直接打开；多结果弹选择框
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
-            from catia_copilot.catia.connection import get_catia_v5_application
-            from catia_copilot.utils import open_catia_file
+            from catia_copilot.catia.connection import open_document
             try:
-                app = get_catia_v5_application()
-                open_catia_file(app.Documents, chosen, foreground=True)
+                open_document(chosen, foreground=True)
             except Exception as e:
                 QMessageBox.critical(
                     self, "打开文件失败",
