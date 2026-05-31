@@ -574,6 +574,226 @@ def tool_find_drawing_for_part(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
+# --- 19. read_file ---
+
+# 允许读取的文本文件扩展名白名单
+_READ_ALLOWED_EXTS: frozenset[str] = frozenset({
+    ".txt", ".csv", ".json", ".jsonl", ".md", ".log",
+    ".xml", ".yaml", ".yml", ".ini", ".cfg", ".toml",
+})
+# 单文件读取大小上限（字节）
+_READ_MAX_BYTES: int = 1 * 1024 * 1024  # 1 MB
+
+
+def tool_read_file(
+    file_path: str,
+    encoding: str = "utf-8",
+    max_lines: int | None = None,
+    **_kwargs,
+) -> str:
+    """读取文本文件内容并返回。
+
+    仅支持文本格式（txt/csv/json/md/log/xml/yaml/ini/cfg/toml/jsonl）。
+    文件大小超过 1 MB 时拒绝读取。
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    # 扩展名白名单检查
+    if path.suffix.lower() not in _READ_ALLOWED_EXTS:
+        return json.dumps(
+            {"error": f"不支持的文件类型 '{path.suffix}'，允许的类型：{sorted(_READ_ALLOWED_EXTS)}"},
+            ensure_ascii=False,
+        )
+
+    # 文件存在性检查
+    if not path.exists():
+        return json.dumps({"error": f"文件不存在：{file_path}"}, ensure_ascii=False)
+    if not path.is_file():
+        return json.dumps({"error": f"路径不是文件：{file_path}"}, ensure_ascii=False)
+
+    # 大小检查
+    size = path.stat().st_size
+    if size > _READ_MAX_BYTES:
+        return json.dumps(
+            {"error": f"文件过大（{size / 1024:.1f} KB），上限 1 MB"},
+            ensure_ascii=False,
+        )
+
+    try:
+        text = path.read_text(encoding=encoding, errors="replace")
+    except Exception as e:
+        return json.dumps({"error": f"读取失败：{e}"}, ensure_ascii=False)
+
+    lines = text.splitlines()
+    total_lines = len(lines)
+
+    if max_lines is not None and max_lines > 0:
+        lines = lines[:max_lines]
+        truncated = total_lines > max_lines
+    else:
+        truncated = False
+
+    return json.dumps(
+        {
+            "file_path": str(path),
+            "total_lines": total_lines,
+            "returned_lines": len(lines),
+            "truncated": truncated,
+            "content": "\n".join(lines),
+        },
+        ensure_ascii=False,
+    )
+
+
+# --- 20. list_directory ---
+
+# 列目录时显示的文件扩展名（其他文件也会列出，只是 type 字段不同）
+_CATIA_EXTS: frozenset[str] = frozenset({
+    ".catpart", ".catproduct", ".catdrawing",
+    ".catvbs", ".catscript", ".catvba",
+    ".xlsx", ".csv", ".pdf", ".stp", ".step",
+    ".txt", ".json", ".md", ".log",
+})
+
+
+def tool_list_directory(
+    dir_path: str,
+    pattern: str = "*",
+    recursive: bool = False,
+    max_depth: int = 2,
+    **_kwargs,
+) -> str:
+    """列出目录内容，返回文件和子目录列表。
+
+    recursive=True 时递归列出，最大深度由 max_depth 控制（默认 2）。
+    pattern 支持 glob 通配符，例如 *.CATDrawing、*.csv。
+    """
+    from pathlib import Path
+
+    path = Path(dir_path)
+
+    if not path.exists():
+        return json.dumps({"error": f"目录不存在：{dir_path}"}, ensure_ascii=False)
+    if not path.is_dir():
+        return json.dumps({"error": f"路径不是目录：{dir_path}"}, ensure_ascii=False)
+
+    entries: list[dict] = []
+
+    def _collect(current: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            items = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except PermissionError:
+            return
+        for item in items:
+            rel = item.relative_to(path)
+            entry: dict = {
+                "name":  item.name,
+                "path":  str(item),
+                "type":  "file" if item.is_file() else "directory",
+                "depth": depth,
+            }
+            if item.is_file():
+                entry["size_kb"] = round(item.stat().st_size / 1024, 1)
+                entry["ext"]     = item.suffix.lower()
+            entries.append(entry)
+            if recursive and item.is_dir():
+                _collect(item, depth + 1)
+
+    _collect(path, 1)
+
+    return json.dumps(
+        {
+            "dir_path":    str(path),
+            "entry_count": len(entries),
+            "entries":     entries,
+        },
+        ensure_ascii=False,
+    )
+
+
+# --- 21. write_file ---
+
+# 允许写入的文本文件扩展名白名单
+_WRITE_ALLOWED_EXTS: frozenset[str] = frozenset({
+    ".txt", ".csv", ".json", ".jsonl", ".md", ".log",
+})
+# 单次写入大小上限（字节）
+_WRITE_MAX_BYTES: int = 2 * 1024 * 1024  # 2 MB
+
+
+def tool_write_file(
+    file_path: str,
+    content: str,
+    mode: str = "overwrite",
+    encoding: str = "utf-8",
+    **_kwargs,
+) -> str:
+    """将文本内容写入文件。
+
+    仅支持文本格式（txt/csv/json/jsonl/md/log）。
+    mode: overwrite=覆盖（默认）；append=追加；create_new=仅当文件不存在时创建。
+    写入内容超过 2 MB 时拒绝。
+    """
+    from pathlib import Path
+
+    path = Path(file_path)
+
+    # 扩展名白名单检查
+    if path.suffix.lower() not in _WRITE_ALLOWED_EXTS:
+        return json.dumps(
+            {"error": f"不支持的文件类型 '{path.suffix}'，允许的类型：{sorted(_WRITE_ALLOWED_EXTS)}"},
+            ensure_ascii=False,
+        )
+
+    # 内容大小检查
+    content_bytes = content.encode(encoding, errors="replace")
+    if len(content_bytes) > _WRITE_MAX_BYTES:
+        return json.dumps(
+            {"error": f"内容过大（{len(content_bytes) / 1024:.1f} KB），上限 2 MB"},
+            ensure_ascii=False,
+        )
+
+    # mode 检查
+    if mode not in ("overwrite", "append", "create_new"):
+        return json.dumps(
+            {"error": f"无效的 mode '{mode}'，可选值：overwrite / append / create_new"},
+            ensure_ascii=False,
+        )
+
+    if mode == "create_new" and path.exists():
+        return json.dumps(
+            {"error": f"文件已存在（mode=create_new 不允许覆盖）：{file_path}"},
+            ensure_ascii=False,
+        )
+
+    # 自动创建父目录
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return json.dumps({"error": f"创建目录失败：{e}"}, ensure_ascii=False)
+
+    write_mode = "a" if mode == "append" else "w"
+    try:
+        with path.open(write_mode, encoding=encoding) as f:
+            f.write(content)
+    except Exception as e:
+        return json.dumps({"error": f"写入失败：{e}"}, ensure_ascii=False)
+
+    return json.dumps(
+        {
+            "success":    True,
+            "file_path":  str(path),
+            "mode":       mode,
+            "size_kb":    round(path.stat().st_size / 1024, 1),
+        },
+        ensure_ascii=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 工具注册表
 # ---------------------------------------------------------------------------
@@ -600,6 +820,9 @@ tools_map: dict[str, Callable] = {
     "find_part_for_drawing":       tool_find_part_for_drawing,
     "find_drawing_for_part":       tool_find_drawing_for_part,
     "update_memory":               tool_update_memory,
+    "read_file":                   tool_read_file,
+    "list_directory":              tool_list_directory,
+    "write_file":                  tool_write_file,
 }
 
 # 发给 LLM 的 JSON Schema 列表
@@ -608,7 +831,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "check_catia_connection",
-            "description": "检查 CATIA V5 的连接状态。返回 connected/broken/disconnected。",
+            "description": ("检查 CATIA V5 的 COM 连接状态。""返回值：connected=连接正常；broken=CATIA 进程存在但 COM 连接失败（通常是权限问题）；""disconnected=CATIA 未运行。""建议在执行任何 CATIA 操作前先调用此工具确认连接。"),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -616,7 +839,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "diagnose_catia_connection",
-            "description": "对 CATIA V5 连接进行详细诊断，返回版本、文档数、进程状态等信息。",
+            "description": ("对 CATIA V5 COM 连接进行详细诊断。""返回字段包括：status（连接状态）、app_version（CATIA 版本）、""doc_count（已打开文档数）、active_doc（活动文档名）、""catia_process_running（进程是否存在）、error（错误描述）等。""适用于排查连接异常；日常使用 check_catia_connection 即可。"),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -624,7 +847,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "open_catia_file",
-            "description": "在 CATIA 中打开指定文件（CATPart / CATProduct / CATDrawing）。若文件已打开则切换到该文档。",
+            "description": ("在 CATIA 中打开指定文件（CATPart / CATProduct / CATDrawing）。""若文件已打开则激活并切换到该文档，不会重复打开。""文件不存在时返回 error。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -634,7 +857,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "foreground": {
                         "type": "boolean",
-                        "description": "是否将 CATIA 窗口置于前台，默认 true",
+                        "description": "是否将 CATIA 窗口切换到前台（置顶显示），默认 true",
                     },
                 },
                 "required": ["file_path"],
@@ -646,8 +869,12 @@ tools_schema: list[dict[str, Any]] = [
         "function": {
             "name": "collect_bom",
             "description": (
-                "采集 CATIA CATProduct 的 BOM（物料清单）数据，返回层级零件清单。"
+                "采集 CATIA CATProduct 的 BOM（物料清单），返回层级零件清单。"
                 "file_path 为 null 时使用当前活动文档。"
+                "返回 {row_count, rows}，每行包含 Level/Type/Part Number/Nomenclature/"
+                "Definition/Revision/Source/Description/Quantity 等标准列，"
+                "以及 custom_columns 中指定的用户自定义属性列。"
+                "summarize=true 时返回去重汇总结果（无 Level 列，Quantity 为全树累计）。"
             ),
             "parameters": {
                 "type": "object",
@@ -659,12 +886,12 @@ tools_schema: list[dict[str, Any]] = [
                     "columns": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "要采集的列名列表，默认使用系统预设列",
+                        "description": ("要采集的标准列名列表。""可选值：Level, Type, Part Number, Nomenclature, Definition, Revision, Source, Description, Quantity。""默认采集全部标准列。"),
                     },
                     "custom_columns": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "额外的用户自定义属性列名列表",
+                        "description": ("用户自定义属性列名列表（通过 CATIA 零件属性对话框写入的属性）。""预设属性名包括：零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。"),
                     },
                     "summarize": {
                         "type": "boolean",
@@ -687,7 +914,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "export_bom_to_excel",
-            "description": "将 CATProduct 的 BOM 导出为 Excel 或 CSV 文件。",
+            "description": ("将 CATProduct 的 BOM 导出为 Excel（.xlsx）或 CSV 文件。""输出文件名规则：{原文件名}_BOM.xlsx（层级模式）或 {原文件名}_汇总BOM.xlsx（汇总模式）。""传 [null] 使用当前活动文档。返回 {success, exported_files}（导出文件路径列表）。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -703,7 +930,7 @@ tools_schema: list[dict[str, Any]] = [
                     "columns": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "要导出的列名列表",
+                        "description": ("要导出的标准列名列表。""可选值：Level, Type, Part Number, Nomenclature, Definition, Revision, Source, Description, Quantity。""默认导出全部标准列。"),
                     },
                     "summarize": {
                         "type": "boolean",
@@ -731,7 +958,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_bom_to_catia",
-            "description": "将编辑后的 BOM 属性批量写回 CATIA 文档（修改零件的用户自定义属性）。",
+            "description": ("将编辑后的属性值批量写回 CATIA 文档中各零件的用户自定义属性。""注意：写回后不会自动保存，需调用 save_catia_document 保存文件，否则修改在关闭 CATIA 后丢失。""file_path 为 null 时操作当前活动文档。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -741,7 +968,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "pn_data": {
                         "type": "object",
-                        "description": "要写入的数据，格式：{零件编号: {列名: 新值}}",
+                        "description": ("要写入的数据，格式：{零件编号(Part Number): {列名: 新值}}。""列名可以是标准列（Nomenclature/Definition/Revision/Source）或用户自定义属性名。""只需包含需要修改的字段，未提供的字段保持不变。"),
                         "additionalProperties": {
                             "type": "object",
                             "additionalProperties": {"type": "string"},
@@ -750,7 +977,7 @@ tools_schema: list[dict[str, Any]] = [
                     "custom_columns": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "用户自定义属性列名列表",
+                        "description": ("pn_data 中包含的用户自定义属性列名列表（非标准列）。""预设属性名包括：零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。""不在此列表中的列名会被当作标准属性处理。"),
                     },
                 },
                 "required": ["pn_data"],
@@ -761,7 +988,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "convert_to_pdf",
-            "description": "批量将 CATDrawing 图纸文件导出为 PDF。",
+            "description": ("批量将 CATDrawing 图纸文件导出为 PDF。""输出文件名规则：{prefix}{原文件名（不含扩展名）}{suffix}.pdf。""默认 prefix=DR_，suffix 为空，即 DR_{原文件名}.pdf。""返回 {success, exported_count, total}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -795,7 +1022,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "convert_to_step",
-            "description": "批量将 CATPart / CATProduct 导出为 STEP 格式。",
+            "description": ("批量将 CATPart / CATProduct 导出为 STEP（.stp）格式。""输出文件名规则：{prefix}{原文件名（不含扩展名）}{suffix}.stp。""默认 prefix=MD_，suffix 为空，即 MD_{原文件名}.stp。""返回 {success, exported_count, total}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -825,7 +1052,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "find_dependencies",
-            "description": "正向依赖查询：返回指定文件引用的所有子文档路径列表（需要 CATIA 已打开该文件）。",
+            "description": ("正向依赖查询：返回指定文件直接引用的子文档路径列表。""CATProduct 返回直接子件路径；CATDrawing 返回视图链接的零件/产品路径。""activate=true（默认）时若文件未打开则自动打开；""activate=false 时只查询已打开文档，适合批量遍历场景。""返回 {dependency_count, dependencies}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -835,7 +1062,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "activate": {
                         "type": "boolean",
-                        "description": "是否激活目标文档，默认 true",
+                        "description": ("是否自动打开并激活目标文档，默认 true。""设为 false 时只在已打开文档中查找，不打开新文件，适合批量遍历。"),
                     },
                 },
                 "required": ["target_path"],
@@ -846,7 +1073,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "find_reverse_dependencies",
-            "description": "反向依赖查询：在当前已打开的文档中，查找哪些文档引用了指定文件。",
+            "description": ("反向依赖查询：在当前 CATIA 中已打开的文档里，查找哪些文档直接引用了指定文件。""只检查已打开的 CATProduct 和 CATDrawing，不会主动打开新文件。""典型用途：删除零件前确认哪些装配体/图纸引用了它。""返回 {dependency_count, dependencies}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -864,8 +1091,12 @@ tools_schema: list[dict[str, Any]] = [
         "function": {
             "name": "collect_mass_props",
             "description": (
-                "采集 CATProduct 产品树中所有零件的质量特性（质量、重心、转动惯量），"
-                "坐标已变换到根坐标系。file_path 为 null 时使用当前活动文档。"
+                "采集 CATProduct 产品树中所有节点的质量特性（质量 kg、重心 m、转动惯量 kg*m^2），"
+                "重心和惯量坐标已变换到根产品坐标系。"
+                "数据来源：CATIA SPA 工具写入的惯量包络体保持测量参数；"
+                "若零件未做保持测量，对应行的 Weight 等字段为 null。"
+                "file_path 为 null 时使用当前活动文档。"
+                "返回 {row_count, rows}，每行含 Level/Type/Part Number/Weight/CogX/CogY/CogZ/Ixx 等字段。"
             ),
             "parameters": {
                 "type": "object",
@@ -877,7 +1108,7 @@ tools_schema: list[dict[str, Any]] = [
                     "read_mode": {
                         "type": "string",
                         "enum": ["all", "first", "last"],
-                        "description": "多实例读取模式：all=全部/first=第一个/last=最后一个，默认 all",
+                        "description": ("同一零件有多个实例（重复使用）时的读取策略：""all=读取全部实例（默认，每个实例单独一行）；""first=只读第一个实例；last=只读最后一个实例。"),
                     },
                     "skip_hidden": {
                         "type": "boolean",
@@ -885,7 +1116,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "summary_only": {
                         "type": "boolean",
-                        "description": "为 true 时只返回根节点（整体）的质量/重心/惯量摘要，减少 token 消耗，默认 false",
+                        "description": ("为 true 时只返回根节点（Level=0，即整个产品）的质量特性摘要，""字段：Weight/CogX/CogY/CogZ/Ixx/Iyy/Izz/Ixy/Ixz/Iyz。""适合只需要总重量和重心的场景，大幅减少 token 消耗。默认 false。"),
                     },
                 },
                 "required": [],
@@ -897,8 +1128,9 @@ tools_schema: list[dict[str, Any]] = [
         "function": {
             "name": "generate_drawing",
             "description": (
-                "从当前活动的 CATPart 或 CATProduct 生成新图纸。"
-                "需要提供图纸模板路径，以及要同步到图纸的属性值。"
+                "从当前活动的 CATPart 或 CATProduct 生成新图纸（基于模板复制）。"
+                "调用前请确认目标零件/产品已在 CATIA 中激活（通过 get_open_documents 确认 active_document）。"
+                "生成的图纸保存在与零件相同的目录下。"
             ),
             "parameters": {
                 "type": "object",
@@ -910,7 +1142,11 @@ tools_schema: list[dict[str, Any]] = [
                     "property_names": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "要同步的属性名列表，默认 [物料编码, 材料, 重量]",
+                        "description": (
+                            "要从零件同步到图纸标题栏的属性名列表。"
+                            "默认同步：物料编码、材料、重量。"
+                            "可扩展为其他用户自定义属性名，如：零件类型、设计状态、规格型号等。"
+                        ),
                     },
                     "property_values": {
                         "type": "object",
@@ -930,8 +1166,10 @@ tools_schema: list[dict[str, Any]] = [
         "function": {
             "name": "refresh_drawing",
             "description": (
-                "刷新当前活动图纸的参数，从对应零件同步属性到图纸标题栏。"
-                "如需修改属性值，通过 property_values 提供。"
+                "刷新当前活动 CATDrawing 的标题栏参数，从关联零件同步属性值。"
+                "与 generate_drawing 的区别：refresh_drawing 作用于已存在的图纸（当前活动文档），"
+                "不创建新文件；generate_drawing 从模板创建新图纸。"
+                "调用前请确认活动文档是 CATDrawing（通过 get_open_documents 确认）。"
             ),
             "parameters": {
                 "type": "object",
@@ -939,7 +1177,10 @@ tools_schema: list[dict[str, Any]] = [
                     "property_names": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "要同步的属性名列表，默认 [物料编码, 材料, 重量]",
+                        "description": (
+                            "要从关联零件同步到图纸标题栏的属性名列表。"
+                            "默认同步：物料编码、材料、重量。"
+                        ),
                     },
                     "property_values": {
                         "type": "object",
@@ -955,7 +1196,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "apply_part_template",
-            "description": "为 CATPart 文件批量添加标准用户自定义属性（刷写模板）。",
+            "description": ("为 CATPart 文件批量添加/刷写标准用户自定义属性。""标准属性包括：零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。""已存在的属性不会被覆盖，只添加缺失的属性。""keep_open=false（默认）时处理完成后关闭文件以释放内存。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -979,7 +1220,9 @@ tools_schema: list[dict[str, Any]] = [
             "name": "get_open_documents",
             "description": (
                 "返回当前 CATIA 中所有已打开文档的完整路径列表及活动文档路径。"
-                "AI 在需要知道当前打开了哪些文件时应首先调用此工具。"
+                "返回 {active_document（完整路径或 null）, open_documents（列表，每项含 name/path/type）}。"
+                "type 取值：PartDocument / ProductDocument / DrawingDocument / Other。"
+                "AI 在执行任何需要文件路径的操作前，应先调用此工具获取准确路径。"
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -988,7 +1231,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "save_catia_document",
-            "description": "保存 CATIA 文档。file_path 为 null 时保存当前活动文档。",
+            "description": ("保存 CATIA 文档到磁盘。file_path 为 null 时保存当前活动文档。""write_bom_to_catia 等写回操作完成后必须调用此工具，否则修改在关闭 CATIA 后丢失。""返回 {success, saved_path} 或 {error}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1007,7 +1250,13 @@ tools_schema: list[dict[str, Any]] = [
             "name": "find_part_for_drawing",
             "description": (
                 "给定 CATDrawing 路径，启发式查找对应的 CATPart/CATProduct 文件路径列表。"
-                "按优先级依次尝试多种策略（PartNumber 参数匹配、同名文件扫描等）。"
+                "策略说明（按优先级）："
+                "pn_param_open_docs=读图纸 PartNumber 参数，在已打开文档中匹配；"
+                "pn_param_scan_dirs=读图纸 PartNumber 参数，在上级目录中扫描同名文件；"
+                "same_name_scan_dirs=用图纸文件名在上级目录中扫描同名零件文件；"
+                "strip_prefix_scan_dirs=去掉图纸文件名前缀后扫描；"
+                "doc_file_links=通过图纸生成式视图的 COM 链接直接读取关联零件（需图纸已打开）。"
+                "返回 {matches: [路径列表]}，未找到时为空列表。"
             ),
             "parameters": {
                 "type": "object",
@@ -1045,7 +1294,13 @@ tools_schema: list[dict[str, Any]] = [
             "name": "find_drawing_for_part",
             "description": (
                 "给定 CATPart/CATProduct 路径，启发式查找对应的 CATDrawing 文件路径列表。"
-                "按优先级依次尝试多种策略（PartNumber 参数匹配、同名文件扫描等）。"
+                "策略说明（按优先级）："
+                "pn_param_open_drws=在已打开图纸中找 PartNumber 参数与零件编号匹配的图纸；"
+                "pn_param_scan_drws=在上级目录中扫描文件名与零件 PartNumber 相同的图纸；"
+                "same_name_scan_dirs=在上级目录中扫描文件名与零件文件名相同的图纸；"
+                "strip_prefix_scan_dirs=扫描上级目录中去掉前缀后与零件文件名匹配的图纸；"
+                "doc_file_links=遍历已打开图纸，反查其视图链接是否指向该零件（需图纸已打开）。"
+                "返回 {matches: [路径列表]}，未找到时为空列表。"
             ),
             "parameters": {
                 "type": "object",
@@ -1104,6 +1359,110 @@ tools_schema: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": (
+                "读取文本文件内容并返回。"
+                "支持格式：txt / csv / json / jsonl / md / log / xml / yaml / yml / ini / cfg / toml。"
+                "文件大小上限 1 MB。"
+                "返回 {file_path, total_lines, returned_lines, truncated, content}。"
+                "典型用途：读取 export_bom_to_excel 导出的 CSV、用户的配置文件或说明文档。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "要读取的文件完整路径",
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "文件编码，默认 utf-8，中文 Excel 导出的 CSV 通常需要 gbk 或 utf-8-sig",
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "最多返回的行数，不填则返回全部内容",
+                    },
+                },
+                "required": ["file_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_directory",
+            "description": (
+                "列出目录内容，返回文件和子目录列表。"
+                "每项包含 name / path / type（file 或 directory）/ depth / size_kb / ext。"
+                "支持 glob 通配符过滤（pattern 参数），例如 *.CATDrawing、*.csv。"
+                "典型用途：批量操作前枚举目标文件，或排查文件是否存在。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dir_path": {
+                        "type": "string",
+                        "description": "要列出的目录完整路径",
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "glob 过滤模式，默认 * 列出全部。例如 *.CATDrawing 只列图纸文件",
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "是否递归列出子目录，默认 false",
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "recursive=true 时的最大递归深度，默认 2",
+                    },
+                },
+                "required": ["dir_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": (
+                "将文本内容写入文件。"
+                "支持格式：txt / csv / json / jsonl / md / log。"
+                "写入内容上限 2 MB。父目录不存在时自动创建。"
+                "典型用途：将 collect_bom 返回的数据保存为 JSON/CSV，或生成分析报告。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "目标文件完整路径",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "要写入的文本内容",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["overwrite", "append", "create_new"],
+                        "description": (
+                            "写入模式：overwrite=覆盖已有文件（默认）；"
+                            "append=追加到文件末尾；"
+                            "create_new=仅当文件不存在时创建，已存在则返回 error"
+                        ),
+                    },
+                    "encoding": {
+                        "type": "string",
+                        "description": "文件编码，默认 utf-8",
+                    },
+                },
+                "required": ["file_path", "content"],
             },
         },
     },

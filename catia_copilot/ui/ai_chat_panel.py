@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +75,9 @@ class UserMessageWidget(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(*L.USER_MSG_MARGINS)
 
+        # setTextFormat(PlainText) 防止用户输入被当成 HTML 解析
         self._label = QLabel(self._text)
+        self._label.setTextFormat(Qt.TextFormat.PlainText)
         self._label.setWordWrap(True)
         self._label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -152,6 +153,51 @@ class _AutoHeightBrowser(QTextBrowser):
         self.updateGeometry()
 
 
+class _BoundedHeightBrowser(QTextBrowser):
+    """
+    高度随内容自动收缩、到上限后出现滚动条的 QTextBrowser。
+
+    - 内容少时：sizeHint 返回实际文档高度，布局系统收缩 widget，无多余空白
+    - 内容多时：高度到达 max_height 上限后停止增长，垂直滚动条按需出现
+    - 不影响水平方向（Expanding policy）
+    """
+
+    def __init__(self, max_height: int, parent=None):
+        super().__init__(parent)
+        self._max_height = max_height
+        self.setReadOnly(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        # 水平滚动条关闭（内容折行），垂直滚动条按需显示
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.document().contentsChanged.connect(self.updateGeometry)
+
+    def _doc_height(self) -> int:
+        """按当前 viewport 宽度排版，返回文档所需高度。"""
+        vw = self.viewport().width()
+        if vw <= 0:
+            return 20  # 尚未布局时给一个最小值
+        doc = self.document()
+        old_size = doc.pageSize()
+        doc.setPageSize(QSizeF(vw, 1e9))
+        h = int(doc.size().height())
+        doc.setPageSize(old_size)
+        return h
+
+    def sizeHint(self):
+        h = min(self._doc_height(), self._max_height)
+        return QSizeF(0, h).toSize()
+
+    def minimumSizeHint(self):
+        h = min(self._doc_height(), self._max_height)
+        return QSizeF(0, h).toSize()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.updateGeometry()
+
+
 class AIMessageWidget(QFrame):
     """AI 回复消息，左对齐，支持流式追加和 Markdown 渲染。"""
 
@@ -224,12 +270,13 @@ class AIMessageWidget(QFrame):
         self._browser.setMarkdown(text)
 
     def _apply_style(self):
-        bg, fg = chat_colors().ai_bg, chat_colors().ai_fg
+        c = chat_colors()
         self._browser.setStyleSheet(
-            f"QTextBrowser {{ background-color: {bg}; color: {fg}; "
+            f"QTextBrowser {{ background-color: {c.ai_bg}; color: {c.ai_fg}; "
             f"border-radius: {L.AI_MSG_RADIUS}px; "
+            f"border: 1px solid {c.ai_border}; "
             f"padding: {L.AI_MSG_PADDING_V}px {L.AI_MSG_PADDING_H}px; "
-            f"font-size: {L.AI_MSG_FONT_SIZE}px; border: none; }}"
+            f"font-size: {L.AI_MSG_FONT_SIZE}px; }}"
         )
 
     @Slot(str)
@@ -268,13 +315,29 @@ class ToolCallWidget(QFrame):
 
         try:
             args_dict = json.loads(self._args_str)
+            def _fmt(v) -> str:
+                # 字符串直接显示，不用 repr()，避免路径中的 \ 被双重转义
+                if isinstance(v, str):
+                    s = v
+                elif isinstance(v, list):
+                    # 列表元素逐个用 str()，避免 str(list) 内部仍走 repr
+                    if not v:
+                        s = "[]"
+                    elif len(v) == 1:
+                        s = f"[{str(v[0])}]"
+                    else:
+                        s = f"[{str(v[0])}, ...]"
+                else:
+                    s = str(v)
+                return s[:40] + "…" if len(s) > 40 else s
             args_summary = ", ".join(
-                f"{k}={repr(v)[:20]}" for k, v in list(args_dict.items())[:3]
+                f"{k}={_fmt(v)}" for k, v in list(args_dict.items())[:3]
             )
         except Exception:
             args_summary = self._args_str[:60]
 
         self._title_label = QLabel(f"🔧 {self._tool_name}({args_summary})")
+        self._title_label.setTextFormat(Qt.TextFormat.PlainText)  # 防止路径中 < > & 被解析为 HTML
         self._title_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self._title_label.mousePressEvent = lambda _: self._toggle()
 
@@ -289,12 +352,11 @@ class ToolCallWidget(QFrame):
 
         self._progress_label = QLabel()
         self._progress_label.setWordWrap(True)
+        self._progress_label.setVisible(False)  # 无内容时不占位
         content_layout.addWidget(self._progress_label)
 
-        self._result_browser = QTextBrowser()
-        self._result_browser.setReadOnly(True)
-        self._result_browser.setFrameShape(QFrame.Shape.NoFrame)
-        self._result_browser.setMaximumHeight(L.TOOL_CARD_RESULT_MAX_HEIGHT)
+        self._result_browser = _BoundedHeightBrowser(L.TOOL_CARD_RESULT_MAX_HEIGHT)
+        self._result_browser.setObjectName("ToolResultBrowser")
         content_layout.addWidget(self._result_browser)
 
         self._content_widget.setVisible(False)
@@ -315,6 +377,7 @@ class ToolCallWidget(QFrame):
     def add_progress(self, msg: str):
         current = self._progress_label.text()
         self._progress_label.setText((current + "\n" + msg).strip() if current else msg)
+        self._progress_label.setVisible(True)  # 有内容才显示
 
     def set_result(self, result: str):
         """填入工具调用结果，保持折叠状态（不自动展开）。"""
@@ -343,10 +406,17 @@ class ToolCallWidget(QFrame):
             f"background: transparent; border: none; }}"
         )
         self._result_browser.setStyleSheet(
-            f"QTextBrowser {{ background: transparent; color: {fg}; "
+            f"QTextBrowser#ToolResultBrowser {{ background-color: {bg}; color: {fg}; "
             f"font-size: {L.TOOL_CARD_RESULT_FONT_SIZE}px; "
             f"font-family: monospace; border: none; }}"
         )
+        # QPalette 直接设置 viewport 背景，确保 qdarkstyle 的 QAbstractScrollArea
+        # 规则不会把 viewport 底色覆盖成主题色
+        vp_pal = self._result_browser.viewport().palette()
+        vp_pal.setColor(QPalette.ColorRole.Base, QColor(bg))
+        vp_pal.setColor(QPalette.ColorRole.Window, QColor(bg))
+        self._result_browser.viewport().setPalette(vp_pal)
+        self._result_browser.viewport().setAutoFillBackground(True)
 
     @Slot(str)
     def _on_theme_changed(self, _mode: str):
@@ -389,12 +459,31 @@ class ChatScrollArea(QScrollArea):
     # 距底部多少像素以内视为"在底部"
     _SNAP_THRESHOLD = 8
 
-    def event(self, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.LayoutRequest:
-            sb = self.verticalScrollBar()
-            if sb.maximum() - sb.value() <= self._SNAP_THRESHOLD:
-                sb.setValue(sb.maximum())
-        return super().event(event)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # qdarkstyle 给所有 QAbstractScrollArea 加了 border + padding，
+        # 导致 viewport 左边缘比外部 widget 多出偏移，与输入框左边线不对齐。
+        # 用 objectName 选择器覆盖，只影响本实例，不影响其他 QScrollArea。
+        self.setObjectName("ChatScrollArea")
+        self.setStyleSheet(
+            "QScrollArea#ChatScrollArea { border: none; padding: 0px; }"
+        )
+        # _at_bottom：用户是否在底部附近。初始为 True，表示新会话默认跟随。
+        # 用户手动向上滚动时置 False，滚回底部时置 True。
+        self._at_bottom = True
+        self.verticalScrollBar().valueChanged.connect(self._on_value_changed)
+        # rangeChanged 在 maximum 真正更新后触发，此时判断是否需要跟随。
+        self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+
+    def _on_value_changed(self, value: int):
+        """用户手动滚动时更新 _at_bottom 标志。"""
+        sb = self.verticalScrollBar()
+        self._at_bottom = (sb.maximum() - value <= self._SNAP_THRESHOLD)
+
+    def _on_range_changed(self, _min: int, new_max: int):
+        """maximum 更新后，若之前在底部则跟随滚到新底部。"""
+        if self._at_bottom:
+            self.verticalScrollBar().setValue(new_max)
 
 
 # ---------------------------------------------------------------------------
@@ -1336,6 +1425,9 @@ class AIChatPanel(QWidget):
     def _rebuild_chat_widgets(self):
         """根据当前会话的 messages 重建聊天区 widget。"""
         self._clear_chat_widgets()
+        # 重建后需要滚到底部，提前把标志置 True，
+        # 避免上一个会话停留在中间位置时 rangeChanged 不跟随
+        self._scroll._at_bottom = True
         messages = self._current_session.messages
 
         # 建立 tool_call_id → tool 结果的映射，供重建 ToolCallWidget 时填入结果
@@ -1376,13 +1468,7 @@ class AIChatPanel(QWidget):
                         card = ToolCallWidget(name, args, self._chat_container)
                         result = tool_results.get(tc_id, "")
                         if result:
-                            # 直接填入结果但保持折叠状态
-                            try:
-                                parsed = json.loads(result)
-                                formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
-                            except Exception:
-                                formatted = result
-                            card._result_browser.setPlainText(formatted)
+                            card.set_result(result)  # 复用 set_result 的格式化逻辑
                         self._insert_widget(card)
 
             # role == "tool" 已通过 tool_results 映射处理，不单独渲染
@@ -1556,8 +1642,8 @@ class AIChatPanel(QWidget):
                 self._insert_widget(self._current_ai_widget)
             self._current_ai_widget.append_token(token)
 
-    @Slot(str, str)
-    def _on_tool_started(self, tool_name: str, args_str: str):
+    @Slot(str, str, str)
+    def _on_tool_started(self, tool_name: str, args_str: str, tool_call_id: str):
         # 工具调用开始前，先把 AI 已输出的文字 buffer 写入 session 并渲染
         # （保证 session 里 assistant content 在 assistant tool_calls 之前）
         if self._current_ai_widget and self._current_ai_widget._buffer.strip():
@@ -1571,8 +1657,7 @@ class AIChatPanel(QWidget):
         # （_on_tool_finished 会创建新的占位 widget）
         self._current_ai_widget = None
 
-        # 生成本次工具调用的 id（用于 session messages 的 tool_call_id）
-        tool_call_id = "call_" + uuid.uuid4().hex[:8]
+        # 使用 AgentWorker 传来的真实 tool_call_id，保证与 tool 结果消息的 id 一致
         self._pending_tool_call = {
             "tool_call_id": tool_call_id,
             "name": tool_name,
