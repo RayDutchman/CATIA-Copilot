@@ -241,6 +241,15 @@ class AgentWorker(QThread):
                         if fn.get("arguments"):             tc["arguments"] += fn["arguments"]
 
                     if finish_reason in ("stop", "tool_calls", "length"):
+                        # finish_reason=length 表示 token 超限截断
+                        # 若此时有未完成的 tool_calls，arguments 可能是残缺 JSON，
+                        # 直接使用会导致工具以空参数执行，提前报错更友好
+                        if finish_reason == "length" and tool_calls_acc:
+                            yield "error", (
+                                "LLM 输出因 token 超限被截断，工具调用参数不完整。"
+                                "请尝试缩短对话历史或减少上下文消息数。"
+                            )
+                            return
                         break
 
                 if tool_calls_acc:
@@ -255,10 +264,11 @@ class AgentWorker(QThread):
             yield "error", f"HTTP {e.code}：{err_msg}"
 
         except urllib.error.URLError as e:
-            yield "error", f"网络错误：{e.reason}"
-
-        except TimeoutError:
-            yield "error", f"请求超时（{timeout}s）"
+            # urllib 超时时 e.reason 是 socket.timeout 实例
+            if isinstance(e.reason, (TimeoutError, OSError)) and "timed out" in str(e.reason).lower():
+                yield "error", f"请求超时（{timeout}s）"
+            else:
+                yield "error", f"网络错误：{e.reason}"
 
         except Exception:
             yield "error", traceback.format_exc()

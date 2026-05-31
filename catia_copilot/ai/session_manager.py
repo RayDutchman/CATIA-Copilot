@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,17 +77,24 @@ def _read_index() -> list[dict[str, Any]]:
 
 
 def _write_index(entries: list[dict[str, Any]]) -> None:
-    """写入 index.json（按 created_at 降序排列）。"""
+    """写入 index.json（按 created_at 降序排列，原子写入）。"""
     _ensure_dir()
-    # 按 created_at 降序（新建的在最前）
     sorted_entries = sorted(
         entries,
         key=lambda e: e.get("created_at", ""),
         reverse=True,
     )
     try:
-        with _INDEX_PATH.open("w", encoding="utf-8") as f:
-            json.dump(sorted_entries, f, ensure_ascii=False, indent=2)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=_SESSIONS_DIR, prefix=".index_", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(sorted_entries, f, ensure_ascii=False, indent=2)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
+        os.replace(tmp_path, _INDEX_PATH)
     except Exception as e:
         logger.error("[SESSION] 写入 index.json 失败：%s", e)
 
@@ -127,10 +136,14 @@ class SessionManager:
     def create_session(self) -> ChatSession:
         """
         创建新会话，写入磁盘，返回 ChatSession 对象。
-        session_id 取 uuid4 hex 前 8 位。
+        session_id 取 uuid4 hex 前 12 位，并检测碰撞。
         """
         _ensure_dir()
-        session_id = uuid.uuid4().hex[:8]
+        # 生成唯一 session_id（碰撞时重试，最多 5 次）
+        for _ in range(5):
+            session_id = uuid.uuid4().hex[:12]
+            if not _session_path(session_id).exists():
+                break
         now = _now_iso()
         session = ChatSession(
             session_id=session_id,
@@ -170,8 +183,16 @@ class SessionManager:
         session.updated_at = _now_iso()
         path = _session_path(session.session_id)
         try:
-            with path.open("w", encoding="utf-8") as f:
-                json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=_SESSIONS_DIR, prefix=".session_", suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
+            except Exception:
+                os.unlink(tmp_path)
+                raise
+            os.replace(tmp_path, path)
         except Exception as e:
             logger.error("[SESSION] 写入会话 %s 失败：%s", session.session_id, e)
             return

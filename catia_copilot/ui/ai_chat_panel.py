@@ -1573,6 +1573,11 @@ class AIChatPanel(QWidget):
         max_ctx = (session.config.get("max_context_messages") or 100) if session else 100
         if max_ctx > 0:
             non_system = non_system[-max_ctx:]
+            # 截断后确保不以孤立的 tool 消息开头：
+            # 若第一条是 role=tool，说明对应的 assistant(tool_calls) 被截掉了，
+            # 继续向前丢弃直到第一条非 tool 消息，避免 API 返回 400
+            while non_system and non_system[0].get("role") == "tool":
+                non_system = non_system[1:]
 
         result = []
         if sys_prompt:
@@ -1782,8 +1787,13 @@ class AIChatPanel(QWidget):
 
         try:
             args = json.loads(args_str) if args_str.strip() else {}
-        except json.JSONDecodeError:
-            args = {}
+        except json.JSONDecodeError as e:
+            result = json.dumps(
+                {"error": f"工具参数 JSON 解析失败：{e}，原始参数：{args_str[:200]}"},
+                ensure_ascii=False,
+            )
+            self._worker.receive_tool_result(result)
+            return
 
         # 工作空间检查（豁免工具跳过）
         if tool_name not in _WORKSPACE_EXEMPT_TOOLS:

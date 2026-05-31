@@ -101,14 +101,17 @@ def make_str_progress_callback(emit_fn: Callable[[str], None]) -> Callable:
 # ---------------------------------------------------------------------------
 
 def _wrap(fn: Callable, *args, **kwargs) -> str:
-    """统一异常捕获包装，返回 JSON 字符串。"""
+    """统一异常捕获包装，返回 JSON 字符串。
+    
+    供工具函数内部使用，将底层异常转换为 {"error": str} 格式，
+    避免 traceback 暴露给 LLM。
+    """
     try:
         result = fn(*args, **kwargs)
         return result
-    except Exception:
-        tb = traceback.format_exc()
-        logger.error("工具调用异常：%s", tb)
-        return json.dumps({"error": tb}, ensure_ascii=False)
+    except Exception as e:
+        logger.error("工具调用异常：%s", traceback.format_exc())
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 # --- 1. check_catia_connection ---
@@ -223,11 +226,13 @@ def tool_export_bom_to_excel(
 
 def tool_write_bom_to_catia(
     file_path: str | None = None,
-    pn_data: dict[str, dict[str, str]] = None,
+    pn_data: dict[str, dict[str, str]] | None = None,
     custom_columns: list[str] | None = None,
     progress_signal=None,
     **_kwargs,
 ) -> str:
+    if not pn_data:
+        return json.dumps({"error": "pn_data 不能为空"}, ensure_ascii=False)
     from catia_copilot.catia.bom_write import write_bom_to_catia
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
@@ -549,7 +554,7 @@ def tool_save_catia_document(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-# --- 19. update_memory ---
+# --- 17. update_memory ---
 
 def tool_update_memory(
     content: str,
@@ -586,7 +591,7 @@ def tool_update_memory(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-# --- 17. find_part_for_drawing ---
+# --- 18. find_part_for_drawing ---
 
 def tool_find_part_for_drawing(
     drawing_path: str,
@@ -605,7 +610,7 @@ def tool_find_part_for_drawing(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
-# --- 18. find_drawing_for_part ---
+# --- 19. find_drawing_for_part ---
 
 def tool_find_drawing_for_part(
     part_path: str,
@@ -651,9 +656,11 @@ def tool_read_file(
     path = Path(file_path)
 
     # 扩展名白名单检查
-    if path.suffix.lower() not in _READ_ALLOWED_EXTS:
+    ext = path.suffix.lower()
+    if ext not in _READ_ALLOWED_EXTS:
+        ext_display = ext if ext else "（无扩展名）"
         return json.dumps(
-            {"error": f"不支持的文件类型 '{path.suffix}'，允许的类型：{sorted(_READ_ALLOWED_EXTS)}"},
+            {"error": f"不支持的文件类型 {ext_display!r}，允许的类型：{sorted(_READ_ALLOWED_EXTS)}"},
             ensure_ascii=False,
         )
 
@@ -717,9 +724,10 @@ def tool_list_directory(
 ) -> str:
     """列出目录内容，返回文件和子目录列表。
 
-    recursive=True 时递归列出，最大深度由 max_depth 控制（默认 2）。
-    pattern 支持 glob 通配符，例如 *.CATDrawing、*.csv。
+    recursive=True 时递归列出，最大深度由 max_depth 控制（默认 2，最小有效值 1）。
+    pattern 支持 glob 通配符过滤文件名，例如 *.CATDrawing、*.csv；目录始终列出。
     """
+    import fnmatch
     from pathlib import Path
 
     path = Path(dir_path)
@@ -729,28 +737,34 @@ def tool_list_directory(
     if not path.is_dir():
         return json.dumps({"error": f"路径不是目录：{dir_path}"}, ensure_ascii=False)
 
+    # max_depth 最小有效值为 1（列出根目录第一层）
+    effective_depth = max(1, max_depth)
+
     entries: list[dict] = []
 
     def _collect(current: Path, depth: int) -> None:
-        if depth > max_depth:
+        if depth > effective_depth:
             return
         try:
             items = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
         except PermissionError:
             return
         for item in items:
-            rel = item.relative_to(path)
+            is_file = item.is_file()
+            # 文件按 pattern 过滤；目录始终列出（用于递归展示结构）
+            if is_file and not fnmatch.fnmatch(item.name, pattern):
+                continue
             entry: dict = {
                 "name":  item.name,
                 "path":  str(item),
-                "type":  "file" if item.is_file() else "directory",
+                "type":  "file" if is_file else "directory",
                 "depth": depth,
             }
-            if item.is_file():
+            if is_file:
                 entry["size_kb"] = round(item.stat().st_size / 1024, 1)
                 entry["ext"]     = item.suffix.lower()
             entries.append(entry)
-            if recursive and item.is_dir():
+            if recursive and not is_file:
                 _collect(item, depth + 1)
 
     _collect(path, 1)

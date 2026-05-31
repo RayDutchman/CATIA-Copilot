@@ -21,20 +21,15 @@ logger = logging.getLogger(__name__)
 _BASE_DIR = Path(__file__).parent.parent.parent
 _CONFIG_PATH = _BASE_DIR / "ai_config.json"
 
-# 无配置时的屌底
+# 无配置时的兜底
 _FALLBACK_CONFIG: dict[str, Any] = {
     "providers": {},
     "default_provider": "",
     "default_model": "gpt-4o",
 }
 
-# System prompt
-DEFAULT_SYSTEM_PROMPT = (
-    "你是 CATIA Copilot 的 AI 助手，专门帮助工程师操作 CATIA V5。"
-    "你可以调用工具来采集 BOM、导出文件、查找依赖、计算质量特性等。"
-    "每次调用工具前，先简要说明你要做什么；工具返回结果后，用中文总结结果。"
-    "如果工具调用失败，分析原因并提出解决建议。"
-)
+# DEFAULT_SYSTEM_PROMPT 定义在 tools.py，此处不重复定义。
+# 使用方：from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT
 
 # 运行时参数默认值
 DEFAULTS_RUNTIME: dict[str, Any] = {
@@ -51,7 +46,7 @@ DEFAULTS_RUNTIME: dict[str, Any] = {
 def load() -> dict[str, Any]:
     """
     加载 ai_config.json。
-    文件不存在或解析失败时返回屌底配置。
+    文件不存在或解析失败时返回兜底配置。
     返回的 dict 结构与 models_config.json 相同，额外包含运行时参数。
     """
     try:
@@ -60,10 +55,10 @@ def load() -> dict[str, Any]:
         logger.info("[CONFIG] 已加载 ai_config.json，providers=%s",
                     list(cfg.get("providers", {}).keys()))
     except FileNotFoundError:
-        logger.warning("[CONFIG] ai_config.json 不存在，使用屌底配置")
+        logger.warning("[CONFIG] ai_config.json 不存在，使用兜底配置")
         cfg = dict(_FALLBACK_CONFIG)
     except Exception as e:
-        logger.error("[CONFIG] 加载 ai_config.json 失败：%s，使用屌底配置", e)
+        logger.error("[CONFIG] 加载 ai_config.json 失败：%s，使用兜底配置", e)
         cfg = dict(_FALLBACK_CONFIG)
 
     # 补全运行时参数
@@ -161,7 +156,7 @@ def fetch_models_from_api(api_base: str, api_key: str, timeout: int = 15) -> lis
         resp = requests.get(
             url,
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=timeout,
+            timeout=(5, timeout),  # (连接超时 5s, 读取超时 timeout s)
         )
         resp.raise_for_status()
         data = resp.json()
