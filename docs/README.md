@@ -24,6 +24,7 @@
 | [PLM_ISSUES.md](PLM_ISSUES.md) | PLM 集成已知问题记录（PLM-01 ~ PLM-07） |
 | [CATIA_COM_CONNECTION_ISSUE.md](CATIA_COM_CONNECTION_ISSUE.md) | CATIA COM 连接问题排查记录 |
 | [EMBED_PANEL.md](EMBED_PANEL.md) | CATIA 3D 视图嵌入面板实现文档 |
+| [DIALOG_BEHAVIOR.md](DIALOG_BEHAVIOR.md) | 对话框窗口行为（置顶、跟随最小化、已知问题） |
 | [PLAN_TRAY_AUTOSTART.md](PLAN_TRAY_AUTOSTART.md) | 托盘化与开机自启计划 |
 | [THEMING.md](THEMING.md) | 主题系统实现说明 |
 | [DEPENDENSIES.md](DEPENDENSIES.md) | CATIA 文件依赖关系调研笔记 |
