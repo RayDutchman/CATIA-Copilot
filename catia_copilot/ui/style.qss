@@ -1,5 +1,0 @@
-/* CATIA Copilot – 样式表
- *
- * 注意：从 v1.7.0 起，全部 QSS 样式均由 catia_copilot/ui/theme_manager.py 管理。
- * 此文件保留作历史参考，运行时不再加载。
- */

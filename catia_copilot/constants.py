@@ -79,9 +79,6 @@ TYPE_DISPLAY_NAMES: dict = {
 MAIN_WINDOW_DEFAULT_WIDTH  = 560
 MAIN_WINDOW_DEFAULT_HEIGHT = 520
 
-# Relative path to the QSS stylesheet (used by main.py entry point)
-STYLESHEET_RELATIVE_PATH = "catia_copilot/ui/style.qss"
-
 # ---------------------------------------------------------------------------
 # Resource file paths (relative to project root / frozen executable directory)
 # ---------------------------------------------------------------------------
