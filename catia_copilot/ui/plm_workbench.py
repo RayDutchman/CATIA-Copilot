@@ -54,9 +54,10 @@ from PySide6.QtWidgets import (
     QProgressDialog
 )
 
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _ROW_HEIGHT
+from catia_copilot.ui.bom_widgets import _BomTreeWidget
 from catia_copilot.ui.ui_colors import get_colors as _get_colors
 from catia_copilot.ui.theme_manager import theme_manager
+from catia_copilot.ui.ui_layout import L
 
 from catia_copilot.constants import (
     BOM_COLUMN_DISPLAY_NAMES,
@@ -749,7 +750,7 @@ class PlmWorkbench(QMainWindow):
         hdr = self._preview_tree.header()
         hdr.setSectionResizeMode(QHeaderView.Interactive)
         hdr.setStretchLastSection(True)
-        hdr.setFixedHeight(_ROW_HEIGHT)
+        hdr.setFixedHeight(L.TABLE_ROW_HEIGHT)
         v_prev.addWidget(self._preview_tree, 1)
 
         # 进度 & 状态（嵌入 GroupBox 底部）
