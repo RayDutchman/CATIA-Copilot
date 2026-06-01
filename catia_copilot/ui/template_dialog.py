@@ -38,8 +38,8 @@ class TemplateDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("模板对话框")
-        self.setMinimumSize(480, 360)
-        self.resize(640, 480)
+        self.setMinimumSize(500, 500)
+        self.resize(500, 500)
 
         self._settings = QSettings("CATIACompanion", self._SETTINGS_KEY)
         self._geometry_restored = False   # 标记：首次 showEvent 时恢复几何

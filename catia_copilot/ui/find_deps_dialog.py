@@ -123,8 +123,8 @@ class FindDependenciesDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("查找指向的文档")
-        self.setMinimumSize(800, 580)
-        self.resize(1000, 660)
+        self.setMinimumSize(750, 500)
+        self.resize(900, 650)
 
         self._settings = QSettings("CATIACompanion", "FindDependenciesDialog")
 

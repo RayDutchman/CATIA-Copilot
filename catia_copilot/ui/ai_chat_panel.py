@@ -24,14 +24,14 @@ import traceback
 import urllib.request
 from pathlib import Path
 from typing import Any
-from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings
+from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings, QThread
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QTextEdit, QTextBrowser,
     QFrame, QSizePolicy, QDialog, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
-    QDialogButtonBox, QToolButton, QListWidget, QListWidgetItem,
+    QDialogButtonBox, QListWidget, QListWidgetItem,
     QMenu, QInputDialog, QMessageBox, QSplitter, QSplitterHandle,
 )
 
@@ -378,7 +378,7 @@ class ToolCallWidget(QFrame):
         header = QHBoxLayout()
         header.setSpacing(L.TOOL_CARD_HEADER_SPACING)
 
-        self._toggle_btn = QToolButton()
+        self._toggle_btn = QPushButton()
         self._toggle_btn.setText("▶")
         self._toggle_btn.setFixedSize(*L.TOOL_CARD_TOGGLE_SIZE)
         self._toggle_btn.clicked.connect(self._toggle)
@@ -1390,9 +1390,8 @@ class AIChatPanel(QWidget):
         self._refresh_model_combo()
         layout.addWidget(self._model_combo)
 
-        # ⚙ 全局设置：用 QToolButton 避免继承主窗口 Tab QSS
-        self._settings_btn = QToolButton()
-        self._settings_btn.setText("⚙ 全局设置")
+        # ⚙ 全局设置
+        self._settings_btn = QPushButton("⚙ 全局设置")
         self._settings_btn.setToolTip("全局 AI 设置（API Key、默认模型、Temperature 等）")
         self._settings_btn.clicked.connect(self._open_settings)
         layout.addWidget(self._settings_btn)

@@ -658,7 +658,7 @@ class HelpDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"{APP_NAME} — 帮助文档")
         self.resize(700, 560)
-        self.setMinimumSize(480, 360)
+        self.setMinimumSize(500, 500)
 
         self._settings = QSettings("CATIACompanion", "HelpDialog")
         

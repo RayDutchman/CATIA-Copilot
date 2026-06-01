@@ -160,8 +160,8 @@ class MassPropsDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("质量特性工作台")
-        self.setMinimumSize(1100, 650)
-        self.resize(1300, 750)
+        self.setMinimumSize(900, 600)
+        self.resize(1100, 700)
 
         self._settings = QSettings("CATIACompanion", "MassPropsDialog")
         self._last_browse_dir: str = self._settings.value("last_browse_dir", "")

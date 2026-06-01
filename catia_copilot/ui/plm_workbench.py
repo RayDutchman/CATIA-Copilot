@@ -333,8 +333,8 @@ class PlmWorkbench(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("PLM 工作台")
-        self.resize(1080, 740)
-        self.setMinimumSize(860, 560)
+        self.setMinimumSize(900, 600)
+        self.resize(1100, 700)
 
         # 恢复窗口几何（位置和尺寸）
         s = QSettings(_S_ORG, _S_WB)
