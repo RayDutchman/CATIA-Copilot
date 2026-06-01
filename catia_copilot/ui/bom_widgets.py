@@ -96,13 +96,22 @@ class _BomTreeWidget(QTreeWidget):
     def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex) -> None:
         """先让风格画展开/折叠箭头，再叠加虚线连接线。
 
+        windows11/windowsvista 风格在有全局 QSS 时不自绘竖线/横线，需要手动补。
+        其他风格（windows 经典、Fusion、macOS 等）自带连接线，直接交由 super() 处理。
+
         坐标系：rect 覆盖从 x=0 到当前层缩进终点的整个 branch 区域，
         宽度 = (depth+1) * indent，高度 = 行高。
-        windows11 风格将箭头画在最右边 indent 格子的中央，
+        Qt 所有内置风格的箭头均画在最右边 indent 格子的中央，
         即 x = rect.right() - indent//2，连接线与此对齐。
         """
-        # 先让 windows11 风格画原生箭头（PE_IndicatorBranch）
+        # 先让风格画原生箭头（PE_IndicatorBranch）
         super().drawBranches(painter, rect, index)
+
+        # 只有 windows11/windowsvista 风格需要手动补虚线；
+        # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
+        style_name = self.style().objectName().lower()
+        if style_name not in ("windows11", "windowsvista"):
+            return
 
         item = self.itemFromIndex(index)
         if item is None:
@@ -138,8 +147,7 @@ class _BomTreeWidget(QTreeWidget):
         row_h = rect.height()
         mid_y = rect.top() + row_h // 2
 
-        # windows11 风格箭头中心 x = rect.right() - indent//2
-        # 连接线与箭头对齐，再左移 1px 使视觉居中
+        # 各层连接线中心 x，与风格箭头对齐，再左移 1px 使视觉居中
         def layer_x(d: int) -> int:
             return rect.left() + (d + 1) * indent - indent // 2 - 1
 
