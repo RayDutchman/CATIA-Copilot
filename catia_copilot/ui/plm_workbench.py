@@ -745,7 +745,7 @@ class PlmWorkbench(QMainWindow):
         self._preview_tree.setRootIsDecorated(True)
         # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
         # 开启后 branch 列背景无法同步，会出现竖条色块。
-        self._preview_tree.setAlternatingRowColors(False)
+        self._preview_tree.setAlternatingRowColors(True)
         self._preview_tree.setIndentation(16)
         # 行高由 _BomTreeWidget 内置的 _RowHeightDelegate.sizeHint() 保证，无需 setStyleSheet
         self._preview_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)

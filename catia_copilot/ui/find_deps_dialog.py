@@ -198,7 +198,7 @@ class FindDependenciesDialog(QDialog):
         self._table.setIndentation(0)
         # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
         # 开启后 branch 列背景无法同步，会出现竖条色块。
-        self._table.setAlternatingRowColors(False)
+        self._table.setAlternatingRowColors(True)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.itemDoubleClicked.connect(self._open_item)
