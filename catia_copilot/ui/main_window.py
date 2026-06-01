@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
-        self.setMinimumSize(600, 600)
+        self.setMinimumSize(540, 420)
 
         # 连接嵌入面板回调信号到槽（必须在 _embed_manager 创建前）
         self._embed_action_signal.connect(self._handle_embed_action)
@@ -852,17 +852,6 @@ class MainWindow(QMainWindow):
 
         # 启动 CATIA 状态监听定时器（如果尚未启动）
         self._start_catia_monitor()
-
-        # 如果 CATIA 当前处于最小化状态，立即将对话框加入隐藏列表并隐藏，
-        # 避免定时器在 500ms 内再次检测到最小化状态时重复 hide() 导致对话框被销毁
-        if getattr(self, "_catia_was_minimized", False):
-            dlg.hide()
-            if hasattr(self, "_hidden_dialogs"):
-                geom = bytes(dlg.saveGeometry())
-                self._hidden_dialogs.add(attr)
-                if hasattr(self, "_dialog_geometries"):
-                    self._dialog_geometries[attr] = geom
-            logger.debug(f"_show_dialog: CATIA 最小化中，对话框 {attr} 延迟到 CATIA 还原后显示")
 
     def _on_dialog_destroyed(self, attr: str) -> None:
         """对话框被销毁时的回调，清理引用和隐藏记录。"""
