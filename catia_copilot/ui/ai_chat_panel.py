@@ -870,10 +870,10 @@ class _CollapseHandle(QSplitterHandle):
         # handle 整体背景（与侧边栏融合，不突兀）
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
-        # 两侧边缘竖线：与分隔线同色，提示此处可拖动
-        # 右侧不画线——ChatArea 的 palette(base) 背景与 handle 背景的颜色差已形成自然分隔
-        painter.setPen(QColor(c.divider))
+        # 两侧边缘竖线：用 handle_line（Midlight）颜色，在深/浅两侧背景上都清晰可见
+        painter.setPen(QColor(c.handle_line))
         painter.drawLine(0, 0, 0, self.height() - 1)
+        painter.drawLine(self._W - 1, 0, self._W - 1, self.height() - 1)
 
         # 箭头按钮区域背景（hover 时高亮）
         btn_rect = self._arrow_rect()

@@ -182,6 +182,7 @@ class ChatColors:
     handle_bg:     str
     handle_hover:  str
     handle_fg:     str
+    handle_line:   str   # handle 两侧竖线颜色（Midlight，比 divider 更亮）
 
 
 def get_chat_colors(mode: str) -> ChatColors:
@@ -220,10 +221,12 @@ def get_chat_colors(mode: str) -> ChatColors:
     sidebar_hover = mid_light
 
     # 分隔线 / handle：用 Mid 色
-    divider     = mid
-    handle_bg   = window_bg
+    divider      = mid
+    handle_bg    = window_bg
     handle_hover = mid_light
-    handle_fg   = _pal_hex(QPalette.ColorRole.ButtonText)
+    handle_fg    = _pal_hex(QPalette.ColorRole.ButtonText)
+    # handle 两侧竖线：用 Midlight，比 Mid 更亮，在深/浅两侧背景上都清晰可见
+    handle_line  = mid_light
 
     return ChatColors(
         user_bg=user_bg, user_fg=user_fg,
@@ -233,6 +236,7 @@ def get_chat_colors(mode: str) -> ChatColors:
         sidebar_bg=sidebar_bg, sidebar_fg=sidebar_fg,
         sidebar_sel=sidebar_sel, sidebar_hover=sidebar_hover,
         divider=divider,
-        handle_bg=handle_bg, handle_hover=handle_hover, handle_fg=handle_fg,
+        handle_bg=handle_bg, handle_hover=handle_hover,
+        handle_fg=handle_fg, handle_line=handle_line,
     )
 
