@@ -850,18 +850,28 @@ class MainWindow(QMainWindow):
         dlg.raise_()
         dlg.activateWindow()
 
+        # 置顶时启动 CATIA 状态监听（跟随最小化/还原），不置顶时不监听
+        if self._dlg_topmost:
+            self._start_catia_monitor()
+
     def _on_dialog_destroyed(self, attr: str) -> None:
-        """对话框被销毁时的回调，清理引用。"""
+        """对话框被销毁时的回调，清理引用和隐藏记录。"""
         setattr(self, attr, None)
+        if hasattr(self, "_hidden_dialogs") and attr in self._hidden_dialogs:
+            self._hidden_dialogs.discard(attr)
 
     def _toggle_dlg_topmost(self) -> None:
         """切换对话框置顶开关，立即对所有已开对话框生效，并持久化。"""
         self._dlg_topmost = self._btn_dlg_topmost.isChecked()
         QSettings("CATIACopilot", "MainWindow").setValue("dlg_topmost", self._dlg_topmost)
-        # 对所有已开对话框立即生效（Win32 方式，无闪烁）
         for attr, value in vars(self).items():
             if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)):
                 self._apply_topmost(value)
+        # 置顶时启动监听，不置顶时停止监听（并还原被隐藏的对话框）
+        if self._dlg_topmost:
+            self._start_catia_monitor()
+        else:
+            self._stop_catia_monitor()
         msg = "对话框已设为置顶" if self._dlg_topmost else "对话框已取消置顶"
         self.statusBar().showMessage(msg, 3000)
 
@@ -884,6 +894,65 @@ class MainWindow(QMainWindow):
                                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
         except Exception as e:
             logger.debug(f"_apply_topmost: {e}")
+
+    def _start_catia_monitor(self) -> None:
+        """启动 CATIA 窗口状态监听定时器（仅置顶模式下使用）。"""
+        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
+            return
+        self._catia_monitor_timer = QTimer(self)
+        self._catia_monitor_timer.timeout.connect(self._check_catia_state)
+        self._catia_monitor_timer.start(500)
+        self._catia_was_minimized = False
+        self._hidden_dialogs: set[str] = set()
+        self._dialog_geometries: dict[str, bytes] = {}
+
+    def _stop_catia_monitor(self) -> None:
+        """停止 CATIA 窗口状态监听定时器，并还原所有被隐藏的对话框。"""
+        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
+            self._catia_monitor_timer.stop()
+        # 还原所有因监听而隐藏的对话框
+        for attr in list(getattr(self, "_hidden_dialogs", [])):
+            value = getattr(self, attr, None)
+            if value is not None and isinstance(value, (QDialog, QMainWindow)):
+                geom = getattr(self, "_dialog_geometries", {}).get(attr)
+                value.show()
+                if geom:
+                    from PySide6.QtCore import QByteArray
+                    value.restoreGeometry(QByteArray(geom))
+        self._hidden_dialogs = set()
+        self._dialog_geometries = {}
+
+    def _check_catia_state(self) -> None:
+        """检查 CATIA 窗口状态，同步对话框的显示/隐藏（仅置顶模式下运行）。"""
+        try:
+            import win32gui
+        except ImportError:
+            return
+        catia_hwnd = self._get_catia_hwnd()
+        if not catia_hwnd:
+            return
+        is_minimized = win32gui.IsIconic(catia_hwnd)
+        if is_minimized != self._catia_was_minimized:
+            self._catia_was_minimized = is_minimized
+            if is_minimized:
+                self._hidden_dialogs.clear()
+                self._dialog_geometries.clear()
+                for attr, value in vars(self).items():
+                    if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)) and value.isVisible():
+                        self._dialog_geometries[attr] = bytes(value.saveGeometry())
+                        value.hide()
+                        self._hidden_dialogs.add(attr)
+            else:
+                for attr in list(self._hidden_dialogs):
+                    value = getattr(self, attr, None)
+                    if value is not None and isinstance(value, (QDialog, QMainWindow)):
+                        value.show()
+                        geom = self._dialog_geometries.get(attr)
+                        if geom:
+                            from PySide6.QtCore import QByteArray
+                            value.restoreGeometry(QByteArray(geom))
+                self._hidden_dialogs.clear()
+                self._dialog_geometries.clear()
 
     def _get_catia_hwnd(self) -> int:
         """查找 CATIA V5 主窗口句柄，未找到返回 0。"""
@@ -1202,11 +1271,14 @@ class MainWindow(QMainWindow):
         # 停止嵌入面板
         if hasattr(self, "_embed_manager"):
             self._embed_manager.stop()
-        
+
         # 停止吸附边栏
         if hasattr(self, "_sidebar_manager"):
             self._sidebar_manager.stop()
-        
+
+        # 停止 CATIA 状态监听定时器
+        self._stop_catia_monitor()
+
         # 停止 AI Agent（如果正在运行）
         if hasattr(self, "_ai_chat_panel"):
             self._ai_chat_panel.stop_agent()
