@@ -66,7 +66,7 @@ class FileConvertDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumSize(500, 450)
+        self.setMinimumSize(500, 500)
 
         self._file_filter           = file_filter
         self._no_files_msg          = no_files_msg

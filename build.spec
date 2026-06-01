@@ -61,7 +61,6 @@ a = Analysis(
         ('macros', 'macros'),
         ('drawing_templates', 'drawing_templates'),
         ('crack', 'crack'),
-        ('catia_copilot/ui/style.qss', 'catia_copilot/ui'),
         ('catia_copilot', 'catia_copilot'),
     ],
     hiddenimports=[
