@@ -129,7 +129,9 @@ class _BomTreeWidget(QTreeWidget):
         except Exception:
             line_color = QColor("#808080")
 
-        pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
+        pen = QPen(line_color, 1, Qt.PenStyle.CustomDashLine)
+        pen.setDashPattern([1, 1])   # 1px 实点 + 1px 间隔，与 Windows 注册表编辑器一致
+        pen.setDashOffset(0)
         painter.save()
         painter.setPen(pen)
 
@@ -137,9 +139,9 @@ class _BomTreeWidget(QTreeWidget):
         mid_y = rect.top() + row_h // 2
 
         # windows11 风格箭头中心 x = rect.right() - indent//2
-        # 各层的 x 坐标：depth 层的中心 = rect.left() + (depth+1)*indent - indent//2
+        # 连接线与箭头对齐，再左移 1px 使视觉居中
         def layer_x(d: int) -> int:
-            return rect.left() + (d + 1) * indent - indent // 2
+            return rect.left() + (d + 1) * indent - indent // 2 - 1
 
         cur_x = layer_x(depth)
 
