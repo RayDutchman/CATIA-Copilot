@@ -14,7 +14,7 @@ import ctypes
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QObject, Signal, QEvent
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
@@ -52,56 +52,54 @@ def _load_qss(name: str) -> str:
 NATIVE_QSS = _load_qss("native.qss")
 
 
-def _apply_dwm_dark_mode(dark: bool) -> None:
-    """通过 Windows DWM API 将所有顶层窗口的系统标题栏切换为深/浅色。
-    非 Windows 平台或 DWM 不可用时静默跳过。
+def _apply_dwm_caption_color(dark: bool) -> None:
+    """通过 DWMWA_CAPTION_COLOR（attr=35，Win11 专属）设置精确标题栏颜色。
+
+    windows11 风格已自动处理 DWMWA_USE_IMMERSIVE_DARK_MODE（深/浅切换），
+    此函数只补充精确的 COLORREF 颜色值，不重复设置 attr=20/19，
+    避免与风格内部调用竞争产生 "Unable to set light window border" 警告。
+    非 Windows 或 DWM 不可用时静默跳过。
     """
     try:
         dwmapi = ctypes.windll.dwmapi  # type: ignore[attr-defined]
         app = QApplication.instance()
         if app is None:
             return
+        # DWMWA_CAPTION_COLOR = 35，颜色格式 COLORREF（0x00BBGGRR）
+        caption_color = ctypes.c_int(0x002b2b2b if dark else 0x00f3f3f3)
         for widget in app.topLevelWidgets():
-            _dwm_set(dwmapi, int(widget.winId()), dark)
+            try:
+                dwmapi.DwmSetWindowAttribute(
+                    int(widget.winId()), 35,
+                    ctypes.byref(caption_color),
+                    ctypes.sizeof(caption_color),
+                )
+            except Exception:
+                pass
     except Exception:
         pass
-
-
-def _dwm_set(dwmapi, hwnd: int, dark: bool) -> None:
-    """对单个 HWND 设置标题栏颜色，跟随系统深色/浅色模式。
-    优先用 DWMWA_CAPTION_COLOR（Win11）设置精确颜色，
-    回退到 DWMWA_USE_IMMERSIVE_DARK_MODE（Win10）。
-    """
-    # DWMWA_CAPTION_COLOR = 35，颜色格式为 COLORREF（0x00BBGGRR）
-    caption_color = 0x002b2b2b if dark else 0x00ffffff
-    try:
-        dwmapi.DwmSetWindowAttribute(
-            hwnd, 35,
-            ctypes.byref(ctypes.c_int(caption_color)),
-            ctypes.sizeof(ctypes.c_int()),
-        )
-        return
-    except Exception:
-        pass
-    # Win10 回退：DWMWA_USE_IMMERSIVE_DARK_MODE = 20 / 19
-    value = ctypes.c_int(1 if dark else 0)
-    for attr in (20, 19):
-        try:
-            dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(value), ctypes.sizeof(value))
-            break
-        except Exception:
-            continue
 
 
 class _DwmEventFilter(QObject):
-    """监听顶层窗口的 Show 事件，确保新打开的对话框也能获得正确的标题栏颜色。"""
+    """监听顶层窗口的 Show 事件，为新打开的对话框补充精确标题栏颜色。
 
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.Show and getattr(obj, "isWindow", lambda: False)():
+    windows11 风格自动处理深/浅切换（DWMWA_USE_IMMERSIVE_DARK_MODE），
+    但不设置精确 COLORREF 颜色（DWMWA_CAPTION_COLOR=35），
+    此过滤器只补充后者，不重复前者。
+    """
+
+    def eventFilter(self, obj: QObject, event) -> bool:
+        if event.type() == 17 and getattr(obj, "isWindow", lambda: False)():
+            # QEvent.Type.Show = 17
             try:
                 dwmapi = ctypes.windll.dwmapi  # type: ignore[attr-defined]
                 dark = theme_manager.current_mode() == "dark"
-                _dwm_set(dwmapi, int(obj.winId()), dark)
+                caption_color = ctypes.c_int(0x002b2b2b if dark else 0x00f3f3f3)
+                dwmapi.DwmSetWindowAttribute(
+                    int(obj.winId()), 35,
+                    ctypes.byref(caption_color),
+                    ctypes.sizeof(caption_color),
+                )
             except Exception:
                 pass
         return False
@@ -171,8 +169,9 @@ class ThemeManager:
         # 通知订阅者（如 AI 聊天面板的气泡颜色逻辑）系统主题已变化
         theme_signal.theme_changed.emit(mode)
 
-        # 通知 Windows DWM 将所有顶层窗口的系统标题栏颜色跟随系统主题
-        _apply_dwm_dark_mode(mode == "dark")
+        # 通知 Windows DWM 设置精确标题栏颜色（DWMWA_CAPTION_COLOR=35）
+        # windows11 风格已自动处理深/浅切换，此处只补充精确颜色，不重复 attr=20/19
+        _apply_dwm_caption_color(mode == "dark")
 
 
 # 全局单例，供整个应用直接导入使用
