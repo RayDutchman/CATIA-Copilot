@@ -884,7 +884,7 @@ class _CollapseHandle(QSplitterHandle):
         arrow = "◀" if not self._is_collapsed() else "▶"
         painter.setPen(QColor(c.handle_fg))
         emoji_font = QFont("Segoe UI Emoji", -1)
-        emoji_font.setPixelSize(10)
+        emoji_font.setPixelSize(L.SPLITTER_ARROW_SIZE)
         painter.setFont(emoji_font)
         painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, arrow)
 

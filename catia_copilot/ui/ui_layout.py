@@ -78,7 +78,8 @@ class _Layout:
 
     # ── Splitter ──────────────────────────────────────────────────────────────
     # AISplitter 分隔侧边栏与右主区
-    SPLITTER_HANDLE_WIDTH:   int   = 10    # 拖动 handle 的宽度（px）
+    SPLITTER_HANDLE_WIDTH:   int   = 16    # 拖动 handle 的宽度（px）
+    SPLITTER_ARROW_SIZE:     int   = 10    # handle 中央箭头字体大小（px）
     SIDEBAR_DEFAULT_WIDTH:   int   = 220   # 侧边栏展开时的默认宽度（px）
 
     # ── 侧边栏 ────────────────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ class _Layout:
     TOOL_CARD_MARGINS:       tuple = (4, 4, 4, 4)   # (left=4, top=4, right=4, bottom=4)
     TOOL_CARD_SPACING:       int   = 2     # 标题行与展开内容之间的间距（px）
     TOOL_CARD_HEADER_SPACING: int  = 4     # 标题行内：折叠箭头与标题文字之间的间距（px）
-    TOOL_CARD_TOGGLE_SIZE:   tuple = (16, 16)   # 折叠/展开箭头按钮尺寸 (width, height)
+    TOOL_CARD_TOGGLE_SIZE:   tuple = (30, 30)   # 折叠/展开箭头按钮尺寸 (width, height)
     TOOL_CARD_RADIUS:        int   = 8     # 卡片圆角半径（px）
     #
     # TOOL_CARD_CONTENT_MARGINS：展开后内容区域（_content_widget）的 layout margins，
