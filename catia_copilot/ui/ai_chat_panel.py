@@ -870,8 +870,8 @@ class _CollapseHandle(QSplitterHandle):
         # handle 整体背景（与侧边栏融合，不突兀）
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
-        # 两侧边缘竖线：用 handle_line（Midlight）颜色，2px 宽与水平分隔线视觉统一
-        pen = QPen(QColor(c.handle_line))
+        # 两侧边缘竖线：与侧边栏分隔线同色（divider）
+        pen = QPen(QColor(c.divider))
         pen.setWidth(2)
         painter.setPen(pen)
         painter.drawLine(1, 0, 1, self.height() - 1)
