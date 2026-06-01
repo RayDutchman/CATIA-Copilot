@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QTextCursor
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QTextEdit, QTextBrowser,
@@ -870,10 +870,12 @@ class _CollapseHandle(QSplitterHandle):
         # handle 整体背景（与侧边栏融合，不突兀）
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
-        # 两侧边缘竖线：用 handle_line（Midlight）颜色，在深/浅两侧背景上都清晰可见
-        painter.setPen(QColor(c.handle_line))
-        painter.drawLine(0, 0, 0, self.height() - 1)
-        painter.drawLine(self._W - 1, 0, self._W - 1, self.height() - 1)
+        # 两侧边缘竖线：用 handle_line（Midlight）颜色，2px 宽与水平分隔线视觉统一
+        pen = QPen(QColor(c.handle_line))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawLine(1, 0, 1, self.height() - 1)
+        painter.drawLine(self._W - 2, 0, self._W - 2, self.height() - 1)
 
         # 箭头按钮区域背景（hover 时高亮）
         btn_rect = self._arrow_rect()

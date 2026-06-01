@@ -79,14 +79,14 @@ class _Layout:
     # ── Splitter ──────────────────────────────────────────────────────────────
     # AISplitter 分隔侧边栏与右主区
     SPLITTER_HANDLE_WIDTH:   int   = 16    # 拖动 handle 的宽度（px）
-    SPLITTER_ARROW_SIZE:     int   = 10    # handle 中央箭头字体大小（px）
+    SPLITTER_ARROW_SIZE:     int   = 16    # handle 中央箭头字体大小（px）
     SIDEBAR_DEFAULT_WIDTH:   int   = 220   # 侧边栏展开时的默认宽度（px）
 
     # ── 侧边栏 ────────────────────────────────────────────────────────────────
     SIDEBAR_HEADER_HEIGHT:   int   = 40    # 顶部标题栏高度（px）
     SIDEBAR_HEADER_MARGINS:  tuple = (8, 2, 8, 2)   # 标题栏 layout margins (left,top,right,bottom)
     SIDEBAR_HEADER_SPACING:  int   = 4     # 标题栏内控件间距（px）
-    SIDEBAR_DIVIDER_HEIGHT:  int   = 1     # 标题栏与列表之间分隔线高度（px）
+    SIDEBAR_DIVIDER_HEIGHT:  int   = 2     # 侧边栏分隔线高度（px），与 splitter 竖线视觉统一
     SIDEBAR_LIST_SPACING:    int   = 0     # 列表项间距（px）；间距靠 ::item padding 控制，此处为 0
     SIDEBAR_BOTTOM_HEIGHT:   int   = 52    # 底部"新对话"按钮区高度（px）
     SIDEBAR_BOTTOM_MARGINS:  tuple = (8, 0, 8, 2)   # 底部区域 layout margins
@@ -95,7 +95,7 @@ class _Layout:
     # ── 工具栏（toolbar） ─────────────────────────────────────────────────────
     # toolbar 是 chat_area 顶部的一行，包含会话标题、模型选择、设置按钮
     TOOLBAR_HEIGHT:          int   = 40    # toolbar 固定高度（px）
-    TOOLBAR_DIVIDER_HEIGHT:  int   = 1     # toolbar 底部分隔线高度（px）
+    TOOLBAR_DIVIDER_HEIGHT:  int   = 2     # toolbar 底部分隔线高度（px），与 splitter 竖线视觉统一
     TOOLBAR_MARGINS:         tuple = (8, 2, 8, 2)   # toolbar layout margins (left,top,right,bottom)
     TOOLBAR_SPACING:         int   = 4     # toolbar 内控件间距（px）
     SESSION_TITLE_WIDTH:     int   = 120   # 会话名 QLabel 固定宽度（px），超出用省略号
