@@ -41,7 +41,7 @@ from catia_copilot.constants import (
 from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
 from catia_copilot.catia.bom_write import write_bom_to_catia
 from catia_copilot.utils import read_catia_thumbnail
-from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem, _ROW_HEIGHT
+from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.ui_colors import (
     MODIFIED_FG          as _MODIFIED_FG,
@@ -49,6 +49,7 @@ from catia_copilot.ui.ui_colors import (
     get_colors as _get_colors,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
+from catia_copilot.ui.ui_layout import L
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +310,7 @@ class BomEditDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(True)
-        hdr.setFixedHeight(_ROW_HEIGHT)
+        hdr.setFixedHeight(L.TABLE_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)
