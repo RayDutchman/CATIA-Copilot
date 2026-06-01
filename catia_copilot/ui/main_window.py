@@ -94,10 +94,6 @@ class MainWindow(QMainWindow):
 
         # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
         theme_manager.register(self)
-        # register 之后 _manual 才从 QSettings 加载完毕，同步更新按钮文字
-        self._btn_theme.setText(
-            f"主题：{self._THEME_LABELS.get(theme_manager.current_mode(), '深色')}  ▾"
-        )
 
         # CATIA 吸附边栏管理器（默认关闭，用户在"≡"页手动开启）
         self._sidebar_manager = CATIASidebarManager(self)
@@ -726,12 +722,6 @@ class MainWindow(QMainWindow):
         btn_diag.clicked.connect(self._show_catia_diagnostics)
         layout.addWidget(btn_diag)
 
-        _THEME_LABELS = {"dark": "深色", "light": "浅色", "native": "原生（CATIA 风格）"}
-        self._btn_theme = QPushButton(f"主题：{_THEME_LABELS.get(theme_manager.current_mode(), '深色')}  ▾")
-        self._btn_theme.setToolTip("选择界面主题：深色 / 浅色 / 原生（CATIA 风格）")
-        self._btn_theme.clicked.connect(self._show_theme_menu)
-        layout.addWidget(self._btn_theme)
-
         layout.addSpacing(4)
 
         # ── 帮助 ──────────────────────────────────────────────────────
@@ -791,25 +781,6 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         """显示关于对话框。"""
         QMessageBox.about(self, f"About {APP_NAME}", ABOUT_TEXT)
-
-    _THEME_LABELS = {"dark": "深色", "light": "浅色", "native": "原生（CATIA 风格）"}
-
-    def _show_theme_menu(self) -> None:
-        """弹出主题选择菜单（深色 / 浅色 / 原生）。"""
-        menu = QMenu(self)
-        current = theme_manager.current_mode()
-        for name, label in self._THEME_LABELS.items():
-            action = menu.addAction(label)
-            action.setCheckable(True)
-            action.setChecked(current == name)
-            action.triggered.connect(lambda checked=False, n=name: self._apply_theme(n))
-        pos = self._btn_theme.mapToGlobal(self._btn_theme.rect().bottomLeft())
-        menu.exec(pos)
-
-    def _apply_theme(self, name: str) -> None:
-        """应用指定主题并更新按钮文字。"""
-        theme_manager.set_theme(name)
-        self._btn_theme.setText(f"主题：{self._THEME_LABELS.get(name, name)}  ▾")
 
     def _show_help(self) -> None:
         """显示帮助文档对话框。"""

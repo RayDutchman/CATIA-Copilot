@@ -1,17 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════════
-   CATIA Copilot – 原生主题（Native / CATIA 风格）
-   
-   本文件配合 QApplication.setStyle("windows") 使用。
-   Qt 的 "windows" 风格会渲染出 Windows 经典 3D 控件外观（凸起按钮、
-   凹陷输入框、XP 调色板），与 CATIA V5 界面风格一致。
-   
-   本文件只写项目专属控件的最小样式，其余控件全部留空，
-   由 "windows" 风格渲染器完全接管。
+   CATIA Copilot – 原生主题（Windows 系统主题）
+
+   本文件配合 QApplication.setStyle("windowsvista") 使用。
+   windowsvista 风格完全跟随 Windows 系统主题（包括深色模式），
+   字体、圆角、颜色均由 Windows 决定，本文件只写项目专属控件的
+   最小覆盖，其余控件全部留空由系统渲染器接管。
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 节标题标签 ─────────────────────────────────────────────────────── */
 QLabel#sectionLabel {
-    color: #444444;
     font-size: 8pt;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -21,62 +18,45 @@ QLabel#sectionLabel {
 
 /* ── 提示标签 ───────────────────────────────────────────────────────── */
 QLabel#hintLabel {
-    color: #555555;
     font-size: 9pt;
     background: transparent;
     margin-bottom: 4px;
 }
 
 /* ── CATIA 连接状态指示器 ───────────────────────────────────────────── */
-QLabel#catiaStatusLabel { padding: 0 8px; font-size: 8.5pt; color: #555555; }
+QLabel#catiaStatusLabel { padding: 0 8px; font-size: 8.5pt; }
 QLabel#catiaStatusLabel[catiaConnected="true"]   { color: #1a6b1a; }
 QLabel#catiaStatusLabel[catiaConnected="false"]  { color: #cc2200; }
 QLabel#catiaStatusLabel[catiaConnected="broken"] { color: #996600; }
 
-/* ── 日志面板（等宽字体，windows 风格不自动设置）───────────────────── */
+/* ── 日志面板（等宽字体，windowsvista 风格不自动设置）──────────────── */
 QPlainTextEdit#logView {
     font-family: @log_font_family;
     font-size: @log_font_size;
 }
 QLabel#logPathLabel {
-    color: #666666;
     font-size: 8.5pt;
     background: transparent;
 }
 
-/* ── 主界面功能按钮高度（windows 风格默认高度偏小）────────────────── */
-QTabWidget#mainTabWidget QPushButton {
-    min-height: 28px;
-}
-/* Toggle 按钮：选中时蓝色高亮 */
-QPushButton#toggleButton:checked {
-    background-color: #346792;
-    color: #ffffff;
-}
-
-/* ── AI 聊天面板：布局容器圆角清零 ──────────────────────────────────────── */
+/* ── AI 聊天面板：布局容器圆角/边框清零 ─────────────────────────────── */
+/* windowsvista 风格会给部分容器加边框，这里精确清零避免多余边框线 */
 QWidget#ChatArea,
 QWidget#ToolbarWrapper,
 QWidget#ToolbarBar,
 QWidget#InputArea {
-  border-radius: 0px;
+    border: none;
+    border-radius: 0px;
 }
 QWidget#SidebarHeader,
 QWidget#SidebarBottom {
-  border: none;
-  border-radius: 0px;
-}
-SessionSidebar QListWidget#SessionList {
-  border: none;
-  border-radius: 0px;
-}
-SessionSidebar QListWidget#SessionList::item {
-  border-radius: 0px;
+    border: none;
+    border-radius: 0px;
 }
 QSplitter#InputSplitter {
-  border-radius: 0px;
+    border-radius: 0px;
 }
 QSplitter#InputSplitter::handle {
-  border-radius: 0px;
-  image: none;
+    border-radius: 0px;
+    image: none;
 }

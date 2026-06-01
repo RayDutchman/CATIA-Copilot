@@ -117,7 +117,7 @@ class _BaseBrowser(QTextBrowser):
     1. resizeEvent：宽度变化时通知布局系统重新询问 sizeHint。
     2. contextMenuEvent：过滤掉 "Copy Link Location" 等无关菜单项，
        只保留 Copy 和 Select All，并确保菜单使用 QApplication 的全局
-       stylesheet（即 qdarkstyle 主题），而不是从父 widget 继承错误的样式。
+       stylesheet（即系统主题），而不是从父 widget 继承错误的样式。
 
     _doc_height() 由子类实现，返回文档所需的像素高度。
     """
@@ -134,7 +134,7 @@ class _BaseBrowser(QTextBrowser):
         """只保留 Copy 和 Select All，去掉 Copy Link Location 等无关项。
 
         创建无 parent 的 QMenu，使其直接从 QApplication 全局 stylesheet
-        获取样式（qdarkstyle 主题），而不是从父 widget 继承错误的背景色。
+        获取样式，而不是从父 widget 继承错误的背景色。
         """
         src = self.createStandardContextMenu(event.pos())
         # 创建无 parent 的菜单，确保从 QApplication stylesheet 获取主题样式
@@ -467,8 +467,8 @@ class ToolCallWidget(QFrame):
             f"font-size: {L.TOOL_CARD_RESULT_FONT_SIZE}px; "
             f"font-family: monospace; border: none; }}"
         )
-        # QPalette 直接设置 viewport 背景，确保 qdarkstyle 的 QAbstractScrollArea
-        # 规则不会把 viewport 底色覆盖成主题色
+        # QPalette 直接设置 viewport 背景，确保 windowsvista 风格的
+        # QAbstractScrollArea 规则不会把 viewport 底色覆盖成主题色
         vp_pal = self._result_browser.viewport().palette()
         vp_pal.setColor(QPalette.ColorRole.Base, QColor(bg))
         vp_pal.setColor(QPalette.ColorRole.Window, QColor(bg))
@@ -518,8 +518,7 @@ class ChatScrollArea(QScrollArea):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # qdarkstyle 给所有 QAbstractScrollArea 加了 border + padding，
-        # 导致 viewport 左边缘比外部 widget 多出偏移，与输入框左边线不对齐。
+        # windowsvista 风格会给 QScrollArea 加 border，
         # 用 objectName 选择器覆盖，只影响本实例，不影响其他 QScrollArea。
         self.setObjectName("ChatScrollArea")
         self.setStyleSheet(

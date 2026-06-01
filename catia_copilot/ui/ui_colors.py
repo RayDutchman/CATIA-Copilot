@@ -33,7 +33,8 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication
 
 
 @dataclass(frozen=True)
@@ -130,11 +131,33 @@ WIDGET_LINE_COLOR = _LIGHT.WIDGET_LINE_COLOR
 # AI 聊天面板颜色令牌
 # ===========================================================================
 
+def _pal_hex(role: QPalette.ColorRole, group: QPalette.ColorGroup = QPalette.ColorGroup.Active) -> str:
+    """从当前应用 QPalette 取色，返回 '#rrggbb' 字符串。
+    若 QApplication 尚未创建则返回空字符串（启动期间不会被调用）。
+    """
+    app = QApplication.instance()
+    if app is None:
+        return "#000000"
+    return app.palette().color(group, role).name()
+
+
+def _blend_hex(c1: str, c2: str, t: float) -> str:
+    """在两个 '#rrggbb' 颜色之间线性插值，t=0 返回 c1，t=1 返回 c2。"""
+    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+    r = int(r1 + (r2 - r1) * t)
+    g = int(g1 + (g2 - g1) * t)
+    b = int(b1 + (b2 - b1) * t)
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 @dataclass(frozen=True)
 class ChatColors:
-    """AI 聊天面板的颜色令牌，深色/浅色各一个实例。
+    """AI 聊天面板的颜色令牌。
 
     颜色值均为 ``"#rrggbb"`` 字符串，供 QSS / QPainter 直接使用。
+    通过 get_chat_colors() 获取，每次调用都从当前系统 QPalette 动态取色，
+    自动跟随 Windows 深色/浅色主题切换。
     """
     # 用户消息气泡
     user_bg:       str
@@ -142,7 +165,7 @@ class ChatColors:
     # AI 消息气泡
     ai_bg:         str
     ai_fg:         str
-    ai_border:     str   # 气泡细边框，增强与背景的区分
+    ai_border:     str
     # 工具调用卡片
     tool_bg:       str
     tool_fg:       str
@@ -153,58 +176,63 @@ class ChatColors:
     sidebar_fg:    str
     sidebar_sel:   str
     sidebar_hover: str
-    # 分隔线（侧边栏标题/底部、toolbar 底部）
+    # 分隔线
     divider:       str
     # Splitter handle
-    handle_bg:     str   # handle 整体背景（与侧边栏融合）
-    handle_hover:  str   # 箭头区域 hover 背景
-    handle_fg:     str   # 箭头文字颜色
-
-
-_CHAT_DARK = ChatColors(
-    user_bg       = "#1e3a5f",
-    user_fg       = "#e8f0fe",
-    ai_bg         = "#1e2d3d",   # 比 qdarkstyle 背景(#19232D)亮，带蓝调，有明显区分
-    ai_fg         = "#dce8f0",
-    ai_border     = "#2e4a62",   # 细边框，进一步勾勒气泡边界
-    tool_bg       = "#1a2a1a",
-    tool_fg       = "#a0d0a0",
-    tool_border   = "#3a5a3a",
-    progress_fg   = "#808080",
-    sidebar_bg    = "#19232D",   # 与 qdarkstyle 主背景一致，消除色调冲突
-    sidebar_fg    = "#DFE1E2",   # qdarkstyle 标准文字色
-    sidebar_sel   = "#346792",   # qdarkstyle 选中色
-    sidebar_hover = "#37414F",   # qdarkstyle hover 色
-    divider       = "#37414F",   # qdarkstyle 边框/分隔色
-    handle_bg     = "#293544",   # qdarkstyle 次背景
-    handle_hover  = "#37414F",
-    handle_fg     = "#9DA9B5",   # qdarkstyle 次要文字色
-)
-
-_CHAT_LIGHT = ChatColors(
-    user_bg       = "#dce8ff",
-    user_fg       = "#1a1a2e",
-    ai_bg         = "#eef2f7",   # 带蓝调的浅灰，在白色背景上有明显区分
-    ai_fg         = "#1a1a1a",
-    ai_border     = "#c8d8e8",   # 浅蓝灰细边框
-    tool_bg       = "#f0fff0",
-    tool_fg       = "#2e7d32",
-    tool_border   = "#a5d6a7",
-    progress_fg   = "#757575",
-    sidebar_bg    = "#FAFAFA",   # 与 qdarkstyle light 主背景一致
-    sidebar_fg    = "#19232D",   # qdarkstyle light 标准文字色
-    sidebar_sel   = "#DAEDFF",   # qdarkstyle light 选中色
-    sidebar_hover = "#D2D5D8",   # qdarkstyle light hover 色
-    divider       = "#C0C4C8",   # qdarkstyle light 边框/分隔色
-    handle_bg     = "#F0F2F3",   # qdarkstyle light 次背景
-    handle_hover  = "#C0C4C8",
-    handle_fg     = "#555555",
-)
+    handle_bg:     str
+    handle_hover:  str
+    handle_fg:     str
 
 
 def get_chat_colors(mode: str) -> ChatColors:
-    """根据主题模式返回 AI 聊天面板颜色集。
+    """从当前系统 QPalette 动态构建 AI 聊天面板颜色集，跟随系统主题。
 
-    :param mode: "dark" 或 "light"（其他值等同于 "light"）
+    :param mode: "dark" 或 "light"（由 theme_manager.current_mode() 提供）
     """
-    return _CHAT_DARK if mode == "dark" else _CHAT_LIGHT
+    # 从系统 QPalette 取基础色
+    window_bg   = _pal_hex(QPalette.ColorRole.Window)           # 窗口背景
+    window_text = _pal_hex(QPalette.ColorRole.WindowText)       # 窗口文字
+    base_bg     = _pal_hex(QPalette.ColorRole.Base)             # 输入框/列表背景
+    highlight   = _pal_hex(QPalette.ColorRole.Highlight)        # 选中色
+    mid         = _pal_hex(QPalette.ColorRole.Mid)              # 中间色（边框/分隔线）
+    button_bg   = _pal_hex(QPalette.ColorRole.Button)           # 按钮背景
+    mid_light   = _pal_hex(QPalette.ColorRole.Midlight)         # 浅中间色
+
+    # 用户气泡：用 Highlight 色系（选中蓝），混入背景使其柔和
+    user_bg = _blend_hex(highlight, window_bg, 0.6)
+    user_fg = window_text
+
+    # AI 气泡：用 Base 色（比 Window 略亮/暗），加细边框
+    ai_bg     = base_bg
+    ai_fg     = window_text
+    ai_border = mid
+
+    # 工具卡片：用 Button 色（比 Window 略有区分）
+    tool_bg     = button_bg
+    tool_fg     = window_text
+    tool_border = mid
+    progress_fg = _pal_hex(QPalette.ColorRole.PlaceholderText)
+
+    # 侧边栏：与窗口背景一致，选中用 Highlight
+    sidebar_bg    = window_bg
+    sidebar_fg    = window_text
+    sidebar_sel   = highlight
+    sidebar_hover = mid_light
+
+    # 分隔线 / handle：用 Mid 色
+    divider     = mid
+    handle_bg   = window_bg
+    handle_hover = mid_light
+    handle_fg   = _pal_hex(QPalette.ColorRole.ButtonText)
+
+    return ChatColors(
+        user_bg=user_bg, user_fg=user_fg,
+        ai_bg=ai_bg, ai_fg=ai_fg, ai_border=ai_border,
+        tool_bg=tool_bg, tool_fg=tool_fg, tool_border=tool_border,
+        progress_fg=progress_fg,
+        sidebar_bg=sidebar_bg, sidebar_fg=sidebar_fg,
+        sidebar_sel=sidebar_sel, sidebar_hover=sidebar_hover,
+        divider=divider,
+        handle_bg=handle_bg, handle_hover=handle_hover, handle_fg=handle_fg,
+    )
+
