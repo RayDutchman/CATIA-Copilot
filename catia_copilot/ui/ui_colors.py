@@ -38,9 +38,8 @@ from PySide6.QtGui import QColor
 
 @dataclass(frozen=True)
 class RowColors:
-    """一套完整的行状态颜色 + 样式表字符串，深色/浅色各一个实例。"""
+    """一套完整的行状态颜色，深色/浅色各一个实例。"""
     MODIFIED_FG:          QColor
-    MODIFIED_COMBO_STYLE: str
     ROW_LOCKED_FG:        QColor
     ROW_NOT_FOUND_BG:     QColor
     ROW_LIGHTWEIGHT_BG:   QColor
@@ -62,7 +61,6 @@ class RowColors:
 # ── 浅色主题（默认）──────────────────────────────────────────────────────────
 _LIGHT = RowColors(
     MODIFIED_FG          = QColor("#c05800"),   # 深橙：已修改字段文字
-    MODIFIED_COMBO_STYLE = "QComboBox { font-weight: bold; color: #c05800; }",
     ROW_LOCKED_FG        = QColor("#909090"),   # 中灰：锁定行文字
     ROW_NOT_FOUND_BG     = QColor("#ffcccc"),   # 粉红：_not_found
     ROW_LIGHTWEIGHT_BG   = QColor("#ebebeb"),   # 浅灰：_unreadable（轻量化）
@@ -84,7 +82,6 @@ _LIGHT = RowColors(
 # ── 深色主题（柔和暗色调，避免在深色背景上过于刺眼）────────────────────────
 _DARK = RowColors(
     MODIFIED_FG          = QColor("#ff9040"),   # 亮橙：深色背景下可读
-    MODIFIED_COMBO_STYLE = "QComboBox { font-weight: bold; color: #ff9040; }",
     ROW_LOCKED_FG        = QColor("#767676"),   # 中灰：锁定行文字
     ROW_NOT_FOUND_BG     = QColor("#5a2020"),   # 暗红：_not_found
     ROW_LIGHTWEIGHT_BG   = QColor("#383838"),   # 深灰：_unreadable（轻量化）
@@ -115,7 +112,6 @@ def get_colors(mode: str) -> RowColors:
 # ── 向后兼容：保留模块级常量（均为浅色主题值）────────────────────────────────
 # 旧代码可继续直接导入这些常量；新代码请改用 get_colors()。
 MODIFIED_FG          = _LIGHT.MODIFIED_FG
-MODIFIED_COMBO_STYLE = _LIGHT.MODIFIED_COMBO_STYLE
 ROW_LOCKED_FG        = _LIGHT.ROW_LOCKED_FG
 ROW_NOT_FOUND_BG     = _LIGHT.ROW_NOT_FOUND_BG
 ROW_LIGHTWEIGHT_BG   = _LIGHT.ROW_LIGHTWEIGHT_BG

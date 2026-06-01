@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressDialog, QRadioButton, QButtonGroup,
     QMenu, QWidgetAction, QLineEdit,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush
+from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush, QPalette, QColor
 from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
 
 from catia_copilot.constants import (
@@ -45,7 +45,6 @@ from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.ui_colors import (
     MODIFIED_FG          as _MODIFIED_FG,
-    MODIFIED_COMBO_STYLE as _MODIFIED_COMBO_STYLE,
     ROW_LOCKED_FG, ROW_NOT_FOUND_BG, ROW_LIGHTWEIGHT_BG, ROW_UNSAVED_BG,
     get_colors as _get_colors,
 )
@@ -54,6 +53,19 @@ from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 logger = logging.getLogger(__name__)
 
 _MAX_HISTORY = 10  # 撤销/重做最大步数
+
+
+def _make_tree_combo(items: list[str]) -> QComboBox:
+    """创建嵌入 QTreeWidget 行的 QComboBox。
+
+    不使用 setStyleSheet，避免创建独立样式上下文导致下拉列表位置偏移。
+    外观跟随 qdarkstyle 默认 QComboBox 样式。
+    """
+    combo = QComboBox()
+    combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    combo.setMaximumHeight(24)
+    combo.addItems(items)
+    return combo
 
 
 class BomEditDialog(QDialog):
@@ -823,11 +835,8 @@ class BomEditDialog(QDialog):
                     )
                     if pn_val not in SOURCE_OPTIONS:
                         pn_val = SOURCE_TO_DISPLAY.get(pn_val, SOURCE_OPTIONS[0])
-                    combo = QComboBox()
-                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
-                    combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不抢走树的焦点，避免已选行高亮消失
+                    combo = _make_tree_combo(SOURCE_OPTIONS)
                     combo.blockSignals(True)
-                    combo.addItems(SOURCE_OPTIONS)
                     combo.setCurrentText(pn_val)
                     combo.blockSignals(False)
                     if row_locked:
@@ -855,11 +864,8 @@ class BomEditDialog(QDialog):
                             col_name, pn_val, pn,
                         )
                         display_opts.append(pn_val)
-                    combo = QComboBox()
-                    combo.setObjectName("treeCombo")  # QSS 专属规则：无边框透明背景，融入 tree item
-                    combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # 不抢走树的焦点，避免已选行高亮消失
+                    combo = _make_tree_combo(display_opts)
                     combo.blockSignals(True)
-                    combo.addItems(display_opts)
                     combo.setCurrentText(pn_val)
                     combo.blockSignals(False)
                     if row_locked:
@@ -1366,9 +1372,19 @@ class BomEditDialog(QDialog):
                         is_modified = col_name in modified_cols
                         widget = self._table.itemWidget(item, col_idx)
                         if isinstance(widget, QComboBox):
-                            widget.setStyleSheet(
-                                c.MODIFIED_COMBO_STYLE if is_modified else ""
-                            )
+                            # 用 setFont/QPalette 代替 setStyleSheet，
+                            # 避免 setStyleSheet 创建独立样式上下文导致下拉列表位置偏移。
+                            font = widget.font()
+                            font.setBold(is_modified)
+                            widget.setFont(font)
+                            if is_modified:
+                                pal = widget.palette()
+                                pal.setColor(QPalette.ColorRole.ButtonText,
+                                             QColor(c.MODIFIED_FG))
+                                widget.setPalette(pal)
+                            else:
+                                # 恢复默认调色板
+                                widget.setPalette(widget.style().standardPalette())
                         else:
                             if is_modified:
                                 font = item.font(col_idx)
