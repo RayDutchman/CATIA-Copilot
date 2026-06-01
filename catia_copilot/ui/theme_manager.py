@@ -159,11 +159,13 @@ class ThemeManager:
         # native.qss 只含项目专属控件的最小覆盖（日志字体、状态标签颜色等）
         # 字体常量统一从 L（ui_layout.py）读取
         qss = NATIVE_QSS \
-            .replace("@mono_font_family",   L.MONO_FONT_FAMILY) \
-            .replace("@mono_font_size_pt",  L.MONO_FONT_SIZE_PT) \
-            .replace("@label_font_size_pt", L.LABEL_FONT_SIZE_PT) \
-            .replace("@hint_font_size_pt",  L.HINT_FONT_SIZE_PT) \
-            .replace("@status_font_size_pt", L.STATUS_FONT_SIZE_PT)
+            .replace("@mono_font_family",    L.MONO_FONT_FAMILY) \
+            .replace("@mono_font_size_pt",   L.MONO_FONT_SIZE_PT) \
+            .replace("@label_font_size_pt",  L.LABEL_FONT_SIZE_PT) \
+            .replace("@hint_font_size_pt",   L.HINT_FONT_SIZE_PT) \
+            .replace("@status_font_size_pt", L.STATUS_FONT_SIZE_PT) \
+            .replace("@button_font_size_pt", L.BUTTON_FONT_SIZE_PT) \
+            .replace("@tab_font_size_pt",    L.TAB_FONT_SIZE_PT)
         app.setStyleSheet(qss)
 
         # 通知订阅者（如 AI 聊天面板的气泡颜色逻辑）系统主题已变化

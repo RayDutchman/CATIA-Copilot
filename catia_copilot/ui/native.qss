@@ -12,7 +12,19 @@
      @label_font_size_pt  节标题字号
      @hint_font_size_pt   提示标签字号
      @status_font_size_pt 状态标签字号
+     @button_font_size_pt 按钮文字字号
+     @tab_font_size_pt    Tab 标签文字字号
    ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 按钮文字 ───────────────────────────────────────────────────────── */
+QPushButton {
+    font-size: @button_font_size_pt;
+}
+
+/* ── Tab 标签文字 ────────────────────────────────────────────────────── */
+QTabBar::tab {
+    font-size: @tab_font_size_pt;
+}
 
 /* ── 节标题标签 ─────────────────────────────────────────────────────── */
 QLabel#sectionLabel {

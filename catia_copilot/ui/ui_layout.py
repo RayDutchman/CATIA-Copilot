@@ -61,7 +61,9 @@ class _Layout:
     # ── QSS pt 字号（用于 native.qss 占位符替换）────────────────────────────
     LABEL_FONT_SIZE_PT:      str = "8pt"    # 节标题（sectionLabel）
     HINT_FONT_SIZE_PT:       str = "9pt"    # 提示标签（hintLabel）
-    STATUS_FONT_SIZE_PT:     str = "8.5pt"  # CATIA 连接状态标签（catiaStatusLabel）
+    STATUS_FONT_SIZE_PT:     str = "9pt"    # CATIA 连接状态标签（catiaStatusLabel）
+    BUTTON_FONT_SIZE_PT:     str = "9pt"    # 按钮文字（QPushButton）
+    TAB_FONT_SIZE_PT:        str = "9pt"    # Tab 标签文字（QTabBar::tab）
 
     # ── 详细表格（BOM / 质量属性等 QTreeWidget）─────────────────────────────
     TABLE_ROW_HEIGHT:        int = 24   # 统一行高（px），通过 delegate.sizeHint 控制
