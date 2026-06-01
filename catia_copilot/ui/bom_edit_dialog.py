@@ -58,6 +58,9 @@ _MAX_HISTORY = 10  # 撤销/重做最大步数
 
 def _make_tree_combo(items: list[str]) -> QComboBox:
     """创建嵌入 QTreeWidget 行的 QComboBox。
+
+    不使用 setStyleSheet，避免创建独立样式上下文导致下拉列表位置偏移。
+    外观跟随 qdarkstyle 默认 QComboBox 样式。
     """
     combo = QComboBox()
     combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
