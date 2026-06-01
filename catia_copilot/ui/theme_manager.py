@@ -18,6 +18,9 @@ from PySide6.QtCore import Qt, QObject, Signal, QEvent
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
+# 字体常量从 ui_layout 统一管理
+from catia_copilot.ui.ui_layout import L
+
 
 class _ThemeSignalEmitter(QObject):
     """向外广播系统主题切换事件的轻量信号发射器。"""
@@ -34,10 +37,6 @@ theme_signal = _ThemeSignalEmitter()
 # QSS 从同目录的独立文件加载，模块导入时读取一次
 # 文件缺失时回退空字符串，样式降级为系统原生，程序仍可正常启动
 _UI_DIR = Path(__file__).parent
-
-# ── 日志字体常量（native.qss 占位符替换用）──────────────────────────
-LOG_FONT_FAMILY = '"Consolas", "Cascadia Code", "NSimSun", monospace'
-LOG_FONT_SIZE   = "9pt"
 
 # windows11 风格原生支持深色模式；回退到 windowsvista（Qt < 6.7）
 _STYLE_NAME = "windows11" if "windows11" in QStyleFactory.keys() else "windowsvista"
@@ -158,9 +157,13 @@ class ThemeManager:
         app.setStyle(_STYLE_NAME)
 
         # native.qss 只含项目专属控件的最小覆盖（日志字体、状态标签颜色等）
+        # 字体常量统一从 L（ui_layout.py）读取
         qss = NATIVE_QSS \
-            .replace("@log_font_family", LOG_FONT_FAMILY) \
-            .replace("@log_font_size",   LOG_FONT_SIZE)
+            .replace("@mono_font_family",   L.MONO_FONT_FAMILY) \
+            .replace("@mono_font_size_pt",  L.MONO_FONT_SIZE_PT) \
+            .replace("@label_font_size_pt", L.LABEL_FONT_SIZE_PT) \
+            .replace("@hint_font_size_pt",  L.HINT_FONT_SIZE_PT) \
+            .replace("@status_font_size_pt", L.STATUS_FONT_SIZE_PT)
         app.setStyleSheet(qss)
 
         # 通知订阅者（如 AI 聊天面板的气泡颜色逻辑）系统主题已变化

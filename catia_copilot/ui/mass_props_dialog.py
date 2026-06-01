@@ -57,7 +57,8 @@ from catia_copilot.ui.ui_colors import (
     get_colors as _get_colors,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem, _ROW_HEIGHT
+from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
+from catia_copilot.ui.ui_layout import L
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +121,8 @@ class _MassPropsDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         hint = super().sizeHint(option, index)
-        if hint.height() < _ROW_HEIGHT:
-            hint.setHeight(_ROW_HEIGHT)
+        if hint.height() < L.TABLE_ROW_HEIGHT:
+            hint.setHeight(L.TABLE_ROW_HEIGHT)
         return hint
 
 
@@ -255,11 +256,11 @@ class MassPropsDialog(QDialog):
         if mode == "dark":
             return (
                 "QLabel { background-color: #3a2e00; border: 1px solid #8a6800;"
-                " border-radius: 4px; padding: 4px 8px; color: #e0b840; font-size: 11px; }"
+                f" border-radius: 4px; padding: 4px 8px; color: #e0b840; font-size: {L.SMALL_FONT_SIZE}px; }}"
             )
         return (
             "QLabel { background-color: #FFF8E1; border: 1px solid #F9A825;"
-            " border-radius: 4px; padding: 4px 8px; color: #5D4037; font-size: 11px; }"
+            f" border-radius: 4px; padding: 4px 8px; color: #5D4037; font-size: {L.SMALL_FONT_SIZE}px; }}"
         )
 
     @staticmethod
@@ -268,11 +269,11 @@ class MassPropsDialog(QDialog):
         if mode == "dark":
             return (
                 "QLabel { background-color: #102040; border: 1px solid #204878;"
-                " border-radius: 4px; padding: 4px 8px; color: #80b0e0; font-size: 11px; }"
+                f" border-radius: 4px; padding: 4px 8px; color: #80b0e0; font-size: {L.SMALL_FONT_SIZE}px; }}"
             )
         return (
             "QLabel { background-color: #EEF4FC; border: 1px solid #B8D0F0;"
-            " border-radius: 4px; padding: 4px 8px; color: #2B4C7E; font-size: 11px; }"
+            f" border-radius: 4px; padding: 4px 8px; color: #2B4C7E; font-size: {L.SMALL_FONT_SIZE}px; }}"
         )
 
     def _on_theme_changed(self, mode: str) -> None:
@@ -639,7 +640,7 @@ class MassPropsDialog(QDialog):
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         hdr.setStretchLastSection(True)
         hdr.setSectionsMovable(False)
-        hdr.setFixedHeight(_ROW_HEIGHT)
+        hdr.setFixedHeight(L.TABLE_ROW_HEIGHT)
         self._table.setUniformRowHeights(True)
         self._table.setRootIsDecorated(True)
         self._table.setSortingEnabled(False)

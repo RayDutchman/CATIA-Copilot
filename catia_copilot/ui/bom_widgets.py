@@ -4,11 +4,10 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
 from PySide6.QtCore import Qt, QSize
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
+from catia_copilot.ui.ui_layout import L
 
 # 自定义 UserRole 用于 QTreeWidgetItem：标记行为锁定（不可读/未找到）
 _ITEM_LOCKED_ROLE: int = Qt.ItemDataRole.UserRole + 1
-
-_ROW_HEIGHT = 24  # 统一行高（像素），替代 QTreeWidget::item { min-height } QSS 规则
 
 
 class _RowHeightDelegate(QStyledItemDelegate):
@@ -22,8 +21,8 @@ class _RowHeightDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index) -> QSize:
         hint = super().sizeHint(option, index)
-        if hint.height() < _ROW_HEIGHT:
-            hint.setHeight(_ROW_HEIGHT)
+        if hint.height() < L.TABLE_ROW_HEIGHT:
+            hint.setHeight(L.TABLE_ROW_HEIGHT)
         return hint
 
 
@@ -71,18 +70,19 @@ class _BomTreeDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index) -> QSize:
         hint = super().sizeHint(option, index)
-        if hint.height() < _ROW_HEIGHT:
-            hint.setHeight(_ROW_HEIGHT)
+        if hint.height() < L.TABLE_ROW_HEIGHT:
+            hint.setHeight(L.TABLE_ROW_HEIGHT)
         return hint
 
 
 class _BomTreeWidget(QTreeWidget):
     """BOM 用 QTreeWidget 封装。
 
-    树状连接线、branch 区域背景、hover/selected 效果完全交由 qdarkstyle QSS 处理。
+    树状连接线、branch 区域背景、hover/selected 效果完全交由系统主题处理。
     构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item`` 规则。
     子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
     由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
+    行高由 ``L.TABLE_ROW_HEIGHT`` 统一控制（ui_layout.py）。
     """
 
     def __init__(self, parent=None):

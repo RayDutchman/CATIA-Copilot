@@ -571,7 +571,7 @@ class AISettingsDialog(QDialog):
 
         cfg_path = ai_config.get_config_path()
         hint = QLabel(f"配置文件：{cfg_path}")
-        hint.setStyleSheet("color: gray; font-size: 11px;")
+        hint.setStyleSheet(f"color: gray; font-size: {L.SMALL_FONT_SIZE}px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
@@ -649,7 +649,7 @@ class AISettingsDialog(QDialog):
         layout.addLayout(form)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("font-size: 11px;")
+        self._status_label.setStyleSheet(f"font-size: {L.SMALL_FONT_SIZE}px;")
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
@@ -767,7 +767,7 @@ class AISettingsDialog(QDialog):
 
     def _set_status(self, msg: str, error: bool = False):
         color = "#c0392b" if error else "gray"
-        self._status_label.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self._status_label.setStyleSheet(f"color: {color}; font-size: {L.SMALL_FONT_SIZE}px;")
         self._status_label.setText(msg)
 
     def _persist_models(self, api_base: str, api_key: str, models: list):

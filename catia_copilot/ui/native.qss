@@ -1,15 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════════
    CATIA Copilot – 原生主题（Windows 系统主题）
 
-   本文件配合 QApplication.setStyle("windowsvista") 使用。
-   windowsvista 风格完全跟随 Windows 系统主题（包括深色模式），
+   本文件配合 QApplication.setStyle("windows11") 使用。
+   windows11 风格完全跟随 Windows 系统主题（包括深色模式），
    字体、圆角、颜色均由 Windows 决定，本文件只写项目专属控件的
    最小覆盖，其余控件全部留空由系统渲染器接管。
+
+   占位符由 theme_manager._apply() 替换（值来自 ui_layout.L）：
+     @mono_font_family    等宽字体族
+     @mono_font_size_pt   等宽字体字号
+     @label_font_size_pt  节标题字号
+     @hint_font_size_pt   提示标签字号
+     @status_font_size_pt 状态标签字号
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 节标题标签 ─────────────────────────────────────────────────────── */
 QLabel#sectionLabel {
-    font-size: 8pt;
+    font-size: @label_font_size_pt;
     font-weight: 700;
     letter-spacing: 0.5px;
     padding: 6px 0 2px 0;
@@ -18,29 +25,29 @@ QLabel#sectionLabel {
 
 /* ── 提示标签 ───────────────────────────────────────────────────────── */
 QLabel#hintLabel {
-    font-size: 9pt;
+    font-size: @hint_font_size_pt;
     background: transparent;
     margin-bottom: 4px;
 }
 
 /* ── CATIA 连接状态指示器 ───────────────────────────────────────────── */
-QLabel#catiaStatusLabel { padding: 0 8px; font-size: 8.5pt; }
+QLabel#catiaStatusLabel { padding: 0 8px; font-size: @status_font_size_pt; }
 QLabel#catiaStatusLabel[catiaConnected="true"]   { color: #1a6b1a; }
 QLabel#catiaStatusLabel[catiaConnected="false"]  { color: #cc2200; }
 QLabel#catiaStatusLabel[catiaConnected="broken"] { color: #996600; }
 
-/* ── 日志面板（等宽字体，windowsvista 风格不自动设置）──────────────── */
+/* ── 日志面板（等宽字体，windows11 风格不自动设置）─────────────────── */
 QPlainTextEdit#logView {
-    font-family: @log_font_family;
-    font-size: @log_font_size;
+    font-family: @mono_font_family;
+    font-size: @mono_font_size_pt;
 }
 QLabel#logPathLabel {
-    font-size: 8.5pt;
+    font-size: @hint_font_size_pt;
     background: transparent;
 }
 
 /* ── AI 聊天面板：布局容器圆角/边框清零 ─────────────────────────────── */
-/* windowsvista 风格会给部分容器加边框，这里精确清零避免多余边框线 */
+/* windows11 风格会给部分容器加边框，这里精确清零避免多余边框线 */
 QWidget#ChatArea,
 QWidget#ToolbarWrapper,
 QWidget#ToolbarBar,
