@@ -79,9 +79,9 @@ class _BomTreeDelegate(QStyledItemDelegate):
 class _BomTreeWidget(QTreeWidget):
     """BOM 用 QTreeWidget 封装。
 
-    树状连接线由 :meth:`drawBranches` 自绘（1px 虚线），不依赖 QSS branch 规则，
-    避免 windows11 风格下 CSS border-left 与原生箭头错位的问题。
-    展开/折叠箭头仍由 windows11 风格的 PE_IndicatorBranch 原生绘制。
+    树状连接线由 :meth:`drawBranches` 自绘（1px 点状虚线，相位对齐），
+    不依赖 QSS branch 规则，避免 windows11 风格下 CSS border 与原生箭头错位。
+    展开/折叠箭头仍由系统风格的 PE_IndicatorBranch 原生绘制。
     构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item`` 规则。
     子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
     由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
@@ -94,46 +94,49 @@ class _BomTreeWidget(QTreeWidget):
         self.setItemDelegate(_RowHeightDelegate(self))
 
     def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex) -> None:
-        """先画虚线连接线（底层），再让风格画箭头（顶层），避免线浮在箭头上。
+        """绘制 Windows 注册表编辑器风格点状连接线。
 
+        先调用 super() 让系统风格画展开/折叠箭头，再叠加虚线连接线。
         windows11/windowsvista 风格在有全局 QSS 时不自绘竖线/横线，需要手动补。
-        其他风格（windows 经典、Fusion、macOS 等）自带连接线，直接交由 super() 处理。
+        其他风格（windows 经典、Fusion 等）自带连接线，直接交由 super() 处理。
 
-        坐标系：rect 覆盖从 x=0 到当前层缩进终点的整个 branch 区域，
-        宽度 = (depth+1) * indent，高度 = 行高。
-        横线从竖线延伸到 rect.right()（文字左边缘），竖线在箭头左侧。
+        虚线采用 1px 实点 + 1px 间隔，通过 setDashOffset(rect.top() % 2)
+        根据行的绝对 y 坐标对齐相位，确保相邻行的竖线点阵在视觉上连续。
         """
+        # 先让系统风格画原生箭头（PE_IndicatorBranch）
+        super().drawBranches(painter, rect, index)
+
         # 只有 windows11/windowsvista 风格需要手动补虚线；
         # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
-        # 用 theme_manager._STYLE_NAME 而非运行时查询 objectName()，
-        # 因为 QWidget.style().objectName() 在未单独设置 style 时可能返回空。
         try:
             from catia_copilot.ui.theme_manager import _STYLE_NAME
             _need_overlay = _STYLE_NAME in ("windows11", "windowsvista")
         except Exception:
             _need_overlay = True   # 导入失败时保守地画线
         if not _need_overlay:
-            super().drawBranches(painter, rect, index)
-            return
-
-        item = self.itemFromIndex(index)
-        if item is None:
-            super().drawBranches(painter, rect, index)
-            return
-
-        # 计算当前 item 的深度（root 的子节点 depth=1）
-        depth = 0
-        p = item.parent()
-        while p is not None:
-            depth += 1
-            p = p.parent()
-
-        if depth == 0:
-            # root 节点本身不画连接线，只画箭头
-            super().drawBranches(painter, rect, index)
             return
 
         indent = self.indentation()
+        model  = self.model()
+
+        # 从当前节点向上遍历到根节点，记录各层祖先是否还有下一个兄弟节点
+        has_next: list[bool] = []
+        tmp = index
+        while True:
+            par = tmp.parent()
+            cnt = model.rowCount(par) if par.isValid() else model.rowCount()
+            has_next.append(tmp.row() < cnt - 1)
+            if not par.isValid():
+                break
+            tmp = par
+        has_next.reverse()  # has_next[0] 对应最顶层祖先，has_next[-1] 对应当前节点
+
+        depth = len(has_next) - 1
+        if depth == 0:
+            # 顶层节点不画连接线
+            return
+
+        mid_y = (rect.top() + rect.bottom()) // 2
 
         # 从 ui_colors 取当前主题的连接线颜色
         try:
@@ -143,52 +146,29 @@ class _BomTreeWidget(QTreeWidget):
         except Exception:
             line_color = QColor("#808080")
 
-        pen = QPen(line_color, 1, Qt.PenStyle.CustomDashLine)
-        pen.setDashPattern([1, 1])   # 1px 实点 + 1px 间隔，与 Windows 注册表编辑器一致
-        pen.setDashOffset(0)
+        pen = QPen(line_color, 1, Qt.PenStyle.SolidLine)
+        pen.setDashPattern([1.0, 1.0])   # 1px 实点 + 1px 间隔
+        pen.setDashOffset(rect.top() % 2)  # 根据行绝对 y 坐标对齐相位，确保竖线连续
         painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(pen)
 
-        row_h = rect.height()
-        mid_y = rect.top() + row_h // 2
+        # 祖先层：如果该层祖先还有后续兄弟，画贯穿整行的竖线
+        for d in range(depth - 1):
+            if has_next[d + 1]:
+                x = rect.left() + d * indent + indent // 2
+                painter.drawLine(x, rect.top(), x, rect.bottom())
 
-        # 竖线 x 坐标：箭头左侧，与箭头中心 (rect.right() - indent//2) 左移 indent//2
-        # 即 rect.right() - indent，再左移 1px 视觉居中
-        def layer_x(d: int) -> int:
-            return rect.left() + d * indent - 1
-
-        cur_x = layer_x(depth)
-
-        # ── 当前层：竖线 + 横线 ──────────────────────────────────────────
-        parent_item = item.parent()
-        idx_in_parent = parent_item.indexOfChild(item) if parent_item else 0
-        has_next_sibling = (
-            parent_item is not None
-            and idx_in_parent < parent_item.childCount() - 1
-        )
-
-        # 竖线：从顶部到行中央（连接上方兄弟/父节点）
-        painter.drawLine(cur_x, rect.top(), cur_x, mid_y)
-        # 竖线：从行中央到底部（如果还有后续兄弟）
-        if has_next_sibling:
-            painter.drawLine(cur_x, mid_y, cur_x, rect.bottom())
-        # 横线：从竖线延伸到文字左边缘（rect.right()）
-        painter.drawLine(cur_x, mid_y, rect.right(), mid_y)
-
-        # ── 祖先层：只画竖线（该祖先还有后续兄弟时）────────────────────
-        anc       = item.parent()
-        anc_depth = depth - 1
-        while anc is not None and anc.parent() is not None:
-            anc_parent = anc.parent()
-            anc_idx    = anc_parent.indexOfChild(anc)
-            if anc_idx < anc_parent.childCount() - 1:
-                # 该祖先还有后续兄弟，需要画贯穿本行的竖线
-                anc_x = layer_x(anc_depth)
-                painter.drawLine(anc_x, rect.top(), anc_x, rect.bottom())
-            anc       = anc.parent()
-            anc_depth -= 1
+        # 当前层：T 型（有后续兄弟）或 L 型（最后一个子节点）
+        x     = rect.left() + (depth - 1) * indent + indent // 2
+        x_end = rect.left() + depth * indent  # 横线终点 = 当前层内容区左边缘
+        if has_next[-1]:
+            # T 型：贯穿整行的竖线
+            painter.drawLine(x, rect.top(), x, rect.bottom())
+        else:
+            # L 型：只画上半段竖线（转角）
+            painter.drawLine(x, rect.top(), x, mid_y)
+        # 横线：从竖线延伸到内容区左边缘
+        painter.drawLine(x, mid_y, x_end, mid_y)
 
         painter.restore()
-
-        # 最后让风格画箭头（顶层），覆盖在虚线上
-        super().drawBranches(painter, rect, index)
