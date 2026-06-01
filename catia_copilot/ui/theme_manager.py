@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QObject, Signal, QEvent
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QPalette, QColor
 from PySide6.QtWidgets import QApplication
 
 
@@ -49,7 +49,45 @@ def _load_qss(name: str) -> str:
 NATIVE_QSS = _load_qss("native.qss")
 
 
-def _apply_dwm_dark_mode(dark: bool) -> None:
+def _make_dark_palette() -> QPalette:
+    """构建与 Windows 11 深色模式视觉一致的 QPalette。
+
+    windowsvista 风格本身不支持深色模式（始终返回浅色调色板），
+    需要手动设置 QPalette 才能让窗口背景、控件颜色跟随系统深色主题。
+    色值参考 Windows 11 深色模式的系统颜色。
+    """
+    p = QPalette()
+    # 窗口 / 对话框背景
+    p.setColor(QPalette.ColorRole.Window,          QColor("#202020"))
+    p.setColor(QPalette.ColorRole.WindowText,      QColor("#ffffff"))
+    # 输入框 / 列表 / 树控件背景
+    p.setColor(QPalette.ColorRole.Base,            QColor("#2d2d2d"))
+    p.setColor(QPalette.ColorRole.AlternateBase,   QColor("#3a3a3a"))
+    p.setColor(QPalette.ColorRole.Text,            QColor("#ffffff"))
+    # 按钮
+    p.setColor(QPalette.ColorRole.Button,          QColor("#2d2d2d"))
+    p.setColor(QPalette.ColorRole.ButtonText,      QColor("#ffffff"))
+    # 选中高亮（Windows 11 蓝）
+    p.setColor(QPalette.ColorRole.Highlight,       QColor("#0078d4"))
+    p.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    # 工具提示
+    p.setColor(QPalette.ColorRole.ToolTipBase,     QColor("#2d2d2d"))
+    p.setColor(QPalette.ColorRole.ToolTipText,     QColor("#ffffff"))
+    # 占位符文字
+    p.setColor(QPalette.ColorRole.PlaceholderText, QColor("#888888"))
+    # 边框 / 分隔线辅助色
+    p.setColor(QPalette.ColorRole.Mid,             QColor("#555555"))
+    p.setColor(QPalette.ColorRole.Midlight,        QColor("#404040"))
+    p.setColor(QPalette.ColorRole.Dark,            QColor("#1a1a1a"))
+    p.setColor(QPalette.ColorRole.Light,           QColor("#404040"))
+    # 禁用状态：文字变灰
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor("#666666"))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text,       QColor("#666666"))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor("#666666"))
+    return p
+
+
+
     """通过 Windows DWM API 将所有顶层窗口的系统标题栏切换为深/浅色。
     非 Windows 平台或 DWM 不可用时静默跳过。
     """
@@ -141,7 +179,7 @@ class ThemeManager:
         return "dark" if scheme == Qt.ColorScheme.Dark else "light"
 
     def _apply(self) -> None:
-        """应用 windowsvista 风格 + native.qss，跟随系统深色/浅色。"""
+        """应用 windowsvista 风格 + QPalette + native.qss，跟随系统深色/浅色。"""
         if self._window is None:
             return
         app = QApplication.instance()
@@ -150,8 +188,16 @@ class ThemeManager:
 
         mode = self.current_mode()
 
-        # windowsvista 风格：字体、圆角、颜色完全由 Windows 系统主题决定
+        # windowsvista 风格负责控件形状/绘制（按钮凸起感、边框等）
         app.setStyle("windowsvista")
+
+        # windowsvista 风格不支持深色模式，需手动设置 QPalette 让背景/文字跟随系统。
+        # 浅色模式：重置为风格默认调色板（让 windowsvista 自己决定）。
+        # 深色模式：手动构建与 Windows 11 深色模式一致的调色板。
+        if mode == "dark":
+            app.setPalette(_make_dark_palette())
+        else:
+            app.setPalette(app.style().standardPalette())
 
         # native.qss 只含项目专属控件的最小覆盖（日志字体、状态标签颜色等）
         qss = NATIVE_QSS \
