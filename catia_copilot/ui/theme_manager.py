@@ -20,6 +20,7 @@ from PySide6.QtWidgets import QApplication, QStyleFactory
 
 # 字体常量从 ui_layout 统一管理
 from catia_copilot.ui.ui_layout import L
+from catia_copilot.ui.ui_colors import get_colors
 
 
 class _ThemeSignalEmitter(QObject):
@@ -165,7 +166,8 @@ class ThemeManager:
             .replace("@hint_font_size_pt",   L.HINT_FONT_SIZE_PT) \
             .replace("@status_font_size_pt", L.STATUS_FONT_SIZE_PT) \
             .replace("@button_font_size_pt", L.BUTTON_FONT_SIZE_PT) \
-            .replace("@tab_font_size_pt",    L.TAB_FONT_SIZE_PT)
+            .replace("@tab_font_size_pt",    L.TAB_FONT_SIZE_PT) \
+            .replace("@branch_line_color",   get_colors(mode).WIDGET_LINE_COLOR.name())
         app.setStyleSheet(qss)
 
         # 通知订阅者（如 AI 聊天面板的气泡颜色逻辑）系统主题已变化
