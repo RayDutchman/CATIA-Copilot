@@ -5,6 +5,8 @@ CATIA 单文档操作模块。
 的区别在于粒度：本模块操作单个文件，不遍历产品树。
 
 公开接口：
+  get_document_type(doc)                 – 判断 COM 文档对象的类型（PartDocument 等）
+  get_bom_node_type(product, parent_fp)  – 判断产品树节点类型（PART/PRODUCT/COMPONENT）
   find_open_document(file_path)          – 在已打开文档中按路径查找 COM 文档对象
   rename_document(file_path, new_pn, …)  – 通过 CATIA SaveAs 将文档另存为新文件名
   get_document_properties(file_path)     – 读取单个文档的属性（标准 + 用户自定义）
@@ -20,6 +22,8 @@ from pathlib import Path
 from catia_copilot.constants import (
     PRODUCT_ATTR_READ_MAP,
     PRODUCT_ATTR_WRITE_MAP,
+    DOC_EXT_TYPE_MAP,
+    BomNodeType,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,6 +54,107 @@ def _is_catia_com_error(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 # 公开接口
 # ---------------------------------------------------------------------------
+
+def get_document_type(doc) -> str:
+    """返回 CATIA COM 文档对象的类型字符串，与 VBScript TypeName() 一致。
+
+    判断策略（优先级从高到低）：
+
+    1. **后缀判断**（主路径）：通过 ``doc.FullName`` 的文件后缀快速判断。
+       适用于已保存到磁盘的文档，准确且无副作用。
+
+    2. **COM 属性探测**（后备）：当 ``FullName`` 无法提供有效后缀时
+       （如文档从未保存，``FullName`` 为内存路径如 ``"Product1"``），
+       通过探测 COM 对象上的特征属性来区分类型：
+
+       - ``doc.Sheets`` 存在 → ``DrawingDocument``
+       - ``doc.Part`` 存在  → ``PartDocument``
+       - ``doc.Product`` 存在 → ``ProductDocument``
+
+    参数
+    ----
+    doc:
+        CATIA Document COM 对象（win32com dispatch）。
+
+    返回
+    ----
+    ``"PartDocument"`` / ``"ProductDocument"`` / ``"DrawingDocument"`` /
+    ``"Unknown"``
+    """
+    # 主路径：后缀判断
+    try:
+        ext = Path(doc.FullName).suffix.lower()
+        if ext in DOC_EXT_TYPE_MAP:
+            return DOC_EXT_TYPE_MAP[ext]
+    except Exception:
+        pass
+
+    # 后备：COM 属性探测（处理未保存文档，FullName 无标准后缀）
+    # 顺序很重要：先检查 Sheets（DrawingDocument 独有），
+    # 再检查 Part（CATPart 独有），最后检查 Product（两者都有但 Part 已排除）
+    try:
+        _ = doc.Sheets
+        return "DrawingDocument"
+    except Exception:
+        pass
+    try:
+        _ = doc.Part
+        return "PartDocument"
+    except Exception:
+        pass
+    try:
+        _ = doc.Product
+        return "ProductDocument"
+    except Exception:
+        pass
+
+    logger.debug("get_document_type: 无法判断文档类型 %s", getattr(doc, "Name", "?"))
+    return "Unknown"
+
+
+def get_bom_node_type(product, parent_filepath: str, filepath: str | None = None) -> str:
+    """判断产品树节点的 BOM 类型。
+
+    封装 bom_collect / mass_props_collect / plm.sync 三处完全相同的判断逻辑，
+    统一维护。
+
+    判断规则（优先级从高到低）：
+
+    1. ``filepath`` 为空（CATIA 无法解析文件引用）→ ``""``
+    2. ``filepath == parent_filepath``（嵌入式部件，与父节点共享同一文件）
+       → ``BomNodeType.COMPONENT``
+    3. 后缀 ``.catpart`` → ``BomNodeType.PART``
+    4. 其他（``.catproduct`` 或未知后缀）→ ``BomNodeType.PRODUCT``
+
+    参数
+    ----
+    product:
+        CATIA Product COM 对象（win32com dispatch）。
+    parent_filepath:
+        父节点的文件完整路径。根节点传空字符串 ``""``。
+    filepath:
+        可选。若调用方已通过 ``get_product_filepath`` 或
+        ``product.ReferenceProduct.Parent.FullName`` 获取了路径，
+        直接传入以避免重复 COM 调用。为 ``None`` 时函数内部自行获取。
+
+    返回
+    ----
+    ``BomNodeType.PART`` / ``BomNodeType.PRODUCT`` / ``BomNodeType.COMPONENT``
+    / ``""``（无法解析时）
+    """
+    if filepath is None:
+        try:
+            filepath = product.ReferenceProduct.Parent.FullName
+        except Exception:
+            filepath = ""
+
+    if not filepath:
+        return ""
+    if bool(parent_filepath) and filepath == parent_filepath:
+        return BomNodeType.COMPONENT
+    ext = Path(filepath).suffix.lower()
+    return BomNodeType.PART if ext == ".catpart" else BomNodeType.PRODUCT
+
 
 def find_open_document(file_path: str):
     """在 CATIA 已打开文档中按路径查找，返回 COM 文档对象或 None。
@@ -269,12 +374,6 @@ def get_document_properties(
     """
     from catia_copilot.catia.connection import get_catia_v5_application
 
-    _EXT_TYPE = {
-        ".catpart":    "PartDocument",
-        ".catproduct": "ProductDocument",
-        ".catdrawing": "DrawingDocument",
-    }
-
     app = get_catia_v5_application()
     doc = find_open_document(file_path)
     if doc is None:
@@ -284,8 +383,7 @@ def get_document_properties(
         )
 
     full_name = doc.FullName
-    ext       = Path(full_name).suffix.lower()
-    doc_type  = _EXT_TYPE.get(ext, "Other")
+    doc_type  = get_document_type(doc)
 
     product = _get_product_from_doc(doc)
     if product is None:

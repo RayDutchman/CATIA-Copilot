@@ -7,63 +7,16 @@
 - generate_drawing()           - 从当前活动的 CATPart/CATProduct 生成新图纸
 - refresh_drawing()            - 刷新当前活动图纸的参数信息
 - sync_to_drawing_parameters() - 同步零件属性到图纸参数（核心逻辑）
-- get_document_type()          - 获取 CATIA 文档类型名称
 """
 
 import logging
 from pathlib import Path
 from typing import Callable
 
+from catia_copilot.constants import DRAWING_SYNC_STANDARD_PARAMS, DRAWING_SYNC_USER_PROPS
+from catia_copilot.catia.document import get_document_type  # noqa: F401 — re-exported for callers
+
 logger = logging.getLogger(__name__)
-
-
-def get_document_type(doc) -> str:
-    """获取 CATIA 文档类型名称
-    
-    在 Python win32com 中，不能直接用 type(doc).__name__ 获取 COM 类型，
-    需要通过检查对象的属性来判断文档类型。
-    
-    参考 VBScript 的 TypeName() 函数，返回：
-    - "PartDocument" - CATPart 零件文档
-    - "ProductDocument" - CATProduct 装配体文档
-    - "DrawingDocument" - CATDrawing 图纸文档
-    - "Unknown" - 未知类型
-    
-    Args:
-        doc: CATIA 文档 COM 对象
-        
-    Returns:
-        文档类型名称字符串
-    """
-    try:
-        # 方法 1：检查 Product 属性（零件和装配体都有）
-        if hasattr(doc, 'Product'):
-            # 进一步区分零件和装配体
-            # 零件有 Part 属性，装配体没有（或者检查 Products 集合）
-            try:
-                _ = doc.Part
-                return "PartDocument"
-            except Exception:
-                pass
-            try:
-                _ = doc.Product.Products
-                return "ProductDocument"
-            except Exception:
-                # 有 Product 但没有 Products，可能是零件
-                return "PartDocument"
-        
-        # 方法 2：检查 Sheets 属性（图纸特有）
-        if hasattr(doc, 'Sheets'):
-            return "DrawingDocument"
-            
-        # 方法 3：检查 DrawingRoot 属性（图纸特有）
-        if hasattr(doc, 'DrawingRoot'):
-            return "DrawingDocument"
-            
-    except Exception as e:
-        logger.debug(f"获取文档类型失败: {e}")
-        
-    return "Unknown"
 
 
 def sync_to_drawing_parameters(
@@ -75,11 +28,13 @@ def sync_to_drawing_parameters(
     """同步零件属性到图纸参数
     
     从零件/装配体文档读取标准属性和用户自定义属性，写入图纸参数。
+    图纸中若不存在对应参数，则跳过（不自动新建，不报错）。
     
     Args:
         part_doc: 零件或装配体文档 COM 对象
         drawing_doc: 图纸文档 COM 对象
-        property_names: 需要同步的用户自定义属性名列表，默认为 ["物料编码", "材料", "重量"]
+        property_names: 需要同步的用户自定义属性名列表，
+                       默认为 DRAWING_SYNC_USER_PROPS（["物料编码", "材料", "重量"]）
         input_callback: 当属性不存在时的回调函数，接收 (属性名, 零件编号)，
                        返回 (用户输入值, 是否确认)。如果为 None，缺失属性将以空值写入。
                        
@@ -94,7 +49,7 @@ def sync_to_drawing_parameters(
     
     # 默认属性列表
     if property_names is None:
-        property_names = ["物料编码", "材料", "重量"]
+        property_names = list(DRAWING_SYNC_USER_PROPS)
     
     try:
         # 1. 读取零件标准属性
@@ -122,23 +77,20 @@ def sync_to_drawing_parameters(
         # 3. 获取图纸参数集合
         params = drawing_doc.Parameters
         
-        # 4. 同步标准属性
-        standard_props = {
-            "PartNumber": part_number,
-            "Nomenclature": nomenclature,
-            "Revision": revision,
-        }
+        # 4. 同步标准属性（PartNumber / Nomenclature / Revision）
+        standard_props = dict(zip(
+            DRAWING_SYNC_STANDARD_PARAMS,
+            [part_number, nomenclature, revision],
+        ))
         
         for param_name, value in standard_props.items():
             try:
                 param = params.Item(param_name)
-                if param is not None:
-                    param.Value = value
-                    log_details.append(f"已同步：{param_name} = {value}")
-                else:
-                    log_details.append(f"图纸中未找到参数 {param_name}")
-            except Exception as e:
-                log_details.append(f"同步 {param_name} 失败: {e}")
+                param.Value = value
+                log_details.append(f"已同步：{param_name} = {value}")
+            except Exception:
+                # 图纸中不存在该参数，跳过（不新建）
+                log_details.append(f"图纸中无参数 {param_name}，已跳过")
                 
         # 5. 批量同步自定义属性
         for prop_name in property_names:
@@ -178,16 +130,13 @@ def sync_to_drawing_parameters(
                 else:
                     log_details.append(f"属性 {prop_name} 不存在，以空值写入")
                     
-            # 写入图纸参数
+            # 写入图纸参数（图纸中不存在该参数则跳过，不新建）
             try:
                 param = params.Item(prop_name)
-                if param is not None:
-                    param.Value = prop_value
-                    log_details.append(f"已同步：{prop_name} = {prop_value}")
-                else:
-                    log_details.append(f"图纸中未找到参数：{prop_name}")
-            except Exception as e:
-                log_details.append(f"同步 {prop_name} 失败: {e}")
+                param.Value = prop_value
+                log_details.append(f"已同步：{prop_name} = {prop_value}")
+            except Exception:
+                log_details.append(f"图纸中无参数 {prop_name}，已跳过")
                 
         # 6. 更新图纸显示
         try:
@@ -222,7 +171,8 @@ def generate_drawing(
     
     Args:
         template_path: 图纸模板文件的完整路径（.CATDrawing）
-        property_names: 需要同步的用户自定义属性名列表，默认为 ["物料编码", "材料", "重量"]
+        property_names: 需要同步的用户自定义属性名列表，
+                       默认为 DRAWING_SYNC_USER_PROPS（["物料编码", "材料", "重量"]）
         input_callback: 当属性不存在时的回调函数，接收 (属性名, 零件编号)，
                        返回 (用户输入值, 是否确认)
                        
@@ -308,7 +258,8 @@ def refresh_drawing(
     然后同步属性到图纸参数。
     
     Args:
-        property_names: 需要同步的用户自定义属性名列表，默认为 ["物料编码", "材料", "重量"]
+        property_names: 需要同步的用户自定义属性名列表，
+                       默认为 DRAWING_SYNC_USER_PROPS（["物料编码", "材料", "重量"]）
         input_callback: 当属性不存在时的回调函数，接收 (属性名, 零件编号)，
                        返回 (用户输入值, 是否确认)
                        

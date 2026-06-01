@@ -486,17 +486,11 @@ def tool_apply_part_template(
 def tool_get_open_documents(**_kwargs) -> str:
     """返回当前 CATIA 中所有已打开文档的完整路径列表及活动文档路径。"""
     from catia_copilot.utils import get_catia_v5_com_dispatch
+    from catia_copilot.catia.document import get_document_type
 
     app = get_catia_v5_com_dispatch()
     if app is None:
         return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
-
-    # 文档类型通过后缀判断（大小写不敏感）
-    _EXT_TYPE = {
-        ".catpart":    "PartDocument",
-        ".catproduct": "ProductDocument",
-        ".catdrawing": "DrawingDocument",
-    }
 
     open_docs: list[dict] = []
     try:
@@ -504,13 +498,10 @@ def tool_get_open_documents(**_kwargs) -> str:
         for i in range(1, docs.Count + 1):
             try:
                 doc = docs.Item(i)
-                path = doc.FullName
-                ext  = path.lower().rsplit(".", 1)[-1]
-                doc_type = _EXT_TYPE.get(f".{ext}", "Other")
                 open_docs.append({
                     "name": doc.Name,
-                    "path": path,
-                    "type": doc_type,
+                    "path": doc.FullName,
+                    "type": get_document_type(doc),
                 })
             except Exception:
                 continue

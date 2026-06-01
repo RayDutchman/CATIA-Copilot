@@ -49,6 +49,7 @@ from pathlib import Path
 
 
 from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType
+from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
 
@@ -968,24 +969,7 @@ def collect_mass_props_rows(
         no_file   = bool(filepath) and not Path(filepath).exists()
 
         # ── 判断节点类型 ──────────────────────────────────────────────────────
-        # 规则：
-        #   1. filepath 为空             → 类型为 ""（未知/缺失）
-        #   2. 与父节点 filepath 相同    → "部件"（零件特征在同一文件中定义，即嵌入式子结构）
-        #   3. .catpart 文件             → "零件"（叶子节点，需进行质量测量）
-        #   4. .catproduct 或其他        → "产品"（中间装配节点，质量由子树汇总）
-        is_embedded = (bool(filepath) and bool(parent_filepath)
-                       and filepath == parent_filepath)
-        if not_found:
-            node_type = ""
-        elif is_embedded:
-            node_type = BomNodeType.COMPONENT
-        else:
-            ext = Path(filepath).suffix.lower()
-            if ext == ".catpart":
-                node_type = BomNodeType.PART
-            else:
-                # .catproduct 或其他未知扩展名统一视为 Product
-                node_type = BomNodeType.PRODUCT
+        node_type = get_bom_node_type(product, parent_filepath, filepath=filepath)
 
         # ── 计算本节点到根坐标系的累积变换矩阵 ──────────────────────────────
         # local_mat4：本节点相对父节点的局部变换（由 CATIA Position 读取）

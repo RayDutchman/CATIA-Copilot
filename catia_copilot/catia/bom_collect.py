@@ -62,6 +62,7 @@ def collect_bom_rows(
     """
     from catia_copilot.catia.connection import get_catia_v5_application
     from catia_copilot.constants import PRODUCT_ATTR_READ_MAP
+    from catia_copilot.catia.document import get_bom_node_type
 
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
@@ -187,23 +188,7 @@ def collect_bom_rows(
         }
 
         try:
-            child_count = product.Products.Count
-            if filepath and filepath == parent_filepath:
-                # The child shares the same backing file as its parent, which
-                # means it is an embedded sub-assembly (部件) rather than a
-                # standalone product (产品) or leaf part (零件).
-                row["Type"] = BomNodeType.COMPONENT
-            elif not filepath:
-                row["Type"] = ""
-            else:
-                # Determine type from file extension so that a CATProduct with
-                # no children is still classified as Product, not Part.
-                ext = Path(filepath).suffix.lower()
-                if ext == ".catpart":
-                    row["Type"] = BomNodeType.PART
-                else:
-                    # .catproduct or any other extension → product/assembly
-                    row["Type"] = BomNodeType.PRODUCT
+            row["Type"] = get_bom_node_type(product, parent_filepath, filepath=filepath)
         except Exception:
             row["Type"] = ""
 

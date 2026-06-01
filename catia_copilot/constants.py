@@ -91,8 +91,7 @@ APP_ICON_PATH     = "resources/icon.ico"
 # ---------------------------------------------------------------------------
 # Preset user-defined reference properties
 # (used both for CATPart template stamping and as BOM preset custom columns)
-# "物料编码", "材料", "重量" 这三个属性在新建图纸和刷新图纸的宏也会用到，修改时请注
-# 意保持一致
+# 图纸同步所用的默认属性子集见 DRAWING_SYNC_USER_PROPS
 # ---------------------------------------------------------------------------
 
 PRESET_USER_REF_PROPERTIES: list[str] = [
@@ -115,6 +114,20 @@ PRESET_USER_REF_PROPERTY_OPTIONS: dict[str, list[str]] = {
                 "物料-钣金件", "物料-塑胶件", "物料-橡胶件", "物料-电子件",
                 "物料-泡沫", "物料-软包", "物料-辅材", "物料-组件",
                 "物料-虚拟件", "半成品-组件", "成品-整机"],
+}
+
+# ---------------------------------------------------------------------------
+# CATIA 文档类型映射
+#
+# 文件后缀（小写）→ 文档类型字符串，与 VBScript TypeName() 返回值一致。
+# 供 get_document_type()、tool_get_open_documents 等所有需要判断文档类型的
+# 地方统一使用，避免各处各自定义 _EXT_TYPE 字典。
+# ---------------------------------------------------------------------------
+
+DOC_EXT_TYPE_MAP: dict[str, str] = {
+    ".catpart":    "PartDocument",
+    ".catproduct": "ProductDocument",
+    ".catdrawing": "DrawingDocument",
 }
 
 # ---------------------------------------------------------------------------
@@ -326,6 +339,21 @@ PLM_MEMBER_TABLE_COLUMNS: list[tuple[str, str, str]] = [
 # 每个零件最多读取"惯量包络体.1"到"惯量包络体.MAX_INERTIA_INDEX"的保持测量。
 # 编号不要求连续；所有编号在此范围内存在的测量均会被读取并在零件级汇总。
 MAX_INERTIA_INDEX: int = 20
+
+# ---------------------------------------------------------------------------
+# CATDrawing 参数同步
+#
+# DRAWING_SYNC_STANDARD_PARAMS  — 从零件 Product 标准属性同步到图纸的参数名列表
+#                                  对应 Product.PartNumber / Nomenclature / Revision
+# DRAWING_SYNC_USER_PROPS       — 默认从零件用户自定义属性同步到图纸的属性名列表
+#                                  可在调用 sync_to_drawing_parameters() 时通过
+#                                  property_names 参数覆盖
+# 注意：图纸中若不存在对应参数，同步时会跳过（不自动新建，不报错）。
+# ---------------------------------------------------------------------------
+
+DRAWING_SYNC_STANDARD_PARAMS: list[str] = ["PartNumber", "Nomenclature", "Revision"]
+
+DRAWING_SYNC_USER_PROPS: list[str] = ["物料编码", "材料", "重量"]
 
 # ---------------------------------------------------------------------------
 # CATDrawing 启发式查找策略（给图纸 → 找对应的 CATPart/CATProduct）

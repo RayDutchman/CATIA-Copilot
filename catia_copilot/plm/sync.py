@@ -21,6 +21,7 @@ from enum import Enum
 from typing import Any
 
 from catia_copilot.constants import PRESET_USER_REF_PROPERTIES, PLM_BUILTIN_ATTR_COLS, BomNodeType
+from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
 
@@ -286,14 +287,7 @@ def collect_bom_for_sync(progress_callback=None) -> list[dict] | None:
             filepath = ""
 
         # ── 节点类型 ─────────────────────────────────────────────────────────
-        is_embedded = bool(filepath) and bool(parent_filepath) and filepath == parent_filepath
-        if not filepath:
-            node_type = ""
-        elif is_embedded:
-            node_type = BomNodeType.COMPONENT
-        else:
-            ext = _Path(filepath).suffix.lower()
-            node_type = BomNodeType.PART if ext == ".catpart" else BomNodeType.PRODUCT
+        node_type = get_bom_node_type(product, parent_filepath, filepath=filepath)
 
         # ── 属性（Nomenclature / Revision / Source 等）───────────────────────
         nomenclature = ""
