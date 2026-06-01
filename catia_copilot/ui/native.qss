@@ -14,7 +14,6 @@
      @status_font_size_pt 状态标签字号
      @button_font_size_pt 按钮文字字号
      @tab_font_size_pt    Tab 标签文字字号
-     @branch_line_color   树状连接线颜色（来自 RowColors.WIDGET_LINE_COLOR，跟随深/浅主题）
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 按钮文字 ───────────────────────────────────────────────────────── */
@@ -87,18 +86,4 @@ QSplitter#InputSplitter::handle {
     background-color: palette(mid);
     border-radius: 0px;
     image: none;
-}
-
-/* ── 树状连接线 ──────────────────────────────────────────────────────────
-   windows11 风格在有全局 QSS 时仍能自绘 branch 箭头（PE_IndicatorBranch），
-   但竖线需要显式声明；不声明 image，让风格继续自绘展开/折叠箭头。
-   ─────────────────────────────────────────────────────────────────────── */
-QTreeView::branch:has-siblings:!adjoins-item {
-    border-left: 1px dotted @branch_line_color;
-}
-QTreeView::branch:has-siblings:adjoins-item {
-    border-left: 1px dotted @branch_line_color;
-}
-QTreeView::branch:!has-children:!has-siblings:adjoins-item {
-    border-image: none;
 }

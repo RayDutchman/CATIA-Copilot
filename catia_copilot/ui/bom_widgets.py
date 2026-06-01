@@ -1,7 +1,8 @@
 """BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QModelIndex, QRect
+from PySide6.QtGui import QPainter, QPen, QColor
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
 from catia_copilot.ui.ui_layout import L
@@ -78,7 +79,9 @@ class _BomTreeDelegate(QStyledItemDelegate):
 class _BomTreeWidget(QTreeWidget):
     """BOM 用 QTreeWidget 封装。
 
-    树状连接线、branch 区域背景、hover/selected 效果完全交由系统主题处理。
+    树状连接线由 :meth:`drawBranches` 自绘（1px 虚线），不依赖 QSS branch 规则，
+    避免 windows11 风格下 CSS border-left 与原生箭头错位的问题。
+    展开/折叠箭头仍由 windows11 风格的 PE_IndicatorBranch 原生绘制。
     构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item`` 规则。
     子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
     由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
@@ -89,3 +92,84 @@ class _BomTreeWidget(QTreeWidget):
         super().__init__(parent)
         # 安装默认行高委托；setItemDelegate 会替换它，新委托需自行保证行高
         self.setItemDelegate(_RowHeightDelegate(self))
+
+    def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex) -> None:
+        """先让风格画展开/折叠箭头，再叠加虚线连接线。
+
+        坐标系：rect 覆盖从 x=0 到当前层缩进终点的整个 branch 区域，
+        宽度 = (depth+1) * indent，高度 = 行高。
+        windows11 风格将箭头画在最右边 indent 格子的中央，
+        即 x = rect.right() - indent//2，连接线与此对齐。
+        """
+        # 先让 windows11 风格画原生箭头（PE_IndicatorBranch）
+        super().drawBranches(painter, rect, index)
+
+        item = self.itemFromIndex(index)
+        if item is None:
+            return
+
+        # 计算当前 item 的深度（root 的子节点 depth=1）
+        depth = 0
+        p = item.parent()
+        while p is not None:
+            depth += 1
+            p = p.parent()
+
+        if depth == 0:
+            # root 节点本身不画连接线
+            return
+
+        indent = self.indentation()
+
+        # 从 ui_colors 取当前主题的连接线颜色
+        try:
+            from catia_copilot.ui.theme_manager import theme_manager
+            from catia_copilot.ui.ui_colors import get_colors
+            line_color = get_colors(theme_manager.current_mode()).WIDGET_LINE_COLOR
+        except Exception:
+            line_color = QColor("#808080")
+
+        pen = QPen(line_color, 1, Qt.PenStyle.DotLine)
+        painter.save()
+        painter.setPen(pen)
+
+        row_h = rect.height()
+        mid_y = rect.top() + row_h // 2
+
+        # windows11 风格箭头中心 x = rect.right() - indent//2
+        # 各层的 x 坐标：depth 层的中心 = rect.left() + (depth+1)*indent - indent//2
+        def layer_x(d: int) -> int:
+            return rect.left() + (d + 1) * indent - indent // 2
+
+        cur_x = layer_x(depth)
+
+        # ── 当前层：竖线 + 横线 ──────────────────────────────────────────
+        parent_item = item.parent()
+        idx_in_parent = parent_item.indexOfChild(item) if parent_item else 0
+        has_next_sibling = (
+            parent_item is not None
+            and idx_in_parent < parent_item.childCount() - 1
+        )
+
+        # 竖线：从顶部到行中央（连接上方兄弟/父节点）
+        painter.drawLine(cur_x, rect.top(), cur_x, mid_y)
+        # 竖线：从行中央到底部（如果还有后续兄弟）
+        if has_next_sibling:
+            painter.drawLine(cur_x, mid_y, cur_x, rect.bottom())
+        # 横线：从竖线向右延伸半个 indent（连接到文字/箭头）
+        painter.drawLine(cur_x, mid_y, cur_x + indent // 2, mid_y)
+
+        # ── 祖先层：只画竖线（该祖先还有后续兄弟时）────────────────────
+        anc       = item.parent()
+        anc_depth = depth - 1
+        while anc is not None and anc.parent() is not None:
+            anc_parent = anc.parent()
+            anc_idx    = anc_parent.indexOfChild(anc)
+            if anc_idx < anc_parent.childCount() - 1:
+                # 该祖先还有后续兄弟，需要画贯穿本行的竖线
+                anc_x = layer_x(anc_depth)
+                painter.drawLine(anc_x, rect.top(), anc_x, rect.bottom())
+            anc       = anc.parent()
+            anc_depth -= 1
+
+        painter.restore()
