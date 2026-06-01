@@ -1,7 +1,10 @@
 # build.spec — PyInstaller spec file for CATIA Copilot
 #
-# How to build:
-#   pyinstaller build.spec
+# How to build（推荐，使用 build.ps1）：
+#   .\build.ps1
+#
+# 也可以手动指定输出目录：
+#   pyinstaller --distpath ..\CATIA-Copilot-dist build.spec
 #
 # Output: ../CATIA-Copilot-dist/CATIA Copilot <version>/
 # 打包产物输出到项目上一级目录的 CATIA-Copilot-dist/ 文件夹，
@@ -23,11 +26,14 @@ _ver = _re.search(
 ).group(1)
 _app_name = f"CATIA Copilot {_ver}"
 
-# 打包输出目录：项目上一级的 CATIA-Copilot-dist/
-# spec 文件所在目录即项目根目录，用 SPECPATH 获取（PyInstaller 内置变量）
+# 打包输出目录：由 build.ps1 通过 --distpath 命令行参数传入，
+# PyInstaller 会将其注入为 DISTPATH 内置变量（与 SPECPATH 同级）。
+# 直接使用 DISTPATH 可确保清理代码与实际输出目录一致，
+# 避免 spec 内硬编码路径与命令行参数不同步的问题。
 import os as _os
-_project_root = SPECPATH  # noqa: F821  — PyInstaller 在执行 spec 时注入此变量
-_dist_root = _os.path.normpath(_os.path.join(_project_root, '..', 'CATIA-Copilot-dist'))
+_project_root = SPECPATH  # noqa: F821  — PyInstaller 在执行 spec 时注入
+# DISTPATH 由 PyInstaller 注入，值等于 --distpath 参数（已规范化为绝对路径）
+_dist_root = DISTPATH      # noqa: F821
 
 # ── pywin32 DLL 动态查找 ────────────────────────────────────────────────────
 # pywintypes / pythoncom DLL 位于 site-packages/pywin32_system32/，
@@ -128,22 +134,23 @@ coll = COLLECT(
     upx=True,
     upx_exclude=[],
     name=_app_name,
-    distpath=_dist_root,
 )
 
 # ── 打包后清理：删除不需要的大文件 ─────────────────────────────────────────────
 # 必须在 COLLECT 之后执行，否则目录尚不存在。
+# _dist_root 由 DISTPATH 注入，与 --distpath 参数保持一致。
 
 _dist = _os.path.join(_dist_root, _app_name, '_internal')
+_pyside6 = _os.path.join(_dist, 'PySide6')
 
-# 1. opengl32sw.dll：Qt 软件渲染回退，桌面环境有系统 OpenGL 不需要（-20M）
-_opengl_sw = _os.path.join(_dist, 'PySide6', 'opengl32sw.dll')
+# 1. opengl32sw.dll：Qt 软件渲染回退，桌面环境有系统 OpenGL 不需要（-20 MB）
+_opengl_sw = _os.path.join(_pyside6, 'opengl32sw.dll')
 if _os.path.exists(_opengl_sw):
     _os.remove(_opengl_sw)
     print(f"[slim] removed opengl32sw.dll")
 
-# 2. Qt translations：只保留中文和英文，其余语言包一律删除（-~5M）
-_trans_dir = _os.path.join(_dist, 'PySide6', 'translations')
+# 2. Qt translations：只保留中文和英文，其余语言包一律删除（-~5.5 MB）
+_trans_dir = _os.path.join(_pyside6, 'translations')
 if _os.path.isdir(_trans_dir):
     for _f in _os.listdir(_trans_dir):
         # 保留 zh_CN、zh_TW、en（含无后缀的基础文件如 qtbase.qm）
@@ -152,8 +159,8 @@ if _os.path.isdir(_trans_dir):
             _os.remove(_path)
             print(f"[slim] removed translation: {_f}")
 
-# 3. PySide6/plugins/imageformats：只保留 png/svg，删除 avif/webp/jp2/tiff 等
-_imgfmt_dir = _os.path.join(_dist, 'PySide6', 'plugins', 'imageformats')
+# 3. PySide6/plugins/imageformats：只保留常用格式，删除 webp/tiff/icns/tga/wbmp/pdf 等
+_imgfmt_dir = _os.path.join(_pyside6, 'plugins', 'imageformats')
 _keep_formats = {'qpng', 'qsvg', 'qico', 'qjpeg', 'qgif'}
 if _os.path.isdir(_imgfmt_dir):
     for _f in _os.listdir(_imgfmt_dir):
@@ -162,3 +169,40 @@ if _os.path.isdir(_imgfmt_dir):
             _path = _os.path.join(_imgfmt_dir, _f)
             _os.remove(_path)
             print(f"[slim] removed imageformat: {_f}")
+
+# 4. 未被项目使用的 Qt6 DLL（excludes 只排除 Python 绑定层，底层 DLL 需手动删除）
+#    - Qt6Quick / Qt6Qml*：QML 框架，项目 UI 全用 Widgets（-12 MB）
+#    - Qt6Pdf：PDF 渲染，项目无 PDF 功能（-4.4 MB）
+#    - Qt6VirtualKeyboard：虚拟键盘，桌面应用不需要（-0.4 MB）
+_unused_qt_dlls = [
+    'Qt6Quick.dll',
+    'Qt6Qml.dll',
+    'Qt6QmlModels.dll',
+    'Qt6QmlMeta.dll',
+    'Qt6QmlWorkerScript.dll',
+    'Qt6Pdf.dll',
+    'Qt6VirtualKeyboard.dll',
+]
+for _dll in _unused_qt_dlls:
+    _path = _os.path.join(_pyside6, _dll)
+    if _os.path.exists(_path):
+        _os.remove(_path)
+        print(f"[slim] removed Qt DLL: {_dll}")
+
+# 5. Pythonwin 目录：pywin32 的 MFC GUI 组件，项目只用 win32com/win32api（-6.4 MB）
+#    excludes 里的 'Pythonwin' 只排除 Python 包，底层目录需手动删除。
+import shutil as _shutil
+_pythonwin_dir = _os.path.join(_dist, 'Pythonwin')
+if _os.path.isdir(_pythonwin_dir):
+    _shutil.rmtree(_pythonwin_dir)
+    print(f"[slim] removed Pythonwin/")
+
+# 6. 非当前 Python 版本的 .pyc 缓存（如 cpython-314.pyc 混入 cpython-313 环境）
+#    这些文件由 datas 收集 catia_copilot/ 源码目录时带入，运行时不会被加载。
+_pyc_ver = f"cpython-{_sys.version_info.major}{_sys.version_info.minor}"
+for _root, _dirs, _files in _os.walk(_dist):
+    for _fname in _files:
+        if _fname.endswith('.pyc') and _pyc_ver not in _fname:
+            _fpath = _os.path.join(_root, _fname)
+            _os.remove(_fpath)
+            print(f"[slim] removed stale pyc: {_os.path.relpath(_fpath, _dist)}")
