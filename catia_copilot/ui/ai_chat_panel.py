@@ -867,9 +867,10 @@ class _CollapseHandle(QSplitterHandle):
         # handle 整体背景（与侧边栏融合，不突兀）
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
-        # 左边缘竖线：与分隔线同色，提示此处可拖动
+        # 两侧边缘竖线：与分隔线同色，提示此处可拖动
         painter.setPen(QColor(c.divider))
         painter.drawLine(0, 0, 0, self.height() - 1)
+        painter.drawLine(self._W - 1, 0, self._W - 1, self.height() - 1)
 
         # 箭头按钮区域背景（hover 时高亮）
         btn_rect = self._arrow_rect()
@@ -991,6 +992,7 @@ class SessionSidebar(QWidget):
         bottom_layout = QHBoxLayout(bottom)
         bottom_layout.setContentsMargins(*L.SIDEBAR_BOTTOM_MARGINS)
         self._new_btn = QPushButton("新对话")
+        self._new_btn.setObjectName("SidebarNewBtn")
         self._new_btn.setFixedHeight(L.SIDEBAR_NEW_BTN_HEIGHT)
         self._new_btn.clicked.connect(self.new_session_requested)
         bottom_layout.addWidget(self._new_btn)
@@ -1032,10 +1034,10 @@ class SessionSidebar(QWidget):
             f"QListWidget#SessionList QScrollBar::add-line:vertical,"
             f"QListWidget#SessionList QScrollBar::sub-line:vertical {{ height: 0px; }}"
             f"QListWidget#SessionList QScrollBar:horizontal {{ height: 0px; }}"
-            # 新对话按钮：保留轻量边框，与列表项区分
-            f"SessionSidebar QPushButton {{ background-color: {c.sidebar_bg};"
+            # 新对话按钮：用 objectName 精确选择，避免被 native.qss 的宽泛 QPushButton 规则覆盖
+            f"QPushButton#SidebarNewBtn {{ background-color: {c.sidebar_bg};"
             f" color: {c.sidebar_fg}; border: 1px solid {c.divider}; border-radius: 4px; }}"
-            f"SessionSidebar QPushButton:hover {{ background-color: {c.sidebar_hover}; }}"
+            f"QPushButton#SidebarNewBtn:hover {{ background-color: {c.sidebar_hover}; }}"
         )
 
     def refresh(self, current_session_id: str | None = None):
