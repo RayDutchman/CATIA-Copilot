@@ -850,26 +850,9 @@ class MainWindow(QMainWindow):
         dlg.raise_()
         dlg.activateWindow()
 
-        # 启动 CATIA 状态监听定时器（如果尚未启动）
-        self._start_catia_monitor()
-
-        # 如果 CATIA 当前处于最小化状态，立即将对话框加入隐藏列表并隐藏，
-        # 避免定时器在 500ms 内再次检测到最小化状态时重复 hide() 导致对话框被销毁
-        if getattr(self, "_catia_was_minimized", False):
-            dlg.hide()
-            if hasattr(self, "_hidden_dialogs"):
-                geom = bytes(dlg.saveGeometry())
-                self._hidden_dialogs.add(attr)
-                if hasattr(self, "_dialog_geometries"):
-                    self._dialog_geometries[attr] = geom
-            logger.debug(f"_show_dialog: CATIA 最小化中，对话框 {attr} 延迟到 CATIA 还原后显示")
-
     def _on_dialog_destroyed(self, attr: str) -> None:
-        """对话框被销毁时的回调，清理引用和隐藏记录。"""
+        """对话框被销毁时的回调，清理引用。"""
         setattr(self, attr, None)
-        if hasattr(self, "_hidden_dialogs") and attr in self._hidden_dialogs:
-            self._hidden_dialogs.discard(attr)
-            logger.debug(f"_on_dialog_destroyed: 对话框 {attr} 已销毁，从隐藏列表中移除")
 
     def _toggle_dlg_topmost(self) -> None:
         """切换对话框置顶开关，立即对所有已开对话框生效，并持久化。"""
@@ -928,65 +911,6 @@ class MainWindow(QMainWindow):
         """已废弃：Win32 Owner 机制在已显示窗口上修改 GWLP_HWNDPARENT 属于未定义行为，
         会导致多对话框场景下崩溃。保留方法签名避免调用方报错，实际不执行任何操作。"""
         pass
-
-    def _start_catia_monitor(self) -> None:
-        """启动 CATIA 窗口状态监听定时器，实现对话框跟随 CATIA 最小化/还原。"""
-        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
-            return
-        
-        self._catia_monitor_timer = QTimer(self)
-        self._catia_monitor_timer.timeout.connect(self._check_catia_state)
-        self._catia_monitor_timer.start(500)  # 每 500ms 检查一次
-        self._catia_was_minimized = False
-        self._hidden_dialogs: set[str] = set()       # 因 CATIA 最小化而隐藏的对话框属性名
-        self._dialog_geometries: dict[str, bytes] = {}  # hide 前保存的几何，key = attr
-        logger.debug("_start_catia_monitor: 已启动 CATIA 状态监听")
-    
-    def _check_catia_state(self) -> None:
-        """检查 CATIA 窗口状态，同步对话框的显示/隐藏。"""
-        try:
-            import win32gui
-        except ImportError:
-            return
-        
-        catia_hwnd = self._get_catia_hwnd()
-        if not catia_hwnd:
-            return
-        
-        # 检查 CATIA 是否最小化
-        is_minimized = win32gui.IsIconic(catia_hwnd)
-        
-        # 状态变化时同步所有对话框（主窗口完全独立，不跟随 CATIA 最小化/还原）
-        if is_minimized != self._catia_was_minimized:
-            self._catia_was_minimized = is_minimized
-            
-            if is_minimized:
-                # CATIA 最小化：hide 前先保存每个对话框的当前几何，再隐藏
-                self._hidden_dialogs.clear()
-                self._dialog_geometries.clear()
-                for attr, value in vars(self).items():
-                    if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)) and value.isVisible():
-                        # saveGeometry() 返回 QByteArray，转为 bytes 存储
-                        self._dialog_geometries[attr] = bytes(value.saveGeometry())
-                        value.hide()
-                        self._hidden_dialogs.add(attr)
-                        logger.debug(f"_check_catia_state: CATIA 最小化，隐藏窗口 {attr}")
-            else:
-                # CATIA 还原：恢复之前隐藏的对话框，并还原 hide 前的几何
-                for attr in list(self._hidden_dialogs):
-                    value = getattr(self, attr, None)
-                    if value is not None and isinstance(value, (QDialog, QMainWindow)):
-                        value.show()
-                        # 优先用 hide 前保存的几何（包含用户刚调整的位置/尺寸）
-                        geom = self._dialog_geometries.get(attr)
-                        if geom:
-                            from PySide6.QtCore import QByteArray
-                            value.restoreGeometry(QByteArray(geom))
-                        logger.debug(f"_check_catia_state: CATIA 还原，显示窗口 {attr}")
-                    else:
-                        logger.warning(f"_check_catia_state: 窗口 {attr} 已不存在 (value={value})")
-                self._hidden_dialogs.clear()
-                self._dialog_geometries.clear()
 
     # ── CATIA 吸附边栏 ────────────────────────────────────────────────────
 
@@ -1286,16 +1210,12 @@ class MainWindow(QMainWindow):
         # 停止 AI Agent（如果正在运行）
         if hasattr(self, "_ai_chat_panel"):
             self._ai_chat_panel.stop_agent()
-        
-        # 停止 CATIA 状态监听定时器
-        if hasattr(self, "_catia_monitor_timer") and self._catia_monitor_timer.isActive():
-            self._catia_monitor_timer.stop()
-        
+
         # 关闭所有对话框和子窗口（包括 QDialog 和 QMainWindow）
         for attr, value in list(vars(self).items()):
             if attr.startswith("_dlg_") and isinstance(value, (QDialog, QMainWindow)):
                 value.close()
-        
+
         super().closeEvent(event)
 
     # ── 宏辅助方法 ────────────────────────────────────────────────────────
