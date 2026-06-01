@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QProgressDialog, QRadioButton, QButtonGroup,
     QMenu, QWidgetAction, QLineEdit,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush, QPalette, QColor
+from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush, QPalette, QColor, QFont
 from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
 
 from catia_copilot.constants import (
@@ -363,6 +363,9 @@ class BomEditDialog(QDialog):
         self._undo_btn.setShortcut(QKeySequence("Ctrl+Z"))
         self._undo_btn.setEnabled(False)
         self._undo_btn.clicked.connect(self._undo)
+        _undo_redo_font = QFont("Segoe UI Emoji")
+        _undo_redo_font.setPointSize(11)
+        self._undo_btn.setFont(_undo_redo_font)
         btn_row.addWidget(self._undo_btn)
 
         self._redo_btn = QPushButton("↷")
@@ -371,6 +374,7 @@ class BomEditDialog(QDialog):
         self._redo_btn.setShortcut(QKeySequence("Ctrl+Y"))
         self._redo_btn.setEnabled(False)
         self._redo_btn.clicked.connect(self._redo)
+        self._redo_btn.setFont(_undo_redo_font)
         btn_row.addWidget(self._redo_btn)
 
         # 状态标签（显示行数及待写回修改数）

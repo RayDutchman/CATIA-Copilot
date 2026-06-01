@@ -382,6 +382,9 @@ class ToolCallWidget(QFrame):
         self._toggle_btn.setText("▶")
         self._toggle_btn.setFixedSize(*L.TOOL_CARD_TOGGLE_SIZE)
         self._toggle_btn.clicked.connect(self._toggle)
+        _toggle_font = QFont("Segoe UI Emoji")
+        _toggle_font.setPixelSize(10)
+        self._toggle_btn.setFont(_toggle_font)
 
         try:
             args_dict = json.loads(self._args_str)

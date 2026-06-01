@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
-from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
-from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint, QGuiApplication
+from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics, QGuiApplication
+from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint
 
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
