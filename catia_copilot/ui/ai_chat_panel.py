@@ -383,7 +383,7 @@ class ToolCallWidget(QFrame):
         self._toggle_btn.setFixedSize(*L.TOOL_CARD_TOGGLE_SIZE)
         self._toggle_btn.clicked.connect(self._toggle)
         _toggle_font = QFont("Segoe UI Emoji")
-        _toggle_font.setPixelSize(10)
+        _toggle_font.setPixelSize(16)
         self._toggle_btn.setFont(_toggle_font)
 
         try:
@@ -871,9 +871,9 @@ class _CollapseHandle(QSplitterHandle):
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
         # 两侧边缘竖线：与分隔线同色，提示此处可拖动
+        # 右侧不画线——ChatArea 的 palette(base) 背景与 handle 背景的颜色差已形成自然分隔
         painter.setPen(QColor(c.divider))
         painter.drawLine(0, 0, 0, self.height() - 1)
-        painter.drawLine(self._W - 1, 0, self._W - 1, self.height() - 1)
 
         # 箭头按钮区域背景（hover 时高亮）
         btn_rect = self._arrow_rect()

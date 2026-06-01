@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QWidget,
 )
 from PySide6.QtCore import Qt, QSettings, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QFont
 
 from catia_copilot.constants import (
     BOM_ALL_COLUMNS,
@@ -35,7 +35,7 @@ class ExportBomDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("从产品导出 BOM")
-        self.setMinimumSize(560, 580)
+        self.setMinimumSize(500, 700)
 
         self._settings        = QSettings("CATIACompanion", "ExportBOMDialog")
         self._last_browse_dir = self._settings.value("last_browse_dir", "")
@@ -211,9 +211,12 @@ class ExportBomDialog(QDialog):
         remove_btn = QPushButton("←")
         up_btn     = QPushButton("↑")
         down_btn   = QPushButton("↓")
+        _arrow_font = QFont("Segoe UI Emoji")
+        _arrow_font.setPointSize(10)
         for btn in (add_btn, remove_btn, up_btn, down_btn):
             btn.setFixedSize(36, 32)
             btn.setStyleSheet("padding: 4px 2px;")
+            btn.setFont(_arrow_font)
         add_btn.clicked.connect(self._add_column)
         remove_btn.clicked.connect(self._remove_column)
         up_btn.clicked.connect(self._move_up)
