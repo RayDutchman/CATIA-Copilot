@@ -846,6 +846,21 @@ class MainWindow(QMainWindow):
                 if isinstance(saved, QByteArray) and not saved.isEmpty():
                     dlg.restoreGeometry(saved)
 
+        # CATIA 最小化时：不调用 show/raise/activateWindow，
+        # 直接加入 _hidden_dialogs，等 CATIA 还原时再显示
+        if getattr(self, "_catia_was_minimized", False):
+            if hasattr(self, "_hidden_dialogs"):
+                if hasattr(self, "_dialog_geometries") and hasattr(dlg, "_settings"):
+                    from PySide6.QtCore import QByteArray
+                    saved = dlg._settings.value("geometry")
+                    if isinstance(saved, QByteArray) and not saved.isEmpty():
+                        self._dialog_geometries[attr] = bytes(saved)
+                self._hidden_dialogs.add(attr)
+            logger.debug(f"_show_dialog: CATIA 最小化中，对话框 {attr} 延迟到 CATIA 还原后显示")
+            # 启动定时器（如果尚未启动）
+            self._start_catia_monitor()
+            return
+
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
