@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings
-from PySide6.QtGui import QColor, QPainter, QPalette, QTextCursor
+from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QTextEdit, QTextBrowser,
@@ -877,10 +877,12 @@ class _CollapseHandle(QSplitterHandle):
         if self._hovered:
             painter.fillRect(btn_rect, QColor(c.handle_hover))
 
-        # 绘制箭头
+        # 绘制箭头：指定 Segoe UI Emoji 字体确保现代矢量渲染
         arrow = "◀" if not self._is_collapsed() else "▶"
         painter.setPen(QColor(c.handle_fg))
-        painter.setFont(self.font())
+        emoji_font = QFont("Segoe UI Emoji", -1)
+        emoji_font.setPixelSize(10)
+        painter.setFont(emoji_font)
         painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, arrow)
 
     def mousePressEvent(self, event):
@@ -1018,14 +1020,18 @@ class SessionSidebar(QWidget):
             f"QFrame#SidebarDivider {{ background-color: {c.divider}; border: none; }}"
             # 会话列表：用 objectName 精确限定，避免宽泛选择器污染 QMenu 样式上下文
             f"QListWidget#SessionList {{ background-color: {c.sidebar_bg};"
-            f" color: {c.sidebar_fg}; border: none; }}"
+            f" color: {c.sidebar_fg}; border: none; outline: none; }}"
             # 列表项：无边框无圆角无间距，选中/hover 色铺满整行
+            # outline:none 消除 windows11 风格的焦点虚线框
             f"QListWidget#SessionList::item {{ padding: 6px 10px;"
-            f" border: none; border-radius: 0px; margin: 0px; }}"
-            f"QListWidget#SessionList::item:selected {{ background-color: {c.sidebar_sel};"
-            f" color: {c.sidebar_fg}; border-radius: 0px; }}"
-            f"QListWidget#SessionList::item:hover:!selected {{"
-            f" background-color: {c.sidebar_hover}; border-radius: 0px; }}"
+            f" border: none; border-radius: 0px; margin: 0px; outline: none; }}"
+            # 选中态：用 SessionSidebar 作为父选择器提升优先级，覆盖 windows11 风格的圆角绘制
+            f"SessionSidebar QListWidget#SessionList::item:selected {{"
+            f" background-color: {c.sidebar_sel}; color: {c.sidebar_fg};"
+            f" border: none; border-radius: 0px; outline: none; }}"
+            f"SessionSidebar QListWidget#SessionList::item:hover:!selected {{"
+            f" background-color: {c.sidebar_hover};"
+            f" border: none; border-radius: 0px; }}"
             # 滚动条：细条样式
             f"QListWidget#SessionList QScrollBar:vertical {{ width: 4px; border: none;"
             f" background: transparent; }}"
@@ -1344,12 +1350,16 @@ class AIChatPanel(QWidget):
             f"QPushButton:hover {{ background: rgba(128,128,128,40); "
             f"border-radius: {L.ICON_BTN_RADIUS}px; }}"
         )
+        # emoji 图标按钮使用 Segoe UI Emoji 字体，确保现代矢量渲染
+        _emoji_font = QFont("Segoe UI Emoji")
+        _emoji_font.setPixelSize(L.ICON_BTN_FONT_SIZE)
 
         # 铅笔图标（重命名）
         rename_btn = QPushButton("✏")
         rename_btn.setFixedSize(*L.ICON_BTN_SIZE)
         rename_btn.setToolTip("重命名会话")
         rename_btn.setStyleSheet(_icon_style)
+        rename_btn.setFont(_emoji_font)
         rename_btn.clicked.connect(self._rename_current_session)
         layout.addWidget(rename_btn)
 
@@ -1358,6 +1368,7 @@ class AIChatPanel(QWidget):
         self._session_cfg_btn.setFixedSize(*L.ICON_BTN_SIZE)
         self._session_cfg_btn.setToolTip("会话设置")
         self._session_cfg_btn.setStyleSheet(_icon_style)
+        self._session_cfg_btn.setFont(_emoji_font)
         self._session_cfg_btn.clicked.connect(self._open_session_config)
         layout.addWidget(self._session_cfg_btn)
 

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics
-from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint
+from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint, QGuiApplication
 
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
@@ -722,6 +722,13 @@ class MainWindow(QMainWindow):
         btn_diag.clicked.connect(self._show_catia_diagnostics)
         layout.addWidget(btn_diag)
 
+        # 主题切换：在系统深色/浅色之间切换（通过 QGuiApplication.styleHints）
+        _mode_label = {"dark": "切换到浅色", "light": "切换到深色"}
+        self._btn_theme = QPushButton(_mode_label.get(theme_manager.current_mode(), "切换主题"))
+        self._btn_theme.setToolTip("在系统深色/浅色主题之间切换")
+        self._btn_theme.clicked.connect(self._toggle_theme)
+        layout.addWidget(self._btn_theme)
+
         layout.addSpacing(4)
 
         # ── 帮助 ──────────────────────────────────────────────────────
@@ -781,6 +788,16 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         """显示关于对话框。"""
         QMessageBox.about(self, f"About {APP_NAME}", ABOUT_TEXT)
+
+    def _toggle_theme(self) -> None:
+        """在系统深色/浅色主题之间切换，并更新按钮文字。"""
+        hints = QGuiApplication.styleHints()
+        if theme_manager.current_mode() == "dark":
+            hints.setColorScheme(Qt.ColorScheme.Light)
+            self._btn_theme.setText("切换到深色")
+        else:
+            hints.setColorScheme(Qt.ColorScheme.Dark)
+            self._btn_theme.setText("切换到浅色")
 
     def _show_help(self) -> None:
         """显示帮助文档对话框。"""
