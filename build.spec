@@ -55,14 +55,9 @@ a = Analysis(
         ('macros', 'macros'),
         ('drawing_templates', 'drawing_templates'),
         ('crack', 'crack'),
-        ('catia_copilot/ui/style.qss', 'catia_copilot/ui'),
         ('catia_copilot', 'catia_copilot'),
     ],
     hiddenimports=[
-        # qdarkstyle 通过 Qt 资源系统注册图标，PyInstaller 静态分析找不到这两个模块，
-        # 缺失时深色/浅色主题的图标（滚动条箭头、复选框等）会显示为空白。
-        'qdarkstyle.dark.darkstyle_rc',
-        'qdarkstyle.light.lightstyle_rc',
     ],
     hookspath=[],
     hooksconfig={},

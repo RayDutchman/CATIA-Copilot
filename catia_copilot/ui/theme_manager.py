@@ -4,7 +4,6 @@
 - 启动时应用 windows11 风格 + native.qss（项目最小覆盖）
 - windows11 风格原生支持深色模式，自动读取系统 QPalette，无需手动构建调色板
 - 系统深色/浅色切换时自动重新应用，DWM 标题栏颜色同步跟随
-- 不再使用 qdarkstyle，不再提供手动主题切换
 - QSS 通过 QApplication.setStyleSheet() 全局应用，对话框等顶层窗口均生效
 """
 
