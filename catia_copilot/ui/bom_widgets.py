@@ -94,19 +94,15 @@ class _BomTreeWidget(QTreeWidget):
         self.setItemDelegate(_RowHeightDelegate(self))
 
     def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex) -> None:
-        """先让风格画展开/折叠箭头，再叠加虚线连接线。
+        """先画虚线连接线（底层），再让风格画箭头（顶层），避免线浮在箭头上。
 
         windows11/windowsvista 风格在有全局 QSS 时不自绘竖线/横线，需要手动补。
         其他风格（windows 经典、Fusion、macOS 等）自带连接线，直接交由 super() 处理。
 
         坐标系：rect 覆盖从 x=0 到当前层缩进终点的整个 branch 区域，
         宽度 = (depth+1) * indent，高度 = 行高。
-        Qt 所有内置风格的箭头均画在最右边 indent 格子的中央，
-        即 x = rect.right() - indent//2，连接线与此对齐。
+        横线从竖线延伸到 rect.right()（文字左边缘），竖线在箭头左侧。
         """
-        # 先让风格画原生箭头（PE_IndicatorBranch）
-        super().drawBranches(painter, rect, index)
-
         # 只有 windows11/windowsvista 风格需要手动补虚线；
         # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
         # 用 theme_manager._STYLE_NAME 而非运行时查询 objectName()，
@@ -117,10 +113,12 @@ class _BomTreeWidget(QTreeWidget):
         except Exception:
             _need_overlay = True   # 导入失败时保守地画线
         if not _need_overlay:
+            super().drawBranches(painter, rect, index)
             return
 
         item = self.itemFromIndex(index)
         if item is None:
+            super().drawBranches(painter, rect, index)
             return
 
         # 计算当前 item 的深度（root 的子节点 depth=1）
@@ -131,7 +129,8 @@ class _BomTreeWidget(QTreeWidget):
             p = p.parent()
 
         if depth == 0:
-            # root 节点本身不画连接线
+            # root 节点本身不画连接线，只画箭头
+            super().drawBranches(painter, rect, index)
             return
 
         indent = self.indentation()
@@ -153,9 +152,10 @@ class _BomTreeWidget(QTreeWidget):
         row_h = rect.height()
         mid_y = rect.top() + row_h // 2
 
-        # 各层连接线中心 x，与风格箭头对齐，再左移 1px 使视觉居中
+        # 竖线 x 坐标：箭头左侧，与箭头中心 (rect.right() - indent//2) 左移 indent//2
+        # 即 rect.right() - indent，再左移 1px 视觉居中
         def layer_x(d: int) -> int:
-            return rect.left() + (d + 1) * indent - indent // 2 - 1
+            return rect.left() + d * indent - 1
 
         cur_x = layer_x(depth)
 
@@ -172,8 +172,8 @@ class _BomTreeWidget(QTreeWidget):
         # 竖线：从行中央到底部（如果还有后续兄弟）
         if has_next_sibling:
             painter.drawLine(cur_x, mid_y, cur_x, rect.bottom())
-        # 横线：从竖线向右延伸半个 indent（连接到文字/箭头）
-        painter.drawLine(cur_x, mid_y, cur_x + indent // 2, mid_y)
+        # 横线：从竖线延伸到文字左边缘（rect.right()）
+        painter.drawLine(cur_x, mid_y, rect.right(), mid_y)
 
         # ── 祖先层：只画竖线（该祖先还有后续兄弟时）────────────────────
         anc       = item.parent()
@@ -189,3 +189,6 @@ class _BomTreeWidget(QTreeWidget):
             anc_depth -= 1
 
         painter.restore()
+
+        # 最后让风格画箭头（顶层），覆盖在虚线上
+        super().drawBranches(painter, rect, index)
