@@ -319,7 +319,7 @@ class BomEditDialog(QDialog):
         # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
         # 开启后 branch 列背景无法同步，且选中行颜色因奇偶行底色不同而出现色差。
         self._table.setAlternatingRowColors(False)
-        self._table.setIndentation(16)
+        self._table.setIndentation(12)
         self._table.itemChanged.connect(self._on_item_changed)
         hdr.sectionResized.connect(self._on_section_resized)
         _delegate = _BomTreeDelegate(lambda: self._columns, self._table)

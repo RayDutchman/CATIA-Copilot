@@ -109,8 +109,14 @@ class _BomTreeWidget(QTreeWidget):
 
         # 只有 windows11/windowsvista 风格需要手动补虚线；
         # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
-        style_name = self.style().objectName().lower()
-        if style_name not in ("windows11", "windowsvista"):
+        # 用 theme_manager._STYLE_NAME 而非运行时查询 objectName()，
+        # 因为 QWidget.style().objectName() 在未单独设置 style 时可能返回空。
+        try:
+            from catia_copilot.ui.theme_manager import _STYLE_NAME
+            _need_overlay = _STYLE_NAME in ("windows11", "windowsvista")
+        except Exception:
+            _need_overlay = True   # 导入失败时保守地画线
+        if not _need_overlay:
             return
 
         item = self.itemFromIndex(index)
