@@ -59,11 +59,11 @@ class _Layout:
     LARGE_FONT_SIZE:         int = 15   # 大图标按钮（emoji）
 
     # ── QSS pt 字号（用于 native.qss 占位符替换）────────────────────────────
-    LABEL_FONT_SIZE_PT:      str = "8pt"    # 节标题（sectionLabel）
-    HINT_FONT_SIZE_PT:       str = "9pt"    # 提示标签（hintLabel）
-    STATUS_FONT_SIZE_PT:     str = "9pt"    # CATIA 连接状态标签（catiaStatusLabel）
-    BUTTON_FONT_SIZE_PT:     str = "9pt"    # 按钮文字（QPushButton）
-    TAB_FONT_SIZE_PT:        str = "9pt"    # Tab 标签文字（QTabBar::tab）
+    LABEL_FONT_SIZE_PT:      str = "10pt"    # 节标题（sectionLabel）
+    HINT_FONT_SIZE_PT:       str = "10pt"    # 提示标签（hintLabel）
+    STATUS_FONT_SIZE_PT:     str = "10pt"    # CATIA 连接状态标签（catiaStatusLabel）
+    BUTTON_FONT_SIZE_PT:     str = "10pt"    # 按钮文字（QPushButton）
+    TAB_FONT_SIZE_PT:        str = "10pt"    # Tab 标签文字（QTabBar::tab）
 
     # ── 详细表格（BOM / 质量属性等 QTreeWidget）─────────────────────────────
     TABLE_ROW_HEIGHT:        int = 24   # 统一行高（px），通过 delegate.sizeHint 控制
@@ -86,7 +86,7 @@ class _Layout:
     SIDEBAR_HEADER_MARGINS:  tuple = (8, 2, 8, 2)   # 标题栏 layout margins (left,top,right,bottom)
     SIDEBAR_HEADER_SPACING:  int   = 4     # 标题栏内控件间距（px）
     SIDEBAR_DIVIDER_HEIGHT:  int   = 1     # 标题栏与列表之间分隔线高度（px）
-    SIDEBAR_LIST_SPACING:    int   = 1     # 会话列表项之间的间距（px）
+    SIDEBAR_LIST_SPACING:    int   = 0     # 列表项间距（px）；间距靠 ::item padding 控制，此处为 0
     SIDEBAR_BOTTOM_HEIGHT:   int   = 52    # 底部"新对话"按钮区高度（px）
     SIDEBAR_BOTTOM_MARGINS:  tuple = (8, 0, 8, 2)   # 底部区域 layout margins
     SIDEBAR_NEW_BTN_HEIGHT:  int   = 30    # "新对话"按钮高度（px）

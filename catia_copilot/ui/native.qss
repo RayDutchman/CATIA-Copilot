@@ -60,8 +60,14 @@ QLabel#logPathLabel {
 
 /* ── AI 聊天面板：布局容器圆角/边框清零 ─────────────────────────────── */
 /* windows11 风格会给部分容器加边框，这里精确清零避免多余边框线 */
+/* ChatArea/ToolbarWrapper 用 palette(base) 背景，比侧边栏的 palette(window)
+   略深/略浅，使两者之间的分隔线在视觉上清晰可见 */
 QWidget#ChatArea,
-QWidget#ToolbarWrapper,
+QWidget#ToolbarWrapper {
+    background-color: palette(base);
+    border: none;
+    border-radius: 0px;
+}
 QWidget#ToolbarBar,
 QWidget#InputArea {
     border: none;
@@ -76,6 +82,8 @@ QSplitter#InputSplitter {
     border-radius: 0px;
 }
 QSplitter#InputSplitter::handle {
+    /* 与分隔线同色（palette(mid)），形成清晰可见的横线 */
+    background-color: palette(mid);
     border-radius: 0px;
     image: none;
 }

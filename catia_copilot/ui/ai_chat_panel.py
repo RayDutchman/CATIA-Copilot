@@ -867,6 +867,10 @@ class _CollapseHandle(QSplitterHandle):
         # handle 整体背景（与侧边栏融合，不突兀）
         painter.fillRect(self.rect(), QColor(c.handle_bg))
 
+        # 左边缘竖线：与分隔线同色，提示此处可拖动
+        painter.setPen(QColor(c.divider))
+        painter.drawLine(0, 0, 0, self.height() - 1)
+
         # 箭头按钮区域背景（hover 时高亮）
         btn_rect = self._arrow_rect()
         if self._hovered:
@@ -1002,28 +1006,35 @@ class SessionSidebar(QWidget):
         self.setStyleSheet(
             # 整体容器背景
             f"SessionSidebar {{ background-color: {c.sidebar_bg}; }}"
-            # 标题栏：背景色跟随主题（border/border-radius 由 qss 统一清零）
-            f"QWidget#SidebarHeader {{ background-color: {c.sidebar_bg}; }}"
-            # 底部区域
-            f"QWidget#SidebarBottom {{ background-color: {c.sidebar_bg}; }}"
+            # 标题栏：无边框无圆角，背景与侧边栏融合
+            f"QWidget#SidebarHeader {{ background-color: {c.sidebar_bg};"
+            f" border: none; border-radius: 0px; }}"
+            # 底部区域：同上
+            f"QWidget#SidebarBottom {{ background-color: {c.sidebar_bg};"
+            f" border: none; border-radius: 0px; }}"
             # 分隔线：显示为实色块，不依赖 QFrame 默认的 sunken/raised 渲染
             f"QFrame#SidebarDivider {{ background-color: {c.divider}; border: none; }}"
             # 会话列表：用 objectName 精确限定，避免宽泛选择器污染 QMenu 样式上下文
-            f"QListWidget#SessionList {{ background-color: {c.sidebar_bg}; color: {c.sidebar_fg}; }}"
-            f"QListWidget#SessionList::item {{ padding: 6px 10px; }}"
-            f"QListWidget#SessionList::item:selected {{ background-color: {c.sidebar_sel}; "
-            f"color: {c.sidebar_fg}; }}"
-            f"QListWidget#SessionList::item:hover:!selected {{ background-color: {c.sidebar_hover}; }}"
-            f"QListWidget#SessionList QScrollBar:vertical {{ width: 4px; border: none; "
-            f"background: transparent; }}"
-            f"QListWidget#SessionList QScrollBar::handle:vertical {{ background: {c.sidebar_fg}; "
-            f"border-radius: 2px; min-height: 20px; }}"
-            f"QListWidget#SessionList QScrollBar::add-line:vertical, "
+            f"QListWidget#SessionList {{ background-color: {c.sidebar_bg};"
+            f" color: {c.sidebar_fg}; border: none; }}"
+            # 列表项：无边框无圆角无间距，选中/hover 色铺满整行
+            f"QListWidget#SessionList::item {{ padding: 6px 10px;"
+            f" border: none; border-radius: 0px; margin: 0px; }}"
+            f"QListWidget#SessionList::item:selected {{ background-color: {c.sidebar_sel};"
+            f" color: {c.sidebar_fg}; border-radius: 0px; }}"
+            f"QListWidget#SessionList::item:hover:!selected {{"
+            f" background-color: {c.sidebar_hover}; border-radius: 0px; }}"
+            # 滚动条：细条样式
+            f"QListWidget#SessionList QScrollBar:vertical {{ width: 4px; border: none;"
+            f" background: transparent; }}"
+            f"QListWidget#SessionList QScrollBar::handle:vertical {{ background: {c.sidebar_fg};"
+            f" border-radius: 2px; min-height: 20px; }}"
+            f"QListWidget#SessionList QScrollBar::add-line:vertical,"
             f"QListWidget#SessionList QScrollBar::sub-line:vertical {{ height: 0px; }}"
             f"QListWidget#SessionList QScrollBar:horizontal {{ height: 0px; }}"
-            # 新对话按钮
-            f"SessionSidebar QPushButton {{ background-color: {c.sidebar_bg}; "
-            f"color: {c.sidebar_fg}; border: 1px solid {c.divider}; border-radius: 4px; }}"
+            # 新对话按钮：保留轻量边框，与列表项区分
+            f"SessionSidebar QPushButton {{ background-color: {c.sidebar_bg};"
+            f" color: {c.sidebar_fg}; border: 1px solid {c.divider}; border-radius: 4px; }}"
             f"SessionSidebar QPushButton:hover {{ background-color: {c.sidebar_hover}; }}"
         )
 
