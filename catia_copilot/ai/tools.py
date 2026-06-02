@@ -79,7 +79,19 @@ DEFAULT_SYSTEM_PROMPT = """\
   特征：
     ctx.add_pad(part, sk, depth)    → Pad     拉伸
     ctx.add_pocket(part, sk, depth) → Pocket  挖槽（目前仅支持基准面草图）
+    ctx.add_shaft(part, sk, axis="z") → Shaft   旋转体（360°），axis 默认 "z"
+    ctx.add_groove(part, sk, axis="z")→ Groove  环形槽（旋转切除，需已有实体），axis 默认 "z"
     ctx.add_hole_from_sketch(part, sk, diameter, depth) → Hole  打孔
+
+  旋转体 / 环形槽约束（重要）：
+    - axis="z"：草图在 ZX 平面（plane="zx"），H=-X，V=Z，轮廓须全在 H>0 侧
+    - axis="x"：草图在 XY 平面（plane="xy"），H=X，V=Y，轮廓须全在 H>0 侧
+    - axis="y"：草图在 YZ 平面（plane="yz"），H=Y，V=Z，轮廓须全在 H>0 侧
+    - add_groove 前提：Part 已有实体且已 update_part；环形槽轮廓需位于实体内部
+    - 示例（绕 X 轴旋转，XY 平面草图，外径100 内径50）：
+        sk = ctx.add_sketch(part, "xy")
+        ctx.draw_rect(sk, 25, 0, 25, 80)  # H=25~50（半径），V=0~80（高度）
+        shaft = ctx.add_shaft(part, sk, axis="x")
 
   修饰（当前需要 edge_ref，暂不可用，后续版本开放）：
     ctx.add_edge_fillet(part, edge_ref, radius)

@@ -13,7 +13,7 @@ CATIA V5 建模操作模块。
 --------
 ::
 
-    from catia_copilot.catia.modeling import create_part, add_sketch, draw_rect, add_pad, update_part
+    from catia_copilot.catia.modeling import create_part, add_sketch, draw_rect, add_pad, add_shaft, add_groove, update_part
 
     part = create_part("MyPart")
     sk   = add_sketch(part, "xy")
@@ -208,9 +208,181 @@ def draw_point(sketch, x: float, y: float):
     return point
 
 
+def _get_z_axis_ref(part_doc_com):
+    """通过 HybridShapeFactory 创建 Z 轴方向线，命名为 'Z 轴' 并插入 MainBody，
+    返回其 Reference（与 CATIA GUI 手动创建的 Z 轴行为一致）。
+
+    参数
+    ----
+    part_doc_com : win32com 的 ActiveDocument COM 对象
+
+    返回
+    ----
+    pycatia Reference（可直接赋给 shaft.revolute_axis / groove.revolute_axis）
+
+    说明
+    ----
+    - body.InsertHybridShape(line) 将线直接插入 MainBody.HybridShapes，
+      使其出现在旋转体子树下（与手工建旋转体的树结构一致）
+    - 线命名为 "Z 轴"，与 CATIA GUI 行为一致
+    - 之后可通过 body.HybridShapes.Item("Z 轴") 再次访问
+    """
+    return _get_axis_ref(part_doc_com, "Z 轴", (0, 0, 0), (0, 0, 1))
+
+
+def _get_x_axis_ref(part_doc_com):
+    """创建 X 轴方向线（(1,0,0)）并插入 MainBody，命名为 'X 轴'。"""
+    return _get_axis_ref(part_doc_com, "X 轴", (0, 0, 0), (1, 0, 0))
+
+
+def _get_y_axis_ref(part_doc_com):
+    """创建 Y 轴方向线（(0,1,0)）并插入 MainBody，命名为 'Y 轴'。"""
+    return _get_axis_ref(part_doc_com, "Y 轴", (0, 0, 0), (0, 1, 0))
+
+
+def make_line_from_points(part_doc_com,
+                          name: str,
+                          pt_start: tuple, pt_end: tuple,
+                          pt_start_name: str = None,
+                          pt_end_name:   str = None):
+    """通用：在 MainBody 中创建命名直线（两点式），构造点作为其子节点。
+
+    参数
+    ----
+    part_doc_com  : win32com ActiveDocument COM 对象
+    name          : 直线名称（显示在树中）
+    pt_start      : 起点坐标 (x, y, z)
+    pt_end        : 终点坐标 (x, y, z)
+    pt_start_name : 起点命名，默认 "{name}_起"
+    pt_end_name   : 终点命名，默认 "{name}_终"
+
+    返回
+    ----
+    pycatia Reference（可直接赋给 revolute_axis / pad 方向等）
+
+    树结构
+    ------
+    MainBody
+    └─ <name>          ← 只 InsertHybridShape 线本身
+         ├─ <pt_start_name>   ← 点作为线的子节点，可双击编辑坐标
+         └─ <pt_end_name>
+
+    说明
+    ----
+    - 构造点**不单独** InsertHybridShape，CATIA 会自动将其作为线的输入子节点显示
+    - 若同名线已存在则直接复用，不重复插入
+    """
+    from pycatia.in_interfaces.reference import Reference as PyRef
+    part_com = part_doc_com.Part
+    body_com = part_com.MainBody
+    hsf      = part_com.HybridShapeFactory
+
+    # 复用已有
+    try:
+        existing = body_com.HybridShapes.Item(name)
+        return PyRef(part_com.CreateReferenceFromObject(existing))
+    except Exception:
+        pass
+
+    # 构造点（命名但不 Insert，挂为线的子节点）
+    pt1 = hsf.AddNewPointCoord(*pt_start)
+    pt2 = hsf.AddNewPointCoord(*pt_end)
+    pt1.Name = pt_start_name or f"{name}_起"
+    pt2.Name = pt_end_name   or f"{name}_终"
+
+    # 只 Insert 线
+    line = hsf.AddNewLinePtPt(
+        part_com.CreateReferenceFromObject(pt1),
+        part_com.CreateReferenceFromObject(pt2))
+    line.Name = name
+    body_com.InsertHybridShape(line)
+
+    return PyRef(part_com.CreateReferenceFromObject(line))
+
+
+def _get_axis_ref(part_doc_com, axis_name: str, pt_start: tuple, pt_end: tuple):
+    """通用：在 MainBody 中创建（或复用）命名轴线，返回 Reference。
+
+    构造点命名为 "{axis_name}_起" / "{axis_name}_终"，
+    作为轴线的子节点显示（不单独插入）。
+    """
+    return make_line_from_points(part_doc_com, axis_name, pt_start, pt_end)
+
+
 # ---------------------------------------------------------------------------
-# 特征：拉伸 / 挖槽 / 孔
+# 特征：旋转体 / 环形槽
 # ---------------------------------------------------------------------------
+
+def add_shaft(part, sketch, axis: str = "z"):
+    """将草图旋转 360° 生成旋转体，返回 pycatia Shaft 对象。
+
+    参数
+    ----
+    part   : pycatia Part 对象
+    sketch : ZX / YZ / XY 平面上的闭合轮廓草图
+    axis   : 旋转轴，"x" / "y" / "z"（默认 "z"）
+             - axis="z"：草图须在 ZX 平面，轮廓在 H>0 侧
+             - axis="x"：草图须在 XY 平面，轮廓在 H>0 侧
+             - axis="y"：草图须在 YZ 平面，轮廓在 H>0 侧
+
+    返回
+    ----
+    pycatia ``Shaft`` 对象
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+    app_com = get_catia_v5_application()
+
+    shaft   = part.shape_factory.add_new_shaft(sketch)
+    axis_ref = _get_named_axis_ref(app_com.ActiveDocument, axis)
+    shaft.revolute_axis = axis_ref
+
+    logger.debug(f"[MODELING] add_shaft: {shaft.name}, axis={axis}")
+    return shaft
+
+
+def add_groove(part, sketch, axis: str = "z"):
+    """在已有实体上按草图旋转切除（环形槽），返回 pycatia Groove 对象。
+
+    参数
+    ----
+    part   : pycatia Part 对象（必须已有实体）
+    sketch : 闭合矩形草图，位于实体内部
+    axis   : 旋转轴，"x" / "y" / "z"（默认 "z"）
+
+    返回
+    ----
+    pycatia ``Groove`` 对象
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+    app_com = get_catia_v5_application()
+
+    groove   = part.shape_factory.add_new_groove(sketch)
+    axis_ref = _get_named_axis_ref(app_com.ActiveDocument, axis)
+    groove.revolute_axis = axis_ref
+
+    logger.debug(f"[MODELING] add_groove: {groove.name}, axis={axis}")
+    return groove
+
+
+def _get_named_axis_ref(part_doc_com, axis: str):
+    """根据轴名称返回对应的 Reference。
+
+    参数
+    ----
+    axis : "x" / "y" / "z"（大小写不敏感）
+    """
+    a = axis.lower()
+    if a == "x":
+        return _get_x_axis_ref(part_doc_com)
+    elif a == "y":
+        return _get_y_axis_ref(part_doc_com)
+    elif a == "z":
+        return _get_z_axis_ref(part_doc_com)
+    else:
+        raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
+
+
+
 
 def add_pad(part, sketch, depth: float):
     """将草图拉伸指定深度，返回 pycatia Pad 对象。
@@ -583,6 +755,26 @@ class ModelingContext:
         """挖槽，返回 Pocket 对象。"""
         self._part = part
         return self._run(f"add_pocket(depth={depth})", add_pocket, part, sketch, depth)
+
+    def add_shaft(self, part, sketch, axis: str = "z"):
+        """旋转草图生成旋转体（360°），返回 Shaft 对象。
+
+        axis: 旋转轴 "x" / "y" / "z"（默认 "z"）
+        草图平面与旋转轴的对应关系：
+          axis="z" → 草图在 ZX 平面；axis="x" → XY 平面；axis="y" → YZ 平面
+        轮廓须全在 H>0 侧（不跨越旋转轴）。调用后需 update_part。
+        """
+        self._part = part
+        return self._run(f"add_shaft(axis={axis!r})", add_shaft, part, sketch, axis)
+
+    def add_groove(self, part, sketch, axis: str = "z"):
+        """在已有实体上旋转切除（环形槽），返回 Groove 对象。
+
+        前提：Part 已有实体且已 update_part。
+        axis: 旋转轴 "x" / "y" / "z"（默认 "z"）
+        """
+        self._part = part
+        return self._run(f"add_groove(axis={axis!r})", add_groove, part, sketch, axis)
 
     def add_hole_from_sketch(self, part, sketch,
                              diameter: float, depth: float):
