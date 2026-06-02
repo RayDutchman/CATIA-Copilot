@@ -205,6 +205,11 @@ class MassPropsDialog(QDialog):
         if self._read_mode not in ("first", "last", "all"):
             self._read_mode = "all"
 
+        # ── 数据来源 ──────────────────────────────────────────────────────────
+        self._source: str = self._settings.value("source", "keep_inertia")
+        if self._source not in ("keep_inertia", "analyze"):
+            self._source = "keep_inertia"
+
         # ── 忽略隐藏节点 ──────────────────────────────────────────────────────
         self._skip_hidden: bool = self._settings.value("skip_hidden", False, type=bool)
 
@@ -495,6 +500,33 @@ class MassPropsDialog(QDialog):
         _sep1.setFrameShadow(QFrame.Shadow.Sunken)
         row1.addSpacing(4); row1.addWidget(_sep1); row1.addSpacing(4)
 
+        # 数据来源
+        self._radio_src_keep = QRadioButton("惯量包络体")
+        self._radio_src_analyze = QRadioButton("Analyze")
+        self._radio_src_keep.setToolTip(
+            "读取 SPA 保持测量写入的「惯量包络体.N」参数。\n"
+            "需用户预先在 SPA 中执行「测量惯量 + 保持测量」操作。"
+        )
+        self._radio_src_analyze.setToolTip(
+            "通过 CATIA Analyze API 实时计算零件质量特性。\n"
+            "需零件已赋材料；无需手动创建保持测量。\n"
+            "选中时「惯量包络体读取」选项不可用。"
+        )
+        self._radio_src_keep.setChecked(self._source == "keep_inertia")
+        self._radio_src_analyze.setChecked(self._source == "analyze")
+        self._source_group = QButtonGroup(self)
+        self._source_group.addButton(self._radio_src_keep)
+        self._source_group.addButton(self._radio_src_analyze)
+        self._radio_src_keep.toggled.connect(self._on_source_changed)
+        self._radio_src_analyze.toggled.connect(self._on_source_changed)
+        row1.addWidget(QLabel("数据来源:"))
+        row1.addWidget(self._radio_src_analyze)
+        row1.addWidget(self._radio_src_keep)
+
+        _sep2 = QFrame(); _sep2.setFrameShape(QFrame.Shape.VLine)
+        _sep2.setFrameShadow(QFrame.Shadow.Sunken)
+        row1.addSpacing(4); row1.addWidget(_sep2); row1.addSpacing(4) 
+
         # 读取模式
         self._read_mode_group = QButtonGroup(self)
         self._radio_read_first = QRadioButton("只读.1")
@@ -524,11 +556,16 @@ class MassPropsDialog(QDialog):
         row1.addWidget(QLabel("惯量包络体读取:"))
         row1.addWidget(self._radio_read_first)
         row1.addWidget(self._radio_read_last)
-        row1.addWidget(self._radio_read_all)
+        row1.addWidget(self._radio_read_all)   
 
-        _sep2 = QFrame(); _sep2.setFrameShape(QFrame.Shape.VLine)
-        _sep2.setFrameShadow(QFrame.Shadow.Sunken)
-        row1.addSpacing(4); row1.addWidget(_sep2); row1.addSpacing(4)
+        # 初始状态：analyze 时禁用读取模式控件
+        _read_mode_enabled = (self._source == "keep_inertia")
+        for _w in (self._radio_read_first, self._radio_read_last, self._radio_read_all):
+            _w.setEnabled(_read_mode_enabled)
+
+        _sep3 = QFrame(); _sep3.setFrameShape(QFrame.Shape.VLine)
+        _sep3.setFrameShadow(QFrame.Shadow.Sunken)
+        row1.addSpacing(4); row1.addWidget(_sep3); row1.addSpacing(4)
 
         # 忽略隐藏节点
         self._skip_hidden_chk = QCheckBox("忽略隐藏的节点")
@@ -899,6 +936,16 @@ class MassPropsDialog(QDialog):
             self._read_mode = "all"
         self._settings.setValue("read_mode", self._read_mode)
 
+    def _on_source_changed(self, checked: bool) -> None:
+        if not checked:
+            return
+        self._source = "analyze" if self._radio_src_analyze.isChecked() else "keep_inertia"
+        self._settings.setValue("source", self._source)
+        # 读取模式控件仅在 keep_inertia 时有意义
+        _enabled = (self._source == "keep_inertia")
+        for _w in (self._radio_read_first, self._radio_read_last, self._radio_read_all):
+            _w.setEnabled(_enabled)
+
     def _on_skip_hidden_changed(self, checked: bool) -> None:
         self._skip_hidden = self._skip_hidden_chk.isChecked()
         self._settings.setValue("skip_hidden", self._skip_hidden)
@@ -1019,7 +1066,8 @@ class MassPropsDialog(QDialog):
         try:
             rows = collect_mass_props_rows(file_path, progress_callback=_on_row_collected,
                                            read_mode=self._read_mode,
-                                           skip_hidden=self._skip_hidden)
+                                           skip_hidden=self._skip_hidden,
+                                           source=self._source)
         except Exception as e:
             progress.close()
             logger.error(f"加载质量特性失败: {e}")
@@ -1239,6 +1287,7 @@ class MassPropsDialog(QDialog):
                 progress_callback=_on_row_collected,
                 read_mode=self._read_mode,
                 skip_hidden=self._skip_hidden,
+                source=self._source,
             )
         except Exception as e:
             logger.error(f"追加活动文档质量特性失败: {e}")

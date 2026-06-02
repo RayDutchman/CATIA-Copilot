@@ -185,3 +185,64 @@ def open_document(file_path: str, foreground: bool = False) -> None:
     app = get_catia_v5_application()
     open_catia_file(app.Documents, file_path, foreground=foreground)
 
+
+# ---------------------------------------------------------------------------
+# pycatia 包装辅助
+# ---------------------------------------------------------------------------
+
+def wrap_application():
+    """返回用本项目连接方式获取的 pycatia Application 包装对象。
+
+    本项目使用自有的 ``get_catia_v5_application()`` 进行 COM 连接（ROT 枚举 +
+    CLSID 直连 + ProgID 三策略，确保在 3DEXPERIENCE 并存时只连 CATIA V5）。
+    pycatia 的 ``catia()`` 入口不具备上述保障，因此**不使用 pycatia 的连接层**。
+
+    此函数将已连接的 win32com Application 对象包装为 pycatia ``Application``，
+    使调用方可以直接使用 pycatia 的高级 API（``Position.get_components``、
+    ``Analyze.get_gravity_center``、``Inertia.get_inertia_matrix`` 等），
+    而无需手写 VBA 字符串或处理 SAFEARRAY ByRef 细节。
+
+    返回
+    ----
+    ``pycatia.in_interfaces.application.Application``
+
+    示例
+    ----
+    ::
+
+        from catia_copilot.catia.connection import wrap_application, wrap_product
+
+        app = wrap_application()
+        doc = app.active_document          # pycatia Document
+        root = wrap_product(doc.product.product)   # pycatia Product
+
+    """
+    from pycatia.in_interfaces.application import Application as _PyApplication
+    return _PyApplication(get_catia_v5_application())
+
+
+def wrap_product(product_com):
+    """将 win32com Product COM 对象包装为 pycatia ``Product``。
+
+    获得 pycatia Product 后可直接调用：
+      - ``product.position.get_components()``  → 12 元素 tuple，位置/旋转
+      - ``product.analyze.mass``               → 质量 kg（基于材料属性）
+      - ``product.analyze.get_gravity_center()``  → 重心坐标 mm
+      - ``product.analyze.get_inertia()``         → 9 元素惯量矩阵
+      - ``product.products``                   → 子件集合
+      - ``product.part_number``                → 零件编号
+      - 其他所有 pycatia Product API
+
+    参数
+    ----
+    product_com : win32com CDispatch
+        由 ``app.ActiveDocument.Product`` 或 ``product.Products.Item(i)``
+        等方式获取的原始 COM 对象。
+
+    返回
+    ----
+    ``pycatia.product_structure_interfaces.product.Product``
+    """
+    from pycatia.product_structure_interfaces.product import Product as _PyProduct
+    return _PyProduct(product_com)
+
