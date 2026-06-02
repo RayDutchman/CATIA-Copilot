@@ -14,7 +14,7 @@
    a. 判断节点类型（零件 / 部件 / 产品）；
    b. 通过 _position_to_mat4() 读取该节点相对父节点的局部变换矩阵，
       与父节点的累积矩阵相乘，得到"局部→根"的绝对变换矩阵（_placement）；
-   c. 若节点为叶子零件，调用 _measure_part_mass_props() 测量质量特性
+   c. 若节点为叶子零件，按 source 参数选择测量路径读取质量特性
       （重心坐标和转动惯量在零件局部坐标系下给出），并写入行字典。
 
 3. _post_process_rows() 对收集到的行列表进行两轮后处理：
@@ -23,13 +23,21 @@
    · 第二轮：对每个产品 / 部件节点，按平行轴定理汇总子孙零件的质量特性，
      计算该节点在根坐标系下的总质量、总重心和总转动惯量。
 
-质量特性读取
------------
-依次读取 CATIA SPA "测量惯量 + 保持测量" 写入的 "惯量包络体.1" 至
-"惯量包络体.{MAX_INERTIA_INDEX}" 保持测量参数，在零件级按平行轴定理汇总后存储：
-  惯量包络体.N\\质量    → 质量， CATIA 原始单位 kg（已为 SI，直接存储）
-  惯量包络体.N\\Gx/Gy/Gz → 重心坐标， CATIA 原始单位 mm（÷1000 换算为 m 后存储）
-  惯量包络体.N\\IoxG/IoyG/IozG/IxyG/IxzG/IyzG → 转动惯量分量， CATIA 原始单位 kg·m²（已为 SI，直接存储）
+质量特性读取路径
+--------------
+source="keep_inertia"（默认）
+    依次读取 CATIA SPA "测量惯量 + 保持测量" 写入的 "惯量包络体.1" 至
+    "惯量包络体.{MAX_INERTIA_INDEX}" 保持测量参数，在零件级按平行轴定理汇总后存储。
+    需用户预先在 SPA 中执行"测量惯量 + 保持测量"操作。
+
+source="analyze"
+    通过 pycatia Analyze API（product.analyze.mass / get_gravity_center /
+    get_inertia）实时读取零件文档根 Product 的质量特性。
+    调用对象为零件文档自身坐标系下的根 Product，故返回值参考系与 keep_inertia
+    路径完全一致，_post_process_rows 后处理逻辑不变。
+    需零件已赋材料；无需用户手动创建保持测量。
+
+两种路径的返回字典结构相同，单位制均为 SI（kg / m / kg·m²）。
 
 单位制（内部存储，全程 SI）
 --------------------------
@@ -121,8 +129,11 @@ def _row_inertia_to_root(row: dict) -> list[list[float]]:
 def _position_to_mat4(product) -> list[list[float]]:
     """从 win32com Product 对象的 Position.GetComponents() 读取位置，返回 4×4 变换矩阵。
 
-    接收 win32com Product COM 对象，无参调用
-    ``product.Position.GetComponents()``，捕获返回的 12 个 double 分量。
+    ``Position.GetComponents`` 使用 SAFEARRAY ByRef 输出参数，win32com 无法直接处理
+    （无参调用报 E_FAIL，传 ``[0.0]*12`` 结果无法反射回 Python）。
+    通过 ``wrap_product()`` 包装为 pycatia ``Product``，调用
+    ``product.position.get_components()``，pycatia 内部用 ``SystemService.Evaluate``
+    注入 VBA 宏绕过此限制。
 
     CATIA Position.GetComponents 数组布局（**列主序**，共 12 个元素）：
       arr[ 0.. 2] = X 轴方向向量（旋转矩阵第 1 列）
@@ -132,21 +143,23 @@ def _position_to_mat4(product) -> list[list[float]]:
 
     组装为行主序 4×4 矩阵：
       mat[i][j] 对应旋转矩阵第 i 行、第 j 列，即 arr[j*3 + i]
-      mat[i][3] 对应平移分量 arr[9 + i]
+      mat[i][3] 对应平移分量 arr[9 + i]（mm → m，除以 1000）
 
     变换含义：P_parent = R @ P_local + T
 
     若调用失败或返回值无效，返回 4×4 单位矩阵（等价于零件位于父坐标系原点，无旋转）。
     """
+    from catia_copilot.catia.connection import wrap_product
+
     try:
         product_name = getattr(product, "Name", repr(product))
     except Exception:
         product_name = repr(product)
 
     try:
-        arr = list(product.Position.GetComponents())
+        arr = wrap_product(product).position.get_components()
     except Exception as e:
-        logger.debug(f"[MAT4] {product_name}: GetComponents 失败: {e}，返回单位矩阵")
+        logger.debug(f"[MAT4] {product_name}: get_components 失败: {e}，返回单位矩阵")
         return _identity_4x4()
 
     if arr is None or len(arr) < 12:
@@ -399,6 +412,64 @@ def _measure_part_mass_props(
     若所有惯量包络体参数均不存在（零件未执行保持测量）则返回 None。
     """
     return _read_keep_inertia_params(part_com, part_number, read_mode=read_mode)
+
+
+def _measure_part_mass_props_analyze(product_com) -> dict | None:
+    """通过 pycatia Analyze API 读取零件质量特性。
+
+    与 ``_measure_part_mass_props`` 并列的替代路径，无需用户预先在 SPA 中创建
+    "惯量包络体"保持测量——只要零件已赋材料，CATIA 即可实时计算。
+
+    实现说明
+    --------
+    调用对象为**零件文档的根 Product**（``product_com.ReferenceProduct.Parent.Product``），
+    而非装配树中的实例。在零件文档根 Product 上调用 ``analyze``，参考系为零件自身
+    坐标系，等同于"在零件文档中单独测量"的结果，与 ``惯量包络体`` 路径的坐标系语义
+    完全一致。
+
+    已验证（本机测试）：
+      - ``analyze.mass``               → 零件质量，kg
+      - ``analyze.get_gravity_center()`` → 零件局部坐标系下重心，mm（此处转换为 m）
+      - ``analyze.get_inertia()``       → **重心处**转动惯量，kg·m²，9 元素行主序 tuple
+        返回行主序 3×3：raw[0..2]=第0行，raw[3..5]=第1行，raw[6..8]=第2行
+
+    返回字典结构与 ``_measure_part_mass_props`` 完全相同（SI 单位）：
+      {
+        "weight":  float,               # 质量，kg
+        "cog":     [x, y, z],           # 重心坐标（零件局部坐标系），m
+        "inertia": [[Ixx, Ixy, Ixz],    # 重心处转动惯量张量，kg·m²
+                    [Ixy, Iyy, Iyz],
+                    [Ixz, Iyz, Izz]],
+        "density": None,                # Analyze 不提供密度字段，始终为 None
+      }
+    若零件未赋材料导致 mass == 0 或调用失败，则返回 None。
+    """
+    from catia_copilot.catia.connection import wrap_product
+
+    try:
+        # 零件文档根 Product：参考系 = 零件自身坐标系
+        part_doc_product_com = product_com.ReferenceProduct.Parent.Product
+        analyze = wrap_product(part_doc_product_com).analyze
+
+        mass = analyze.mass          # kg
+        if not mass or mass <= 0.0:
+            return None
+
+        cog_mm = analyze.get_gravity_center()   # mm，3 元素 tuple
+        cog_m  = [cog_mm[i] / 1000.0 for i in range(3)]
+
+        raw = analyze.get_inertia()  # kg·m²，9 元素 tuple，行主序 3×3
+        inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]
+
+        return {
+            "weight":  mass,
+            "cog":     cog_m,
+            "inertia": inertia,
+            "density": None,
+        }
+    except Exception as e:
+        logger.debug(f"[ANALYZE] get_inertia/get_gravity_center 失败: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +892,7 @@ def collect_mass_props_rows(
     progress_callback: Callable[[int], None] | None = None,
     read_mode: str = "all",
     skip_hidden: bool = False,
+    source: str = "keep_inertia",
 ) -> list[dict]:
     """遍历产品树，返回每个节点的质量特性行列表。
 
@@ -836,13 +908,20 @@ def collect_mass_props_rows(
         progress_callback:
             可选回调，每追加一行后调用，传入当前行数。可通过抛出异常中止遍历。
         read_mode:
-            控制读取哪些惯量包络体（传递给 ``_measure_part_mass_props``）：
+            控制读取哪些惯量包络体（仅 ``source="keep_inertia"`` 时生效）：
             "first" — 仅读取惯量包络体.1；
             "last"  — 读取编号最大的惯量包络体；
             "all"   — 全部读取并按平行轴定理汇总（默认）。
         skip_hidden:
             若为 True，则跳过处于隐藏状态的节点：
             零件隐藏时不读取该行；产品/部件隐藏时连同其全部子孙一并跳过。
+        source:
+            质量特性数据来源，可选值：
+            "keep_inertia" — 读取 SPA 保持测量写入的"惯量包络体.N"参数（默认）。
+                             需用户预先在 SPA 中执行"测量惯量 + 保持测量"。
+            "analyze"      — 通过 pycatia Analyze API 实时计算。
+                             需零件已赋材料；无需用户手动创建保持测量。
+                             两种方式返回结构相同，坐标系语义一致，后处理逻辑不变。
 
     返回：
         行字典列表，每行含以下键：
@@ -900,16 +979,11 @@ def collect_mass_props_rows(
             sel = application.ActiveDocument.Selection
             sel.Clear()
             sel.Add(com)
-            # In win32com late-binding (IDispatch), ByRef out-params are returned
-            # as Python return values when you pass an initial plain int.
-            # Passing a VARIANT(VT_BYREF|VT_I4,…) causes win32com to attempt
-            # int(variant) during dispatch argument marshalling which raises TypeError.
-            result = sel.VisProperties.GetShow(0)
-            # result may be the show-state int directly, or a tuple ending with it
-            if isinstance(result, tuple):
-                show_val = result[-1]
-            else:
-                show_val = result
+            # win32com 对 GetShow 的返回形式：无参调用时将 ByRef out-param 作为
+            # 元组末位元素返回，即 (status, show_val)。取 [1] 得到 show 状态值。
+            # 与 pycatia VisPropertySet.get_show() 的实现一致。
+            result = sel.VisProperties.GetShow()
+            show_val = result[1] if isinstance(result, tuple) and len(result) >= 2 else result
             hidden = bool(show_val) if show_val is not None else False
             logger.debug(f"[VIS] {tag}: Selection.VisProperties.GetShow()={show_val} → hidden={hidden}")
             return hidden
@@ -1000,8 +1074,6 @@ def collect_mass_props_rows(
                 revision     = _get_prop(product, "Revision")
 
         # ── 质量特性测量（仅对叶子零件节点）────────────────────────────────────
-        # 依次读取"惯量包络体.1"至"惯量包络体.MAX_INERTIA_INDEX"的保持测量参数，
-        # 在零件级汇总后存储（零件须已执行 SPA 保持测量）。
         mass_props: dict | None = None
         meas_failed = False
 
@@ -1011,11 +1083,15 @@ def collect_mass_props_rows(
                 mass_props = _mass_cache[filepath]
             else:
                 try:
-                    # ReferenceProduct.Parent 就是该零件的 PartDocument COM 对象，
-                    # 无需遍历 Documents 集合按路径查找，直接取 .Part 即可。
-                    part_doc_com = product.ReferenceProduct.Parent
-                    part_com     = part_doc_com.Part
-                    mass_props   = _measure_part_mass_props(part_com, pn, read_mode=read_mode)
+                    if source == "analyze":
+                        # Analyze API：通过零件文档根 Product 实时计算
+                        # 参考系 = 零件自身坐标系，与 keep_inertia 路径语义一致
+                        mass_props = _measure_part_mass_props_analyze(product)
+                    else:
+                        # keep_inertia（默认）：读取 SPA 保持测量参数
+                        part_doc_com = product.ReferenceProduct.Parent
+                        part_com     = part_doc_com.Part
+                        mass_props   = _measure_part_mass_props(part_com, pn, read_mode=read_mode)
                 except Exception as e:
                     logger.debug(f"无法测量零件 {filepath}: {e}")
                     mass_props  = None
@@ -1023,13 +1099,13 @@ def collect_mass_props_rows(
 
                 if mass_props is not None:
                     logger.debug(
-                        f"[TRAV] {pn} 测量成功: "
-                        f"weight={mass_props.get('weight')}g, "
-                        f"cog={[round(v,3) for v in mass_props.get('cog',[0,0,0])]}, "
-                        f"Ixx={mass_props.get('inertia',[[0]])[0][0]:.3g}g·mm²"
+                        f"[TRAV] {pn} 测量成功 (source={source}): "
+                        f"weight={mass_props.get('weight')}kg, "
+                        f"cog={[round(v,4) for v in mass_props.get('cog',[0,0,0])]}m, "
+                        f"Ixx={mass_props.get('inertia',[[0]])[0][0]:.3g}kg·m²"
                     )
                 else:
-                    logger.debug(f"[TRAV] {pn} 惯量包络体参数不存在或读取失败")
+                    logger.debug(f"[TRAV] {pn} 质量特性读取失败或未赋材料 (source={source})")
 
                 # 写入缓存（即使测量失败也缓存 None，防止重复尝试）
                 _mass_cache[filepath] = mass_props
