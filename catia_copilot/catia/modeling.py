@@ -387,3 +387,263 @@ def get_mass_props(part) -> dict | None:
     except Exception as e:
         logger.debug(f"[MODELING] get_mass_props 失败: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# 逐步执行上下文（M0：结构化反馈）
+# ---------------------------------------------------------------------------
+
+class ModelingStepError(Exception):
+    """建模步骤异常，携带已完成步骤记录和失败上下文。
+
+    由 ModelingContext 内部抛出，供 tool_run_modeling_script 捕获并格式化为
+    结构化 JSON 返回给 AI。
+    """
+    def __init__(
+        self,
+        step_name: str,
+        original_error: Exception,
+        steps_completed: list,
+        features_at_failure: list,
+        traceback_str: str,
+    ):
+        super().__init__(str(original_error))
+        self.step_name          = step_name          # 失败的步骤名称
+        self.original_error     = original_error     # 原始异常
+        self.steps_completed    = steps_completed    # 失败前已成功的步骤列表
+        self.features_at_failure = features_at_failure  # 失败时的特征树
+        self.traceback_str      = traceback_str      # 完整 traceback 字符串
+
+
+class ModelingContext:
+    """建模执行上下文，供 AI 生成的脚本通过 build(ctx) 调用。
+
+    设计目标
+    --------
+    - 代理 modeling.py 中所有公开函数，AI 只需操作 ctx，不必 import。
+    - 每次函数调用自动记录步骤名称、执行状态、调用后的特征树。
+    - 函数调用失败时，抛出 ModelingStepError，携带完整的步骤历史，
+      使 tool_run_modeling_script 能返回"第几步在哪里失败"的精确信息。
+    - ctx.step(name) 可选：在多个函数调用之间插入语义化里程碑标记。
+
+    脚本写法示例
+    ------------
+    ::
+
+        def build(ctx):
+            part = ctx.create_part("底座")
+            sk   = ctx.add_sketch(part, "xy")
+            ctx.draw_rect(sk, 0, 0, 100, 50)
+            pad  = ctx.add_pad(part, sk, 20)
+            ctx.step("底座主体完成")          # 可选里程碑
+
+            sk2  = ctx.add_sketch(part, "xy")
+            ctx.draw_circle(sk2, 50, 25, 15)
+            ctx.add_pocket(part, sk2, 10)
+            ctx.step("挖槽完成")
+
+            ctx.update_part(part)
+    """
+
+    def __init__(self):
+        self._steps: list[dict] = []  # 步骤记录列表
+        self._part = None             # 最后一次操作的 Part，用于 features 快照
+
+    # ------------------------------------------------------------------
+    # 内部辅助
+    # ------------------------------------------------------------------
+
+    def _snapshot(self) -> list[str]:
+        """安全地读取当前特征树快照，失败时返回空列表。"""
+        if self._part is None:
+            return []
+        try:
+            return list_features(self._part)
+        except Exception:
+            return []
+
+    def _run(self, func_label: str, fn, *args, **kwargs):
+        """执行一个建模函数，记录结果，失败时抛出 ModelingStepError。
+
+        参数
+        ----
+        func_label : 步骤标签（如 "add_pad(depth=20)"）
+        fn         : 要调用的函数
+        *args/**kwargs : 传给 fn 的参数
+        """
+        import traceback as _tb
+        try:
+            result = fn(*args, **kwargs)
+            # 成功：记录步骤
+            self._steps.append({
+                "step":           func_label,
+                "status":         "ok",
+                "features_after": self._snapshot(),
+            })
+            return result
+        except Exception as exc:
+            tb_str = _tb.format_exc()
+            feats  = self._snapshot()
+            # 记录失败步骤
+            self._steps.append({
+                "step":           func_label,
+                "status":         "error",
+                "error":          str(exc),
+                "traceback":      tb_str,
+                "features_after": feats,
+            })
+            raise ModelingStepError(
+                step_name          = func_label,
+                original_error     = exc,
+                steps_completed    = [s for s in self._steps if s["status"] == "ok"],
+                features_at_failure = feats,
+                traceback_str      = tb_str,
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # 手动里程碑
+    # ------------------------------------------------------------------
+
+    def step(self, name: str, feature=None) -> None:
+        """插入一个命名里程碑，记录当前特征树状态。
+
+        不执行任何 CATIA 操作，纯粹用于给 AI 的反馈结构加注语义标签。
+        """
+        self._steps.append({
+            "step":           name,
+            "status":         "ok",
+            "milestone":      True,
+            "features_after": self._snapshot(),
+        })
+
+    @property
+    def steps(self) -> list[dict]:
+        """返回已记录的步骤列表（只读）。"""
+        return list(self._steps)
+
+    # ------------------------------------------------------------------
+    # 文档与零件
+    # ------------------------------------------------------------------
+
+    def create_part(self, name: str = "Part"):
+        """新建 CATPart，返回 Part 对象。"""
+        result = self._run(f"create_part({name!r})", create_part, name)
+        self._part = result
+        return result
+
+    def get_active_part(self):
+        """获取活动文档的 Part 对象。"""
+        result = self._run("get_active_part()", get_active_part)
+        self._part = result
+        return result
+
+    def update_part(self, part) -> None:
+        """刷新零件模型。"""
+        self._part = part
+        self._run("update_part()", update_part, part)
+
+    def save_part(self, part, path: str) -> None:
+        """另存为指定路径。"""
+        self._run(f"save_part({path!r})", save_part, part, path)
+
+    # ------------------------------------------------------------------
+    # 草图
+    # ------------------------------------------------------------------
+
+    def add_sketch(self, part, plane="xy"):
+        """在基准平面上新建草图。plane: 'xy' / 'yz' / 'zx'"""
+        self._part = part
+        return self._run(f"add_sketch(plane={plane!r})", add_sketch, part, plane)
+
+    def draw_rect(self, sketch, x: float, y: float,
+                  width: float, height: float) -> None:
+        """在草图中绘制矩形。"""
+        self._run(f"draw_rect(x={x}, y={y}, w={width}, h={height})",
+                  draw_rect, sketch, x, y, width, height)
+
+    def draw_circle(self, sketch, cx: float, cy: float, radius: float) -> None:
+        """在草图中绘制圆。"""
+        self._run(f"draw_circle(cx={cx}, cy={cy}, r={radius})",
+                  draw_circle, sketch, cx, cy, radius)
+
+    def draw_point(self, sketch, x: float, y: float):
+        """在草图中创建定位点。"""
+        return self._run(f"draw_point(x={x}, y={y})", draw_point, sketch, x, y)
+
+    # ------------------------------------------------------------------
+    # 特征：拉伸 / 挖槽 / 孔
+    # ------------------------------------------------------------------
+
+    def add_pad(self, part, sketch, depth: float):
+        """拉伸草图，返回 Pad 对象。"""
+        self._part = part
+        return self._run(f"add_pad(depth={depth})", add_pad, part, sketch, depth)
+
+    def add_pocket(self, part, sketch, depth: float):
+        """挖槽，返回 Pocket 对象。"""
+        self._part = part
+        return self._run(f"add_pocket(depth={depth})", add_pocket, part, sketch, depth)
+
+    def add_hole_from_sketch(self, part, sketch,
+                             diameter: float, depth: float):
+        """以草图定位打盲孔，返回 Hole 对象。"""
+        self._part = part
+        return self._run(
+            f"add_hole_from_sketch(d={diameter}, depth={depth})",
+            add_hole_from_sketch, part, sketch, diameter, depth,
+        )
+
+    # ------------------------------------------------------------------
+    # 特征：修饰
+    # ------------------------------------------------------------------
+
+    def add_edge_fillet(self, part, edge_ref, radius: float):
+        """对边倒圆角（需传入 edge_ref Reference）。"""
+        self._part = part
+        return self._run(f"add_edge_fillet(r={radius})",
+                         add_edge_fillet, part, edge_ref, radius)
+
+    def add_chamfer(self, part, edge_ref,
+                    length: float, angle: float = 45.0):
+        """对边倒角（需传入 edge_ref Reference）。"""
+        self._part = part
+        return self._run(f"add_chamfer(l={length}, angle={angle})",
+                         add_chamfer, part, edge_ref, length, angle)
+
+    # ------------------------------------------------------------------
+    # 特征：阵列
+    # ------------------------------------------------------------------
+
+    def add_rect_pattern(self, part, feature,
+                         nx: int, ny: int, dx: float, dy: float):
+        """矩形阵列。"""
+        self._part = part
+        return self._run(
+            f"add_rect_pattern(nx={nx}, ny={ny}, dx={dx}, dy={dy})",
+            add_rect_pattern, part, feature, nx, ny, dx, dy,
+        )
+
+    def add_circ_pattern(self, part, feature,
+                         count: int, total_angle: float = 360.0):
+        """圆形阵列。"""
+        self._part = part
+        return self._run(
+            f"add_circ_pattern(count={count}, angle={total_angle})",
+            add_circ_pattern, part, feature, count, total_angle,
+        )
+
+    # ------------------------------------------------------------------
+    # 查询
+    # ------------------------------------------------------------------
+
+    def list_features(self, part) -> list[str]:
+        """返回当前特征列表（不计入步骤记录）。"""
+        return list_features(part)
+
+    def list_sketches(self, part) -> list[str]:
+        """返回当前草图列表（不计入步骤记录）。"""
+        return list_sketches(part)
+
+    def get_mass_props(self, part) -> dict | None:
+        """读取质量特性（不计入步骤记录）。"""
+        return get_mass_props(part)
