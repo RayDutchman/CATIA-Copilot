@@ -49,8 +49,9 @@ DEFAULT_SYSTEM_PROMPT = """\
 - 两者的区别：generate_drawing 从模板创建新图纸；refresh_drawing 刷新已有图纸的标题栏。
 
 **质量特性**
-- collect_mass_props 的数据来源是 CATIA SPA 工具写入的"惯量包络体"保持测量。
-  若零件未做保持测量，Weight 等字段为 null，这是正常现象，不是工具错误。
+- collect_mass_props 的数据来源由 source 参数控制：
+  - "analyze"（默认）：通过 pycatia Analyze API 实时计算，需零件已赋材料；若未赋材料，CATIA 使用默认密度 1000 kg/m³ 计算，结果仍会返回但不代表真实材料。
+  - "keep_inertia"：读取 CATIA SPA"测量惯量 + 保持测量"写入的"惯量包络体"参数，需用户预先在零件文档中建立保持测量；若未建立，Weight 等字段为 null。
 - 只需要总重量和重心时，传 summary_only=true 减少返回数据量。
 
 **建模**
@@ -445,6 +446,7 @@ def tool_collect_mass_props(
     file_path: str | None = None,
     read_mode: str = "all",
     skip_hidden: bool = False,
+    source: str = "analyze",
     summary_only: bool = False,
     progress_signal=None,
     **_kwargs,
@@ -457,6 +459,7 @@ def tool_collect_mass_props(
         progress_callback=cb,
         read_mode=read_mode,
         skip_hidden=skip_hidden,
+        source=source,
     )
 
     # 过滤内部键和不可序列化字段

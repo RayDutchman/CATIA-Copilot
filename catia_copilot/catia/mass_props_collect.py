@@ -37,14 +37,14 @@ source="analyze"
     路径完全一致，_post_process_rows 后处理逻辑不变。
     需零件已赋材料；无需用户手动创建保持测量。
 
-两种路径的返回字典结构相同，单位制均为 SI（kg / m / kg·m²）。
+两种路径的返回字典结构相同，单位制均为内部单位（kg / mm / kg·mm²）。
 
-单位制（内部存储，全程 SI）
+单位制（内部存储）
 --------------------------
   质量   ：kg
-  长度   ：m
-  惯量   ：kg·m²
-整个流程以 SI 为基准，UI 显示时按用户选择换算到 g/mm/g·mm² 等实用单位。
+  长度   ：mm
+  惯量   ：kg·mm²
+整个流程以 mm 为长度基准，UI 显示时按用户选择换算到 g/m/g·m² 等单位。
 """
 
 import gzip
@@ -143,7 +143,7 @@ def _position_to_mat4(product) -> list[list[float]]:
 
     组装为行主序 4×4 矩阵：
       mat[i][j] 对应旋转矩阵第 i 行、第 j 列，即 arr[j*3 + i]
-      mat[i][3] 对应平移分量 arr[9 + i]（mm → m，除以 1000）
+      mat[i][3] 对应平移分量 arr[9 + i]
 
     变换含义：P_parent = R @ P_local + T
 
@@ -169,17 +169,17 @@ def _position_to_mat4(product) -> list[list[float]]:
         return _identity_4x4()
 
     # 将列主序 12 元素数组重新排列为行主序 4×4 矩阵：
-    #   第 0 行 = [arr[0], arr[3], arr[6], arr[ 9]/1000]  ← X 分量
-    #   第 1 行 = [arr[1], arr[4], arr[7], arr[10]/1000]  ← Y 分量
-    #   第 2 行 = [arr[2], arr[5], arr[8], arr[11]/1000]  ← Z 分量
-    #   第 3 行 = [    0,      0,      0,         1    ]  ← 齐次行
+    #   第 0 行 = [arr[0], arr[3], arr[6], arr[ 9]]  ← X 分量
+    #   第 1 行 = [arr[1], arr[4], arr[7], arr[10]]  ← Y 分量
+    #   第 2 行 = [arr[2], arr[5], arr[8], arr[11]]  ← Z 分量
+    #   第 3 行 = [    0,      0,      0,      1  ]  ← 齐次行
     # 注：CATIA Position.GetComponents 返回的平移分量单位为 mm，
-    #     此处除以 1000 将其转换为 m，与内部 SI 单位制（m）保持一致。
+    #     与内部单位制（mm）一致，直接存储，无需换算。
     mat = [
-        [arr[0], arr[3], arr[6], arr[9]  / 1000.0],
-        [arr[1], arr[4], arr[7], arr[10] / 1000.0],
-        [arr[2], arr[5], arr[8], arr[11] / 1000.0],
-        [0.0,    0.0,    0.0,    1.0               ],
+        [arr[0], arr[3], arr[6], arr[9]  ],
+        [arr[1], arr[4], arr[7], arr[10] ],
+        [arr[2], arr[5], arr[8], arr[11] ],
+        [0.0,    0.0,    0.0,    1.0     ],
     ]
     logger.debug(
         f"[MAT4] {product_name}: R[0]={mat[0][:3]}, T={[mat[0][3], mat[1][3], mat[2][3]]}"
@@ -216,11 +216,11 @@ def _read_keep_inertia_params(
       "last"  — 扫描所有编号，仅返回编号最大的有效测量结果。
       "all"   — 读取全部有效编号并按平行轴定理汇总（默认行为）。
 
-    CATIA 保持测量参数的原始单位（注意坐标为 mm，非 m）：
-      质量                            CATIA 原始: kg   → 内部存储: kg  （无需换算）
-      Gx / Gy / Gz                    CATIA 原始: mm   → 内部存储: m   （÷ 1 000）
-      IoxG / IoyG / IozG              CATIA 原始: kg·m² → 内部存储: kg·m²（无需换算）
-      IxyG / IxzG / IyzG              CATIA 原始: kg·m² → 内部存储: kg·m²（无需换算）
+    CATIA 保持测量参数的原始单位（注意坐标为 mm，惯量为 kg·m²）：
+      质量                            CATIA 原始: kg    → 内部存储: kg    （无需换算）
+      Gx / Gy / Gz                    CATIA 原始: mm    → 内部存储: mm   （无需换算）
+      IoxG / IoyG / IozG              CATIA 原始: kg·m² → 内部存储: kg·mm²（× 1e6）
+      IxyG / IxzG / IyzG              CATIA 原始: kg·m² → 内部存储: kg·mm²（× 1e6）
 
     零件级汇总算法（标准刚体力学，均在零件局部坐标系下）：
       1. 累积各测量的质量及"惯量移到局部坐标原点"的贡献。
@@ -231,11 +231,11 @@ def _read_keep_inertia_params(
       密度                            CATIA 原始: kg/m³ → 内部存储: kg/m³（无需换算）
       当单个测量内材料不统一时 CATIA 返回 -1；跨多个惯量包络体密度不一致时同样返回 -1。
 
-    返回值结构（内部 SI 单位）：
+    返回值结构（内部单位）：
       {
         "weight":  float,               # 总质量，kg
-        "cog":     [x, y, z],           # 总重心，m（零件局部坐标系，已由 mm 换算）
-        "inertia": [[Ixx, Ixy, Ixz],    # 总重心处转动惯量张量（3×3 对称矩阵），kg·m²
+        "cog":     [x, y, z],           # 总重心，mm（零件局部坐标系）
+        "inertia": [[Ixx, Ixy, Ixz],    # 总重心处转动惯量张量（3×3 对称矩阵），kg·mm²
                     [Ixy, Iyy, Iyz],
                     [Ixz, Iyz, Izz]],
         "density": float | None,        # 密度，kg/m³；-1.0 表示不统一；None 表示无密度数据
@@ -294,12 +294,13 @@ def _read_keep_inertia_params(
 
             measurements.append({
                 "weight": mass_si,
-                # Gx/Gy/Gz 由 CATIA 以 mm 存储，÷1000 换算为内部 SI 单位（m）
-                "cog": [gx_si / 1000.0, gy_si / 1000.0, gz_si / 1000.0],
+                # Gx/Gy/Gz 由 CATIA 以 mm 存储，与内部单位制（mm）一致，直接使用
+                "cog": [gx_si, gy_si, gz_si],
+                # IoxG/IoyG/IozG 等由 CATIA 以 kg·m² 存储，×1e6 换算为内部单位 kg·mm²
                 "inertia": [
-                    [ixx_si, ixy_si, ixz_si],
-                    [ixy_si, iyy_si, iyz_si],
-                    [ixz_si, iyz_si, izz_si],
+                    [ixx_si * 1e6, ixy_si * 1e6, ixz_si * 1e6],
+                    [ixy_si * 1e6, iyy_si * 1e6, iyz_si * 1e6],
+                    [ixz_si * 1e6, iyz_si * 1e6, izz_si * 1e6],
                 ],
                 "density": density_raw,  # None：无密度参数；-1.0： CATIA 报材料不统一；>0：kg/m³
             })
@@ -371,7 +372,7 @@ def _read_keep_inertia_params(
 
         logger.debug(
             f"{tag}汇总 {len(measurements)} 个惯量包络体测量: "
-            f"weight={M_total:.4g} kg, cog={[round(v,4) for v in cog_total]} m, "
+            f"weight={M_total:.4g} kg, cog={[round(v,4) for v in cog_total]} mm, "
             f"density={agg_density} kg/m³"
         )
         return {"weight": M_total, "cog": cog_total, "inertia": I_final, "density": agg_density}
@@ -388,7 +389,7 @@ def _measure_part_mass_props(
 ) -> dict | None:
     """测量零件质量特性。
 
-    所有返回值均使用 **SI 单位制（kg / m / kg·m²）**。
+    所有返回值均使用 **内部单位制（kg / mm / kg·mm²）**。
 
     先决条件：
       零件已在 SPA 中执行"测量惯量"并勾选"保持测量"，
@@ -404,10 +405,10 @@ def _measure_part_mass_props(
     返回字典：
       {
         "weight":  float,          # 总质量，kg
-        "cog":     [x, y, z],      # 重心坐标（零件局部坐标系），m
+        "cog":     [x, y, z],      # 重心坐标（零件局部坐标系），mm
         "inertia": [[Ixx,Ixy,Ixz],
                     [Iyx,Iyy,Iyz],
-                    [Izx,Izy,Izz]], # 重心处转动惯量（零件局部坐标轴），kg·m²
+                    [Izx,Izy,Izz]], # 重心处转动惯量（零件局部坐标轴），kg·mm²
       }
     若所有惯量包络体参数均不存在（零件未执行保持测量）则返回 None。
     """
@@ -429,15 +430,15 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
 
     已验证（本机测试）：
       - ``analyze.mass``               → 零件质量，kg
-      - ``analyze.get_gravity_center()`` → 零件局部坐标系下重心，mm（此处转换为 m）
-      - ``analyze.get_inertia()``       → **重心处**转动惯量，kg·m²，9 元素行主序 tuple
+      - ``analyze.get_gravity_center()`` → 零件局部坐标系下重心，mm
+      - ``analyze.get_inertia()``       → **重心处**转动惯量，kg·mm²，9 元素行主序 tuple
         返回行主序 3×3：raw[0..2]=第0行，raw[3..5]=第1行，raw[6..8]=第2行
 
-    返回字典结构与 ``_measure_part_mass_props`` 完全相同（SI 单位）：
+    返回字典结构与 ``_measure_part_mass_props`` 完全相同（内部单位）：
       {
         "weight":  float,               # 质量，kg
-        "cog":     [x, y, z],           # 重心坐标（零件局部坐标系），m
-        "inertia": [[Ixx, Ixy, Ixz],    # 重心处转动惯量张量，kg·m²
+        "cog":     [x, y, z],           # 重心坐标（零件局部坐标系），mm
+        "inertia": [[Ixx, Ixy, Ixz],    # 重心处转动惯量张量，kg·mm²
                     [Ixy, Iyy, Iyz],
                     [Ixz, Iyz, Izz]],
         "density": None,                # Analyze 不提供密度字段，始终为 None
@@ -455,15 +456,14 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
         if not mass or mass <= 0.0:
             return None
 
-        cog_mm = analyze.get_gravity_center()   # mm，3 元素 tuple
-        cog_m  = [cog_mm[i] / 1000.0 for i in range(3)]
+        cog = analyze.get_gravity_center()   # mm，3 元素 tuple
 
-        raw = analyze.get_inertia()  # kg·m²，9 元素 tuple，行主序 3×3
-        inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]
+        raw = analyze.get_inertia()  # kg·mm²，9 元素 tuple，行主序 3×3
+        inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]  # CATIA 返回 kg·mm²，与内部单位一致，直接使用
 
         return {
             "weight":  mass,
-            "cog":     cog_m,
+            "cog":     cog,
             "inertia": inertia,
             "density": None,
         }
@@ -482,7 +482,7 @@ def _rollup_one_product(child_parts: list[dict]) -> dict | None:
 
     参数：
         child_parts: 该节点子树内所有零件的 ``_root_mp`` 字典列表，
-                     每个元素含 weight（kg）、cog（m 列表）、inertia（3×3 列表）。
+                     每个元素含 weight（kg）、cog（mm 列表）、inertia（3×3 列表，kg·mm²）。
 
     返回字典（若总质量 > 0）：
         {"weight": M_total, "cog": [x, y, z], "inertia": [[3×3]]}
@@ -892,7 +892,7 @@ def collect_mass_props_rows(
     progress_callback: Callable[[int], None] | None = None,
     read_mode: str = "all",
     skip_hidden: bool = False,
-    source: str = "keep_inertia",
+    source: str = "analyze",
 ) -> list[dict]:
     """遍历产品树，返回每个节点的质量特性行列表。
 
@@ -1101,8 +1101,8 @@ def collect_mass_props_rows(
                     logger.debug(
                         f"[TRAV] {pn} 测量成功 (source={source}): "
                         f"weight={mass_props.get('weight')}kg, "
-                        f"cog={[round(v,4) for v in mass_props.get('cog',[0,0,0])]}m, "
-                        f"Ixx={mass_props.get('inertia',[[0]])[0][0]:.3g}kg·m²"
+                        f"cog={[round(v,4) for v in mass_props.get('cog',[0,0,0])]}mm, "
+                        f"Ixx={mass_props.get('inertia',[[0]])[0][0]:.3g}kg·mm²"
                     )
                 else:
                     logger.debug(f"[TRAV] {pn} 质量特性读取失败或未赋材料 (source={source})")
