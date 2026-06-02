@@ -82,16 +82,35 @@ DEFAULT_SYSTEM_PROMPT = """\
     ctx.add_shaft(part, sk, axis="z") → Shaft   旋转体（360°），axis 默认 "z"
     ctx.add_groove(part, sk, axis="z")→ Groove  环形槽（旋转切除，需已有实体），axis 默认 "z"
     ctx.add_hole_from_sketch(part, sk, diameter, depth) → Hole  打孔
+    ctx.prepare_revolute_axis(part, axis="z")   提前创建旋转轴线（必须在 add_sketch 之前调用！）
 
   旋转体 / 环形槽约束（重要）：
-    - axis="z"：草图在 ZX 平面（plane="zx"），H=-X，V=Z，轮廓须全在 H>0 侧
-    - axis="x"：草图在 XY 平面（plane="xy"），H=X，V=Y，轮廓须全在 H>0 侧
-    - axis="y"：草图在 YZ 平面（plane="yz"），H=Y，V=Z，轮廓须全在 H>0 侧
+
+    【草图平面与旋转轴对应关系】
+    - axis="z"：草图在 ZX 平面（plane="zx"）；旋转轴=V(Z)；半径方向=H(-X)；约束 H>0
+    - axis="y"：草图在 XY 平面（plane="xy"）；旋转轴=V(Y)；半径方向=H(X)；约束 H>0
+    - axis="x"：草图在 XY 平面（plane="xy"）；旋转轴=H(X)；半径方向=V(Y)；约束 V>0
+
+    【draw_rect 坐标说明】
+    draw_rect(sk, x, y, w, h) 中 x=H起点, y=V起点, w=H方向宽度, h=V方向高度
+    - axis="z"/"y"：x=内径（半径起点，H方向），y=轴向起点（V方向），w=壁厚，h=轴向长度
+    - axis="x"：x=轴向起点（H方向），y=内径（半径起点，V方向），w=轴向长度，h=壁厚
+
+    【必须先建轴线再建草图】
+    旋转体特征树要求轴线节点在草图节点之前，必须严格按以下顺序：
+      1. ctx.prepare_revolute_axis(part, axis)   ← 先建轴线
+      2. ctx.add_sketch(part, plane)             ← 再建草图
+      3. ctx.draw_rect / ctx.draw_circle ...
+      4. ctx.add_shaft(part, sk, axis)
+      5. ctx.update_part(part)
+
     - add_groove 前提：Part 已有实体且已 update_part；环形槽轮廓需位于实体内部
-    - 示例（绕 X 轴旋转，XY 平面草图，外径100 内径50）：
+
+    【示例：外径100 内径50 高度80 绕Y轴旋转圆筒】
+        ctx.prepare_revolute_axis(part, "y")
         sk = ctx.add_sketch(part, "xy")
-        ctx.draw_rect(sk, 25, 0, 25, 80)  # H=25~50（半径），V=0~80（高度）
-        shaft = ctx.add_shaft(part, sk, axis="x")
+        ctx.draw_rect(sk, 25, 0, 25, 80)  # x=H起=内径25, y=V起=0, w=壁厚25, h=高度80
+        shaft = ctx.add_shaft(part, sk, axis="y")
 
   修饰（当前需要 edge_ref，暂不可用，后续版本开放）：
     ctx.add_edge_fillet(part, edge_ref, radius)

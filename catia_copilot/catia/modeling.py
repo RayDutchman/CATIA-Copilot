@@ -364,7 +364,36 @@ def add_groove(part, sketch, axis: str = "z"):
     return groove
 
 
-def _get_named_axis_ref(part_doc_com, axis: str):
+def ensure_revolute_axis(part, axis: str = "z"):
+    """在 MainBody 中提前创建旋转轴线（若已存在则复用），返回 Reference。
+
+    **必须在 add_sketch 之前调用**，使轴线节点出现在草图节点之前，
+    保证特征树顺序与 CATIA GUI 手工操作一致。
+
+    参数
+    ----
+    part : pycatia Part 对象
+    axis : "x" / "y" / "z"（默认 "z"）
+
+    返回
+    ----
+    pycatia Reference（可传给 shaft.revolute_axis，但 add_shaft 会自动获取，无需手动传）
+
+    示例
+    ----
+    ::
+
+        ctx.prepare_revolute_axis(part, "y")   # ← 先建轴线（在草图之前）
+        sk = ctx.add_sketch(part, "xy")         # ← 再建草图
+        ctx.draw_rect(sk, 25, 0, 25, 80)
+        shaft = ctx.add_shaft(part, sk, axis="y")
+        ctx.update_part(part)
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+    app_com = get_catia_v5_application()
+    return _get_named_axis_ref(app_com.ActiveDocument, axis)
+
+
     """根据轴名称返回对应的 Reference。
 
     参数
@@ -717,6 +746,16 @@ class ModelingContext:
     def save_part(self, part, path: str) -> None:
         """另存为指定路径。"""
         self._run(f"save_part({path!r})", save_part, part, path)
+
+    def prepare_revolute_axis(self, part, axis: str = "z"):
+        """提前在 MainBody 中创建旋转轴线（若已存在则复用）。
+
+        **必须在 add_sketch 之前调用**，确保轴线节点在草图节点之前出现在特征树中。
+        axis: "x" / "y" / "z"（默认 "z"）
+        """
+        self._part = part
+        self._run(f"prepare_revolute_axis(axis={axis!r})",
+                  ensure_revolute_axis, part, axis)
 
     # ------------------------------------------------------------------
     # 草图
