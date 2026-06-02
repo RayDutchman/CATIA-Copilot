@@ -53,6 +53,15 @@ DEFAULT_SYSTEM_PROMPT = """\
   若零件未做保持测量，Weight 等字段为 null，这是正常现象，不是工具错误。
 - 只需要总重量和重心时，传 summary_only=true 减少返回数据量。
 
+**建模**
+- 使用 run_modeling_script 工具在 CATIA 中建模。
+- 调用前先确认 CATIA 连接正常（check_catia_connection）。
+- 脚本必须包含 def build(): 函数，以 from catia_copilot.catia.modeling import * 开头。
+- 所有几何参数单位为 mm。
+- build() 末尾必须调用 update_part(part) 刷新模型，否则特征不会显示。
+- 脚本一次性生成完整建模步骤，不要分多次调用。
+- 执行失败时返回 traceback，根据错误信息修正脚本后重新调用。
+
 **文档属性**
 - get_document_properties：读取单个文档的标准属性（Part Number / Revision / Nomenclature 等）和用户自定义属性。file_path 传 null 读取活动文档。
 - set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source / Description（Description 通过 DescriptionRef 写入，经实测可写）；user_defined 只能使用预设字段（见下方约束）。
@@ -982,6 +991,118 @@ def tool_write_file(
     )
 
 
+
+# ---------------------------------------------------------------------------
+# 建模工具
+# ---------------------------------------------------------------------------
+
+def tool_run_modeling_script(
+    script: str,
+    progress_signal=None,
+    **_kwargs,
+) -> str:
+    """在 CATIA 中执行 AI 生成的建模脚本。
+
+    脚本是完整的 Python 代码字符串，必须包含一个无参的 build() 函数。
+    build() 内部调用 catia_copilot.catia.modeling 中的建模 API 完成操作。
+
+    执行流程：
+      1. 将脚本写入临时文件（便于调试）
+      2. 通过 importlib 加载模块
+      3. 调用 build()
+      4. 返回执行结果（特征列表、质量特性等）
+
+    脚本示例：
+      from catia_copilot.catia.modeling import *
+
+      def build():
+          part = create_part("底座")
+          sk = add_sketch(part, "xy")
+          draw_rect(sk, 0, 0, 100, 50)
+          pad = add_pad(part, sk, 20)
+          update_part(part)
+    """
+    import importlib.util
+    import sys
+    import tempfile
+    import traceback
+    from pathlib import Path
+
+    if progress_signal:
+        progress_signal.emit("正在执行建模脚本...")
+
+    # 将脚本写入临时文件（importlib 需要文件路径；同时保留供调试）
+    tmp_dir = Path(tempfile.gettempdir()) / "catia_copilot_modeling"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    script_path = tmp_dir / "generated_model.py"
+
+    try:
+        script_path.write_text(script, encoding="utf-8")
+    except Exception as e:
+        return json.dumps({"error": f"写入脚本失败: {e}"}, ensure_ascii=False)
+
+    # 检查脚本中是否定义了 build()
+    if "def build(" not in script and "def build (" not in script:
+        return json.dumps(
+            {"error": "脚本中未找到 build() 函数，请确保脚本包含 def build(): ..."},
+            ensure_ascii=False,
+        )
+
+    # 加载并执行
+    try:
+        # 移除旧的同名模块缓存，避免重复调用时取到旧版本
+        sys.modules.pop("_catia_generated_model", None)
+
+        spec   = importlib.util.spec_from_file_location("_catia_generated_model", script_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if progress_signal:
+            progress_signal.emit("脚本已加载，正在调用 build()...")
+
+        module.build()
+
+    except Exception:
+        err = traceback.format_exc()
+        logger.error(f"[MODELING] build() 执行失败:\n{err}")
+        return json.dumps(
+            {
+                "error":       "建模脚本执行失败",
+                "traceback":   err,
+                "script_path": str(script_path),
+            },
+            ensure_ascii=False,
+        )
+
+    # 执行成功，读取当前零件状态作为返回信息
+    if progress_signal:
+        progress_signal.emit("build() 执行完成，正在读取模型状态...")
+
+    try:
+        from catia_copilot.catia.modeling import get_active_part, list_features, get_mass_props
+        part     = get_active_part()
+        features = list_features(part)
+        mp       = get_mass_props(part)
+        result: dict = {
+            "success":     True,
+            "part_name":   part.name,
+            "features":    features,
+            "script_path": str(script_path),
+        }
+        if mp:
+            result["mass_kg"]  = round(mp["mass"], 6)
+            result["cog_mm"]   = [round(v, 3) for v in mp["cog"]]
+    except Exception as e:
+        # 状态读取失败不影响成功判定
+        result = {
+            "success":     True,
+            "script_path": str(script_path),
+            "note":        f"build() 已执行，但读取模型状态失败: {e}",
+        }
+
+    return json.dumps(result, ensure_ascii=False)
+
+
 # ---------------------------------------------------------------------------
 # 工具注册表
 # ---------------------------------------------------------------------------
@@ -1013,6 +1134,7 @@ tools_map: dict[str, Callable] = {
     "read_file":                   tool_read_file,
     "list_directory":              tool_list_directory,
     "write_file":                  tool_write_file,
+    "run_modeling_script":         tool_run_modeling_script,
 }
 
 # 发给 LLM 的 JSON Schema 列表
@@ -1746,6 +1868,53 @@ tools_schema: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_modeling_script",
+            "description": (
+                "在 CATIA 中执行 AI 生成的 Python 建模脚本，完成零件建模。\n\n"
+                "脚本必须包含一个无参的 build() 函数，函数内调用 "
+                "catia_copilot.catia.modeling 模块中的建模 API。\n\n"
+                "可用的建模 API：\n"
+                "  create_part(name)                       新建零件\n"
+                "  add_sketch(part, plane)                 在基准面新建草图，plane='xy'/'yz'/'zx'\n"
+                "  draw_rect(sketch, x, y, width, height)  画矩形，单位 mm\n"
+                "  draw_circle(sketch, cx, cy, radius)     画圆，单位 mm\n"
+                "  draw_point(sketch, x, y)                画点（用于定位孔）\n"
+                "  add_pad(part, sketch, depth)            拉伸，单位 mm\n"
+                "  add_pocket(part, sketch, depth)         挖槽，单位 mm\n"
+                "  add_hole_from_sketch(part, sketch, diameter, depth)  打孔\n"
+                "  add_edge_fillet(part, edge_ref, radius) 圆角\n"
+                "  add_chamfer(part, edge_ref, length)     倒角\n"
+                "  add_rect_pattern(part, feat, nx, ny, dx, dy)  矩形阵列\n"
+                "  add_circ_pattern(part, feat, count, total_angle)  圆形阵列\n"
+                "  update_part(part)                       刷新模型（必须在最后调用）\n\n"
+                "脚本模板：\n"
+                "  from catia_copilot.catia.modeling import *\n\n"
+                "  def build():\n"
+                "      part = create_part('零件名')\n"
+                "      sk = add_sketch(part, 'xy')\n"
+                "      draw_rect(sk, 0, 0, 100, 50)\n"
+                "      pad = add_pad(part, sk, 20)\n"
+                "      update_part(part)\n\n"
+                "执行成功后返回零件名、特征列表和质量特性（如已赋材料）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {
+                        "type": "string",
+                        "description": (
+                            "完整的 Python 脚本字符串，必须包含 def build(): 函数。"
+                            "脚本中应以 from catia_copilot.catia.modeling import * 开头。"
+                        ),
+                    },
+                },
+                "required": ["script"],
             },
         },
     },
