@@ -270,7 +270,7 @@ ppy.update()
 | 编号 | 问题 | 优先级 |
 |------|------|--------|
 | P1 | ~~零件真正 Z 轴的 COM 获取方式~~ | **已解决**：`HybridShapeFactory.AddNewLinePtPt((0,0,0),(0,0,1))` → `CreateReferenceFromObject` |
-| P2 | 实体 B-Rep 面 → 草图支撑 Reference 的正确 COM 获取方式 | 高 |
+| P2 | ~~实体 B-Rep 面 → 草图支撑 Reference 的正确 COM 获取方式~~ | **已解决**：`CreateReferenceFromBRepName` 可获取面引用但 Pad update 失败（`WithTemporaryBody`）；**回退方案**：`add_new_plane_offset` + `InsertHybridShape` 创建偏移平面，在其上建草图，完全可靠。API：`add_sketch_at_height(part, height, base_plane)` |
 | P3 | 侧面（非水平面）`set_absolute_axis_data` 参数计算逻辑 | 中 |
 | P4 | Groove 在 Shaft Update 后 `AddNewGroove` 失败的根本原因 | 中 |
 

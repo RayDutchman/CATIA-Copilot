@@ -162,6 +162,42 @@ def add_sketch(part, plane: Literal["xy", "yz", "zx"] = "xy"):
     return sketch
 
 
+def add_sketch_at_height(part, height: float, base_plane: Literal["xy", "yz", "zx"] = "xy"):
+    """在距基准平面偏移 ``height`` mm 处创建草图，返回 pycatia Sketch 对象。
+
+    适用场景：在已有凸台的顶面（或任意偏移高度）继续建模，
+    比直接使用 B-Rep 面引用更可靠。
+
+    参数
+    ----
+    part        : pycatia Part 对象
+    height      : 偏移距离（mm），正值沿平面法向远离原点
+    base_plane  : 基准平面，"xy"（默认）/ "yz" / "zx"
+
+    返回
+    ----
+    pycatia ``Sketch`` 对象（尚未进入编辑状态）
+    """
+    from catia_copilot.catia.connection import get_catia_v5_application
+    app_com = get_catia_v5_application()
+    raw_part = app_com.ActiveDocument.Part
+
+    # 将 InWorkObject 设为 PartBody，使后续插入追加到末尾而非插入到当前特征之前
+    part.in_work_object = part.main_body
+
+    hsf = part.hybrid_shape_factory
+    base_ref = _plane_ref(part, base_plane)
+    off_plane = hsf.add_new_plane_offset(base_ref, float(height), False)
+    off_plane.name = f"偏移平面_{base_plane}_h{height:.3g}"
+    raw_part.MainBody.InsertHybridShape(off_plane.com_object)
+    part.update_object(off_plane)
+
+    off_ref = part.create_reference_from_object(off_plane)
+    sketch  = part.main_body.sketches.add(off_ref)
+    logger.debug(f"[MODELING] add_sketch_at_height: {sketch.name} on {base_plane} offset={height}")
+    return sketch
+
+
 def draw_rect(sketch, x: float, y: float, width: float, height: float) -> None:
     """在草图中绘制矩形（四条首尾相连的直线），单位 mm。
 
@@ -312,6 +348,19 @@ def _get_axis_ref(part_doc_com, axis_name: str, pt_start: tuple, pt_end: tuple):
 # ---------------------------------------------------------------------------
 # 特征：旋转体 / 环形槽
 # ---------------------------------------------------------------------------
+
+def _get_named_axis_ref(part_doc_com, axis: str):
+    """根据轴名称返回对应的 Reference。axis: 'x'/'y'/'z'（大小写不敏感）"""
+    a = axis.lower()
+    if a == "x":
+        return _get_x_axis_ref(part_doc_com)
+    elif a == "y":
+        return _get_y_axis_ref(part_doc_com)
+    elif a == "z":
+        return _get_z_axis_ref(part_doc_com)
+    else:
+        raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
+
 
 def add_shaft(part, sketch, axis: str = "z"):
     """将草图旋转 360° 生成旋转体，返回 pycatia Shaft 对象。
@@ -765,6 +814,14 @@ class ModelingContext:
         """在基准平面上新建草图。plane: 'xy' / 'yz' / 'zx'"""
         self._part = part
         return self._run(f"add_sketch(plane={plane!r})", add_sketch, part, plane)
+
+    def add_sketch_at_height(self, part, height: float, base_plane="xy"):
+        """在距基准平面 height mm 处建草图（偏移平面）。
+        适用于在凸台顶面继续建模，比 B-Rep 面引用更可靠。"""
+        self._part = part
+        return self._run(
+            f"add_sketch_at_height(h={height}, base={base_plane!r})",
+            add_sketch_at_height, part, height, base_plane)
 
     def draw_rect(self, sketch, x: float, y: float,
                   width: float, height: float) -> None:

@@ -31,7 +31,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 ## 基本原则
 
-- 执行任何 CATIA 操作前，先调用 check_catia_connection 确认连接状态。
+- **不要在每次操作前主动调用 check_catia_connection**；仅当某个工具返回的错误信息指向 CATIA 无法连接（如 "CATIA 未连接"、COM 连接失败等）时，才调用它来诊断原因。
 - 需要文件路径时，先调用 get_open_documents 获取当前已打开文档的准确路径，不要猜测或编造路径。
 - 不确定用户意图时，先询问，不要擅自执行可能修改文件的操作。
 - 工具返回 error 时，向用户说明原因，不要静默重试。
@@ -55,7 +55,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 **建模**
 - 使用 run_modeling_script 工具在 CATIA 中建模。
-- 调用前先确认 CATIA 连接正常（check_catia_connection）。
+- 调用前如遇 CATIA 连接错误才检查连接（check_catia_connection），平时无需预先调用。
 - 脚本必须包含 `def build(ctx):` 函数（注意：参数是 ctx，不是无参）。
 - 通过 ctx 调用所有建模 API，不需要 import 任何模块。
 - 所有几何参数单位为 mm。
@@ -83,6 +83,12 @@ DEFAULT_SYSTEM_PROMPT = """\
     ctx.add_groove(part, sk, axis="z")→ Groove  环形槽（旋转切除，需已有实体），axis 默认 "z"
     ctx.add_hole_from_sketch(part, sk, diameter, depth) → Hole  打孔
     ctx.prepare_revolute_axis(part, axis="z")   提前创建旋转轴线（必须在 add_sketch 之前调用！）
+
+  草图创建：
+    ctx.add_sketch(part, plane)              → 在基准平面（"xy"/"yz"/"zx"）上建草图
+    ctx.add_sketch_at_height(part, h, base)  → 在距基准平面 h mm 处建偏移草图
+      **在已有凸台顶面继续建模时，必须用 add_sketch_at_height，不能用 add_sketch！**
+      示例：底层 Pad 高 20mm → ctx.add_sketch_at_height(part, 20, "xy")
 
   旋转体 / 环形槽约束（重要）：
 
@@ -2028,6 +2034,7 @@ tools_schema: list[dict[str, Any]] = [
                 "  ctx.update_part(part)                          刷新模型（必须在末尾调用）\n"
                 "  ctx.save_part(part, path)                      另存为\n"
                 "  ctx.add_sketch(part, plane)                    新建草图，plane='xy'/'yz'/'zx'\n"
+                "  ctx.add_sketch_at_height(part, h, base='xy')   在距基准平面 h mm 处建草图（在顶面继续建模时用）\n"
                 "  ctx.draw_rect(sk, x, y, w, h)                  画矩形（左下角+宽高，mm）\n"
                 "  ctx.draw_circle(sk, cx, cy, r)                 画圆（圆心+半径，mm）\n"
                 "  ctx.draw_point(sk, x, y)                       画定位点\n"
