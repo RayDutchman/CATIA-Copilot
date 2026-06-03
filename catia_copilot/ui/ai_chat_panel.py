@@ -328,6 +328,46 @@ class AIMessageWidget(QFrame):
             f"padding: {L.AI_MSG_PADDING_V}px {L.AI_MSG_PADDING_H}px; "
             f"font-size: {L.AI_MSG_FONT_SIZE}px; }}"
         )
+        # QTextDocument 内联 CSS：改善 setMarkdown() 对代码块/表格/引用的渲染质量。
+        # QSS 只影响 widget 外框，不影响文档内部元素，需要单独设置。
+        # 主题切换时随 _apply_style 一起更新，保持颜色同步。
+        self._browser.document().setDefaultStyleSheet(
+            f"body {{ margin: 0; padding: 0; }}"
+            f"p {{ margin: 0 0 0.5em 0; }}"
+            f"p:last-child {{ margin-bottom: 0; }}"
+            f"ul, ol {{ margin: 0.3em 0 0.3em 1.2em; padding: 0; }}"
+            f"li {{ margin: 0.1em 0; }}"
+            f"h1, h2, h3, h4, h5, h6 {{ margin: 0.2em 0 0.4em 0; }}"
+            f"blockquote {{"
+            f"  margin: 0.4em 0;"
+            f"  padding-left: 0.7em;"
+            f"  border-left: 3px solid {c.divider};"
+            f"  color: {c.sidebar_fg};"
+            f"}}"
+            f"pre {{"
+            f"  margin: 0.4em 0;"
+            f"  padding: 0.6em 0.75em;"
+            f"  border-radius: 4px;"
+            f"  background: rgba(127,127,127,0.10);"
+            f"  font-family: Consolas, \"Cascadia Code\", \"Courier New\", monospace;"
+            f"  font-size: {L.AI_MSG_FONT_SIZE - 1}px;"
+            f"  white-space: pre-wrap;"
+            f"}}"
+            f"code {{"
+            f"  font-family: Consolas, \"Cascadia Code\", \"Courier New\", monospace;"
+            f"  font-size: {L.AI_MSG_FONT_SIZE - 1}px;"
+            f"  padding: 0.1em 0.3em;"
+            f"  border-radius: 3px;"
+            f"  background: rgba(127,127,127,0.10);"
+            f"}}"
+            f"pre code {{ padding: 0; background: transparent; border-radius: 0; }}"
+            f"table {{ border-collapse: collapse; margin: 0.4em 0; }}"
+            f"th, td {{ border: 1px solid {c.divider}; padding: 0.25em 0.4em; }}"
+            f"th {{ background: rgba(127,127,127,0.08); font-weight: bold; }}"
+            f"hr {{ border: none; border-top: 1px solid {c.divider}; margin: 0.5em 0; }}"
+            f"a {{ color: {c.sidebar_sel}; text-decoration: none; }}"
+            f"a:hover {{ text-decoration: underline; }}"
+        )
 
     @Slot(str)
     def _on_theme_changed(self, _mode: str):
@@ -635,6 +675,13 @@ class ToolCallWidget(QFrame):
             f"QTextBrowser#ToolResultBrowser {{ background-color: {bg}; color: {fg}; "
             f"font-size: {L.TOOL_CARD_RESULT_FONT_SIZE}px; "
             f"font-family: monospace; border: none; }}"
+        )
+        # 等宽字体、紧凑行距，纯文本内容不需要复杂 CSS
+        self._result_browser.document().setDefaultStyleSheet(
+            f"body {{ margin: 0; padding: 0; "
+            f"font-family: Consolas, \"Cascadia Code\", \"Courier New\", monospace; "
+            f"font-size: {L.TOOL_CARD_RESULT_FONT_SIZE}px; }}"
+            f"p {{ margin: 0; }}"
         )
         # QPalette 直接设置 viewport 背景，确保 windowsvista 风格的
         # QAbstractScrollArea 规则不会把 viewport 底色覆盖成主题色
