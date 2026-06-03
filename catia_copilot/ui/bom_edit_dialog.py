@@ -1273,6 +1273,101 @@ class BomEditDialog(QDialog):
             self._push_undo(undo_actions)
         self._refresh_pns_appearance(pns_to_update)
 
+    # ── 批量单元格写入（内部辅助） ────────────────────────────────────────────
+
+    def _apply_cell_values(
+        self,
+        assignments: list[tuple[int, str, str]],
+    ) -> None:
+        """批量将 (row_idx, col_name, new_value) 写入数据层和界面，并推入撤销栈。
+
+        - 每个 row_idx 对应 ``self._rows`` 的索引。
+        - 只写入可编辑列（不在 BOM_READONLY_COLUMNS 中）且行未锁定的单元格。
+        - 同一零件编号的多行通过 ``_pn_to_items`` 一并刷新（包括 combo widget）。
+        - 整批 assignments 作为一个原子步骤推入 ``_undo_stack``。
+        """
+        if not assignments:
+            return
+
+        old_vals: dict[tuple[str, str], str] = {}  # (pn, col_name) → old_value
+        pns_to_update: set[str] = set()
+
+        for row_idx, col_name, new_value in assignments:
+            if row_idx < 0 or row_idx >= len(self._rows):
+                continue
+            row = self._rows[row_idx]
+            if row.get("_not_found") or row.get("_unreadable"):
+                continue
+            pn = str(row.get("Part Number", ""))
+            if not pn or pn not in self._canonical_data:
+                continue
+            if col_name in BOM_READONLY_COLUMNS:
+                continue
+
+            old_val = self._canonical_data[pn].get(col_name, "")
+            if (pn, col_name) not in old_vals:   # 只记录每个 PN+列的第一次旧值
+                old_vals[(pn, col_name)] = old_val
+            self._canonical_data[pn][col_name] = new_value
+            pns_to_update.add(pn)
+
+            snap_val = self._snapshot_data.get(pn, {}).get(col_name, "")
+            if new_value != snap_val:
+                self._modified_keys.setdefault(pn, set()).add(col_name)
+            else:
+                if pn in self._modified_keys:
+                    self._modified_keys[pn].discard(col_name)
+                    if not self._modified_keys[pn]:
+                        del self._modified_keys[pn]
+
+        if not pns_to_update:
+            return
+
+        # 刷新界面（文本行 + combo 行）
+        self._is_updating = True
+        try:
+            for row_idx, col_name, new_value in assignments:
+                if row_idx < 0 or row_idx >= len(self._rows):
+                    continue
+                pn = str(self._rows[row_idx].get("Part Number", ""))
+                if not pn or pn not in self._pn_to_items:
+                    continue
+                col_idx = self._columns.index(col_name) if col_name in self._columns else -1
+                if col_idx < 0:
+                    continue
+                for tree_item in self._pn_to_items[pn]:
+                    widget = self._table.itemWidget(tree_item, col_idx)
+                    if isinstance(widget, QComboBox):
+                        if widget.currentText() != new_value:
+                            widget.blockSignals(True)
+                            widget.setCurrentText(new_value)
+                            widget.blockSignals(False)
+                    else:
+                        if tree_item.text(col_idx) != new_value:
+                            tree_item.setText(col_idx, new_value)
+        finally:
+            self._is_updating = False
+
+        # 构建撤销动作（按 pn+col_name 去重，只保留真正改变的条目）
+        seen: set[tuple[str, str]] = set()
+        undo_actions: list[tuple[str, str, str, str]] = []
+        for row_idx, col_name, new_value in assignments:
+            if row_idx < 0 or row_idx >= len(self._rows):
+                continue
+            pn = str(self._rows[row_idx].get("Part Number", ""))
+            key = (pn, col_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            old_val = old_vals.get(key)
+            if old_val is not None and old_val != new_value:
+                undo_actions.append((pn, col_name, old_val, new_value))
+
+        if undo_actions:
+            self._push_undo(undo_actions)
+
+        self._refresh_pns_appearance(pns_to_update)
+        self._update_status()
+
     # ── 撤销/重做 ─────────────────────────────────────────────────────────────
 
     def _push_undo(self, actions: list[tuple[str, str, str, str]]) -> None:
@@ -1352,6 +1447,396 @@ class BomEditDialog(QDialog):
 
         if pns_affected:
             self._refresh_pns_appearance(pns_affected)
+
+    # ── 相同内容填充 ──────────────────────────────────────────────────────────
+
+    def _fill_same_value(
+        self,
+        col_name: str,
+        row_indices: list[int],
+    ) -> None:
+        """将选中行中视觉最靠前（row_idx 最小）的行在 col_name 列的值填充到其余行。
+
+        - row_indices 无需排序，方法内部按 row_idx 升序排列。
+        - 源行取排序后第一行（表格中最靠上的行）。
+        - 来源值从 _canonical_data 中读取（优先），combo 列从 widget 读取。
+        - 锁定行或只读列静默跳过。
+        - 整批变更作为一个原子步骤推入撤销栈。
+        """
+        if len(row_indices) < 2:
+            return
+        if col_name in BOM_READONLY_COLUMNS:
+            return
+
+        # 按视觉顺序排序（row_idx 即 _rows 中的索引，对应表格从上到下的顺序）
+        sorted_indices = sorted(row_indices)
+        source_row_idx = sorted_indices[0]
+        target_row_indices = sorted_indices[1:]
+
+        if source_row_idx >= len(self._rows):
+            return
+
+        # 取源值
+        src_pn = str(self._rows[source_row_idx].get("Part Number", ""))
+        if src_pn and src_pn in self._canonical_data:
+            src_value = self._canonical_data[src_pn].get(col_name, "")
+        else:
+            src_item = self._item_by_row[source_row_idx] if source_row_idx < len(self._item_by_row) else None
+            if src_item is not None:
+                col_idx = self._columns.index(col_name) if col_name in self._columns else -1
+                if col_idx >= 0:
+                    widget = self._table.itemWidget(src_item, col_idx)
+                    src_value = widget.currentText() if isinstance(widget, QComboBox) else src_item.text(col_idx)
+                else:
+                    return
+            else:
+                return
+
+        assignments = [(r, col_name, src_value) for r in target_row_indices]
+        self._apply_cell_values(assignments)
+
+    # ── 序列填充 ──────────────────────────────────────────────────────────────
+
+    def _fill_sequence(
+        self,
+        col_name: str,
+        row_indices: list[int],
+    ) -> None:
+        """弹出序列填充对话框，按视觉顺序（row_idx 升序）在 col_name 列写入递增序列值。
+
+        - row_indices 无需排序，方法内部按 row_idx 升序排列后再依次赋值。
+        - 序列格式：``{前缀}{数字:0位数}``，例如前缀 "A-"、起始 1、步长 1、位数 3
+          生成 A-001, A-002, A-003...
+        - 对于 Part Number 列，每个生成值须通过合法性校验和冲突检查；
+          任意一个值不合法则中止全部操作。
+        """
+        if col_name in BOM_READONLY_COLUMNS:
+            return
+        if len(row_indices) < 2:
+            return
+
+        # 按视觉顺序排序，并按 PN 去重（保留每个 PN 的第一次出现）
+        # 同一零件在层级 BOM 中可能多次出现，但共享同一 _canonical_data 条目，
+        # 序列填充对同一 PN 只能赋一个值，因此必须去重后再分配序列值。
+        seen_pns: set[str] = set()
+        ordered_row_indices: list[int] = []
+        duplicated_pns: set[str] = set()
+        for r in sorted(row_indices):
+            pn = str(self._rows[r].get("Part Number", "")) if r < len(self._rows) else ""
+            if pn and pn in seen_pns:
+                duplicated_pns.add(pn)
+                continue
+            if pn:
+                seen_pns.add(pn)
+            ordered_row_indices.append(r)
+
+        if duplicated_pns:
+            pn_list = "、".join(sorted(duplicated_pns))
+            QMessageBox.information(
+                self, "已合并重复零件",
+                f"选中行中以下零件编号在 BOM 中多次出现，\n序列填充将对每个零件只赋值一次：\n\n{pn_list}\n\n"
+                f"实际填充行数：{len(ordered_row_indices)} 行。",
+            )
+
+        if len(ordered_row_indices) < 2:
+            return
+
+        # ── 内联对话框 ────────────────────────────────────────────────────────
+        from PySide6.QtWidgets import QSpinBox, QRadioButton, QButtonGroup  # noqa: PLC0415
+
+        _ROW_H    = 24   # 输入控件统一行高（px）
+        _DLG_W    = 400  # 固定宽度（px）
+        _SETT_PFX = "fill_seq/"  # QSettings key 前缀
+
+        # ── 字母序列辅助函数（对话框之外也要用） ─────────────────────────────
+        def _num_to_alpha(n: int) -> str:
+            """1-based 整数 → Excel 列名风格：1→A, 26→Z, 27→AA…"""
+            result = ""
+            while n > 0:
+                n, rem = divmod(n - 1, 26)
+                result = chr(ord("A") + rem) + result
+            return result
+
+        def _alpha_to_num(s: str) -> int:
+            """字母串 → 1-based 整数，与 _num_to_alpha 互逆。"""
+            result = 0
+            for ch in s.upper():
+                result = result * 26 + (ord(ch) - ord("A") + 1)
+            return result
+
+        # ── 读取持久化设置 ────────────────────────────────────────────────────
+        saved_prefix = self._edit_settings.value(_SETT_PFX + "prefix", "")
+        saved_suffix = self._edit_settings.value(_SETT_PFX + "suffix", "")
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("序列填充")
+        dlg.setFixedWidth(_DLG_W)
+        root = QVBoxLayout(dlg)
+        root.setSpacing(10)
+        root.setContentsMargins(16, 12, 16, 12)
+
+        # ── 统一 QGridLayout（7列：左padding + 3数据列×(标题+输入) + 右padding） ──
+        # 实际布局：4列数据列，左右各1列 stretch 列用于居中
+        # col: 0=stretch  1=前缀/起始  2=序列值/步长  3=后缀/位数  4=stretch
+        from PySide6.QtWidgets import QGridLayout  # noqa: PLC0415
+
+        _COL_W = 100  # 所有输入框统一宽度（px）
+
+        main_grid = QGridLayout()
+        main_grid.setHorizontalSpacing(10)
+        main_grid.setVerticalSpacing(4)
+        # 左右 stretch 列撑开，三个数据列等宽固定
+        main_grid.setColumnStretch(0, 1)
+        main_grid.setColumnStretch(4, 1)
+        for c in (1, 2, 3):
+            main_grid.setColumnMinimumWidth(c, _COL_W)
+            main_grid.setColumnStretch(c, 0)
+
+        # ── 行0：前缀 / 序列值（第1项） / 后缀 标题 ──────────────────────────
+        lbl_prefix = QLabel("前缀")
+        lbl_seq1h  = QLabel("序列值（第 1 项）")
+        lbl_suffix = QLabel("后缀")
+        for lbl in (lbl_prefix, lbl_seq1h, lbl_suffix):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_prefix, 0, 1, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_seq1h,  0, 2, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_suffix, 0, 3, Qt.AlignmentFlag.AlignCenter)
+
+        # ── 行1：前缀输入 / 序列值只读预览 / 后缀输入 ────────────────────────
+        prefix_edit = QLineEdit(saved_prefix)
+        prefix_edit.setPlaceholderText("（可为空）")
+        prefix_edit.setFixedHeight(_ROW_H)
+        prefix_edit.setFixedWidth(_COL_W)
+
+        seq1_edit = QLineEdit()
+        seq1_edit.setReadOnly(True)
+        seq1_edit.setFixedHeight(_ROW_H)
+        seq1_edit.setFixedWidth(_COL_W)
+        seq1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        seq1_edit.setToolTip("第 1 项序列值（不含前后缀）")
+
+        suffix_edit = QLineEdit(saved_suffix)
+        suffix_edit.setPlaceholderText("（可为空）")
+        suffix_edit.setFixedHeight(_ROW_H)
+        suffix_edit.setFixedWidth(_COL_W)
+
+        main_grid.addWidget(prefix_edit, 1, 1, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(seq1_edit,   1, 2, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(suffix_edit, 1, 3, Qt.AlignmentFlag.AlignCenter)
+
+        # ── 行2：起始 / 步长 / 位数（填零） 标题 ────────────────────────────
+        lbl_start  = QLabel("起始数字")
+        lbl_step   = QLabel("步长")
+        lbl_digits = QLabel("位数（填零）")
+        for lbl in (lbl_start, lbl_step, lbl_digits):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_start,  2, 1, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_step,   2, 2, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(lbl_digits, 2, 3, Qt.AlignmentFlag.AlignCenter)
+
+        # ── 行3：起始输入 / 步长输入 / 位数输入 ──────────────────────────────
+        # 起始数字（数字模式）
+        start_spin = QSpinBox()
+        start_spin.setRange(0, 999999)
+        start_spin.setValue(1)
+        start_spin.setFixedHeight(_ROW_H)
+        start_spin.setFixedWidth(_COL_W)
+
+        # 起始字母（字母模式），初始隐藏
+        start_alpha_edit = QLineEdit("A")
+        start_alpha_edit.setPlaceholderText("A")
+        start_alpha_edit.setFixedHeight(_ROW_H)
+        start_alpha_edit.setFixedWidth(_COL_W)
+        start_alpha_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        start_alpha_edit.setToolTip("起始字母（A~ZZ），仅允许大写英文字母")
+        start_alpha_edit.setVisible(False)
+
+        # 用容器把 start_spin / start_alpha_edit 叠放，切换时 setVisible
+        start_cell = QWidget()
+        start_cell.setFixedWidth(_COL_W)
+        start_cell.setFixedHeight(_ROW_H)
+        start_cell_layout = QHBoxLayout(start_cell)
+        start_cell_layout.setContentsMargins(0, 0, 0, 0)
+        start_cell_layout.setSpacing(0)
+        start_cell_layout.addWidget(start_spin)
+        start_cell_layout.addWidget(start_alpha_edit)
+
+        step_spin = QSpinBox()
+        step_spin.setRange(1, 999999)
+        step_spin.setValue(1)
+        step_spin.setFixedHeight(_ROW_H)
+        step_spin.setFixedWidth(_COL_W)
+
+        digits_spin = QSpinBox()
+        digits_spin.setRange(0, 6)
+        digits_spin.setValue(0)
+        digits_spin.setToolTip("数字最小位数（不足时补前导零）；0 = 不补零")
+        digits_spin.setFixedHeight(_ROW_H)
+        digits_spin.setFixedWidth(_COL_W)
+
+        main_grid.addWidget(start_cell,  3, 1, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(step_spin,   3, 2, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(digits_spin, 3, 3, Qt.AlignmentFlag.AlignCenter)
+
+        # ── 行4：模式 toggle（跨3列） ─────────────────────────────────────────
+        mode_group = QButtonGroup(dlg)
+        rb_numeric = QRadioButton("数字序列")
+        rb_alpha   = QRadioButton("字母序列（A, B…, Z, AA…, ZZ）")
+        rb_numeric.setChecked(True)
+        mode_group.addButton(rb_numeric, 0)
+        mode_group.addButton(rb_alpha,   1)
+        toggle_widget = QWidget()
+        toggle_layout = QHBoxLayout(toggle_widget)
+        toggle_layout.setContentsMargins(0, 4, 0, 0)
+        toggle_layout.setSpacing(16)
+        toggle_layout.addWidget(rb_numeric)
+        toggle_layout.addWidget(rb_alpha)
+        toggle_layout.addStretch()
+        main_grid.addWidget(toggle_widget, 4, 1, 1, 3)  # 跨 col 1-3
+
+        root.addLayout(main_grid)
+
+        # ── 预览行（3行，左对齐） ─────────────────────────────────────────────
+        n_preview = min(3, len(ordered_row_indices))
+        preview_labels: list[QLabel] = []
+        for _ in range(n_preview):
+            lbl = QLabel()
+            lbl.setObjectName("hintLabel")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            root.addWidget(lbl)
+            preview_labels.append(lbl)
+
+        # ── 更新逻辑 ──────────────────────────────────────────────────────────
+        def _seq_value_numeric(i: int) -> str:
+            num    = start_spin.value() + i * step_spin.value()
+            digits = digits_spin.value()
+            return str(num).zfill(digits) if digits > 0 else str(num)
+
+        def _seq_value_alpha(i: int) -> str:
+            raw  = start_alpha_edit.text().strip().upper()
+            base = _alpha_to_num(raw) if raw else 1
+            return _num_to_alpha(base + i * step_spin.value())
+
+        def _make_seq_value(i: int) -> str:
+            return _seq_value_numeric(i) if rb_numeric.isChecked() else _seq_value_alpha(i)
+
+        def _update_all() -> None:
+            # 序列值预览框（不含前后缀）
+            seq1_edit.setText(_make_seq_value(0))
+            # 预览行（前缀 + 序列 + 后缀），每行一条
+            pfx = prefix_edit.text()
+            sfx = suffix_edit.text()
+            for i, lbl in enumerate(preview_labels):
+                is_last = (i == n_preview - 1) and (len(ordered_row_indices) > n_preview)
+                val  = pfx + _make_seq_value(i) + sfx
+                text = f"预览 {i + 1}：{val}" + ("  …" if is_last else "")
+                lbl.setText(text)
+
+        def _on_mode_changed() -> None:
+            is_numeric = rb_numeric.isChecked()
+            start_spin.setVisible(is_numeric)
+            start_alpha_edit.setVisible(not is_numeric)
+            lbl_start.setText("起始数字" if is_numeric else "起始字母")
+            lbl_digits.setEnabled(is_numeric)
+            digits_spin.setEnabled(is_numeric)
+            _update_all()
+
+        def _on_alpha_text_changed(text: str) -> None:
+            cleaned = "".join(c for c in text.upper() if c.isalpha() and c.isascii())
+            if len(cleaned) > 2:
+                cleaned = cleaned[:2]
+            if cleaned != text:
+                pos = start_alpha_edit.cursorPosition()
+                start_alpha_edit.blockSignals(True)
+                start_alpha_edit.setText(cleaned)
+                start_alpha_edit.setCursorPosition(min(pos, len(cleaned)))
+                start_alpha_edit.blockSignals(False)
+            _update_all()
+
+        rb_numeric.toggled.connect(lambda _: _on_mode_changed())
+        rb_alpha.toggled.connect(lambda _: _on_mode_changed())
+        prefix_edit.textChanged.connect(lambda _: _update_all())
+        suffix_edit.textChanged.connect(lambda _: _update_all())
+        start_spin.valueChanged.connect(lambda _: _update_all())
+        start_alpha_edit.textChanged.connect(_on_alpha_text_changed)
+        step_spin.valueChanged.connect(lambda _: _update_all())
+        digits_spin.valueChanged.connect(lambda _: _update_all())
+        _update_all()
+
+        # ── 行6：按钮 ─────────────────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        ok_btn     = QPushButton("确定")
+        cancel_btn = QPushButton("取消")
+        ok_btn.setDefault(True)
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        root.addLayout(btn_row)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # 持久化前缀/后缀
+        self._edit_settings.setValue(_SETT_PFX + "prefix", prefix_edit.text())
+        self._edit_settings.setValue(_SETT_PFX + "suffix", suffix_edit.text())
+
+        pfx = prefix_edit.text()
+        sfx = suffix_edit.text()
+
+        # 生成所有值
+        if rb_numeric.isChecked():
+            start  = start_spin.value()
+            step   = step_spin.value()
+            digits = digits_spin.value()
+
+            def _make_value(i: int) -> str:
+                num = start + i * step
+                num_str = str(num).zfill(digits) if digits > 0 else str(num)
+                return pfx + num_str + sfx
+        else:
+            raw_alpha  = start_alpha_edit.text().strip().upper()
+            alpha_base = _alpha_to_num(raw_alpha) if raw_alpha else 1
+            alpha_step = step_spin.value()
+
+            def _make_value(i: int) -> str:  # type: ignore[misc]
+                return pfx + _num_to_alpha(alpha_base + i * alpha_step) + sfx
+
+        generated = [_make_value(i) for i in range(len(ordered_row_indices))]
+
+        # Part Number 列需要额外校验
+        if col_name == "Part Number":
+            for val in generated:
+                if not val.strip():
+                    QMessageBox.warning(self, "序列填充失败", "生成的零件编号含空值，请调整参数。")
+                    return
+                if not PART_NUMBER_VALID_PATTERN.fullmatch(val):
+                    QMessageBox.warning(
+                        self, "序列填充失败",
+                        f"生成的零件编号 \"{val}\" 含有非法字符。\n"
+                        "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
+                        "（\\ / : * ? \" < > |）。",
+                    )
+                    return
+            # 冲突检查：与规范数据中现有零件编号冲突
+            existing_pns: set[str] = set()
+            for pn, data in self._canonical_data.items():
+                existing_pns.add(data.get("Part Number", pn))
+            # 将本次填充对象的当前值排除（它们本身会被替换）
+            for row_idx in ordered_row_indices:
+                own_pn = str(self._rows[row_idx].get("Part Number", ""))
+                existing_pns.discard(self._canonical_data.get(own_pn, {}).get("Part Number", own_pn))
+            for val in generated:
+                if val in existing_pns:
+                    QMessageBox.warning(
+                        self, "序列填充失败",
+                        f"生成的零件编号 \"{val}\" 与 BOM 中现有零件编号冲突，操作已中止。",
+                    )
+                    return
+
+        assignments = list(zip(ordered_row_indices, [col_name] * len(ordered_row_indices), generated))
+        self._apply_cell_values(assignments)
 
     def _refresh_pns_appearance(self, pns: set[str]) -> None:
         """刷新指定零件编号对应所有行的已修改字段视觉标记。
@@ -2144,6 +2629,43 @@ class BomEditDialog(QDialog):
 
         menu.addSeparator()
 
+        # ── 填充操作（多选 + 可编辑列时启用） ────────────────────────────────
+        # 收集所有选中行的 row_idx，按 row_idx 升序排列（视觉顺序）
+        selected_row_indices: list[int] = sorted(
+            {
+                it.data(0, Qt.ItemDataRole.UserRole)
+                for it in self._table.selectedItems()
+                if it.data(0, Qt.ItemDataRole.UserRole) is not None
+            }
+        )
+        # 右键点击列是否可编辑（非只读列）
+        fill_col_name: str = (
+            self._columns[clicked_col_idx]
+            if 0 <= clicked_col_idx < len(self._columns)
+            else ""
+        )
+        fill_enabled = (
+            len(selected_row_indices) >= 2
+            and bool(fill_col_name)
+            and fill_col_name not in BOM_READONLY_COLUMNS
+            # 序列填充仅对文本列启用（Source / Preset 选项列是 combo，不支持序列）
+        )
+        fill_seq_enabled = fill_enabled and fill_col_name not in PRESET_USER_REF_PROPERTY_OPTIONS and fill_col_name != "Source"
+
+        _fill_col_display = BOM_COLUMN_DISPLAY_NAMES.get(fill_col_name, fill_col_name) if fill_col_name else ""
+
+        act_fill_same = menu.addAction(
+            f"首行内容填充（{_fill_col_display}）" if fill_enabled else "首行内容填充"
+        )
+        act_fill_same.setEnabled(fill_enabled)
+
+        act_fill_seq = menu.addAction(
+            f"序列填充（{_fill_col_display}）" if fill_seq_enabled else "序列填充"
+        )
+        act_fill_seq.setEnabled(fill_seq_enabled)
+
+        menu.addSeparator()
+
         # ── 另存为 ────────────────────────────────────────────────────────────
         act_edit_path = menu.addAction("另存为")
         # 允许对未保存过的零件（文件不在磁盘上但在CATIA内存中）执行另存为；
@@ -2160,6 +2682,10 @@ class BomEditDialog(QDialog):
             QApplication.clipboard().setText(cell_text)
         elif action == act_open_catia:
             self._open_in_catia(fp)
+        elif action == act_fill_same:
+            self._fill_same_value(fill_col_name, selected_row_indices)
+        elif action == act_fill_seq:
+            self._fill_sequence(fill_col_name, selected_row_indices)
         elif action == act_edit_path:
             self._rename_selected_file()
 
