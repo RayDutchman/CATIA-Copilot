@@ -1583,7 +1583,7 @@ class BomEditDialog(QDialog):
         _COL_W = 100  # 所有输入框统一宽度（px）
 
         main_grid = QGridLayout()
-        main_grid.setHorizontalSpacing(10)
+        main_grid.setHorizontalSpacing(20)
         main_grid.setVerticalSpacing(4)
         # 左右 stretch 列撑开，三个数据列等宽固定
         main_grid.setColumnStretch(0, 1)
@@ -1703,7 +1703,7 @@ class BomEditDialog(QDialog):
         for _ in range(n_preview):
             lbl = QLabel()
             lbl.setObjectName("hintLabel")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
             root.addWidget(lbl)
             preview_labels.append(lbl)
 
@@ -1730,7 +1730,7 @@ class BomEditDialog(QDialog):
             for i, lbl in enumerate(preview_labels):
                 is_last = (i == n_preview - 1) and (len(ordered_row_indices) > n_preview)
                 val  = pfx + _make_seq_value(i) + sfx
-                text = f"预览 {i + 1}：{val}" + ("  …" if is_last else "")
+                text = f"预览 {i + 1}：{val}"
                 lbl.setText(text)
 
         def _on_mode_changed() -> None:
