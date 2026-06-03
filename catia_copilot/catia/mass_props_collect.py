@@ -441,7 +441,7 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
         "inertia": [[Ixx, Ixy, Ixz],    # 重心处转动惯量张量，kg·mm²
                     [Ixy, Iyy, Iyz],
                     [Ixz, Iyz, Izz]],
-        "density": None,                # Analyze 不提供密度字段，始终为 None
+        "density": float | None,        # 密度，kg/m³；由 mass/volume 计算；volume≤0 时为 None
       }
     若零件未赋材料导致 mass == 0 或调用失败，则返回 None。
     """
@@ -461,11 +461,20 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
         raw = analyze.get_inertia()  # kg·mm²，9 元素 tuple，行主序 3×3
         inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]  # CATIA 返回 kg·mm²，与内部单位一致，直接使用
 
+        # 密度：analyze.volume 返回 mm³，换算为 kg/m³（1 m³ = 1e9 mm³）
+        density: float | None = None
+        try:
+            volume_mm3 = analyze.volume  # mm³
+            if volume_mm3 and volume_mm3 > 0.0:
+                density = mass / volume_mm3 * 1e9  # kg/m³
+        except Exception as ve:
+            logger.debug(f"[ANALYZE] 读取 volume 失败，密度置为 None: {ve}")
+
         return {
             "weight":  mass,
             "cog":     cog,
             "inertia": inertia,
-            "density": None,
+            "density": density,
         }
     except Exception as e:
         logger.debug(f"[ANALYZE] get_inertia/get_gravity_center 失败: {e}")

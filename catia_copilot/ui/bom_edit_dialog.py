@@ -1608,12 +1608,13 @@ class BomEditDialog(QDialog):
         prefix_edit.setFixedHeight(_ROW_H)
         prefix_edit.setFixedWidth(_COL_W)
 
-        seq1_edit = QLineEdit()
-        seq1_edit.setReadOnly(True)
-        seq1_edit.setFixedHeight(_ROW_H)
-        seq1_edit.setFixedWidth(_COL_W)
-        seq1_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        seq1_edit.setToolTip("第 1 项序列值（不含前后缀）")
+        seq1_label = QLabel()
+        seq1_label.setFixedHeight(_ROW_H)
+        seq1_label.setFixedWidth(_COL_W)
+        seq1_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        seq1_label.setToolTip("第 1 项序列值（不含前后缀）")
+        seq1_label.setFrameShape(seq1_label.Shape.StyledPanel)  # 视觉上像输入框
+        seq1_label.setFrameShadow(seq1_label.Shadow.Sunken)
 
         suffix_edit = QLineEdit(saved_suffix)
         suffix_edit.setPlaceholderText("（可为空）")
@@ -1621,7 +1622,7 @@ class BomEditDialog(QDialog):
         suffix_edit.setFixedWidth(_COL_W)
 
         main_grid.addWidget(prefix_edit, 1, 1, Qt.AlignmentFlag.AlignCenter)
-        main_grid.addWidget(seq1_edit,   1, 2, Qt.AlignmentFlag.AlignCenter)
+        main_grid.addWidget(seq1_label,  1, 2, Qt.AlignmentFlag.AlignCenter)
         main_grid.addWidget(suffix_edit, 1, 3, Qt.AlignmentFlag.AlignCenter)
 
         # ── 行2：起始 / 步长 / 位数（填零） 标题 ────────────────────────────
@@ -1662,7 +1663,7 @@ class BomEditDialog(QDialog):
         start_cell_layout.addWidget(start_alpha_edit)
 
         step_spin = QSpinBox()
-        step_spin.setRange(1, 999999)
+        step_spin.setRange(0, 999999)
         step_spin.setValue(1)
         step_spin.setFixedHeight(_ROW_H)
         step_spin.setFixedWidth(_COL_W)
@@ -1722,7 +1723,7 @@ class BomEditDialog(QDialog):
 
         def _update_all() -> None:
             # 序列值预览框（不含前后缀）
-            seq1_edit.setText(_make_seq_value(0))
+            seq1_label.setText(_make_seq_value(0))
             # 预览行（前缀 + 序列 + 后缀），每行一条
             pfx = prefix_edit.text()
             sfx = suffix_edit.text()

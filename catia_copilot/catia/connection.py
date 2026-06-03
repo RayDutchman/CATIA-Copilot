@@ -227,6 +227,7 @@ def wrap_product(product_com):
     获得 pycatia Product 后可直接调用：
       - ``product.position.get_components()``  → 12 元素 tuple，位置/旋转
       - ``product.analyze.mass``               → 质量 kg（基于材料属性）
+      - ``product.analyze.volume``             → 体积 mm³
       - ``product.analyze.get_gravity_center()``  → 重心坐标 mm
       - ``product.analyze.get_inertia()``         → 9 元素惯量矩阵
       - ``product.products``                   → 子件集合
