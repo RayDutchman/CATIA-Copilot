@@ -1,0 +1,72 @@
+=================================================================
+M1 B-Rep Exploration v8
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: SPA Measurable API 诊断
+=================================================================
+
+  new part: BRepDiag_SPA
+  Pad: '凸台.1'
+  SPA: <COMObject GetWorkbench>
+
+  N=0 DisplayName: 'FSur:(Face:(Brp:(Pad.1;0);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'
+  Measurable type: <class 'win32com.client.CDispatch'>
+  Measurable attrs with keywords: ['Area', 'GetAngleBetween', 'GetAngleBetweenInContext', 'GetAxis', 'GetAxisSystem', 'GetCOG', 'GetCenter', 'GetDirection', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetMinimumDistance', 'GetMinimumDistanceInContext', 'GetMinimumDistancePoints', 'GetMinimumDistancePointsInContext', 'GetPlane', 'GetPoint', 'GetPointsOnAxis', 'GetPointsOnCurve', 'GetTypeInfo', 'GetTypeInfoCount', '__getattr__', '__getattribute__', '__getitem__', '__getstate__', '_get_good_object_', '_get_good_single_object_']
+  meas.Area -> (-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+  meas.area -> (-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+  meas.GetArea() -> GetMeasurable.GetArea
+  meas.get_area() -> GetMeasurable.get_area
+  meas.GetNormal -> GetMeasurable.GetNormal
+  meas.get_normal -> GetMeasurable.get_normal
+  meas.Normal -> GetMeasurable.Normal
+  meas.normal -> GetMeasurable.normal
+
+  === 枚举 N=0..19 (Area测试) ===
+    N= 0  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 1  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 2  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 3  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 4  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 5  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 6  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 7  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 8  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N= 9  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=10  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=11  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=12  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=13  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=14  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=15  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=16  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=17  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=18  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+    N=19  ref1.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)  ref2.Area=ERR:(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+
+
+=================================================================
+Part B: Shaft 旋转轴策略诊断
+=================================================================
+
+  new part: BRepDiag_Shaft
+  add_new_shaft: '旋转体.1'
+  Update (no axis set): FAILED -> (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+  Z-line HybridShape: OK
+  shaft.revolution_axis = z_ref: OK
+  Update (with axis): FAILED -> (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  Shaft COM attrs (Revolution*):
+    ['FirstAngle', 'RevoluteAxis', 'SecondAngle']
+
+  Trying sketch H-axis as revolution axis...
+    sketch axis_system:
+    ['AbsoluteAxis', 'GetAbsoluteAxisData', 'SetAbsoluteAxisData']
+
+
+=================================================================
+Done
+=================================================================

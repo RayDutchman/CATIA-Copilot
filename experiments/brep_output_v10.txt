@@ -1,0 +1,73 @@
+=================================================================
+M1 B-Rep Exploration v10
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: GeometricElements 访问面 + SPA
+=================================================================
+
+  new part: BRepDiag_GE
+  Pad: '凸台.1'
+  GeometricElements.Count: 16
+
+  --- 逐项检查 ---
+  [ 1] type=CDispatch name='原点'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='原点'
+  [ 2] type=CDispatch name='横向'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='横向'
+  [ 3] type=CDispatch name='纵向'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='纵向'
+  [ 4] type=CDispatch name='绝对轴'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='绝对轴'
+  [ 5] type=CDispatch name='直线.1'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='直线.1'
+  [ 6] type=CDispatch name='直线.2'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='直线.2'
+  [ 7] type=CDispatch name='直线.3'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='直线.3'
+  [ 8] type=CDispatch name='直线.4'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='直线.4'
+  [ 9] type=CDispatch name='点.1'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.1'
+  [10] type=CDispatch name='点.2'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.2'
+  [11] type=CDispatch name='点.3'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.3'
+  [12] type=CDispatch name='点.4'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.4'
+  [13] type=CDispatch name='点.5'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.5'
+  [14] type=CDispatch name='点.6'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.6'
+  [15] type=CDispatch name='点.7'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.7'
+  [16] type=CDispatch name='点.8'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 
+        dn='点.8'
+
+
+=================================================================
+Part B: Shaft + COM RevoluteAxis 直接赋值
+=================================================================
+
+  new part: BRepDiag_Shaft_v10
+  建 Z 轴 HybridShape line...
+  Z-line: OK
+
+  [ERROR]:
+Traceback (most recent call last):
+  File "D:\CATIA_Related\CATIA-Copilot\experiments\explore_brepnames_v10.py", line 160, in <module>
+    shaft = ppy_b.shape_factory.add_new_shaft(sk_s)
+  File "C:\Users\Chen Weibo\AppData\Local\Programs\Python\Python313\Lib\site-packages\pycatia\part_interfaces\shape_factory.py", line 1856, in add_new_shaft
+    return Shaft(self.shape_factory.AddNewShaft(i_sketch.com_object))
+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "<COMObject <unknown>>", line 2, in AddNewShaft
+pywintypes.com_error: (-2147352567, '发生意外。', (0, 'CATIAShapeFactory', '方法 AddNewShaft 失败', None, 0, -2147467259), None)
+
+
+
+=================================================================
+Done
+=================================================================

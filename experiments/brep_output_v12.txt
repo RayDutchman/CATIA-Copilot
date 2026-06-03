@@ -1,0 +1,69 @@
+=================================================================
+M1 B-Rep Exploration v12
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: 面识别 via sketches.add + get_absolute_axis_data
+=================================================================
+
+  new part: BRepDiag_FaceId
+  Pad: '凸台.1'
+  GeometricElements.Count: 16
+
+  尝试对每个 GE 项建草图，读取轴系：
+  [ 1] '原点'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 2] '横向'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 3] '纵向'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 4] '绝对轴'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 5] '直线.1'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 6] '直线.2'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 7] '直线.3'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 8] '直线.4'  sketches.add -> CreateReferenceFromObject.com_object
+  [ 9] '点.1'  sketches.add -> CreateReferenceFromObject.com_object
+  [10] '点.2'  sketches.add -> CreateReferenceFromObject.com_object
+  [11] '点.3'  sketches.add -> CreateReferenceFromObject.com_object
+  [12] '点.4'  sketches.add -> CreateReferenceFromObject.com_object
+  [13] '点.5'  sketches.add -> CreateReferenceFromObject.com_object
+  [14] '点.6'  sketches.add -> CreateReferenceFromObject.com_object
+  [15] '点.7'  sketches.add -> CreateReferenceFromObject.com_object
+  [16] '点.8'  sketches.add -> CreateReferenceFromObject.com_object
+
+  Valid face sketches: 0
+
+
+=================================================================
+Part B: 顶面定位草图 + 第二个 Pad
+=================================================================
+
+  new part: BRepDiag_FaceSketch_v12
+  Base Pad: '凸台.1'
+  Top face NOT found
+
+
+=================================================================
+Part C: Shaft + Groove 完整验证
+=================================================================
+
+  new part: BRepDiag_Shaft_v12
+  add_new_shaft: '旋转体.1'
+  shaft.revolute_axis = z_ref: OK
+  Shaft Update: OK
+
+  [ERROR]:
+Traceback (most recent call last):
+  File "D:\CATIA_Related\CATIA-Copilot\experiments\explore_brepnames_v12.py", line 296, in <module>
+    groove = ppy_c.shape_factory.add_new_groove(sk_g)
+  File "C:\Users\Chen Weibo\AppData\Local\Programs\Python\Python313\Lib\site-packages\pycatia\part_interfaces\shape_factory.py", line 898, in add_new_groove
+    return Groove(self.shape_factory.AddNewGroove(i_sketch.com_object))
+                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "<COMObject <unknown>>", line 2, in AddNewGroove
+pywintypes.com_error: (-2147352567, '发生意外。', (0, 'CATIAShapeFactory', '方法 AddNewGroove 失败', None, 0, -2147467259), None)
+
+
+
+=================================================================
+Done
+=================================================================

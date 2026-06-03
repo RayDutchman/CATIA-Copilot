@@ -813,7 +813,7 @@ def tool_update_memory(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-# --- 18. find_part_for_drawing ---
+# --- 20. find_part_for_drawing ---
 
 def tool_find_part_for_drawing(
     drawing_path: str,
@@ -832,7 +832,7 @@ def tool_find_part_for_drawing(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
-# --- 19. find_drawing_for_part ---
+# --- 21. find_drawing_for_part ---
 
 def tool_find_drawing_for_part(
     part_path: str,
@@ -851,7 +851,7 @@ def tool_find_drawing_for_part(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
-# --- 19. read_file ---
+# --- 22. read_file ---
 
 # 允许读取的文本文件扩展名白名单
 _READ_ALLOWED_EXTS: frozenset[str] = frozenset({
@@ -926,7 +926,7 @@ def tool_read_file(
     )
 
 
-# --- 20. list_directory ---
+# --- 23. list_directory ---
 
 # 列目录时显示的文件扩展名（其他文件也会列出，只是 type 字段不同）
 _CATIA_EXTS: frozenset[str] = frozenset({
@@ -1001,7 +1001,7 @@ def tool_list_directory(
     )
 
 
-# --- 21. write_file ---
+# --- 24. write_file ---
 
 # 允许写入的文本文件扩展名白名单
 _WRITE_ALLOWED_EXTS: frozenset[str] = frozenset({
@@ -1303,7 +1303,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "diagnose_catia_connection",
-            "description": ("对 CATIA V5 COM 连接进行详细诊断。""返回字段包括：status（连接状态）、app_version（CATIA 版本）、""doc_count（已打开文档数）、active_doc（活动文档名）、""catia_process_running（进程是否存在）、error（错误描述）等。""适用于排查连接异常；日常使用 check_catia_connection 即可。"),
+            "description": ("对 CATIA V5 COM 连接进行详细诊断。""返回字段包括：status（连接状态）、""doc_count（已打开文档数）、active_doc（活动文档名）、""catia_process_running（进程是否存在）、error（错误描述）等。""适用于排查连接异常；日常使用 check_catia_connection 即可。"),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

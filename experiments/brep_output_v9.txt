@@ -1,0 +1,85 @@
+=================================================================
+M1 B-Rep Exploration v9
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: CreateReferenceFromBRepName 第二参数测试
+=================================================================
+
+  new part: BRepDiag_SPA_v9
+  Pad: '凸台.1'
+  Part Reference failed: <unknown>.com_object
+
+  --- 枚举 N=0..9 with 3 ref variants ---
+  N= 0  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 1  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 2  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 3  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 4  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 5  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 6  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 7  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 8  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  N= 9  v1=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura  v2=?  v3=E:(-2147352567, '发生意外。', (0, 'CATIAMeasura
+
+  --- pycatia create_reference_from_b_rep_name ---
+  pycatia ref: Reference(name="CATIAReference318")
+  pycatia create_reference_from_b_rep_name: Traceback (most recent call last):
+  File "D:\CATIA_Related\CATIA-Copilot\experiments\explore_brepnames_v9.py", line 140, in <module>
+    area_py = spa.GetMeasurable(r_py.com_object).Area
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Chen Weibo\AppData\Local\Programs\Python\Python313\Lib\site-packages\win32com\client\dynamic.py", line 620, in __getattr__
+    ret = self._oleobj_.Invoke(retEntry.dispid, 0, invoke_type, 1)
+pywintypes.com_error: (-2147352567, '发生意外。', (0, 'CATIAMeasurable', '方法 Area 失败', None, 0, -2147467259), None)
+
+
+  --- Part.GeometricElements ---
+  GeometricElements count: 16
+    item(1): <COMObject Item>
+    item(2): <COMObject Item>
+    item(3): <COMObject Item>
+    item(4): <COMObject Item>
+
+  --- 通过 Body.Faces 或 Shape 访问实体面 ---
+  MainBody attrs (face/surf): ['QueryInterface']
+
+
+=================================================================
+Part B: Shaft 草图方向测试
+=================================================================
+
+  new part: BRepDiag_Shaft_v9
+
+  [Test1] ZX 平面, H(Z)=5~25, V(X)=0~40, 底边 V=0
+  add_new_shaft: '旋转体.1'
+  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  [Test2] ZX 平面, H=0~25, V=0~40, 左边 H=0 在轴上
+  add_new_shaft: '旋转体.2'
+  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  [Test3] YZ 平面, H=0~25, V=0~40
+  add_new_shaft: '旋转体.3'
+  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  [Test4] XY 平面, H=0~25, V=0~40
+  add_new_shaft: '旋转体.4'
+  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  Final features: ['旋转体.1', '旋转体.2', '旋转体.3', '旋转体.4']
+
+  SPA test on '旋转体.1':
+
+  SPA test on '旋转体.2':
+
+  SPA test on '旋转体.3':
+
+  SPA test on '旋转体.4':
+
+
+=================================================================
+Done
+=================================================================
