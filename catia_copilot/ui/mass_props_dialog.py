@@ -206,9 +206,9 @@ class MassPropsDialog(QDialog):
             self._read_mode = "all"
 
         # ── 数据来源 ──────────────────────────────────────────────────────────
-        self._source: str = self._settings.value("source", "keep_inertia")
+        self._source: str = self._settings.value("source", "analyze")
         if self._source not in ("keep_inertia", "analyze"):
-            self._source = "keep_inertia"
+            self._source = "analyze"
 
         # ── 忽略隐藏节点 ──────────────────────────────────────────────────────
         self._skip_hidden: bool = self._settings.value("skip_hidden", False, type=bool)
@@ -319,29 +319,29 @@ class MassPropsDialog(QDialog):
     def _calc_unit_factors(mass_unit: str, cog_unit: str) -> tuple[float, float, float]:
         """根据重量单位和长度单位返回 (mass_factor, inertia_factor_derived, cog_factor)。
 
-        内部存储单位为 SI：质量 kg、坐标 m、惯量 kg·m²。
+        内部存储单位为：质量 kg、坐标 mm、惯量 kg·mm²。
         inertia_factor_derived = mass_factor × cog_factor²（用于向后兼容推导）。
         独立惯量单位换算请使用 _calc_inertia_factor()。
         """
         mf = 1e3 if mass_unit == "g" else 1.0
-        cf = 1e3 if cog_unit == "mm" else 1.0
+        cf = 1e-3 if cog_unit == "m" else 1.0   # 内部已是 mm；选 m 显示则缩小 1000 倍
         return mf, mf * cf * cf, cf
 
     @staticmethod
     def _calc_inertia_factor(inertia_unit: str) -> float:
-        """从 SI 内部单位 kg·m² 换算到 inertia_unit 字符串对应显示单位的换算因子。
+        """从内部单位 kg·mm² 换算到 inertia_unit 字符串对应显示单位的换算因子。
 
         支持的惯量单位字符串（Unicode 上标²）：
-          "g·mm²"  → 1e9   (kg→g=×1e3, m→mm=×1e3, m²→mm²=×1e6, 合计×1e9)
-          "g·m²"   → 1e3   (kg→g=×1e3, m→m=×1)
-          "kg·mm²" → 1e6   (kg→kg=×1, m→mm=×1e3, m²→mm²=×1e6)
-          "kg·m²"  → 1.0   (SI，无需换算)
+          "kg·mm²" → 1.0    (内部单位，无需换算)
+          "kg·m²"  → 1e-6   (mm²→m²=÷1e6)
+          "g·mm²"  → 1e3    (kg→g=×1e3)
+          "g·m²"   → 1e-3   (kg→g=×1e3, mm²→m²=÷1e6, 合计×1e-3)
         """
         _map = {
-            "g\u00b7mm\u00b2":  1e9,
-            "g\u00b7m\u00b2":   1e3,
-            "kg\u00b7mm\u00b2": 1e6,
-            "kg\u00b7m\u00b2":  1.0,
+            "kg\u00b7mm\u00b2": 1.0,
+            "kg\u00b7m\u00b2":  1e-6,
+            "g\u00b7mm\u00b2":  1e3,
+            "g\u00b7m\u00b2":   1e-3,
         }
         return _map.get(inertia_unit, 1.0)
 
@@ -401,11 +401,11 @@ class MassPropsDialog(QDialog):
         return self._fmt_scaled(value, self._unit_factor)
 
     def _fmt_inertia_val(self, value) -> str:
-        """将惯量原始值（kg·m²，SI 内部单位）乘以 _inertia_unit_factor 并格式化为字符串（惯量列专用）。"""
+        """将惯量原始值（kg·mm²，内部单位）乘以 _inertia_unit_factor 并格式化为字符串（惯量列专用）。"""
         return self._fmt_scaled(value, self._inertia_unit_factor)
 
     def _fmt_cog_val(self, value) -> str:
-        """将重心坐标原始值（m，SI 内部单位）乘以 _cog_unit_factor 并格式化为字符串（CogX/Y/Z 列专用）。"""
+        """将重心坐标原始值（mm，内部单位）乘以 _cog_unit_factor 并格式化为字符串（CogX/Y/Z 列专用）。"""
         return self._fmt_scaled(value, self._cog_unit_factor)
 
     # ── UI 构建 ────────────────────────────────────────────────────────────

@@ -79,7 +79,7 @@ class _Layout:
     # ── Splitter ──────────────────────────────────────────────────────────────
     # AISplitter 分隔侧边栏与右主区
     SPLITTER_HANDLE_WIDTH:   int   = 16    # 拖动 handle 的宽度（px）
-    SPLITTER_ARROW_SIZE:     int   = 12    # handle 中央箭头字体大小（px）
+    SPLITTER_MARK_SIZE:     int   = 30    # handle 中央箭头字体大小（px）
     SIDEBAR_DEFAULT_WIDTH:   int   = 220   # 侧边栏展开时的默认宽度（px）
 
     # ── 侧边栏 ────────────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ class _Layout:
     SEND_BTN_SIZE:           tuple = (60, 60)   # 发送按钮尺寸 (width, height)
 
     # ── Splitter handle 绘制 ──────────────────────────────────────────────────
-    HANDLE_BTN_HEIGHT:       int   = 40    # handle 中央箭头按钮的可点击区域高度（px）
+    HANDLE_BTN_HEIGHT:       int   = 30    # handle 中央箭头按钮的可点击区域高度（px）
 
 
 # 全局单例，直接 from catia_copilot.ui.ui_layout import L 使用

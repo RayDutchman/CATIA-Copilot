@@ -1,0 +1,65 @@
+=================================================================
+M1 B-Rep Exploration v11
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: SPA via GeometricElements + CreateReferenceFromObject
+=================================================================
+
+  new part: BRepDiag_SPA_v11
+  Pad: '凸台.1'
+  GeometricElements.Count: 16
+  [ 1] '原点'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 2] '横向'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 3] '纵向'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 4] '绝对轴'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 5] '直线.1'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 6] '直线.2'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 7] '直线.3'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 8] '直线.4'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [ 9] '点.1'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [10] '点.2'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [11] '点.3'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [12] '点.4'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [13] '点.5'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [14] '点.6'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [15] '点.7'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+  [16] '点.8'  Area_err=(-2147352567, '发生意外。', (0, 'CATIAMeasura
+
+  Valid faces found: 0
+
+
+=================================================================
+Part B: Shaft 正确顺序（add先，Z-line后，再 update）
+=================================================================
+
+  new part: BRepDiag_Shaft_v11
+  Sketch (ZX): OK
+  add_new_shaft: '旋转体.1'
+  Z-line HybridShape: OK
+  shaft.com_object.RevoluteAxis = z_ref: OK
+  Part Update: OK
+
+  草图轴系 (ZX plane):
+  origin=[0.0, 0.0, 0.0]
+  H-axis=[0.0, 0.0, 0.0]
+  V-axis=[0.0, 0.0, 0.0]
+
+  Final features: ['旋转体.1']
+
+
+=================================================================
+Part C: 在顶面上建草图 + Pad
+=================================================================
+
+  new part: BRepDiag_FaceSketch_v11
+  Base Pad: '凸台.1'
+  Top face NOT found via SPA
+
+
+=================================================================
+Done
+=================================================================

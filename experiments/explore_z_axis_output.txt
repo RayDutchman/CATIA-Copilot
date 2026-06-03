@@ -1,0 +1,38 @@
+零件 Z 轴 COM 获取方式探查
+============================================================
+Part name: Part46
+
+── 1. OriginElements 属性 ──
+  type(origin): <class 'pycatia.mec_mod_interfaces.origin_elements.OriginElements'>
+  origin.plane_xy = AnyObject(name="xy 平面") (type=AnyObject)
+  origin.plane_yz = AnyObject(name="yz 平面") (type=AnyObject)
+  origin.plane_zx = AnyObject(name="zx 平面") (type=AnyObject)
+  origin.axis_x → AttributeError（不存在）
+  origin.axis_y → AttributeError（不存在）
+  origin.axis_z → AttributeError（不存在）
+  origin.x_axis → AttributeError（不存在）
+  origin.y_axis → AttributeError（不存在）
+  origin.z_axis → AttributeError（不存在）
+  origin.direction_x → AttributeError（不存在）
+  origin.direction_y → AttributeError（不存在）
+  origin.direction_z → AttributeError（不存在）
+  origin.line_x → AttributeError（不存在）
+  origin.line_y → AttributeError（不存在）
+  origin.line_z → AttributeError（不存在）
+
+── 2. COM doc.Part.OriginElements 属性 ──
+  type: <class 'win32com.client.CDispatch'>
+  COM 属性/方法: ['AddRef', 'Application', 'ChangeComponentState', 'Destructor', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'PlaneXY', 'PlaneYZ', 'PlaneZX', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']
+
+── 3. Part.AxisSystems ──
+  AxisSystems.Count = 0
+
+── 4. HybridShapeFactory 创建 Z 方向线（无 HybridBody）──
+  无 HybridBody 方案 FAILED: The Python instance can not be converted to a COM object
+
+── 5. 通过 Part.OriginElements（COM 只读属性）──
+  PlaneXY type: <class 'win32com.client.CDispatch'>
+  PlaneXY dir: ['AddRef', 'Application', 'ChangeComponentState', 'Destructor', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']
+
+============================================================
+探查完成。

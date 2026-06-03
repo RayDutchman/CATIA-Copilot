@@ -27,6 +27,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings, QThread
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QTextEdit, QTextBrowser,
     QFrame, QSizePolicy, QDialog, QFormLayout,
@@ -374,6 +375,132 @@ class AIMessageWidget(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# 活动指示器：AI 思考 / 工具执行 / 生成中
+# ---------------------------------------------------------------------------
+
+class _TypingIndicatorWidget(QWidget):
+    """聊天区底部的动态活动指示器。
+
+    作为普通消息 widget 插入 chat_layout，跟随自动滚底。
+    根据 AgentWorker 当前状态显示不同文字 + 转圈动画，
+    让用户知道后台正在工作，而不是卡死或断连。
+
+    状态：
+      "thinking" — AI 思考中（发送后、工具调用后等待下一轮）
+      "tool"     — 正在执行工具，附带工具名和经过秒数
+      "gen"      — 流式生成中（通常被快速替换为实际文字，极短暂）
+    """
+
+    _FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._frame_idx = 0
+        self._elapsed   = 0
+        self._state     = "thinking"
+        self._detail    = ""
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(
+            L.AI_MSG_MARGINS[0], 6, L.AI_MSG_MARGINS[2], 6
+        )
+        self._label = QLabel()
+        self._label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self._label)
+        layout.addStretch()
+
+        # 转圈动画（120ms/帧，约 8fps，流畅不抢眼）
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._tick_anim)
+        self._anim_timer.start(120)
+
+        # 工具执行计时（每秒 +1）
+        self._sec_timer = QTimer(self)
+        self._sec_timer.timeout.connect(self._tick_sec)
+
+        self._update_label()
+        theme_signal.theme_changed.connect(self._update_label)
+
+    def set_state(self, state: str, detail: str = "") -> None:
+        """切换显示状态。state: 'thinking' | 'tool' | 'gen'"""
+        self._state  = state
+        self._detail = detail
+        self._elapsed = 0
+        if state == "tool":
+            self._sec_timer.start(1000)
+        else:
+            self._sec_timer.stop()
+        self._update_label()
+
+    def stop_animation(self) -> None:
+        """停止所有定时器（在 deleteLater 前调用避免野定时器）。"""
+        self._anim_timer.stop()
+        self._sec_timer.stop()
+
+    def _tick_anim(self):
+        self._frame_idx = (self._frame_idx + 1) % len(self._FRAMES)
+        self._update_label()
+
+    def _tick_sec(self):
+        self._elapsed += 1
+        self._update_label()
+
+    def _update_label(self):
+        c = chat_colors()
+        sp = self._FRAMES[self._frame_idx]
+        if self._state == "tool":
+            elapsed_str = f"  {self._elapsed}s" if self._elapsed > 0 else ""
+            text = f"{sp}  执行工具：{self._detail}{elapsed_str}"
+        elif self._state == "gen":
+            text = f"{sp}  生成回复中…"
+        else:
+            text = f"{sp}  AI 思考中…"
+        self._label.setText(text)
+        self._label.setStyleSheet(
+            f"color: {c.ai_fg}; font-size: {L.SMALL_FONT_SIZE}px;"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 错误消息 Widget
+# ---------------------------------------------------------------------------
+
+class _ErrorMessageWidget(QFrame):
+    """错误消息，用红色左边线区分于普通 AI 回复，醒目且可选中复制。"""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(L.AI_MSG_MARGINS[0], 4, L.AI_MSG_MARGINS[2], 4)
+
+        self._label = QLabel(text)
+        self._label.setObjectName("ErrorBubble")
+        self._label.setWordWrap(True)
+        self._label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self._label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        layout.addWidget(self._label)
+        self._apply_style()
+        theme_signal.theme_changed.connect(self._apply_style)
+
+    def _apply_style(self):
+        self._label.setStyleSheet(
+            f"QLabel#ErrorBubble {{"
+            f"  border-left: 3px solid #e05555;"
+            f"  background: rgba(224,85,85,0.08);"
+            f"  padding: 6px 10px;"
+            f"  border-radius: 0px;"
+            f"  font-size: {L.AI_MSG_FONT_SIZE}px;"
+            f"  color: #c0392b;"
+            f"}}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 消息 Widget：工具调用卡片
 # ---------------------------------------------------------------------------
 
@@ -405,6 +532,10 @@ class ToolCallWidget(QFrame):
         self._tool_name = tool_name
         self._args_str = args_str
         self._expanded = False
+        self._result_text = ""
+        self._start_time: float | None = None
+        self._tick_timer = QTimer(self)
+        self._tick_timer.timeout.connect(self._update_duration)
         self._build_ui()
         theme_signal.theme_changed.connect(self._on_theme_changed)
 
@@ -442,6 +573,12 @@ class ToolCallWidget(QFrame):
 
         header.addWidget(self._toggle_btn)
         header.addWidget(self._title_label, 1)
+
+        # 执行时长标签（执行中显示秒数，完成后显示总耗时）
+        self._dur_label = QLabel()
+        self._dur_label.setObjectName("ToolCardDur")
+        self._dur_label.setVisible(False)
+        header.addWidget(self._dur_label)
         outer.addLayout(header)
 
         self._content_widget = QWidget()
@@ -463,6 +600,23 @@ class ToolCallWidget(QFrame):
         outer.addWidget(self._content_widget)
         self._apply_style()
 
+    def start_timer(self) -> None:
+        """实时执行开始：展开卡片 + 启动计时。由 AIChatPanel 在工具启动时调用。"""
+        # 自动展开，让 progress 消息可见
+        if not self._expanded:
+            self._toggle()
+        self._start_time = time.monotonic()
+        self._dur_label.setVisible(True)
+        self._update_duration()
+        self._tick_timer.start(500)
+
+    def _update_duration(self) -> None:
+        """每 500ms 更新时长标签。"""
+        if self._start_time is None:
+            return
+        elapsed = time.monotonic() - self._start_time
+        self._dur_label.setText(f"{elapsed:.1f}s")
+
     def _toggle(self):
         """切换展开/折叠状态。
 
@@ -480,12 +634,20 @@ class ToolCallWidget(QFrame):
         self._progress_label.setVisible(True)  # 有内容才显示
 
     def set_result(self, result: str):
-        """填入工具调用结果，保持折叠状态（不自动展开）。"""
+        """填入工具调用结果，停止计时并显示最终耗时。"""
+        # 停止计时，显示最终耗时
+        self._tick_timer.stop()
+        if self._start_time is not None:
+            elapsed = time.monotonic() - self._start_time
+            self._dur_label.setText(f"✓  {elapsed:.1f}s")
+            self._dur_label.setVisible(True)
+
         try:
             parsed = json.loads(result)
             formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
         except Exception:
             formatted = result
+        self._result_text = formatted
         self._result_browser.setPlainText(formatted)
 
     def _apply_style(self):
@@ -500,6 +662,10 @@ class ToolCallWidget(QFrame):
         self._title_label.setStyleSheet(
             f"QLabel#ToolCardTitle {{ color: {fg}; font-size: {L.TOOL_CARD_TITLE_FONT_SIZE}px; "
             f"font-weight: bold; background: transparent; border: none; }}"
+        )
+        self._dur_label.setStyleSheet(
+            f"QLabel#ToolCardDur {{ color: {chat_colors().progress_fg}; "
+            f"font-size: {L.SMALL_FONT_SIZE}px; background: transparent; border: none; }}"
         )
         self._progress_label.setStyleSheet(
             f"QLabel#ToolCardProgress {{ color: {prog_fg}; font-size: {L.TOOL_CARD_PROGRESS_FONT_SIZE}px; "
@@ -876,19 +1042,19 @@ class AISettingsDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
-# 自定义 Splitter Handle：中间有折叠/展开箭头按钮
+# 自定义 Splitter Handle：中间有折叠/展开 ⋮ 按钮
 # ---------------------------------------------------------------------------
 
 class _CollapseHandle(QSplitterHandle):
     """
     QSplitter 的自定义 handle。
 
-    宽度 14px，中间位置绘制一个 ◀/▶ 箭头按钮区域（高 40px）。
-    点击箭头区域时折叠/展开左侧侧边栏（index=0 的 widget）。
+    宽度 14px，中间位置绘制一个 ⋮ 按钮区域（高 30px）。
+    点击 ⋮ 区域时折叠/展开左侧侧边栏（index=0 的 widget）。
     拖动 handle 其余区域仍可调整宽度。
     """
 
-    _BTN_H = L.HANDLE_BTN_HEIGHT   # 箭头按钮区域高度
+    _BTN_H = L.HANDLE_BTN_HEIGHT   #  ⋮ 按钮区域高度
     _W     = L.SPLITTER_HANDLE_WIDTH  # handle 宽度
 
     def __init__(self, orientation, parent):
@@ -904,8 +1070,8 @@ class _CollapseHandle(QSplitterHandle):
         sizes = sp.sizes()
         return len(sizes) > 0 and sizes[0] == 0
 
-    def _arrow_rect(self):
-        """返回箭头按钮区域的 QRect（垂直居中）。"""
+    def _mark_rect(self):
+        """返回 ⋮ 按钮区域的 QRect（垂直居中）。"""
         cy = self.height() // 2
         return QRect(0, cy - self._BTN_H // 2, self._W, self._BTN_H)
 
@@ -924,28 +1090,28 @@ class _CollapseHandle(QSplitterHandle):
         painter.drawLine(1, 0, 1, self.height() - 1)
         painter.drawLine(self._W - 2, 0, self._W - 2, self.height() - 1)
 
-        # 箭头按钮区域背景（hover 时高亮）
-        btn_rect = self._arrow_rect()
+        #  ⋮ 按钮区域背景（hover 时高亮）
+        btn_rect = self._mark_rect()
         if self._hovered:
             painter.fillRect(btn_rect, QColor(c.handle_hover))
 
-        # 绘制箭头：指定 Segoe UI Emoji 字体确保现代矢量渲染
-        arrow = "◀" if not self._is_collapsed() else "▶"
+        # 绘制 ⋮ ：指定 Segoe UI Emoji 字体确保现代矢量渲染
+        mark = "⋮" if not self._is_collapsed() else "⋮"
         painter.setPen(QColor(c.handle_fg))
         emoji_font = QFont("Segoe UI Emoji", -1)
-        emoji_font.setPixelSize(L.SPLITTER_ARROW_SIZE)
+        emoji_font.setPixelSize(L.SPLITTER_MARK_SIZE)
         painter.setFont(emoji_font)
-        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, arrow)
+        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, mark)
 
     def mousePressEvent(self, event):
-        if self._arrow_rect().contains(event.pos()):
+        if self._mark_rect().contains(event.pos()):
             self._toggle_collapse()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         was = self._hovered
-        self._hovered = self._arrow_rect().contains(event.pos())
+        self._hovered = self._mark_rect().contains(event.pos())
         if was != self._hovered:
             self.update()
         super().mouseMoveEvent(event)
@@ -1313,12 +1479,29 @@ class AIChatPanel(QWidget):
             # 按 updated_at 降序取最近活跃的会话
             latest = max(entries, key=lambda e: e.get("updated_at", ""))
             self._current_session = self._sm.load_session(latest["session_id"])
-        self._worker: AgentWorker | None = None
+        # ── 多 session 并发生成支持 ───────────────────────────────────────────
+        # session_id → AgentWorker（后台正在运行）
+        self._workers: dict[str, AgentWorker] = {}
+        # session_id → ChatSession 对象（用于后台 session 的消息写入）
+        self._bg_sessions: dict[str, object] = {}
+
+        # 当前可见 session 的前端快照（切换时保存到 _gen_states，切回时恢复）
         self._current_ai_widget: AIMessageWidget | None = None
         self._current_tool_widget: ToolCallWidget | None = None
+        self._typing_indicator: _TypingIndicatorWidget | None = None
         # 当前正在执行的工具调用信息（用于写入 session messages）
         # 格式：{"tool_call_id": str, "name": str, "arguments": str}
         self._pending_tool_call: dict | None = None
+
+        # session_id → (ai_widget, tool_widget, tool_wrapper, typing_indicator, pending_tool_call)
+        # 仅在 session 切走时存入，切回时恢复并清除
+        self._gen_states: dict[str, tuple] = {}
+
+        # 隐藏的停车区：切换 session 时把正在生成的 widget reparent 到这里，
+        # 使其脱离 layout 但不被 deleteLater 销毁，切回时再还原
+        self._widget_park = QWidget()
+        self._widget_park.hide()
+
         self._build_ui()
         # 启动时重建历史消息 widget
         if self._current_session is not None:
@@ -1332,7 +1515,7 @@ class AIChatPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # QSplitter：左侧边栏 + 右主区，handle 上有折叠/展开箭头
+        # QSplitter：左侧边栏 + 右主区，handle 上有折叠/展开 ⋮ 
         self._splitter = AISplitter(Qt.Orientation.Horizontal)
         self._splitter.setChildrenCollapsible(True)
         self._splitter.setHandleWidth(L.SPLITTER_HANDLE_WIDTH)
@@ -1426,6 +1609,15 @@ class AIChatPanel(QWidget):
 
         layout.addStretch()
 
+        # Token 用量小标签（初始隐藏，收到 usage_updated 后显示）
+        self._usage_label = QLabel()
+        self._usage_label.setObjectName("UsageLabel")
+        self._usage_label.setVisible(False)
+        self._usage_label.setStyleSheet(
+            f"color: gray; font-size: {L.SMALL_FONT_SIZE}px;"
+        )
+        layout.addWidget(self._usage_label)
+
         # 模型 ComboBox：可编辑模式下 Qt 独立计算下拉列表宽度，模型名不会被截断
         self._model_combo = QComboBox()
         self._model_combo.setEditable(True)
@@ -1498,7 +1690,7 @@ class AIChatPanel(QWidget):
 
         self._send_btn = QPushButton("发送")
         self._send_btn.setFixedSize(*L.SEND_BTN_SIZE)
-        self._send_btn.clicked.connect(self._send_message)
+        self._send_btn.clicked.connect(self._on_send_or_stop)
         layout.addWidget(self._send_btn)
 
         return area
@@ -1518,11 +1710,80 @@ class AIChatPanel(QWidget):
         """
         self._current_session = None
 
+    def _save_gen_state(self):
+        """将当前 session 的生成状态保存并从 layout 摘出（reparent 到 parking widget）。
+        这样后续 _clear_chat_widgets 不会 deleteLater 这些 widget。
+        仅在该 session 有后台 worker 时调用。
+        """
+        if self._current_session is None:
+            return
+        sid = self._current_session.session_id
+        if sid not in self._workers:
+            return
+
+        # ToolCallWidget 在 layout 里是被包了一层 wrapper 的，需要摘 wrapper
+        tool_wrapper = None
+        if self._current_tool_widget is not None:
+            parent = self._current_tool_widget.parent()
+            # wrapper 是透明的 QWidget，不是 ToolCallWidget 本身
+            if parent is not None and parent is not self._chat_container:
+                tool_wrapper = parent
+
+        # 把各 widget 从 layout 摘出，reparent 到 parking，避免被 _clear_chat_widgets 销毁
+        for w in [self._current_ai_widget, tool_wrapper or self._current_tool_widget,
+                  self._typing_indicator]:
+            if w is not None:
+                w.setParent(self._widget_park)  # 自动从 layout 移除
+
+        self._gen_states[sid] = (
+            self._current_ai_widget,
+            self._current_tool_widget,
+            tool_wrapper,
+            self._typing_indicator,
+            self._pending_tool_call,
+        )
+
+    def _restore_gen_state(self, sid: str):
+        """切回某 session 时，把 parking 里的 widget 还原到 layout。"""
+        state = self._gen_states.pop(sid, None)
+        if state is None:
+            return
+        ai_w, tool_w, tool_wrapper, typing_w, pending = state
+
+        self._current_ai_widget   = ai_w
+        self._current_tool_widget = tool_w
+        self._typing_indicator    = typing_w
+        self._pending_tool_call   = pending
+
+        # 还原到 chat_container 并重新插入 layout
+        # 顺序：ai_widget → tool_wrapper/tool_widget → typing_indicator
+        if ai_w is not None:
+            ai_w.setParent(self._chat_container)
+            # is_inserted=True 说明曾插入过（发送后立即插入），直接加回；
+            # is_inserted=False 说明是工具调用后的懒插入占位，等下一个 token 触发
+            if ai_w.is_inserted:
+                self._insert_widget(ai_w)
+                ai_w.show()
+
+        if tool_wrapper is not None:
+            tool_wrapper.setParent(self._chat_container)
+            count = self._chat_layout.count()
+            self._chat_layout.insertWidget(count - 1, tool_wrapper)
+            tool_wrapper.show()
+        elif tool_w is not None:
+            tool_w.setParent(self._chat_container)
+            self._insert_widget(tool_w)
+            tool_w.show()
+
+        if typing_w is not None:
+            typing_w.setParent(self._chat_container)
+            self._insert_widget(typing_w)
+            typing_w.show()
+
     def _new_session(self):
         """切换到草稿状态（不立即创建 ChatSession，发送第一条消息时才创建）。"""
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(2000)
+        # 保存当前 session 的生成状态（若有）
+        self._save_gen_state()
         # 保存当前会话（若有）
         if self._current_session is not None:
             self._sm.save_session(self._current_session)
@@ -1530,17 +1791,28 @@ class AIChatPanel(QWidget):
         self._current_session = None
         self._sidebar.set_current(None)
         self._clear_chat_widgets()
+        self._current_ai_widget = None
+        self._current_tool_widget = None
+        self._typing_indicator = None
+        self._pending_tool_call = None
         self._update_session_title()
         self._refresh_model_combo_for_session()
+        # 按钮恢复为"发送"（草稿无 worker）
+        self._send_btn.setEnabled(True)
+        self._send_btn.setText("发送")
 
     def _switch_session(self, session_id: str):
-        """切换到指定会话。"""
+        """切换到指定会话（不停止后台 worker，保持后台生成继续运行）。"""
         if (self._current_session is not None
                 and session_id == self._current_session.session_id):
             return
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(2000)
+        # 保存当前 session 的生成状态快照（若有 worker 在跑）
+        self._save_gen_state()
+        # 清空前端当前 session 的快照引用（不 deleteLater，widget 已存入 _gen_states）
+        self._current_ai_widget = None
+        self._current_tool_widget = None
+        self._typing_indicator = None
+        self._pending_tool_call = None
         # 保存当前会话（若有）
         if self._current_session is not None:
             self._sm.save_session(self._current_session)
@@ -1549,8 +1821,20 @@ class AIChatPanel(QWidget):
         if session is None:
             return
         self._current_session = session
+        # _bg_sessions 只用于跟踪后台生成中的 session；
+        # 若目标 session 已有 worker（切回中途生成的会话），更新其 session 对象引用
+        if session_id in self._workers:
+            self._bg_sessions[session_id] = session
         self._sidebar.set_current(session_id)
         self._rebuild_chat_widgets()
+        # 若目标 session 有后台 worker，恢复前端状态并改按钮
+        if session_id in self._workers:
+            self._restore_gen_state(session_id)
+            self._send_btn.setEnabled(False)
+            self._send_btn.setText("⏹ 停止")
+        else:
+            self._send_btn.setEnabled(True)
+            self._send_btn.setText("发送")
         self._update_session_title()
         self._refresh_model_combo_for_session()
 
@@ -1614,6 +1898,9 @@ class AIChatPanel(QWidget):
 
     def _clear_chat_widgets(self):
         """清空聊天区所有消息 widget（保留 stretch）。"""
+        # 先停掉 typing indicator 的定时器，再 deleteLater
+        if self._typing_indicator is not None:
+            self._typing_indicator.stop_animation()
         while self._chat_layout.count() > 1:
             item = self._chat_layout.takeAt(0)
             if item.widget():
@@ -1621,6 +1908,7 @@ class AIChatPanel(QWidget):
         self._current_ai_widget = None
         self._current_tool_widget = None
         self._pending_tool_call = None
+        self._typing_indicator = None
 
     def _rebuild_chat_widgets(self):
         """根据当前会话的 messages 重建聊天区 widget。"""
@@ -1636,10 +1924,13 @@ class AIChatPanel(QWidget):
             if m.get("role") == "tool":
                 tool_results[m.get("tool_call_id", "")] = m.get("content", "")
 
-        # 过滤出需要渲染的消息（跳过 system），只取最近 60 条原始消息
-        visible = [m for m in messages if m.get("role") != "system"][-60:]
+        # 过滤出需要渲染的消息（跳过 system），只取最近 40 条原始消息
+        visible = [m for m in messages if m.get("role") != "system"][-40:]
 
-        for msg in visible:
+        for i, msg in enumerate(visible):
+            # 每创建 10 个 widget 让主线程处理一次事件，避免卡顿
+            if i > 0 and i % 10 == 0:
+                QApplication.processEvents()
             role = msg.get("role")
 
             if role == "user":
@@ -1791,7 +2082,9 @@ class AIChatPanel(QWidget):
         text = self._input_box.toPlainText().strip()
         if not text:
             return
-        if self._worker and self._worker.isRunning():
+        # 如果当前 session 已有 worker 在跑则拦截（草稿状态 _current_session 为 None，跳过此检查）
+        if (self._current_session is not None
+                and self._workers.get(self._current_session.session_id)):
             return
 
         self._input_box.clear()
@@ -1802,6 +2095,8 @@ class AIChatPanel(QWidget):
             self._sidebar.refresh(self._current_session.session_id)
             self._sidebar.set_current(self._current_session.session_id)
             self._update_session_title()
+
+        sid = self._current_session.session_id
 
         # 显示用户消息气泡
         self._add_user_message(text)
@@ -1828,54 +2123,83 @@ class AIChatPanel(QWidget):
         self._current_ai_widget = AIMessageWidget(self._chat_container)
         self._insert_widget(self._current_ai_widget)
 
-        # 启动 AgentWorker
-        self._worker = AgentWorker(messages_for_llm, cfg)
-        self._worker.token_received.connect(self._on_token)
-        self._worker.tool_started.connect(self._on_tool_started)
-        self._worker.tool_progress.connect(self._on_tool_progress)
-        self._worker.tool_finished.connect(self._on_tool_finished)
-        self._worker.all_done.connect(self._on_all_done)
-        self._worker.error_occurred.connect(self._on_error)
-        self._worker.tool_call_requested.connect(self._execute_tool_in_main_thread)
-        self._worker.start()
+        # 插入活动指示器（AI 思考中…），第一个 token 到来时自动移除
+        self._typing_indicator = _TypingIndicatorWidget(self._chat_container)
+        self._insert_widget(self._typing_indicator)
 
-        self._send_btn.setEnabled(False)
-        self._send_btn.setText("...")
+        # 启动 AgentWorker
+        worker = AgentWorker(messages_for_llm, cfg)
+        self._workers[sid] = worker
+        self._bg_sessions[sid] = self._current_session
+        worker.token_received.connect(lambda t, s=sid: self._on_token(s, t))
+        worker.tool_started.connect(lambda name, args, tcid, s=sid: self._on_tool_started(s, name, args, tcid))
+        worker.tool_progress.connect(lambda msg, s=sid: self._on_tool_progress(s, msg))
+        worker.tool_finished.connect(lambda name, res, s=sid: self._on_tool_finished(s, name, res))
+        worker.all_done.connect(lambda txt, s=sid: self._on_all_done(s, txt))
+        worker.error_occurred.connect(lambda err, s=sid: self._on_error(s, err))
+        worker.tool_call_requested.connect(lambda name, args, tcid, s=sid: self._execute_tool_in_main_thread(s, name, args, tcid))
+        worker.usage_updated.connect(lambda p, c, s=sid: self._on_usage_updated(s, p, c))
+        worker.start()
+
+        self._send_btn.setText("⏹ 停止")
 
     # ── AgentWorker 信号处理 ──────────────────────────────────────────────────
 
     @Slot(str)
-    def _on_token(self, token: str):
-        if self._current_ai_widget:
-            # 懒插入：工具调用后创建的占位 widget 在第一个 token 到来时才插入布局
-            if not self._current_ai_widget.is_inserted:
-                self._insert_widget(self._current_ai_widget)
-            self._current_ai_widget.append_token(token)
+    def _remove_typing_indicator(self):
+        """安全移除当前可见 session 的 typing indicator。"""
+        if self._typing_indicator is not None:
+            self._typing_indicator.stop_animation()
+            self._typing_indicator.deleteLater()
+            self._typing_indicator = None
 
-    @Slot(str, str, str)
-    def _on_tool_started(self, tool_name: str, args_str: str, tool_call_id: str):
-        # 工具调用开始前，先把 AI 已输出的文字 buffer 写入 session 并渲染
-        # （保证 session 里 assistant content 在 assistant tool_calls 之前）
-        if self._current_ai_widget and self._current_ai_widget._buffer.strip():
+    def _on_send_or_stop(self):
+        """发送/停止统一入口。"""
+        sid = self._current_session.session_id if self._current_session else None
+        if sid and sid in self._workers:
+            self._workers[sid].stop()
+            self._send_btn.setText("停止中…")
+            self._send_btn.setEnabled(False)
+        else:
+            self._send_message()
+
+    @Slot(str, int, int)
+    def _on_usage_updated(self, sid: str, prompt_tokens: int, completion_tokens: int):
+        # 只在当前可见 session 时更新 UI
+        if self._current_session and self._current_session.session_id == sid:
+            total = prompt_tokens + completion_tokens
+            self._usage_label.setText(
+                f"↑{prompt_tokens} ↓{completion_tokens}  ∑{total}"
+            )
+            self._usage_label.setVisible(True)
+
+    def _on_token(self, sid: str, token: str):
+        # 只在当前可见 session 时更新 widget
+        if self._current_session and self._current_session.session_id == sid:
+            self._remove_typing_indicator()
+            if self._current_ai_widget:
+                # 懒插入：工具调用后创建的占位 widget 在第一个 token 到来时才插入布局
+                if not self._current_ai_widget.is_inserted:
+                    self._insert_widget(self._current_ai_widget)
+                self._current_ai_widget.append_token(token)
+
+    def _on_tool_started(self, sid: str, tool_name: str, args_str: str, tool_call_id: str):
+        session = self._bg_sessions.get(sid)
+        is_visible = (self._current_session is not None
+                      and self._current_session.session_id == sid)
+
+        # 把 AI 已输出的 buffer 写入 session
+        if is_visible and self._current_ai_widget and self._current_ai_widget._buffer.strip():
             buf = self._current_ai_widget._buffer
             self._current_ai_widget.set_final_text(buf)
-            if self._current_session is not None:
-                self._current_session.messages.append(
-                    {"role": "assistant", "content": buf}
-                )
-        # 无论有无 buffer，当前 ai_widget 使命结束，置 None
-        # （_on_tool_finished 会创建新的占位 widget）
-        self._current_ai_widget = None
+            if session is not None:
+                session.messages.append({"role": "assistant", "content": buf})
+        if is_visible:
+            self._current_ai_widget = None
 
-        # 使用 AgentWorker 传来的真实 tool_call_id，保证与 tool 结果消息的 id 一致
-        self._pending_tool_call = {
-            "tool_call_id": tool_call_id,
-            "name": tool_name,
-            "arguments": args_str,
-        }
         # 写入 assistant(tool_calls) 消息到 session
-        if self._current_session is not None:
-            self._current_session.messages.append({
+        if session is not None:
+            session.messages.append({
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [{
@@ -1885,91 +2209,143 @@ class AIChatPanel(QWidget):
                 }],
             })
 
-        self._current_tool_widget = ToolCallWidget(
-            tool_name, args_str, self._chat_container
-        )
-        self._insert_widget(self._current_tool_widget)
+        pending = {"tool_call_id": tool_call_id, "name": tool_name, "arguments": args_str}
+        if is_visible:
+            self._pending_tool_call = pending
+            self._current_tool_widget = ToolCallWidget(tool_name, args_str, self._chat_container)
+            self._insert_widget(self._current_tool_widget)
+            self._current_tool_widget.start_timer()
+            if self._typing_indicator is not None:
+                self._typing_indicator.set_state("tool", tool_name)
+        else:
+            # 后台 session：保存 pending 到 gen_states（若已存在则更新）
+            state = self._gen_states.get(sid)
+            if state:
+                self._gen_states[sid] = (state[0], state[1], state[2], state[3], pending)
 
-    @Slot(str)
-    def _on_tool_progress(self, msg: str):
-        if self._current_tool_widget:
+    def _on_tool_progress(self, sid: str, msg: str):
+        if (self._current_session and self._current_session.session_id == sid
+                and self._current_tool_widget):
             self._current_tool_widget.add_progress(msg)
 
-    @Slot(str, str)
-    def _on_tool_finished(self, tool_name: str, result: str):
-        if self._current_tool_widget:
-            self._current_tool_widget.set_result(result)
-        self._current_tool_widget = None
+    def _on_tool_finished(self, sid: str, tool_name: str, result: str):
+        session = self._bg_sessions.get(sid)
+        is_visible = (self._current_session is not None
+                      and self._current_session.session_id == sid)
+
+        pending = self._pending_tool_call if is_visible else (
+            self._gen_states[sid][3] if sid in self._gen_states else None
+        )
+
+        if is_visible:
+            if self._current_tool_widget:
+                self._current_tool_widget.set_result(result)
+            self._current_tool_widget = None
+            # 工具执行完毕，typing indicator 恢复为"思考中"
+            if self._typing_indicator is not None:
+                self._typing_indicator.set_state("thinking")
 
         # 写入 tool 结果消息到 session
-        if self._current_session is not None and self._pending_tool_call is not None:
-            self._current_session.messages.append({
+        if session is not None and pending is not None:
+            session.messages.append({
                 "role": "tool",
-                "tool_call_id": self._pending_tool_call["tool_call_id"],
+                "tool_call_id": pending["tool_call_id"],
                 "content": result,
             })
-        self._pending_tool_call = None
 
-        # _on_tool_started 已处理并清空了 _current_ai_widget，
-        # 这里创建新的占位 widget 等待下一轮 AI 文字（懒插入）
-        self._current_ai_widget = AIMessageWidget(self._chat_container)
+        if is_visible:
+            self._pending_tool_call = None
+            # 创建新的占位 widget 等待下一轮 AI 文字（懒插入）
+            self._current_ai_widget = AIMessageWidget(self._chat_container)
+        else:
+            # 后台 session：更新 gen_states，清 pending，准备新 ai_widget 占位
+            if sid in self._gen_states:
+                state = self._gen_states[sid]
+                new_ai = AIMessageWidget(self._widget_park)  # 先放 parking，懒插入
+                self._gen_states[sid] = (new_ai, None, None, state[3], None)
 
     @Slot(str)
-    def _on_all_done(self, final_text: str):
-        if self._current_ai_widget:
-            if final_text.strip():
-                # 懒插入：若 widget 尚未插入布局，先插入再渲染
-                if not self._current_ai_widget.is_inserted:
-                    self._insert_widget(self._current_ai_widget)
-                self._current_ai_widget.set_final_text(final_text)
-            else:
-                # 无文字：无论是否已插入，都清理掉（已插入的是空 widget，隐藏即可）
-                if not self._current_ai_widget.is_inserted:
-                    self._current_ai_widget.deleteLater()
-                # 已插入但无文字：_set_visible(False) 让它不占空间
+    def _on_all_done(self, sid: str, final_text: str):
+        session = self._bg_sessions.pop(sid, None)
+        self._workers.pop(sid, None)
+        is_visible = (self._current_session is not None
+                      and self._current_session.session_id == sid)
+
+        if is_visible:
+            if self._current_ai_widget:
+                if final_text.strip():
+                    if not self._current_ai_widget.is_inserted:
+                        self._insert_widget(self._current_ai_widget)
+                    self._current_ai_widget.set_final_text(final_text)
                 else:
-                    self._current_ai_widget._set_visible(False)
+                    if not self._current_ai_widget.is_inserted:
+                        self._current_ai_widget.deleteLater()
+                    else:
+                        self._current_ai_widget._set_visible(False)
             self._current_ai_widget = None
+            self._remove_typing_indicator()
+            self._send_btn.setEnabled(True)
+            self._send_btn.setText("发送")
 
-        # 追加 assistant 消息到会话历史（空文字不写入，避免部分模型报错）
-        if self._current_session is not None:
+        # 写入 assistant 消息 + 保存
+        if session is not None:
             if final_text.strip():
-                self._current_session.messages.append(
-                    {"role": "assistant", "content": final_text}
-                )
-            # 无论有无文字都保存：本轮可能有 tool 消息需要持久化
-            self._sm.save_session(self._current_session)
-            self._sidebar.refresh(self._current_session.session_id)
+                session.messages.append({"role": "assistant", "content": final_text})
+            self._sm.save_session(session)
+            # refresh 传当前可见 session 的 sid，避免覆盖 sidebar._current_session_id
+            current_sid = (self._current_session.session_id
+                           if self._current_session else None)
+            self._sidebar.refresh(current_sid)
 
-        self._send_btn.setEnabled(True)
-        self._send_btn.setText("发送")
+        # 清理 gen_states（后台 session 的 parking widget 也需销毁）
+        self._cleanup_gen_state(sid)
 
     @Slot(str)
-    def _on_error(self, error_msg: str):
-        err_widget = AIMessageWidget(self._chat_container)
-        err_widget.set_final_text(f"**错误：** {error_msg}")
-        self._insert_widget(err_widget)
+    def _on_error(self, sid: str, error_msg: str):
+        session = self._bg_sessions.pop(sid, None)
+        self._workers.pop(sid, None)
+        is_visible = (self._current_session is not None
+                      and self._current_session.session_id == sid)
 
-        self._current_ai_widget = None
-        self._current_tool_widget = None
-        self._pending_tool_call = None
-        # 保存会话（即使出错也保留已有历史）
-        if self._current_session is not None:
-            self._sm.save_session(self._current_session)
+        if is_visible:
+            self._remove_typing_indicator()
+            err_widget = _ErrorMessageWidget(f"错误：{error_msg}", self._chat_container)
+            self._insert_widget(err_widget)
+            self._current_ai_widget = None
+            self._current_tool_widget = None
+            self._pending_tool_call = None
+            self._send_btn.setEnabled(True)
+            self._send_btn.setText("发送")
 
-        self._send_btn.setEnabled(True)
-        self._send_btn.setText("发送")
+        if session is not None:
+            self._sm.save_session(session)
+
+        self._cleanup_gen_state(sid)
+
+    def _cleanup_gen_state(self, sid: str):
+        """清理并销毁 parking 里的后台 session widget（gen_states 弹出后调用）。"""
+        state = self._gen_states.pop(sid, None)
+        if state is None:
+            return
+        ai_w, tool_w, tool_wrapper, typing_w, _ = state
+        for w in [typing_w, tool_wrapper, tool_w, ai_w]:
+            if w is not None:
+                try:
+                    w.deleteLater()
+                except RuntimeError:
+                    pass  # 已销毁则忽略
 
     # ── 工具调用（主线程执行，COM 安全）──────────────────────────────────────
 
-    @Slot(str, str, str)
-    def _execute_tool_in_main_thread(self, tool_name: str, args_str: str, tool_id: str):
+    @Slot(str, str, str, str)
+    def _execute_tool_in_main_thread(self, sid: str, tool_name: str, args_str: str, tool_id: str):
         """
         在主线程中执行工具函数（保证 COM STA 安全）。
         执行前检查工作空间限制（豁免工具除外）。
         执行完毕后调用 worker.receive_tool_result() 传回结果。
         """
-        if self._worker is None:
+        worker = self._workers.get(sid)
+        if worker is None:
             return
 
         tool_fn = tools_map.get(tool_name)
@@ -1978,7 +2354,7 @@ class AIChatPanel(QWidget):
                 {"error": f"未知工具：{tool_name}"},
                 ensure_ascii=False,
             )
-            self._worker.receive_tool_result(result)
+            worker.receive_tool_result(result)
             return
 
         try:
@@ -1988,25 +2364,24 @@ class AIChatPanel(QWidget):
                 {"error": f"工具参数 JSON 解析失败：{e}，原始参数：{args_str[:200]}"},
                 ensure_ascii=False,
             )
-            self._worker.receive_tool_result(result)
+            worker.receive_tool_result(result)
             return
 
         # 工作空间检查（豁免工具跳过）
         if tool_name not in _WORKSPACE_EXEMPT_TOOLS:
-            ws = self._current_session.workspace if self._current_session else None
+            session = self._bg_sessions.get(sid)
+            ws = session.workspace if session else None
             err = _check_workspace(args, ws)
             if err:
                 result = json.dumps({"error": err}, ensure_ascii=False)
-                self._worker.receive_tool_result(result)
+                worker.receive_tool_result(result)
                 return
 
         # 注入 progress_signal
-        args["progress_signal"] = self._worker.tool_progress
+        args["progress_signal"] = worker.tool_progress
 
         try:
             result = tool_fn(**args)
-            # 工具函数应返回 JSON 字符串；若返回其他类型则强制序列化，
-            # 防止 Signal(str) 在传递非字符串时抛出 TypeError
             if not isinstance(result, str):
                 result = json.dumps(result, ensure_ascii=False, default=str)
         except Exception as e:
@@ -2015,7 +2390,7 @@ class AIChatPanel(QWidget):
                 ensure_ascii=False,
             )
 
-        self._worker.receive_tool_result(result)
+        worker.receive_tool_result(result)
 
     # ── UI 辅助 ───────────────────────────────────────────────────────────────
 
@@ -2048,24 +2423,33 @@ class AIChatPanel(QWidget):
 
     def _clear_chat(self):
         """清空当前会话的聊天记录和对话历史。"""
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(2000)
-
         if self._current_session is not None:
+            sid = self._current_session.session_id
+            worker = self._workers.pop(sid, None)
+            if worker and worker.isRunning():
+                worker.stop()
+                worker.wait(2000)
+            self._bg_sessions.pop(sid, None)
+            self._cleanup_gen_state(sid)
             self._current_session.messages.clear()
             self._sm.save_session(self._current_session)
         self._clear_chat_widgets()
-
         self._send_btn.setEnabled(True)
         self._send_btn.setText("发送")
 
     def stop_agent(self):
-        """主窗口关闭时调用：停止后台线程，保存当前会话。"""
-        if self._worker and self._worker.isRunning():
-            self._worker.stop()
-            self._worker.wait(3000)
-        # 关闭时持久化当前会话（确保最新消息不丢失）
+        """主窗口关闭时调用：停止所有后台线程，保存所有会话。"""
+        for sid, worker in list(self._workers.items()):
+            if worker.isRunning():
+                worker.stop()
+                worker.wait(3000)
+            session = self._bg_sessions.get(sid)
+            if session is not None:
+                self._sm.save_session(session)
+        self._workers.clear()
+        self._bg_sessions.clear()
+        self._gen_states.clear()
+        # 保存当前会话
         if self._current_session is not None:
             self._sm.save_session(self._current_session)
 

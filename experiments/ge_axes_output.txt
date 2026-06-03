@@ -1,0 +1,42 @@
+GE 直线项 Z 轴识别（修复版）
+==================================================
+步骤1：建含 Pad 的 Part，读取 GE 项
+GE.Count = 16
+  GE[ 1] name='原点'
+  GE[ 2] name='横向'
+  GE[ 3] name='纵向'
+  GE[ 4] name='绝对轴'
+  GE[ 5] name='直线.1'
+  GE[ 6] name='直线.2'
+  GE[ 7] name='直线.3'
+  GE[ 8] name='直线.4'
+  GE[ 9] name='点.1'
+  GE[10] name='点.2'
+  GE[11] name='点.3'
+  GE[12] name='点.4'
+  GE[13] name='点.5'
+  GE[14] name='点.6'
+  GE[15] name='点.7'
+  GE[16] name='点.8'
+
+步骤2：逐 GE 索引测试 Shaft revolute_axis（同 Part 内）
+==================================================
+  GE[ 1] '原点'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 2] '横向'  → Update OK  ← 候选旋转轴!
+  GE[ 3] '纵向'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 4] '绝对轴'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 5] '直线.1'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 6] '直线.2'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 7] '直线.3'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 8] '直线.4'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[ 9] '点.1'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[10] '点.2'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[11] '点.3'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[12] '点.4'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[13] '点.5'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[14] '点.6'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[15] '点.7'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+  GE[16] '点.8'  FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), N
+
+==================================================
+测试完成。Update OK 的 GE 索引即为可用旋转轴。

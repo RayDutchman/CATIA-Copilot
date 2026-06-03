@@ -31,7 +31,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 ## 基本原则
 
-- 执行任何 CATIA 操作前，先调用 check_catia_connection 确认连接状态。
+- **不要在每次操作前主动调用 check_catia_connection**；仅当某个工具返回的错误信息指向 CATIA 无法连接（如 "CATIA 未连接"、COM 连接失败等）时，才调用它来诊断原因。
 - 需要文件路径时，先调用 get_open_documents 获取当前已打开文档的准确路径，不要猜测或编造路径。
 - 不确定用户意图时，先询问，不要擅自执行可能修改文件的操作。
 - 工具返回 error 时，向用户说明原因，不要静默重试。
@@ -49,18 +49,105 @@ DEFAULT_SYSTEM_PROMPT = """\
 - 两者的区别：generate_drawing 从模板创建新图纸；refresh_drawing 刷新已有图纸的标题栏。
 
 **质量特性**
-- collect_mass_props 的数据来源是 CATIA SPA 工具写入的"惯量包络体"保持测量。
-  若零件未做保持测量，Weight 等字段为 null，这是正常现象，不是工具错误。
+- collect_mass_props 的数据来源由 source 参数控制：
+  - "analyze"（默认）：通过 pycatia Analyze API 实时计算，需零件已赋材料；若未赋材料，CATIA 使用默认密度 1000 kg/m³ 计算，结果仍会返回但不代表真实材料。
+  - "keep_inertia"：读取 CATIA SPA"测量惯量 + 保持测量"写入的"惯量包络体"参数，需用户预先在零件文档中建立保持测量；若未建立，Weight 等字段为 null。
 - 只需要总重量和重心时，传 summary_only=true 减少返回数据量。
 
 **建模**
 - 使用 run_modeling_script 工具在 CATIA 中建模。
-- 调用前先确认 CATIA 连接正常（check_catia_connection）。
-- 脚本必须包含 def build(): 函数，以 from catia_copilot.catia.modeling import * 开头。
+- 调用前如遇 CATIA 连接错误才检查连接（check_catia_connection），平时无需预先调用。
+- 脚本必须包含 `def build(ctx):` 函数（注意：参数是 ctx，不是无参）。
+- 通过 ctx 调用所有建模 API，不需要 import 任何模块。
 - 所有几何参数单位为 mm。
-- build() 末尾必须调用 update_part(part) 刷新模型，否则特征不会显示。
-- 脚本一次性生成完整建模步骤，不要分多次调用。
-- 执行失败时返回 traceback，根据错误信息修正脚本后重新调用。
+- build(ctx) 末尾必须调用 ctx.update_part(part) 刷新模型，否则特征不会显示。
+- 用 ctx.step("描述") 在关键节点打里程碑标记，便于调试定位。
+
+**build(ctx) 可用 API 清单**
+
+  文档与零件：
+    ctx.create_part(name)           → Part    新建 CATPart
+    ctx.get_active_part()           → Part    获取当前活动文档的 Part
+    ctx.update_part(part)                     刷新模型（必须在末尾调用）
+    ctx.save_part(part, path)                 另存为
+
+  草图：
+    ctx.add_sketch(part, plane)     → Sketch  plane: "xy"/"yz"/"zx"
+    ctx.draw_rect(sk, x, y, w, h)            画矩形（左下角坐标+宽高，mm）
+    ctx.draw_circle(sk, cx, cy, r)           画圆（圆心+半径，mm）
+    ctx.draw_point(sk, x, y)        → Point2D 画定位点（用于孔定位）
+
+  特征：
+    ctx.add_pad(part, sk, depth)    → Pad     拉伸
+    ctx.add_pocket(part, sk, depth) → Pocket  挖槽（目前仅支持基准面草图）
+    ctx.add_shaft(part, sk, axis="z") → Shaft   旋转体（360°），axis 默认 "z"
+    ctx.add_groove(part, sk, axis="z")→ Groove  环形槽（旋转切除，需已有实体），axis 默认 "z"
+    ctx.add_hole_from_sketch(part, sk, diameter, depth) → Hole  打孔
+    ctx.prepare_revolute_axis(part, axis="z")   提前创建旋转轴线（必须在 add_sketch 之前调用！）
+
+  草图创建：
+    ctx.add_sketch(part, plane)              → 在基准平面（"xy"/"yz"/"zx"）上建草图
+    ctx.add_sketch_at_height(part, h, base)  → 在距基准平面 h mm 处建偏移草图
+      **在已有凸台顶面继续建模时，必须用 add_sketch_at_height，不能用 add_sketch！**
+      示例：底层 Pad 高 20mm → ctx.add_sketch_at_height(part, 20, "xy")
+
+  旋转体 / 环形槽约束（重要）：
+
+    【草图平面与旋转轴对应关系】
+    - axis="z"：草图在 ZX 平面（plane="zx"）；旋转轴=V(Z)；半径方向=H(-X)；约束 H>0
+    - axis="y"：草图在 XY 平面（plane="xy"）；旋转轴=V(Y)；半径方向=H(X)；约束 H>0
+    - axis="x"：草图在 XY 平面（plane="xy"）；旋转轴=H(X)；半径方向=V(Y)；约束 V>0
+
+    【draw_rect 坐标说明】
+    draw_rect(sk, x, y, w, h) 中 x=H起点, y=V起点, w=H方向宽度, h=V方向高度
+    - axis="z"/"y"：x=内径（半径起点，H方向），y=轴向起点（V方向），w=壁厚，h=轴向长度
+    - axis="x"：x=轴向起点（H方向），y=内径（半径起点，V方向），w=轴向长度，h=壁厚
+
+    【必须先建轴线再建草图】
+    旋转体特征树要求轴线节点在草图节点之前，必须严格按以下顺序：
+      1. ctx.prepare_revolute_axis(part, axis)   ← 先建轴线
+      2. ctx.add_sketch(part, plane)             ← 再建草图
+      3. ctx.draw_rect / ctx.draw_circle ...
+      4. ctx.add_shaft(part, sk, axis)
+      5. ctx.update_part(part)
+
+    - add_groove 前提：Part 已有实体且已 update_part；环形槽轮廓需位于实体内部
+
+    【示例：外径100 内径50 高度80 绕Y轴旋转圆筒】
+        ctx.prepare_revolute_axis(part, "y")
+        sk = ctx.add_sketch(part, "xy")
+        ctx.draw_rect(sk, 25, 0, 25, 80)  # x=H起=内径25, y=V起=0, w=壁厚25, h=高度80
+        shaft = ctx.add_shaft(part, sk, axis="y")
+
+  修饰（当前需要 edge_ref，暂不可用，后续版本开放）：
+    ctx.add_edge_fillet(part, edge_ref, radius)
+    ctx.add_chamfer(part, edge_ref, length, angle=45)
+
+  阵列（当前方向参数有 bug，暂不推荐使用）：
+    ctx.add_rect_pattern(part, feature, nx, ny, dx, dy)
+    ctx.add_circ_pattern(part, feature, count, total_angle=360)
+
+  查询（不计入步骤记录）：
+    ctx.list_features(part)         → list[str]
+    ctx.list_sketches(part)         → list[str]
+    ctx.get_mass_props(part)        → dict | None
+
+  里程碑：
+    ctx.step("描述")                           打标记，不执行 CATIA 操作
+
+**脚本模板**::
+
+    def build(ctx):
+        part = ctx.create_part("零件名")
+        sk   = ctx.add_sketch(part, "xy")
+        ctx.draw_rect(sk, 0, 0, 100, 50)
+        pad  = ctx.add_pad(part, sk, 20)
+        ctx.step("主体完成")
+        ctx.update_part(part)
+
+**失败处理**
+- 执行失败时返回 failed_step（哪步失败）、error（错误信息）、steps（完整步骤记录）。
+- 根据 failed_step 和 error 定位问题，修正后重新调用，不要重写无关步骤。
 
 **文档属性**
 - get_document_properties：读取单个文档的标准属性（Part Number / Revision / Nomenclature 等）和用户自定义属性。file_path 传 null 读取活动文档。
@@ -359,6 +446,7 @@ def tool_collect_mass_props(
     file_path: str | None = None,
     read_mode: str = "all",
     skip_hidden: bool = False,
+    source: str = "analyze",
     summary_only: bool = False,
     progress_signal=None,
     **_kwargs,
@@ -371,6 +459,7 @@ def tool_collect_mass_props(
         progress_callback=cb,
         read_mode=read_mode,
         skip_hidden=skip_hidden,
+        source=source,
     )
 
     # 过滤内部键和不可序列化字段
@@ -724,7 +813,7 @@ def tool_update_memory(
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
-# --- 18. find_part_for_drawing ---
+# --- 20. find_part_for_drawing ---
 
 def tool_find_part_for_drawing(
     drawing_path: str,
@@ -743,7 +832,7 @@ def tool_find_part_for_drawing(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
-# --- 19. find_drawing_for_part ---
+# --- 21. find_drawing_for_part ---
 
 def tool_find_drawing_for_part(
     part_path: str,
@@ -762,7 +851,7 @@ def tool_find_drawing_for_part(
     return json.dumps({"matches": matches}, ensure_ascii=False)
 
 
-# --- 19. read_file ---
+# --- 22. read_file ---
 
 # 允许读取的文本文件扩展名白名单
 _READ_ALLOWED_EXTS: frozenset[str] = frozenset({
@@ -837,7 +926,7 @@ def tool_read_file(
     )
 
 
-# --- 20. list_directory ---
+# --- 23. list_directory ---
 
 # 列目录时显示的文件扩展名（其他文件也会列出，只是 type 字段不同）
 _CATIA_EXTS: frozenset[str] = frozenset({
@@ -912,7 +1001,7 @@ def tool_list_directory(
     )
 
 
-# --- 21. write_file ---
+# --- 24. write_file ---
 
 # 允许写入的文本文件扩展名白名单
 _WRITE_ALLOWED_EXTS: frozenset[str] = frozenset({
@@ -1001,32 +1090,66 @@ def tool_run_modeling_script(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    """在 CATIA 中执行 AI 生成的建模脚本。
+    """在 CATIA 中执行 AI 生成的建模脚本（逐步执行 + 结构化反馈）。
 
-    脚本是完整的 Python 代码字符串，必须包含一个无参的 build() 函数。
-    build() 内部调用 catia_copilot.catia.modeling 中的建模 API 完成操作。
+    脚本必须包含 ``def build(ctx):`` 函数，通过 ctx 对象调用所有建模 API。
+    ctx 会自动记录每一步的执行状态，失败时精确报告哪一步出错。
 
     执行流程：
       1. 将脚本写入临时文件（便于调试）
       2. 通过 importlib 加载模块
-      3. 调用 build()
-      4. 返回执行结果（特征列表、质量特性等）
+      3. 创建 ModelingContext，调用 build(ctx)
+      4. 返回结构化步骤记录 + 最终模型状态
 
-    脚本示例：
-      from catia_copilot.catia.modeling import *
+    成功返回结构：
+      {
+        "success": true,
+        "part_name": "...",
+        "features": ["凸台.1", ...],
+        "steps": [
+          {"step": "create_part('底座')", "status": "ok", "features_after": []},
+          ...
+        ],
+        "mass_kg": 0.123,   // 有材料时才有
+        "cog_mm":  [x,y,z]
+      }
 
-      def build():
-          part = create_part("底座")
-          sk = add_sketch(part, "xy")
-          draw_rect(sk, 0, 0, 100, 50)
-          pad = add_pad(part, sk, 20)
-          update_part(part)
+    失败返回结构：
+      {
+        "success": false,
+        "failed_step": "add_pad(depth=20)",
+        "error": "COMException: ...",
+        "traceback": "...",
+        "steps": [
+          {"step": "create_part('底座')", "status": "ok", ...},
+          {"step": "add_sketch(plane='xy')", "status": "ok", ...},
+          {"step": "add_pad(depth=20)", "status": "error", ...}
+        ],
+        "features_at_failure": ["草图.1"]
+      }
+
+    脚本示例::
+
+        def build(ctx):
+            part = ctx.create_part("底座")
+            sk   = ctx.add_sketch(part, "xy")
+            ctx.draw_rect(sk, 0, 0, 100, 50)
+            pad  = ctx.add_pad(part, sk, 20)
+            ctx.step("底座主体完成")          # 可选里程碑
+
+            sk2  = ctx.add_sketch(part, "xy")
+            ctx.draw_circle(sk2, 50, 25, 15)
+            ctx.add_pocket(part, sk2, 10)
+            ctx.step("挖槽完成")
+
+            ctx.update_part(part)
     """
     import importlib.util
     import sys
     import tempfile
-    import traceback
+    import traceback as _traceback
     from pathlib import Path
+    from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
 
     if progress_signal:
         progress_signal.emit("正在执行建模脚本...")
@@ -1044,39 +1167,67 @@ def tool_run_modeling_script(
     # 检查脚本中是否定义了 build()
     if "def build(" not in script and "def build (" not in script:
         return json.dumps(
-            {"error": "脚本中未找到 build() 函数，请确保脚本包含 def build(): ..."},
+            {"error": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ..."},
             ensure_ascii=False,
         )
 
-    # 加载并执行
+    # 加载模块
     try:
-        # 移除旧的同名模块缓存，避免重复调用时取到旧版本
         sys.modules.pop("_catia_generated_model", None)
-
         spec   = importlib.util.spec_from_file_location("_catia_generated_model", script_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+    except Exception:
+        err = _traceback.format_exc()
+        logger.error(f"[MODELING] 脚本加载失败:\n{err}")
+        return json.dumps(
+            {"error": "脚本语法错误或 import 失败", "traceback": err,
+             "script_path": str(script_path)},
+            ensure_ascii=False,
+        )
 
-        if progress_signal:
-            progress_signal.emit("脚本已加载，正在调用 build()...")
+    if progress_signal:
+        progress_signal.emit("脚本已加载，正在调用 build(ctx)...")
 
-        module.build()
+    # 创建执行上下文并调用 build(ctx)
+    ctx = ModelingContext()
+    try:
+        module.build(ctx)
+
+    except ModelingStepError as mse:
+        # 步骤级失败：有精确的步骤定位信息
+        logger.error(f"[MODELING] 步骤 [{mse.step_name}] 失败:\n{mse.traceback_str}")
+        return json.dumps(
+            {
+                "success":             False,
+                "failed_step":         mse.step_name,
+                "error":               str(mse.original_error),
+                "traceback":           mse.traceback_str,
+                "steps":               ctx.steps,
+                "features_at_failure": mse.features_at_failure,
+                "script_path":         str(script_path),
+            },
+            ensure_ascii=False,
+        )
 
     except Exception:
-        err = traceback.format_exc()
+        # build() 本身（非 _run 包裹的代码）抛出的异常
+        err = _traceback.format_exc()
         logger.error(f"[MODELING] build() 执行失败:\n{err}")
         return json.dumps(
             {
-                "error":       "建模脚本执行失败",
+                "success":     False,
+                "error":       "build() 执行失败（非建模步骤异常）",
                 "traceback":   err,
+                "steps":       ctx.steps,
                 "script_path": str(script_path),
             },
             ensure_ascii=False,
         )
 
-    # 执行成功，读取当前零件状态作为返回信息
+    # 执行成功，读取当前零件状态
     if progress_signal:
-        progress_signal.emit("build() 执行完成，正在读取模型状态...")
+        progress_signal.emit("build(ctx) 执行完成，正在读取模型状态...")
 
     try:
         from catia_copilot.catia.modeling import get_active_part, list_features, get_mass_props
@@ -1087,17 +1238,18 @@ def tool_run_modeling_script(
             "success":     True,
             "part_name":   part.name,
             "features":    features,
+            "steps":       ctx.steps,
             "script_path": str(script_path),
         }
         if mp:
-            result["mass_kg"]  = round(mp["mass"], 6)
-            result["cog_mm"]   = [round(v, 3) for v in mp["cog"]]
+            result["mass_kg"] = round(mp["mass"], 6)
+            result["cog_mm"]  = [round(v, 3) for v in mp["cog"]]
     except Exception as e:
-        # 状态读取失败不影响成功判定
         result = {
             "success":     True,
+            "steps":       ctx.steps,
             "script_path": str(script_path),
-            "note":        f"build() 已执行，但读取模型状态失败: {e}",
+            "note":        f"build(ctx) 已执行，但读取模型状态失败: {e}",
         }
 
     return json.dumps(result, ensure_ascii=False)
@@ -1151,7 +1303,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "diagnose_catia_connection",
-            "description": ("对 CATIA V5 COM 连接进行详细诊断。""返回字段包括：status（连接状态）、app_version（CATIA 版本）、""doc_count（已打开文档数）、active_doc（活动文档名）、""catia_process_running（进程是否存在）、error（错误描述）等。""适用于排查连接异常；日常使用 check_catia_connection 即可。"),
+            "description": ("对 CATIA V5 COM 连接进行详细诊断。""返回字段包括：status（连接状态）、""doc_count（已打开文档数）、active_doc（活动文档名）、""catia_process_running（进程是否存在）、error（错误描述）等。""适用于排查连接异常；日常使用 check_catia_connection 即可。"),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1877,31 +2029,39 @@ tools_schema: list[dict[str, Any]] = [
             "name": "run_modeling_script",
             "description": (
                 "在 CATIA 中执行 AI 生成的 Python 建模脚本，完成零件建模。\n\n"
-                "脚本必须包含一个无参的 build() 函数，函数内调用 "
-                "catia_copilot.catia.modeling 模块中的建模 API。\n\n"
-                "可用的建模 API：\n"
-                "  create_part(name)                       新建零件\n"
-                "  add_sketch(part, plane)                 在基准面新建草图，plane='xy'/'yz'/'zx'\n"
-                "  draw_rect(sketch, x, y, width, height)  画矩形，单位 mm\n"
-                "  draw_circle(sketch, cx, cy, radius)     画圆，单位 mm\n"
-                "  draw_point(sketch, x, y)                画点（用于定位孔）\n"
-                "  add_pad(part, sketch, depth)            拉伸，单位 mm\n"
-                "  add_pocket(part, sketch, depth)         挖槽，单位 mm\n"
-                "  add_hole_from_sketch(part, sketch, diameter, depth)  打孔\n"
-                "  add_edge_fillet(part, edge_ref, radius) 圆角\n"
-                "  add_chamfer(part, edge_ref, length)     倒角\n"
-                "  add_rect_pattern(part, feat, nx, ny, dx, dy)  矩形阵列\n"
-                "  add_circ_pattern(part, feat, count, total_angle)  圆形阵列\n"
-                "  update_part(part)                       刷新模型（必须在最后调用）\n\n"
+                "脚本必须包含 def build(ctx): 函数（注意：参数是 ctx，不是无参）。\n"
+                "通过 ctx 调用所有建模 API，不需要任何 import 语句。\n\n"
+                "可用 API（通过 ctx 调用）：\n"
+                "  ctx.create_part(name)                          新建零件，返回 Part\n"
+                "  ctx.get_active_part()                          获取活动文档的 Part\n"
+                "  ctx.update_part(part)                          刷新模型（必须在末尾调用）\n"
+                "  ctx.save_part(part, path)                      另存为\n"
+                "  ctx.add_sketch(part, plane)                    新建草图，plane='xy'/'yz'/'zx'\n"
+                "  ctx.add_sketch_at_height(part, h, base='xy')   在距基准平面 h mm 处建草图（在顶面继续建模时用）\n"
+                "  ctx.draw_rect(sk, x, y, w, h)                  画矩形（左下角+宽高，mm）\n"
+                "  ctx.draw_circle(sk, cx, cy, r)                 画圆（圆心+半径，mm）\n"
+                "  ctx.draw_point(sk, x, y)                       画定位点\n"
+                "  ctx.add_pad(part, sk, depth)                   拉伸，mm\n"
+                "  ctx.add_pocket(part, sk, depth)                挖槽，mm（仅基准面草图）\n"
+                "  ctx.add_hole_from_sketch(part, sk, d, depth)   打孔\n"
+                "  ctx.list_features(part)                        查询特征列表\n"
+                "  ctx.list_sketches(part)                        查询草图列表\n"
+                "  ctx.get_mass_props(part)                       查询质量特性\n"
+                "  ctx.step('描述')                               可选里程碑标记\n\n"
+                "暂不可用（后续版本开放）：\n"
+                "  ctx.add_edge_fillet / ctx.add_chamfer          需要 edge_ref，当前无法构造\n"
+                "  ctx.add_rect_pattern / ctx.add_circ_pattern    方向参数有 bug\n\n"
                 "脚本模板：\n"
-                "  from catia_copilot.catia.modeling import *\n\n"
-                "  def build():\n"
-                "      part = create_part('零件名')\n"
-                "      sk = add_sketch(part, 'xy')\n"
-                "      draw_rect(sk, 0, 0, 100, 50)\n"
-                "      pad = add_pad(part, sk, 20)\n"
-                "      update_part(part)\n\n"
-                "执行成功后返回零件名、特征列表和质量特性（如已赋材料）。"
+                "  def build(ctx):\n"
+                "      part = ctx.create_part('零件名')\n"
+                "      sk   = ctx.add_sketch(part, 'xy')\n"
+                "      ctx.draw_rect(sk, 0, 0, 100, 50)\n"
+                "      pad  = ctx.add_pad(part, sk, 20)\n"
+                "      ctx.step('主体完成')\n"
+                "      ctx.update_part(part)\n\n"
+                "成功：返回 success=true、零件名、特征列表、步骤记录。\n"
+                "失败：返回 success=false、failed_step（哪步失败）、error、完整步骤记录。\n"
+                "根据 failed_step 和 error 定位并修正，不要重写无关步骤。"
             ),
             "parameters": {
                 "type": "object",
@@ -1909,8 +2069,8 @@ tools_schema: list[dict[str, Any]] = [
                     "script": {
                         "type": "string",
                         "description": (
-                            "完整的 Python 脚本字符串，必须包含 def build(): 函数。"
-                            "脚本中应以 from catia_copilot.catia.modeling import * 开头。"
+                            "完整的 Python 脚本字符串，必须包含 def build(ctx): 函数。"
+                            "通过 ctx 调用所有建模 API，不需要任何 import 语句。"
                         ),
                     },
                 },

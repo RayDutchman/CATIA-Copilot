@@ -48,6 +48,7 @@ class AgentWorker(QThread):
     turn_finished    = Signal()          # 一轮 LLM 回复完成
     all_done         = Signal(str)       # 全部完成（最终完整回复）
     error_occurred   = Signal(str)       # 错误信息
+    usage_updated    = Signal(int, int)  # token 用量更新（input_tokens, output_tokens）
 
     # 工具调用请求（发给主线程执行）
     tool_call_requested = Signal(str, str, str)  # 工具名, JSON 参数, 请求 ID
@@ -64,10 +65,16 @@ class AgentWorker(QThread):
         self._stop = False
         self._tool_result_event = threading.Event()
         self._tool_result_value: str = ""
+        self._resp = None   # 当前 HTTP 响应对象，stop() 时强制关闭以打断阻塞读取
 
     def stop(self) -> None:
-        """请求停止。"""
+        """请求停止。关闭当前 HTTP 响应以立即打断阻塞的流式读取。"""
         self._stop = True
+        if self._resp is not None:
+            try:
+                self._resp.close()
+            except Exception:
+                pass
 
     def receive_tool_result(self, result: str) -> None:
         """主线程执行完工具后调用，将结果传回 AgentWorker。"""
@@ -184,10 +191,11 @@ class AgentWorker(QThread):
 
         url = f"{api_base}/v1/chat/completions"
         payload: dict[str, Any] = {
-            "model":       model_id,
-            "messages":    messages,
-            "stream":      True,
-            "temperature": temperature,
+            "model":          model_id,
+            "messages":       messages,
+            "stream":         True,
+            "stream_options": {"include_usage": True},   # 获取 token 用量
+            "temperature":    temperature,
         }
         if tools and supports_tools:
             payload["tools"] = tools
@@ -204,53 +212,72 @@ class AgentWorker(QThread):
 
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
+                self._resp = resp
                 tool_calls_acc: dict[int, dict] = {}
+                last_usage: tuple[int, int] | None = None
 
-                for raw_line in resp:
+                try:
+                    for raw_line in resp:
+                        if self._stop:
+                            return
+                        line = raw_line.decode("utf-8").rstrip("\n\r")
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        # 捕获 token 用量（stream_options.include_usage 时出现）
+                        usage = chunk.get("usage")
+                        if usage:
+                            last_usage = (
+                                usage.get("prompt_tokens", 0),
+                                usage.get("completion_tokens", 0),
+                            )
+
+                        choices = chunk.get("choices", [])
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {})
+                        finish_reason = choices[0].get("finish_reason")
+
+                        content = delta.get("content")
+                        if content:
+                            yield "text", content
+
+                        for dt in delta.get("tool_calls", []):
+                            idx = dt.get("index", 0)
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                            tc = tool_calls_acc[idx]
+                            if dt.get("id"):                    tc["id"] = dt["id"]
+                            fn = dt.get("function", {})
+                            if fn.get("name"):                  tc["name"] += fn["name"]
+                            if fn.get("arguments"):             tc["arguments"] += fn["arguments"]
+
+                        if finish_reason in ("stop", "tool_calls", "length"):
+                            if finish_reason == "length" and tool_calls_acc:
+                                yield "error", (
+                                    "LLM 输出因 token 超限被截断，工具调用参数不完整。"
+                                    "请尝试缩短对话历史或减少上下文消息数。"
+                                )
+                                return
+                            break
+
+                except Exception:
+                    # resp.close() 被 stop() 调用后读取会抛异常；若是正常停止则静默退出
                     if self._stop:
                         return
-                    line = raw_line.decode("utf-8").rstrip("\n\r")
-                    if not line.startswith("data: "):
-                        continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
+                    raise
+                finally:
+                    self._resp = None
 
-                    choices = chunk.get("choices", [])
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta", {})
-                    finish_reason = choices[0].get("finish_reason")
-
-                    content = delta.get("content")
-                    if content:
-                        yield "text", content
-
-                    for dt in delta.get("tool_calls", []):
-                        idx = dt.get("index", 0)
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                        tc = tool_calls_acc[idx]
-                        if dt.get("id"):                    tc["id"] = dt["id"]
-                        fn = dt.get("function", {})
-                        if fn.get("name"):                  tc["name"] += fn["name"]
-                        if fn.get("arguments"):             tc["arguments"] += fn["arguments"]
-
-                    if finish_reason in ("stop", "tool_calls", "length"):
-                        # finish_reason=length 表示 token 超限截断
-                        # 若此时有未完成的 tool_calls，arguments 可能是残缺 JSON，
-                        # 直接使用会导致工具以空参数执行，提前报错更友好
-                        if finish_reason == "length" and tool_calls_acc:
-                            yield "error", (
-                                "LLM 输出因 token 超限被截断，工具调用参数不完整。"
-                                "请尝试缩短对话历史或减少上下文消息数。"
-                            )
-                            return
-                        break
+                if last_usage:
+                    self.usage_updated.emit(*last_usage)
 
                 if tool_calls_acc:
                     yield "tool_calls", list(tool_calls_acc.values())

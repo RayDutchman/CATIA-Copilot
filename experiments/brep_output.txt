@@ -1,0 +1,224 @@
+=================================================================
+M1 B-Rep Exploration v7
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part 1: BRepTest_Prismatic  (Pad + Pocket)
+=================================================================
+
+  new part: BRepTest_Prismatic
+  Pad: 凸台.1  features: ['凸台.1']
+  Pocket: 凹槽.1  features: ['凸台.1', '凹槽.1']
+  SPAWorkbench: available
+
+  --- Feature [凸台.1] ---
+    N= 0 [????]  input='Face:(Brp:(凸台.1;0);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;0);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 1 [????]  input='Face:(Brp:(凸台.1;1);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;1);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 2 [????]  input='Face:(Brp:(凸台.1;2);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;2);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 3 [????]  input='Face:(Brp:(凸台.1;3);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;3);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 4 [????]  input='Face:(Brp:(凸台.1;4);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;4);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 5 [????]  input='Face:(Brp:(凸台.1;5);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;5);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 6 [????]  input='Face:(Brp:(凸台.1;6);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;6);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 7 [????]  input='Face:(Brp:(凸台.1;7);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;7);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 8 [????]  input='Face:(Brp:(凸台.1;8);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;8);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 9 [????]  input='Face:(Brp:(凸台.1;9);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;9);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=10 [????]  input='Face:(Brp:(凸台.1;10);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;10);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=11 [????]  input='Face:(Brp:(凸台.1;11);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;11);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=12 [????]  input='Face:(Brp:(凸台.1;12);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;12);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=13 [????]  input='Face:(Brp:(凸台.1;13);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;13);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=14 [????]  input='Face:(Brp:(凸台.1;14);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;14);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=15 [????]  input='Face:(Brp:(凸台.1;15);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;15);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=16 [????]  input='Face:(Brp:(凸台.1;16);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;16);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=17 [????]  input='Face:(Brp:(凸台.1;17);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;17);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=18 [????]  input='Face:(Brp:(凸台.1;18);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;18);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=19 [????]  input='Face:(Brp:(凸台.1;19);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;19);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+
+    Total found: 20, SPA-confirmed valid: 0
+
+  --- Feature [凹槽.1] ---
+    N= 0 [????]  input='Face:(Brp:(凹槽.1;0);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;0);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 1 [????]  input='Face:(Brp:(凹槽.1;1);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;1);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 2 [????]  input='Face:(Brp:(凹槽.1;2);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;2);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 3 [????]  input='Face:(Brp:(凹槽.1;3);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;3);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 4 [????]  input='Face:(Brp:(凹槽.1;4);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;4);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 5 [????]  input='Face:(Brp:(凹槽.1;5);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;5);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 6 [????]  input='Face:(Brp:(凹槽.1;6);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;6);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 7 [????]  input='Face:(Brp:(凹槽.1;7);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;7);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 8 [????]  input='Face:(Brp:(凹槽.1;8);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;8);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 9 [????]  input='Face:(Brp:(凹槽.1;9);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;9);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=10 [????]  input='Face:(Brp:(凹槽.1;10);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;10);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=11 [????]  input='Face:(Brp:(凹槽.1;11);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;11);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=12 [????]  input='Face:(Brp:(凹槽.1;12);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;12);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=13 [????]  input='Face:(Brp:(凹槽.1;13);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;13);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=14 [????]  input='Face:(Brp:(凹槽.1;14);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;14);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=15 [????]  input='Face:(Brp:(凹槽.1;15);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;15);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=16 [????]  input='Face:(Brp:(凹槽.1;16);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;16);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=17 [????]  input='Face:(Brp:(凹槽.1;17);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;17);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=18 [????]  input='Face:(Brp:(凹槽.1;18);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;18);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=19 [????]  input='Face:(Brp:(凹槽.1;19);None:())'
+           dn='FSur:(Face:(Brp:(Pocket.1;19);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+
+    Total found: 20, SPA-confirmed valid: 0
+
+
+=================================================================
+Part 2: BRepTest_Revolute  (Shaft + Groove)
+=================================================================
+
+  new part: BRepTest_Revolute
+
+  [Shaft] ZX closed profile R=5~25 H=40
+  add_new_shaft: 旋转体.1
+    [OK] Z-axis HybridShape line created
+  shaft.revolution_axis = Z-line  OK
+  Shaft Update FAILED: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+  [Groove] ZX closed profile R=22~25 Z=15~20
+  Groove failed: (-2147352567, '发生意外。', (0, 'CATIAShapeFactory', '方法 AddNewGroove 失败', None, 0, -2147467259), None)
+  Final features: ['旋转体.1']
+
+  --- Feature [旋转体.1] ---
+    N= 0 [????]  input='Face:(Brp:(旋转体.1;0);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;0);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 1 [????]  input='Face:(Brp:(旋转体.1;1);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;1);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 2 [????]  input='Face:(Brp:(旋转体.1;2);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;2);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 3 [????]  input='Face:(Brp:(旋转体.1;3);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;3);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 4 [????]  input='Face:(Brp:(旋转体.1;4);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;4);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 5 [????]  input='Face:(Brp:(旋转体.1;5);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;5);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 6 [????]  input='Face:(Brp:(旋转体.1;6);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;6);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 7 [????]  input='Face:(Brp:(旋转体.1;7);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;7);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 8 [????]  input='Face:(Brp:(旋转体.1;8);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;8);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 9 [????]  input='Face:(Brp:(旋转体.1;9);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;9);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=10 [????]  input='Face:(Brp:(旋转体.1;10);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;10);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=11 [????]  input='Face:(Brp:(旋转体.1;11);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;11);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=12 [????]  input='Face:(Brp:(旋转体.1;12);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;12);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=13 [????]  input='Face:(Brp:(旋转体.1;13);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;13);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=14 [????]  input='Face:(Brp:(旋转体.1;14);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;14);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=15 [????]  input='Face:(Brp:(旋转体.1;15);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;15);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=16 [????]  input='Face:(Brp:(旋转体.1;16);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;16);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=17 [????]  input='Face:(Brp:(旋转体.1;17);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;17);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=18 [????]  input='Face:(Brp:(旋转体.1;18);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;18);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=19 [????]  input='Face:(Brp:(旋转体.1;19);None:())'
+           dn='FSur:(Face:(Brp:(Shaft.1;19);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+
+    Total found: 20, SPA-confirmed valid: 0
+
+
+=================================================================
+Part 3: BRepTest_FaceSketch  (SPA-confirmed top face -> sketch)
+=================================================================
+
+  new part: BRepTest_FaceSketch
+  Base Pad: 凸台.1  features: ['凸台.1']
+
+  --- Feature [凸台.1] ---
+    N= 0 [????]  input='Face:(Brp:(凸台.1;0);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;0);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 1 [????]  input='Face:(Brp:(凸台.1;1);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;1);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 2 [????]  input='Face:(Brp:(凸台.1;2);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;2);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 3 [????]  input='Face:(Brp:(凸台.1;3);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;3);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 4 [????]  input='Face:(Brp:(凸台.1;4);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;4);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 5 [????]  input='Face:(Brp:(凸台.1;5);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;5);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 6 [????]  input='Face:(Brp:(凸台.1;6);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;6);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 7 [????]  input='Face:(Brp:(凸台.1;7);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;7);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 8 [????]  input='Face:(Brp:(凸台.1;8);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;8);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N= 9 [????]  input='Face:(Brp:(凸台.1;9);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;9);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=10 [????]  input='Face:(Brp:(凸台.1;10);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;10);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=11 [????]  input='Face:(Brp:(凸台.1;11);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;11);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=12 [????]  input='Face:(Brp:(凸台.1;12);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;12);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=13 [????]  input='Face:(Brp:(凸台.1;13);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;13);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=14 [????]  input='Face:(Brp:(凸台.1;14);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;14);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=15 [????]  input='Face:(Brp:(凸台.1;15);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;15);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=16 [????]  input='Face:(Brp:(凸台.1;16);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;16);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=17 [????]  input='Face:(Brp:(凸台.1;17);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;17);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=18 [????]  input='Face:(Brp:(凸台.1;18);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;18);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+    N=19 [????]  input='Face:(Brp:(凸台.1;19);None:())'
+           dn='FSur:(Face:(Brp:(Pad.1;19);None:();Cf8:());WithTemporaryBody;WithoutBuildError;WithInitialFeatureSupport;MFBRepVersion_CXR3_SP2)'  SPA_normal_fail=GetMeasurable.GetNormal
+
+    Total found: 20, SPA-confirmed valid: 0
+
+  Cannot identify top by normal, 0 valid faces found
+  Trying each valid face for sketch (will check if Pad extrudes upward)...
+
+
+=================================================================
+Done
+=================================================================

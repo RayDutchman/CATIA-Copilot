@@ -1,0 +1,53 @@
+=================================================================
+M1 B-Rep Exploration v15
+=================================================================
+[OK] CATIA connected
+[OK] pycatia ready
+
+
+=================================================================
+Part A: CreateReferenceFromBRepName — 面索引穷举
+=================================================================
+
+  new part: BRepFace_v15
+  Pad name: '凸台.1'
+  [OK] idx=1 name='凸台.1'  origin_z=0.0  -> FSur:(Face:(Brp:(凸台.1;1);None:();Cf8:());WithTemporaryBody;W
+  [OK] idx=1 name='Pad.1'  origin_z=0.0  -> FSur:(Face:(Brp:(Pad.1;1);None:();Cf8:());WithTemporaryBody;
+  [OK] idx=2 name='凸台.1'  origin_z=30.0  -> FSur:(Face:(Brp:(凸台.1;2);None:();Cf8:());WithTemporaryBody;W
+  [OK] idx=2 name='Pad.1'  origin_z=30.0  -> FSur:(Face:(Brp:(Pad.1;2);None:();Cf8:());WithTemporaryBody;
+  [fail] idx=3 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=3 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=4 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=4 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=5 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=5 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=6 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=6 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=7 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=7 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=8 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=8 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=9 name='凸台.1'  (-2147418113, '灾难性故障', None, None)
+  [fail] idx=9 name='Pad.1'  (-2147418113, '灾难性故障', None, None)
+
+  Valid refs: 4
+    idx=1 name='凸台.1' origin_z=0.0  (底面)
+    idx=1 name='Pad.1' origin_z=0.0  (底面)
+    idx=2 name='凸台.1' origin_z=30.0  (顶面)
+    idx=2 name='Pad.1' origin_z=30.0  (顶面)
+
+
+=================================================================
+Part B: 顶面草图 + 第二层 Pad（验证可行性）
+=================================================================
+
+  new part: BRepFace_TopPad_v15
+  底层 Pad: '凸台.1'
+  找到顶面: idx=2 name='凸台.1' origin_z=20.0
+  顶面草图绘制: OK
+  第二层 Pad update 失败: (-2147352567, '发生意外。', (0, 'CATIAPart', '方法 Update 失败', None, 0, -2147467259), None)
+
+
+=================================================================
+Done
+=================================================================

@@ -1,0 +1,2007 @@
+============================================================
+CATIA COM 状态轮询启动
+间隔: 3s | Ctrl+C 退出
+============================================================
+
+── 快照 #1  23:03:00 ──
+  doc: Part51.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+
+── 快照 #2  23:03:03 ──
+  doc: Part51.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #3  23:03:06 ──
+  doc: Part51.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #4  23:03:09 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+
+  *** DIFF（相比快照 #3）***
+  CHANGED  Shapes.1.Name
+    before: <missing>
+    after:  '凸台.1'
+
+── 快照 #5  23:03:13 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #6  23:03:16 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #7  23:03:19 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #8  23:03:22 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #9  23:03:25 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #10  23:03:29 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #11  23:03:32 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #12  23:03:35 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #13  23:03:38 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #14  23:03:41 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #15  23:03:44 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #16  23:03:48 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #17  23:03:51 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #18  23:03:54 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #19  23:03:57 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #20  23:04:00 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #21  23:04:03 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #22  23:04:06 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #23  23:04:10 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #24  23:04:13 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #25  23:04:16 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #26  23:04:19 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #27  23:04:22 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #28  23:04:25 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #29  23:04:29 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #30  23:04:32 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #31  23:04:35 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #32  23:04:38 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #33  23:04:41 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #34  23:04:45 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #35  23:04:48 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #36  23:04:51 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #37  23:04:54 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #38  23:04:57 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #39  23:05:00 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #40  23:05:04 ──
+  doc: Part51.CATPart
+  Shape[1] 凸台.1  RevoluteAxis=None
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 直线.1  ref=直线.1
+  GE[6] 直线.2  ref=直线.2
+  GE[7] 直线.3  ref=直线.3
+  GE[8] 直线.4  ref=直线.4
+  GE[9] 点.1  ref=点.1
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  GE[13] 点.5  ref=点.5
+  GE[14] 点.6  ref=点.6
+  GE[15] 点.7  ref=点.7
+  GE[16] 点.8  ref=点.8
+  （无变化）
+
+── 快照 #41  23:05:07 ──
+  doc: Part52.CATPart
+
+  *** DIFF（相比快照 #40）***
+  CHANGED  GE.1.name
+    before: '原点'
+    after:  <missing>
+  CHANGED  GE.1.ref_display
+    before: '原点'
+    after:  <missing>
+  CHANGED  GE.10.name
+    before: '点.2'
+    after:  <missing>
+  CHANGED  GE.10.ref_display
+    before: '点.2'
+    after:  <missing>
+  CHANGED  GE.11.name
+    before: '点.3'
+    after:  <missing>
+  CHANGED  GE.11.ref_display
+    before: '点.3'
+    after:  <missing>
+  CHANGED  GE.12.name
+    before: '点.4'
+    after:  <missing>
+  CHANGED  GE.12.ref_display
+    before: '点.4'
+    after:  <missing>
+  CHANGED  GE.13.name
+    before: '点.5'
+    after:  <missing>
+  CHANGED  GE.13.ref_display
+    before: '点.5'
+    after:  <missing>
+  CHANGED  GE.14.name
+    before: '点.6'
+    after:  <missing>
+  CHANGED  GE.14.ref_display
+    before: '点.6'
+    after:  <missing>
+  CHANGED  GE.15.name
+    before: '点.7'
+    after:  <missing>
+  CHANGED  GE.15.ref_display
+    before: '点.7'
+    after:  <missing>
+  CHANGED  GE.16.name
+    before: '点.8'
+    after:  <missing>
+  CHANGED  GE.16.ref_display
+    before: '点.8'
+    after:  <missing>
+  CHANGED  GE.2.name
+    before: '横向'
+    after:  <missing>
+  CHANGED  GE.2.ref_display
+    before: '横向'
+    after:  <missing>
+  CHANGED  GE.3.name
+    before: '纵向'
+    after:  <missing>
+  CHANGED  GE.3.ref_display
+    before: '纵向'
+    after:  <missing>
+  CHANGED  GE.4.name
+    before: '绝对轴'
+    after:  <missing>
+  CHANGED  GE.4.ref_display
+    before: '绝对轴'
+    after:  <missing>
+  CHANGED  GE.5.name
+    before: '直线.1'
+    after:  <missing>
+  CHANGED  GE.5.ref_display
+    before: '直线.1'
+    after:  <missing>
+  CHANGED  GE.6.name
+    before: '直线.2'
+    after:  <missing>
+  CHANGED  GE.6.ref_display
+    before: '直线.2'
+    after:  <missing>
+  CHANGED  GE.7.name
+    before: '直线.3'
+    after:  <missing>
+  CHANGED  GE.7.ref_display
+    before: '直线.3'
+    after:  <missing>
+  CHANGED  GE.8.name
+    before: '直线.4'
+    after:  <missing>
+  CHANGED  GE.8.ref_display
+    before: '直线.4'
+    after:  <missing>
+  CHANGED  GE.9.name
+    before: '点.1'
+    after:  <missing>
+  CHANGED  GE.9.ref_display
+    before: '点.1'
+    after:  <missing>
+  CHANGED  Shapes.1.Name
+    before: '凸台.1'
+    after:  <missing>
+  CHANGED  Sketches.1.AbsoluteAxisData
+    before: 'ERR'
+    after:  <missing>
+  CHANGED  Sketches.1.Name
+    before: '草图.1'
+    after:  <missing>
+  CHANGED  doc_name
+    before: 'Part51.CATPart'
+    after:  'Part52.CATPart'
+
+── 快照 #42  23:05:10 ──
+  doc: Part52.CATPart
+  （无变化）
+
+── 快照 #43  23:05:14 ──
+  doc: Part52.CATPart
+  （无变化）
+
+── 快照 #44  23:05:17 ──
+  doc: Part52.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+
+  *** DIFF（相比快照 #43）***
+  CHANGED  GE.1.name
+    before: <missing>
+    after:  '原点'
+  CHANGED  GE.1.ref_display
+    before: <missing>
+    after:  '原点'
+  CHANGED  GE.2.name
+    before: <missing>
+    after:  '横向'
+  CHANGED  GE.2.ref_display
+    before: <missing>
+    after:  '横向'
+  CHANGED  GE.3.name
+    before: <missing>
+    after:  '纵向'
+  CHANGED  GE.3.ref_display
+    before: <missing>
+    after:  '纵向'
+  CHANGED  GE.4.name
+    before: <missing>
+    after:  '绝对轴'
+  CHANGED  GE.4.ref_display
+    before: <missing>
+    after:  '绝对轴'
+  CHANGED  Sketches.1.AbsoluteAxisData
+    before: <missing>
+    after:  'ERR'
+  CHANGED  Sketches.1.Name
+    before: <missing>
+    after:  '草图.1'
+
+── 快照 #45  23:05:20 ──
+  doc: Part52.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  （无变化）
+
+── 快照 #46  23:05:23 ──
+  doc: Part52.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #45）***
+  CHANGED  GE.10.name
+    before: <missing>
+    after:  '点.2'
+  CHANGED  GE.10.ref_display
+    before: <missing>
+    after:  '点.2'
+  CHANGED  GE.11.name
+    before: <missing>
+    after:  '点.3'
+  CHANGED  GE.11.ref_display
+    before: <missing>
+    after:  '点.3'
+  CHANGED  GE.12.name
+    before: <missing>
+    after:  '点.4'
+  CHANGED  GE.12.ref_display
+    before: <missing>
+    after:  '点.4'
+  CHANGED  GE.5.name
+    before: <missing>
+    after:  '点.1'
+  CHANGED  GE.5.ref_display
+    before: <missing>
+    after:  '点.1'
+  CHANGED  GE.6.name
+    before: <missing>
+    after:  '直线.1'
+  CHANGED  GE.6.ref_display
+    before: <missing>
+    after:  '直线.1'
+  CHANGED  GE.7.name
+    before: <missing>
+    after:  '直线.2'
+  CHANGED  GE.7.ref_display
+    before: <missing>
+    after:  '直线.2'
+  CHANGED  GE.8.name
+    before: <missing>
+    after:  '直线.3'
+  CHANGED  GE.8.ref_display
+    before: <missing>
+    after:  '直线.3'
+  CHANGED  GE.9.name
+    before: <missing>
+    after:  '直线.4'
+  CHANGED  GE.9.ref_display
+    before: <missing>
+    after:  '直线.4'
+
+── 快照 #47  23:05:27 ──
+  doc: Part52.CATPart
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+  （无变化）
+
+── 快照 #48  23:05:30 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference470', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference470', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference470
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference470
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #47）***
+  CHANGED  Shapes.1.Name
+    before: <missing>
+    after:  '旋转体.1'
+  CHANGED  Shapes.1.RevoluteAxis.DisplayName
+    before: <missing>
+    after:  'Z 轴'
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: <missing>
+    after:  'CATIAReference470'
+  CHANGED  Shapes.1.RevoluteAxis._dir
+    before: <missing>
+    after:  ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']
+  CHANGED  Shapes.1.RevoluteAxis.py_display_name
+    before: <missing>
+    after:  'Z 轴'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: <missing>
+    after:  'CATIAReference470'
+  CHANGED  Shapes.1.RevoluteAxis_type
+    before: <missing>
+    after:  'CDispatch'
+
+── 快照 #49  23:05:33 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference471', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference471', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference471
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference471
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #48）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference470'
+    after:  'CATIAReference471'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference470'
+    after:  'CATIAReference471'
+
+── 快照 #50  23:05:36 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference472', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference472', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference472
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference472
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #49）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference471'
+    after:  'CATIAReference472'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference471'
+    after:  'CATIAReference472'
+
+── 快照 #51  23:05:39 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference473', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference473', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference473
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference473
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #50）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference472'
+    after:  'CATIAReference473'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference472'
+    after:  'CATIAReference473'
+
+── 快照 #52  23:05:43 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference474', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference474', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference474
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference474
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #51）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference473'
+    after:  'CATIAReference474'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference473'
+    after:  'CATIAReference474'
+
+── 快照 #53  23:05:46 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference475', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference475', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference475
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference475
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #52）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference474'
+    after:  'CATIAReference475'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference474'
+    after:  'CATIAReference475'
+
+── 快照 #54  23:05:49 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference476', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference476', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference476
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference476
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #53）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference475'
+    after:  'CATIAReference476'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference475'
+    after:  'CATIAReference476'
+
+── 快照 #55  23:05:52 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference477', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference477', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference477
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference477
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #54）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference476'
+    after:  'CATIAReference477'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference476'
+    after:  'CATIAReference477'
+
+── 快照 #56  23:05:56 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference478', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference478', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference478
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference478
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #55）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference477'
+    after:  'CATIAReference478'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference477'
+    after:  'CATIAReference478'
+
+── 快照 #57  23:05:59 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference479', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference479', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference479
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference479
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #56）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference478'
+    after:  'CATIAReference479'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference478'
+    after:  'CATIAReference479'
+
+── 快照 #58  23:06:02 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference480', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference480', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference480
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference480
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #57）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference479'
+    after:  'CATIAReference480'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference479'
+    after:  'CATIAReference480'
+
+── 快照 #59  23:06:05 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference481', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference481', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference481
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference481
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #58）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference480'
+    after:  'CATIAReference481'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference480'
+    after:  'CATIAReference481'
+
+── 快照 #60  23:06:09 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference482', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference482', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference482
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference482
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #59）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference481'
+    after:  'CATIAReference482'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference481'
+    after:  'CATIAReference482'
+
+── 快照 #61  23:06:12 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference483', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference483', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference483
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference483
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #60）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference482'
+    after:  'CATIAReference483'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference482'
+    after:  'CATIAReference483'
+
+── 快照 #62  23:06:15 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference484', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference484', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference484
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference484
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #61）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference483'
+    after:  'CATIAReference484'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference483'
+    after:  'CATIAReference484'
+
+── 快照 #63  23:06:18 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference485', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference485', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference485
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference485
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #62）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference484'
+    after:  'CATIAReference485'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference484'
+    after:  'CATIAReference485'
+
+── 快照 #64  23:06:21 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference486', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference486', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference486
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference486
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #63）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference485'
+    after:  'CATIAReference486'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference485'
+    after:  'CATIAReference486'
+
+── 快照 #65  23:06:25 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference487', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference487', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference487
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference487
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #64）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference486'
+    after:  'CATIAReference487'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference486'
+    after:  'CATIAReference487'
+
+── 快照 #66  23:06:28 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference488', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference488', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference488
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference488
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #65）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference487'
+    after:  'CATIAReference488'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference487'
+    after:  'CATIAReference488'
+
+── 快照 #67  23:06:31 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference489', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference489', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference489
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference489
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #66）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference488'
+    after:  'CATIAReference489'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference488'
+    after:  'CATIAReference489'
+
+── 快照 #68  23:06:34 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference490', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference490', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference490
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference490
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #67）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference489'
+    after:  'CATIAReference490'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference489'
+    after:  'CATIAReference490'
+
+── 快照 #69  23:06:38 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference491', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference491', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference491
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference491
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #68）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference490'
+    after:  'CATIAReference491'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference490'
+    after:  'CATIAReference491'
+
+── 快照 #70  23:06:41 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference492', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference492', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference492
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference492
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #69）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference491'
+    after:  'CATIAReference492'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference491'
+    after:  'CATIAReference492'
+
+── 快照 #71  23:06:44 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference493', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference493', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference493
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference493
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #70）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference492'
+    after:  'CATIAReference493'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference492'
+    after:  'CATIAReference493'
+
+── 快照 #72  23:06:47 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference494', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference494', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference494
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference494
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #71）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference493'
+    after:  'CATIAReference494'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference493'
+    after:  'CATIAReference494'
+
+── 快照 #73  23:06:50 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference495', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference495', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference495
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference495
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #72）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference494'
+    after:  'CATIAReference495'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference494'
+    after:  'CATIAReference495'
+
+── 快照 #74  23:06:54 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference496', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference496', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference496
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference496
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #73）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference495'
+    after:  'CATIAReference496'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference495'
+    after:  'CATIAReference496'
+
+── 快照 #75  23:06:57 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference497', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference497', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference497
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference497
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #74）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference496'
+    after:  'CATIAReference497'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference496'
+    after:  'CATIAReference497'
+
+── 快照 #76  23:07:00 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference498', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference498', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference498
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference498
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #75）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference497'
+    after:  'CATIAReference498'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference497'
+    after:  'CATIAReference498'
+
+── 快照 #77  23:07:03 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference499', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference499', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference499
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference499
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #76）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference498'
+    after:  'CATIAReference499'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference498'
+    after:  'CATIAReference499'
+
+── 快照 #78  23:07:07 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference500', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference500', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference500
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference500
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #77）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference499'
+    after:  'CATIAReference500'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference499'
+    after:  'CATIAReference500'
+
+── 快照 #79  23:07:10 ──
+  doc: Part52.CATPart
+  Shape[1] 旋转体.1  RevoluteAxis={'Name': 'CATIAReference501', 'DisplayName': 'Z 轴', 'py_display_name': 'Z 轴', 'py_name': 'CATIAReference501', '_dir': ['AddRef', 'Application', 'ChangeComponentState', 'ComposeWith', 'Destructor', 'DisplayName', 'GetIDsOfNames', 'GetImpl', 'GetItem', 'GetMetaObject', 'GetTypeInfo', 'GetTypeInfoCount', 'Invoke', 'IsA', 'IsAKindOf', 'IsEqual', 'IsNull', 'Name', 'Parent', 'QueryInterface', 'Release', 'SetImpl', 'SurChargeQI']}
+    Name: CATIAReference501
+    DisplayName: Z 轴
+    py_display_name: Z 轴
+    py_name: CATIAReference501
+  GE[1] 原点  ref=原点
+  GE[2] 横向  ref=横向
+  GE[3] 纵向  ref=纵向
+  GE[4] 绝对轴  ref=绝对轴
+  GE[5] 点.1  ref=点.1
+  GE[6] 直线.1  ref=直线.1
+  GE[7] 直线.2  ref=直线.2
+  GE[8] 直线.3  ref=直线.3
+  GE[9] 直线.4  ref=直线.4
+  GE[10] 点.2  ref=点.2
+  GE[11] 点.3  ref=点.3
+  GE[12] 点.4  ref=点.4
+
+  *** DIFF（相比快照 #78）***
+  CHANGED  Shapes.1.RevoluteAxis.Name
+    before: 'CATIAReference500'
+    after:  'CATIAReference501'
+  CHANGED  Shapes.1.RevoluteAxis.py_name
+    before: 'CATIAReference500'
+    after:  'CATIAReference501'
+
+
+轮询已停止。

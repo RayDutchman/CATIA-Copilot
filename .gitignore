@@ -64,7 +64,8 @@ memory.md
 .playwright-mcp/
 
 # ── OpenCode 工作区 ───────────────────────────────────────────────────────────
-.opencode/
+.opencode/*
+!.opencode/instructions.md
 
 # ── 临时 / 探查 / 开发笔记（不属于正式代码库）────────────────────────────────
 AI_answer.md

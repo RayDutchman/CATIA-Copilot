@@ -552,7 +552,6 @@ def diagnose_catia_connection() -> dict:
     - ``error``                    (str | None)     — 最近一次异常描述（如有）
     - ``get_active_error``         (str | None)     — GetActiveObject 的实际报错（与 error 区分）
     - ``app_name``                 (str | None)     — CATIA 应用名称（如 "CATIA"）
-    - ``app_version``              (str | None)     — CATIA 版本字符串
     - ``is_v5``                    (bool | None)    — True 表示连接到 CATIA V5；False 表示 3DEXPERIENCE
     - ``active_doc``               (str | None)     — 当前活动文档名称
     - ``doc_count``                (int | None)     — 已打开文档数量
@@ -567,7 +566,6 @@ def diagnose_catia_connection() -> dict:
         "error": None,
         "get_active_error": None,
         "app_name": None,
-        "app_version": None,
         "is_v5": None,
         "active_doc": None,
         "doc_count": None,
@@ -658,11 +656,6 @@ def diagnose_catia_connection() -> dict:
 
     result["status"] = "connected"
     result["is_v5"] = _is_catia_v5_dispatch(app)
-
-    try:
-        result["app_version"] = str(app.Version)
-    except Exception:
-        pass
 
     try:
         result["doc_count"] = int(app.Documents.Count)
