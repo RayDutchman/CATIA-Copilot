@@ -1,4 +1,4 @@
-"""
+﻿"""
 AI 聊天面板 - CATIA Copilot 主窗口新 Tab 页。
 
 布局：
@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QFrame, QSizePolicy, QDialog, QFormLayout,
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
     QDialogButtonBox, QListWidget, QListWidgetItem,
-    QMenu, QInputDialog, QMessageBox, QSplitter, QSplitterHandle,
+    QMenu, QInputDialog, QMessageBox, QSplitter, QSplitterHandle, QFileDialog,
 )
 
 from catia_copilot.ui.theme_manager import theme_signal, theme_manager
@@ -41,9 +41,11 @@ from catia_copilot.ui.ui_colors import get_chat_colors
 from catia_copilot.ui.ui_layout import L
 from catia_copilot.ai import config as ai_config
 from catia_copilot.ai.agent import AgentWorker
-from catia_copilot.ai.tools import tools_map
+from catia_copilot.ai.config import fetch_models_from_api
+from catia_copilot.ai.tools import tools_map, DEFAULT_SYSTEM_PROMPT
 from catia_copilot.ai.session import ChatSession
 from catia_copilot.ai.session_manager import SessionManager
+from catia_copilot.ui.session_config_dialog import SessionConfigDialog
 
 logger = logging.getLogger(__name__)
 
@@ -840,16 +842,20 @@ class AISettingsDialog(QDialog):
         self._temperature.setSingleStep(0.1)
         self._temperature.setDecimals(1)
         self._temperature.setValue(self._cfg.get("temperature", 0.7))
+        self._temperature.setMinimumHeight(24)
         temp_row = QHBoxLayout()
         temp_row.addWidget(self._temperature)
+        
         temp_row.addWidget(QLabel("  (0=最确定，1=平衡，2=最富创造性；建议 0.5–0.7)"), 1)
         form.addRow("Temperature:", temp_row)
 
         self._max_rounds = QSpinBox()
         self._max_rounds.setRange(1, 50)
         self._max_rounds.setValue(self._cfg.get("max_tool_rounds", 20))
+        self._max_rounds.setMinimumHeight(24)
         rounds_row = QHBoxLayout()
         rounds_row.addWidget(self._max_rounds)
+        
         rounds_row.addWidget(QLabel("  (单次回复中 AI 调用工具的最大次数)"), 1)
         form.addRow("最大工具调用轮数:", rounds_row)
 
@@ -857,6 +863,7 @@ class AISettingsDialog(QDialog):
         self._timeout.setRange(10, 600)
         self._timeout.setSuffix(" 秒")
         self._timeout.setValue(self._cfg.get("timeout", 120))
+        self._timeout.setMinimumHeight(24)
         timeout_row = QHBoxLayout()
         timeout_row.addWidget(self._timeout)
         timeout_row.addWidget(QLabel("  (单次 LLM 请求的最长等待时间)"), 1)
@@ -886,8 +893,6 @@ class AISettingsDialog(QDialog):
         self._fetch_btn.setEnabled(False)
         self._fetch_btn.setText("...")
         self._set_status("正在拉取模型列表...")
-
-        from catia_copilot.ai.config import fetch_models_from_api
 
         class _FetchThread(QThread):
             def __init__(self, base, key, parent=None):
@@ -1361,14 +1366,12 @@ class SessionSidebar(QWidget):
             session = self._sm.load_session(session_id)
             if session is None:
                 return
-            from catia_copilot.ui.session_config_dialog import SessionConfigDialog
             dlg = SessionConfigDialog(session, self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 self._sm.save_session(session)
                 self.refresh()
 
     def _set_workspace(self, session_id: str):
-        from PySide6.QtWidgets import QFileDialog
         folder = QFileDialog.getExistingDirectory(self, "选择工作空间目录")
         if folder:
             self._sm.set_workspace(session_id, folder)
@@ -1997,8 +2000,6 @@ class AIChatPanel(QWidget):
             self._refresh_model_combo_for_session()
 
     def _open_session_config(self):
-        from catia_copilot.ui.session_config_dialog import SessionConfigDialog
-
         # 草稿状态下先创建会话，否则设置无处保存
         if self._current_session is None:
             self._current_session = self._sm.create_session()
@@ -2041,7 +2042,6 @@ class AIChatPanel(QWidget):
 
         # 用户未配置 system_prompt 时，使用内置默认值
         if not sys_prompt:
-            from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT
             sys_prompt = DEFAULT_SYSTEM_PROMPT
 
         # 注入全局记忆

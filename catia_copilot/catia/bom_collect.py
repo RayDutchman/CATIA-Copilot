@@ -12,7 +12,9 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType
+from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType, PRODUCT_ATTR_READ_MAP
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +62,6 @@ def collect_bom_rows(
         is appended to the result list.  May raise an exception to abort the
         traversal (e.g. when the user cancels).
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.constants import PRODUCT_ATTR_READ_MAP
-    from catia_copilot.catia.document import get_bom_node_type
-
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
     CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization

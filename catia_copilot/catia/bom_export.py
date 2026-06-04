@@ -5,9 +5,16 @@ Provides:
 - export_bom_to_excel() – export a hierarchical or summarised BOM to an .xlsx or .csv file
 """
 
+import csv
 import logging
 from collections.abc import Callable
 from pathlib import Path
+
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from PySide6.QtWidgets import QMessageBox
+
+from catia_copilot.catia.connection import get_catia_v5_application
 
 from catia_copilot.constants import (
     BOM_DEFAULT_COLUMNS,
@@ -70,10 +77,6 @@ def export_bom_to_excel(
     list[Path]
         The file paths that were successfully written.
     """
-    import openpyxl
-    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-    from catia_copilot.catia.connection import get_catia_v5_application
-
     if columns is None:
         columns = BOM_DEFAULT_COLUMNS
     if custom_columns is None:
@@ -146,7 +149,6 @@ def export_bom_to_excel(
             ws.column_dimensions[col_letter].width = max_width + 2
 
     def _write_csv_file(dest: Path, rows: list[dict]) -> None:
-        import csv
         headers = [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
         with open(dest, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
@@ -201,7 +203,6 @@ def export_bom_to_excel(
                 with open(dest, "a+b"):
                     pass
             except PermissionError:
-                from PySide6.QtWidgets import QMessageBox
                 reply = QMessageBox.question(
                     None, "文件正在使用",
                     f"该文件当前在 Excel 中已打开：\n{dest}\n\n"

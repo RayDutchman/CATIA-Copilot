@@ -1,10 +1,12 @@
-"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
+﻿"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
 from PySide6.QtCore import Qt, QSize, QModelIndex, QRect
 from PySide6.QtGui import QPainter, QPen, QColor
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
+from catia_copilot.ui.theme_manager import _STYLE_NAME, theme_manager
+from catia_copilot.ui.ui_colors import get_colors
 from catia_copilot.ui.ui_layout import L
 
 # 自定义 UserRole 用于 QTreeWidgetItem：标记行为锁定（不可读/未找到）
@@ -109,7 +111,6 @@ class _BomTreeWidget(QTreeWidget):
         # 只有 windows11/windowsvista 风格需要手动补虚线；
         # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
         try:
-            from catia_copilot.ui.theme_manager import _STYLE_NAME
             _need_overlay = _STYLE_NAME in ("windows11", "windowsvista")
         except Exception:
             _need_overlay = True   # 导入失败时保守地画线
@@ -140,8 +141,6 @@ class _BomTreeWidget(QTreeWidget):
 
         # 从 ui_colors 取当前主题的连接线颜色
         try:
-            from catia_copilot.ui.theme_manager import theme_manager
-            from catia_copilot.ui.ui_colors import get_colors
             line_color = get_colors(theme_manager.current_mode()).WIDGET_LINE_COLOR
         except Exception:
             line_color = QColor("#808080")

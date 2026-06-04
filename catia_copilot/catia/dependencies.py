@@ -43,8 +43,9 @@ from catia_copilot.constants import (
     DRAWING_SEARCH_STRATEGIES,
     SEARCH_MAX_LEVELS,
     PART_TO_DRAWING_STRATEGIES,
-    SEARCH_MAX_LEVELS,
 )
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.utils import open_catia_file
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,6 @@ def find_dependencies(
     - 结果中不包含目标文件本身。
     - 路径比对使用小写，以兼容 Windows 文件系统大小写不敏感的特性。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
 
     target_lower = target_path.lower()
     ext_lower    = Path(target_path).suffix.lower()
@@ -192,7 +191,6 @@ def find_reverse_dependencies(
     progress_callback:
         可选的 ``callable(str)``，在遍历时传递进度信息。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     application    = get_catia_v5_application()
     documents      = application.Documents
@@ -287,7 +285,6 @@ def _read_drawing_pn_param(drawing_path: str) -> str | None:
     不会主动打开文件，无副作用。
     """
     try:
-        from catia_copilot.catia.connection import get_catia_v5_application
         application = get_catia_v5_application()
         documents   = application.Documents
         drawing_path_lower = drawing_path.lower()
@@ -367,7 +364,6 @@ def _find_part_in_open_docs(pn_value: str) -> str | None:
     通过 COM 直接读取 doc.Product.PartNumber（不使用 pycatia）。
     只检查已打开文档，无副作用。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     application = get_catia_v5_application()
     documents   = application.Documents
@@ -401,7 +397,6 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
     再经 product.ReferenceProduct.Parent.FullName 取到文档绝对路径。
     过滤出 .CATPart / .CATProduct ，结果去重（保序）后返回。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     application = get_catia_v5_application()
     documents   = application.Documents
@@ -574,7 +569,6 @@ def _read_part_pn(part_path: str) -> str | None:
     零件必须已在 CATIA 中打开；若未打开或读取失败则返回 None。不会主动打开文件。
     """
     try:
-        from catia_copilot.catia.connection import get_catia_v5_application
         application = get_catia_v5_application()
         documents   = application.Documents
         part_path_lower = part_path.lower()
@@ -651,7 +645,6 @@ def _find_drawing_by_part_pn(part_pn: str) -> str | None:
 
     只检查已打开文档，无副作用。Parameters["PartNumber"] 可能不存在，跳过即可。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     application = get_catia_v5_application()
     documents   = application.Documents
@@ -722,7 +715,6 @@ def _find_drawings_via_part_link(part_path: str) -> list[str]:
     则将该图纸加入返回列表。
     图纸须已在 CATIA 中打开；若无已打开图纸则返回空列表。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     application   = get_catia_v5_application()
     documents     = application.Documents

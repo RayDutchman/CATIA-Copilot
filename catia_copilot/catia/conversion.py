@@ -12,6 +12,8 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QMessageBox
 
+from catia_copilot.catia.connection import get_catia_v5_application
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,8 +110,6 @@ def convert_drawing_to_pdf(
     返回：
         成功导出的文件数量
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-
     application = get_catia_v5_application()
     application.Visible = True
     documents = application.Documents
@@ -194,8 +194,6 @@ def convert_part_to_step(
     返回：
         成功导出的文件数量
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-
     application = get_catia_v5_application()
     application.Visible = True
     documents = application.Documents

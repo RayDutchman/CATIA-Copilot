@@ -14,11 +14,16 @@
                       • 自动汇总装配体总质量特性并导出 Excel
 """
 
+import csv
+import ctypes
 import logging
 import math
 import subprocess
 import uuid
 from pathlib import Path
+
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
@@ -59,6 +64,8 @@ from catia_copilot.ui.ui_colors import (
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
 from catia_copilot.ui.ui_layout import L
+from catia_copilot.utils import estimate_column_width
+from catia_copilot.catia.connection import open_document
 
 logger = logging.getLogger(__name__)
 
@@ -417,13 +424,14 @@ class MassPropsDialog(QDialog):
 
         # ── 前提条件说明（窗口过窄时允许截断）──────────────────────────────
         prereq_lbl = QLabel(
-            "⚠ 使用说明：本功能读取指定产品树下的每个零件的'测量惯量'结果和其"
-            "在根产品中的位置，用于计算根产品的重量、重心、转动惯量。"
-            "请在 CATIA 中 <b>单独打开</b> 每个零件,执行'测量惯量'并勾选 <b>保持测量</b>,"
+            "⚠ 使用说明：本功能用于统计产品的重量、重心、转动惯量。基本原理是读取指定产品树下的每个零件的'属性-机械'中的结果或'测量惯量'结果，"
+            "和每个零件在根产品中的位置，计算出产品重量、重心、转动惯量。"
+            "当使用'Analyze'模式时，读取的是零件的'属性-机械'中的数据，需要零件的主几何体被正确赋予材料，且不得有多余的几何体或包络体（因为它们也会被一同纳入统计）。"
+            "当使用'惯量包络体'模式时，读取的是零件中勾选 '保持测量' 的惯量测量结果（惯量包络体），需要在 CATIA 中 <b>单独打开</b> 每个零件,执行'测量惯量'并勾选 <b>保持测量</b>。"
             "在产品窗口中建立的惯量包络体的参考坐标系为根产品坐标系（即使当前工作对象是零件），"
             "这会导致坐标系与根产品不重合的零件的测量结果不正确。"
-            f"测量结果必须命名为 <b>惯量包络体.x</b>（x 为 1–{MAX_INERTIA_INDEX} 的整数）。"
-            "支持一个零件具有多个惯量包络体，产品的惯量包络体将不被读取。"
+            f"测量结果必须命名为 <b>惯量包络体.x</b>（x 为 1–{MAX_INERTIA_INDEX} 的整数），"
+            "支持一个零件具有多个惯量包络体，产品中的惯量包络体将不被读取。"
         )
         prereq_lbl.setWordWrap(True)
         self._prereq_lbl = prereq_lbl
@@ -2001,9 +2009,6 @@ class MassPropsDialog(QDialog):
         return " | ".join(tokens)
 
     def _do_export(self, dest: str) -> None:
-        import openpyxl
-        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-        from catia_copilot.utils import estimate_column_width
 
         # 导出始终使用层级BOM（含产品/部件/对称件），排除内部序号列 "#"，末尾追加 Status 列
         export_cols = [c for c in self._build_hierarchy_columns() if c != "#"] + ["Status"]
@@ -2129,7 +2134,6 @@ class MassPropsDialog(QDialog):
 
     def _do_export_csv(self, dest: Path) -> None:
         """将当前表格数据（含汇总行）写入 UTF-8 with BOM 的 CSV 文件。"""
-        import csv
 
         # 导出始终使用层级BOM（含产品/部件/对称件），排除内部序号列 "#"，末尾追加 Status 列
         export_cols = [c for c in self._build_hierarchy_columns() if c != "#"] + ["Status"]
@@ -2821,7 +2825,6 @@ class MassPropsDialog(QDialog):
         使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
         cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
         """
-        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():
@@ -2838,7 +2841,6 @@ class MassPropsDialog(QDialog):
     def _open_in_catia(self, fp: str) -> None:
         """在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-            from catia_copilot.catia.connection import open_document  # noqa: PLC0415
             open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")

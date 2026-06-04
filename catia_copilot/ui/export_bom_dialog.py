@@ -1,10 +1,11 @@
-"""
+﻿"""
 BOM 导出对话框。
 
 提供：
 - ExportBomDialog – 用于选择 CATProduct 、选择列并将 BOM 导出到 Excel 的对话框。
 """
 
+import ctypes
 import logging
 import subprocess
 from pathlib import Path
@@ -502,7 +503,6 @@ class ExportBomDialog(QDialog):
         使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
         cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
         """
-        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():

@@ -6,16 +6,21 @@ BOM 编辑对话框模块。
 """
 
 import copy
+import csv
+import ctypes
 import os
 import logging
 import subprocess
 from pathlib import Path
 
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QTreeWidgetItem, QHeaderView, QAbstractItemView,
     QComboBox, QCheckBox, QGroupBox, QMessageBox, QApplication,
-    QFileDialog, QProgressDialog, QRadioButton, QButtonGroup,
+    QFileDialog, QProgressDialog, QRadioButton, QButtonGroup, QSpinBox, QGridLayout,
     QMenu, QWidgetAction, QLineEdit,
 )
 from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush, QPalette, QColor, QFont
@@ -50,6 +55,8 @@ from catia_copilot.ui.ui_colors import (
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 from catia_copilot.ui.ui_layout import L
+from catia_copilot.catia.document import rename_document
+from catia_copilot.catia.connection import open_document
 
 logger = logging.getLogger(__name__)
 
@@ -1542,7 +1549,6 @@ class BomEditDialog(QDialog):
             return
 
         # ── 内联对话框 ────────────────────────────────────────────────────────
-        from PySide6.QtWidgets import QSpinBox, QRadioButton, QButtonGroup  # noqa: PLC0415
 
         _ROW_H    = 24   # 输入控件统一行高（px）
         _DLG_W    = 400  # 固定宽度（px）
@@ -1578,7 +1584,6 @@ class BomEditDialog(QDialog):
         # ── 统一 QGridLayout（7列：左padding + 3数据列×(标题+输入) + 右padding） ──
         # 实际布局：4列数据列，左右各1列 stretch 列用于居中
         # col: 0=stretch  1=前缀/起始  2=序列值/步长  3=后缀/位数  4=stretch
-        from PySide6.QtWidgets import QGridLayout  # noqa: PLC0415
 
         _COL_W = 100  # 所有输入框统一宽度（px）
 
@@ -2033,7 +2038,6 @@ class BomEditDialog(QDialog):
 
         QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
-        from catia_copilot.catia.document import rename_document  # noqa: PLC0415
 
         renamed_count = 0
         for fp, pn in reversed(to_rename):
@@ -2145,7 +2149,6 @@ class BomEditDialog(QDialog):
 
         QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
 
-        from catia_copilot.catia.document import rename_document  # noqa: PLC0415
         try:
             new_fp, skipped = rename_document(
                 fp, Path(new_fp).stem,
@@ -2454,8 +2457,6 @@ class BomEditDialog(QDialog):
         rows: list[dict],
     ) -> None:
         """将 *rows* 写入 *dest* 路径的 .xlsx 工作簿。"""
-        import openpyxl
-        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -2519,7 +2520,6 @@ class BomEditDialog(QDialog):
         rows: list[dict],
     ) -> None:
         """将 *rows* 写入 *dest* 路径的 UTF-8 CSV 文件（带 BOM 头）。"""
-        import csv
 
         with open(dest, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
@@ -2696,7 +2696,6 @@ class BomEditDialog(QDialog):
         使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
         cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
         """
-        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():
@@ -2713,7 +2712,6 @@ class BomEditDialog(QDialog):
     def _open_in_catia(self, fp: str) -> None:
         """在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-            from catia_copilot.catia.connection import open_document  # noqa: PLC0415
-            open_document(fp, foreground=True)
+                open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")

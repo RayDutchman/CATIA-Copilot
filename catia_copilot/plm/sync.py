@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA BOM → DocdokuPLM 同步逻辑。
 
 入口函数：sync_bom_to_plm()
@@ -15,13 +15,31 @@ BOM 提取，调用方负责线程调度。
 """
 
 import logging
+import os as _os
+import pathlib as _pl
+import tempfile
 import time
+import time as _time
+import urllib.parse as _up
+import win32com.client as _win32
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path, Path as _Path
 from typing import Any
 
-from catia_copilot.constants import PRESET_USER_REF_PROPERTIES, PLM_BUILTIN_ATTR_COLS, BomNodeType
+import pythoncom as _pcom
+
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.conversion import convert_drawing_to_pdf
+from catia_copilot.catia.dependencies import find_drawing_for_part
 from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.constants import (
+    PRESET_USER_REF_PROPERTIES,
+    PLM_BUILTIN_ATTR_COLS,
+    BomNodeType,
+    SOURCE_TO_DISPLAY,
+)
+from catia_copilot.plm.api_client import PlmApiError
 
 logger = logging.getLogger(__name__)
 
@@ -245,10 +263,6 @@ def collect_bom_for_sync(progress_callback=None) -> list[dict] | None:
 
     返回 None 表示 CATIA 连接失败；返回空列表表示文档无产品结构。
     """
-    from pathlib import Path as _Path
-    from catia_copilot.catia.catia_utils import get_catia_v5_application
-    from catia_copilot.constants import BomNodeType
-
     def _cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
@@ -387,8 +401,6 @@ def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
     """
     if not rows:
         return None
-
-    from catia_copilot.constants import SOURCE_TO_DISPLAY
 
     root: BomNode | None = None
     # stack[i] 存储 level i 的当前节点
@@ -538,8 +550,6 @@ def sync_bom_to_plm(
 
     upload_step 参数保留兼容旧调用方，新调用方通过 options.upload_step_file 控制。
     """
-    from catia_copilot.plm.api_client import PlmApiError
-
     if options is None:
         options = SyncOptions()
 
@@ -693,8 +703,6 @@ def sync_bom_to_plm(
 
 def _plm_call_with_retry(fn, *args, max_retries: int = _RETRY_MAX, **kwargs):
     """对网络层错误（status_code==0）自动重试，HTTP 4xx/5xx 不重试。"""
-    from catia_copilot.plm.api_client import PlmApiError
-
     last_exc: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
@@ -713,7 +721,6 @@ def _plm_call_with_retry(fn, *args, max_retries: int = _RETRY_MAX, **kwargs):
 def _get_checkout_owner(client, workspace: str, part_number: str, version: str) -> str | None:
     """查询零件当前的 checkout 持有者用户名，未签出时返回 None。"""
     try:
-        import urllib.parse as _up
         ws_q  = _up.quote(workspace)
         pn_q  = _up.quote(part_number)
         r = client._request("GET", f"/workspaces/{ws_q}/parts/{pn_q}-{version}") or {}
@@ -730,13 +737,10 @@ def _find_drawing_for_part(filepath: str) -> str | None:
     同步场景不需要用户选择，若有多个候选则记录日志后取第一个。
     未找到时返回 None。
     """
-    from catia_copilot.catia.dependencies import find_drawing_for_part
-
     candidates = find_drawing_for_part(filepath)
     if not candidates:
         return None
     if len(candidates) > 1:
-        import logging
         logging.getLogger(__name__).info(
             f"_find_drawing_for_part: 找到 {len(candidates)} 个候选图纸，取第一个：{candidates[0]}"
         )
@@ -802,8 +806,6 @@ def _sync_node(
         跨层级去重表——同一 Part Number 无论出现在多少个父节点下，只上传一次。
         后续出现时直接返回缓存的引用，但父节点仍会用正确的 cadInstances 写入装配关系。
     """
-    from catia_copilot.plm.api_client import PlmApiError
-
     if plm_parts_cache is None:
         plm_parts_cache = {}
     if tickets is None:
@@ -1020,8 +1022,6 @@ def _wait_for_conversion(
     本函数通过发送 col3="" 的过程行（_log_row）向 UI 推送进度；
     UI 侧通过 col3 是否为空区分过程行与终态行，不将其计入 node_done。
     """
-    import time as _time
-
     deadline = _time.monotonic() + timeout_s
     elapsed  = 0
     interval = poll_interval_s
@@ -1089,8 +1089,6 @@ def _do_update_and_upload(
     中间过程行（附件已上传、STP 已上传、转换进度）通过 col3="" 的 _log_row 输出，
     UI 解析时据此识别为过程行，不触发 node_done 计数。
     """
-    from catia_copilot.plm.api_client import PlmApiError
-
     # ── 属性更新 ──────────────────────────────────────────────────────────────
     attr_values = {
         k: v for k, v in node.attrs.items()
@@ -1115,8 +1113,6 @@ def _do_update_and_upload(
         result.errors.append(f"{lbl}: {msg}")
 
     # ── 文件上传（各项独立，由 SyncOptions 控制）────────────────────────────
-    import os as _os
-
     upload_col       = ""   # 供 ticket.upload_col 显示用（取最后一次非空上传结果）
     needs_conversion = False
     fp = node.filepath
@@ -1138,9 +1134,6 @@ def _do_update_and_upload(
             and fp.lower().endswith(".catpart")
             and _os.path.isfile(fp)):
         try:
-            import tempfile
-            import pythoncom as _pcom        # noqa: PLC0415
-            import win32com.client as _win32 # noqa: PLC0415
             _pcom.CoInitialize()
             try:
                 catia   = _win32.GetActiveObject("CATIA.Application")
@@ -1181,8 +1174,6 @@ def _do_update_and_upload(
         drawing_path = _find_drawing_for_part(fp)
         if drawing_path and _os.path.isfile(drawing_path):
             try:
-                import tempfile
-                from catia_copilot.catia.conversion import convert_drawing_to_pdf
                 with tempfile.TemporaryDirectory() as tmpdir:
                     converted = convert_drawing_to_pdf(
                         file_paths=[drawing_path],
@@ -1192,7 +1183,6 @@ def _do_update_and_upload(
                     )
                     if converted:
                         # convert_drawing_to_pdf 输出文件名与源文件同名，扩展名 .pdf
-                        import pathlib as _pl
                         pdf_path = str(_pl.Path(tmpdir) / (_pl.Path(drawing_path).stem + ".pdf"))
                         if _os.path.isfile(pdf_path):
                             client.upload_attached_file(
@@ -1265,8 +1255,6 @@ def _do_checkin_ticket(
     终态行格式：col1=source，col2=update_col，col3=已签入/✗ 签入失败
     这是每个节点唯一的终态行，UI 据此触发一次 node_done 计数。
     """
-    from catia_copilot.plm.api_client import PlmApiError
-
     try:
         _plm_call_with_retry(
             client.checkin_part, workspace, ticket.part_number, ticket.version

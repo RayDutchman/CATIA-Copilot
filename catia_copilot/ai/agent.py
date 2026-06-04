@@ -23,6 +23,9 @@ from typing import Any
 
 from PySide6.QtCore import QThread, Signal
 
+from catia_copilot.ai import config as ai_config
+from catia_copilot.ai.tools import tools_schema
+
 logger = logging.getLogger(__name__)
 
 # 工具调用等待超时（秒）
@@ -91,8 +94,6 @@ class AgentWorker(QThread):
 
     def _agent_loop(self) -> None:
         """多轮工具调用主循环。"""
-        from catia_copilot.ai.tools import tools_schema
-
         messages = list(self._messages)
         max_rounds = self._config.get("max_tool_rounds", 20)
 
@@ -175,8 +176,6 @@ class AgentWorker(QThread):
         通过 config.get_provider_for_model 路由到对应 provider，
         支持 ai_config.json 的多 provider / 多模型配置。
         """
-        from catia_copilot.ai import config as ai_config
-
         cfg = self._config
         model_id = cfg.get("default_model", "gpt-4o")
 

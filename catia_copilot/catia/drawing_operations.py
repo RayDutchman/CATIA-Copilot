@@ -1,4 +1,4 @@
-"""
+﻿"""
 图纸操作模块
 
 提供新建图纸和刷新图纸功能，替代原有的 VBScript 宏实现。
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 from catia_copilot.constants import DRAWING_SYNC_STANDARD_PARAMS, DRAWING_SYNC_USER_PROPS
+from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document import get_document_type  # noqa: F401 — re-exported for callers
 
 logger = logging.getLogger(__name__)
@@ -186,8 +187,6 @@ def generate_drawing(
     Raises:
         RuntimeError: 当前文档不是零件/装配体，或创建图纸失败时
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    
     try:
         app = get_catia_v5_application()
         
@@ -272,8 +271,6 @@ def refresh_drawing(
     Raises:
         RuntimeError: 当前文档不是图纸，或找不到对应的零件/装配体时
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    
     try:
         app = get_catia_v5_application()
         

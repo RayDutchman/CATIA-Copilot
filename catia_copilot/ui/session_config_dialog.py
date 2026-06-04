@@ -1,4 +1,4 @@
-"""
+﻿"""
 per-session 设置面板。
 
 触发位置：AI 聊天面板输入框下方的 ⚙ 按钮。
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QPushButton, QSpinBox, QSlider,
     QComboBox, QDialogButtonBox, QFileDialog, QWidget,
-    QCheckBox,
+    QCheckBox, QMessageBox,
 )
 
 from catia_copilot.ai import config as ai_config
@@ -203,7 +203,6 @@ class SessionConfigDialog(QDialog):
 
     def _clear_messages(self):
         """二次确认后清空会话消息记录，并调用 on_clear 回调。"""
-        from PySide6.QtWidgets import QMessageBox
         ret = QMessageBox.question(
             self,
             "清空消息记录",

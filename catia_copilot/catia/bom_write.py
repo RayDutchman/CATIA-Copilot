@@ -12,7 +12,9 @@ from pathlib import Path
 from catia_copilot.constants import (
     BOM_READONLY_COLUMNS,
     SOURCE_FROM_DISPLAY,
+    PRODUCT_ATTR_WRITE_MAP,
 )
+from catia_copilot.catia.connection import get_catia_v5_application
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +37,6 @@ def write_bom_to_catia(
                           可抛出异常以中止。遍历顺序为后序（子节点在父节点之前），
                           因此较深层级在父级之前写入 CATIA 。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.constants import PRODUCT_ATTR_WRITE_MAP
-
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
     CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization

@@ -58,6 +58,7 @@ from pathlib import Path
 
 from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType
 from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,6 @@ def _position_to_mat4(product) -> list[list[float]]:
 
     若调用失败或返回值无效，返回 4×4 单位矩阵（等价于零件位于父坐标系原点，无旋转）。
     """
-    from catia_copilot.catia.connection import wrap_product
 
     try:
         product_name = getattr(product, "Name", repr(product))
@@ -445,7 +445,6 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
       }
     若零件未赋材料导致 mass == 0 或调用失败，则返回 None。
     """
-    from catia_copilot.catia.connection import wrap_product
 
     try:
         # 零件文档根 Product：参考系 = 零件自身坐标系
@@ -867,7 +866,6 @@ def remeasure_part_mass_props(
         成功时返回质量特性字典（内部 SI 单位，与 :func:`collect_mass_props_rows`
         相同格式）；找不到文档或读取失败时返回 None。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application  # 运行时导入，避免无 CATIA 环境时报错
     try:
         application = get_catia_v5_application()
         application.Visible = True
@@ -938,7 +936,6 @@ def collect_mass_props_rows(
           Density, Weight, CogX, CogY, CogZ, Ixx, Iyy, Izz, Ixy, Ixz, Iyz,
           _filepath, _placement, _not_found, _no_file, _unreadable, _meas_failed
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
     CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
