@@ -1,7 +1,7 @@
 ﻿"""
 PLM 工作台主窗口。
 
-独立非模态 QMainWindow，通过 QTabWidget 整合所有 PLM 对接功能：
+独立非模态 QDialog，通过 QTabWidget 整合所有 PLM 对接功能：
   Tab 1 - 连接：配置与测试 PLM 服务端连接
   Tab 2 - 同步： BOM 预览 + 增量同步（附件上传可选）
   Tab 3 - 标签：Tag 管理与自动映射规则
@@ -39,8 +39,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMainWindow,
-    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -333,7 +331,7 @@ class _CreateTagWorker(QThread):
 # 主窗口
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PlmWorkbench(QMainWindow):
+class PlmWorkbench(QDialog):
     """PLM 工作台主窗口（非模态）。"""
 
     def __init__(self, parent=None):
@@ -353,9 +351,7 @@ class PlmWorkbench(QMainWindow):
         except Exception:
             pass
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
+        root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
         self._tabs = QTabWidget()
@@ -383,13 +379,6 @@ class PlmWorkbench(QMainWindow):
         # 窗口首次显示后，把右侧"连接日志"高度对齐到左侧"PLM 连接配置"
         if hasattr(self, "_grp_cfg") and hasattr(self, "_grp_conn_log"):
             self._grp_conn_log.setFixedHeight(self._grp_cfg.sizeHint().height())
-
-    def keyPressEvent(self, event) -> None:
-        """ESC 键关闭窗口。"""
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
 
     def closeEvent(self, event):  # noqa: N802
         """关闭时保存窗口几何（位置和尺寸）。"""
