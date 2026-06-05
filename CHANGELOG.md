@@ -4,6 +4,29 @@
 
 ---
 
+## [2.0.1] — 2026-06-05
+
+### 新增 — BOM 工作台 V2（即时写回版）
+
+- **`bom_edit_dialog_v2.py`**：全新 BOM 工作台 V2，每次单元格编辑后立即通过缓存 COM 引用写回 CATIA，无需点击"应用"按钮批量提交。
+- **完整 BOM 模式**：新增"完整 BOM"单选按钮，每个装配实例单独一行；含可编辑"实例名"列，直接写回 `product.Name`。
+- **`collect_bom_rows_full()`**：逐实例遍历产品树，经 `ReferenceProduct.Products.Item(i)` 取得可写实例引用（修复 `instance.Products.Item(i)` 代理对象 `.Name` setter 静默 no-op 的根因）。
+- **`build_hierarchical_rows()`**：纯 Python 后处理，将完整行重组为层级视图，切换显示模式无需重新遍历 CATIA。
+- **`write_cell_fast()`**：通过缓存 COM 引用单格直接写入，含实例名分支。
+- **右键菜单新增"自动修改实例名"**：对选中节点的子树按 `PartNumber.n` 规则递归重命名实例名。
+- **右键菜单新增"自动修改文件名"**：对选中节点子树中文件名与零件编号不符的文件批量另存为改名；替代原工具栏"按零件编号修改文件名"按钮。
+
+### 修复
+
+- **实例名列切换后不消失**：从"完整 BOM"切换到"层级 BOM"时，实例名列仍然显示的问题——为"层级 BOM"单选按钮补充 `_on_hierarchical_bom_toggled` handler，正确重置 `_full_bom = False` 并重建列。
+- **`_on_bom_type_changed` 逻辑简化**：各 BOM 模式的单选按钮均只在 `checked=True` 时处理，消除旧代码中 `False` 分支互相干扰的问题。
+
+### 样式
+
+- BOM 类型选择器顺序调整："完整 BOM"移至最前（完整 BOM → 层级 BOM → 汇总 BOM）。
+
+---
+
 ## [2.0.0] — 2026-06-04
 
 ### 新增 — AI Copilot 助手

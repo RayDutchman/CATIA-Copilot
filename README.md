@@ -2,7 +2,7 @@
 
 > 一款面向工程团队的 CATIA V5 辅助工具，旨在简化日常操作、提升工作效率。
 
-**版本：** 2.0.0 &nbsp;|&nbsp; **发布日期：** 2026-06-04 &nbsp;|&nbsp; **作者：** CHEN Weibo
+**版本：** 2.0.1 &nbsp;|&nbsp; **发布日期：** 2026-06-05 &nbsp;|&nbsp; **作者：** CHEN Weibo
 
 > 历史版本变更说明见 [CHANGELOG.md](CHANGELOG.md)。
 

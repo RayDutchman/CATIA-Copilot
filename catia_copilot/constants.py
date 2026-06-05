@@ -12,8 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 APP_NAME    = "CATIA Copilot"
-APP_VERSION = "2.0.0"
-APP_DATE    = "2026-06-04"
+APP_VERSION = "2.0.1"
+APP_DATE    = "2026-06-05"
 APP_AUTHOR  = "CHEN Weibo"
 APP_CONTACT = "thucwb@gmail.com"
 
