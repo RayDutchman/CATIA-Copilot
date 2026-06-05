@@ -456,8 +456,6 @@ def ensure_revolute_axis(part, axis: str = "z"):
         raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
 
 
-
-
 def add_pad(part, sketch, depth: float):
     """将草图拉伸指定深度，返回 pycatia Pad 对象。
 

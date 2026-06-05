@@ -227,7 +227,7 @@ BOM_COLUMN_MIN_WIDTHS: dict[str, int] = {
     "Definition":   20,
     "Revision":     10,
     "Source":       8,
-    "Description":  20,
+    "Description":  40,
     "Quantity":     8,
 }
 
@@ -308,7 +308,6 @@ PART_NUMBER_VALID_PATTERN: re.Pattern = re.compile(
 # ---------------------------------------------------------------------------
 
 # DocdokuPLM 内置属性列（对应 PartRevision 的标准字段，作为 instanceAttributes 上传）
-# "Description" 是 PLM 创建零件时的描述字段，其余四项与 BOM_HIDEABLE_COLUMNS 一致
 PLM_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
 
 # ---------------------------------------------------------------------------

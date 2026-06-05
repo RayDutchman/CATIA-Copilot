@@ -60,7 +60,7 @@ CATIA-Copilot/
 │       ├── find_deps_dialog.py      #   依赖查找对话框（开发中）
 │       ├── help_dialog.py           #   帮助文档对话框
 │       ├── log_window.py            #   日志窗口
-│       └── style.qss                #   QSS 样式表（由 theme_manager 动态注入）
+│       └── native.qss               #   QSS 样式表（由 theme_manager 动态注入）
 ├── macros/                          # CATIA VBA 宏文件
 │   ├── fastener_assembly.txt        #   紧固件装配宏主模块
 │   ├── fastener_assembly_userforms.txt  # 紧固件装配 FlipForm UI
@@ -105,7 +105,6 @@ BOM 树同步的核心逻辑：
 
 ### `ui/theme_manager.py`
 
-- 维护深色/浅色两套 QSS 模板，通过占位符注入圆角、字体等常量
 - 通过 `QSettings` 持久化用户偏好
 - 发出 `theme_changed` 信号，各对话框订阅后动态更新行着色等无法由 QSS 覆盖的样式
 
@@ -129,7 +128,6 @@ BOM 树同步的核心逻辑：
 
 | 决策 | 原因 |
 |------|------|
-| 不引入 `pycatia` 依赖 | 直接用 `win32com.client` 更轻量，避免包装层带来的版本兼容问题 |
 | 不引入 `structlog` / Sentry | 项目规模不需要，标准库 `logging` 已够用 |
 | PLM 存在性判断改用 `POST` 探测 | PLM 服务端 `GET /parts/{pn}-{ver}` 存在全局 NPE bug（PLM-06），POST 创建成功=不存在，400"不唯一"=已存在 |
 | VBA 宏源码用 `.txt` 存储 | `.catvba` 是二进制，Git 无法 diff；`.txt` 便于代码审查和版本管理 |
