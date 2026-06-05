@@ -233,11 +233,12 @@ class BomEditDialogV2(QDialog):
         self._bom_type_btn_group.addButton(self._radio_hierarchical)
         self._bom_type_btn_group.addButton(self._radio_summary_bom)
         self._bom_type_btn_group.addButton(self._radio_full_bom)
+        self._radio_hierarchical.toggled.connect(self._on_hierarchical_bom_toggled)
         self._radio_summary_bom.toggled.connect(self._on_bom_type_changed)
         self._radio_full_bom.toggled.connect(self._on_full_bom_toggled)
+        bom_type_row.addWidget(self._radio_full_bom)
         bom_type_row.addWidget(self._radio_hierarchical)
         bom_type_row.addWidget(self._radio_summary_bom)
-        bom_type_row.addWidget(self._radio_full_bom)
 
         self._summary_opts_widget = QWidget()
         summary_opts_layout = QHBoxLayout(self._summary_opts_widget)
@@ -441,26 +442,23 @@ class BomEditDialogV2(QDialog):
     # ── BOM类型切换 ───────────────────────────────────────────────────────────
 
     def _on_bom_type_changed(self, summary_checked: bool) -> None:
-        # When "完整 BOM" is checked, QButtonGroup unchecks "汇总 BOM" which
-        # fires this slot with summary_checked=False.  That switch is handled
-        # entirely by _on_full_bom_toggled; ignore the false-negative here.
-        if not summary_checked and self._radio_full_bom.isChecked():
+        """处理"汇总 BOM"单选按钮切换。
+
+        切换到层级/完整 BOM 由各自按钮的 toggled 信号处理，此处仅响应
+        summary_checked=True（即"汇总 BOM"被选中）的情况。
+        """
+        if not summary_checked:
             return
-        if summary_checked and self._full_bom:
-            self._full_bom = False
-            self._edit_settings.setValue("full_bom", False)
-        self._summarize = summary_checked
-        self._edit_settings.setValue("summarize", summary_checked)
-        self._summary_opts_widget.setVisible(summary_checked)
-        # 若BOM已加载，则从原始行重新生成显示行并刷新表格
+        self._full_bom  = False
+        self._summarize = True
+        self._edit_settings.setValue("full_bom", False)
+        self._edit_settings.setValue("summarize", True)
+        self._summary_opts_widget.setVisible(True)
         if self._raw_rows:
-            self._rows = (
-                flatten_bom_to_summary(
-                    self._raw_rows,
-                    include_assemblies=self._summary_include_assemblies,
-                    sort_column=None,
-                )
-                if summary_checked else self._raw_rows
+            self._rows = flatten_bom_to_summary(
+                self._raw_rows,
+                include_assemblies=self._summary_include_assemblies,
+                sort_column=None,
             )
             self._rebuild_columns_and_repopulate()
 
@@ -476,6 +474,23 @@ class BomEditDialogV2(QDialog):
         self._summary_opts_widget.setVisible(False)
         if self._full_rows:
             self._rows = self._full_rows
+            self._rebuild_columns_and_repopulate()
+
+    def _on_hierarchical_bom_toggled(self, checked: bool) -> None:
+        """处理"层级 BOM"单选按钮切换。
+
+        切换到汇总/完整 BOM 由各自按钮的 toggled 信号处理，此处仅响应
+        checked=True（即"层级 BOM"被选中）的情况。
+        """
+        if not checked:
+            return
+        self._full_bom  = False
+        self._summarize = False
+        self._edit_settings.setValue("full_bom", False)
+        self._edit_settings.setValue("summarize", False)
+        self._summary_opts_widget.setVisible(False)
+        if self._raw_rows:
+            self._rows = self._raw_rows
             self._rebuild_columns_and_repopulate()
 
     def _on_include_assemblies_toggled(self, checked: bool) -> None:
@@ -807,7 +822,7 @@ class BomEditDialogV2(QDialog):
                 if col_name in self._col_widths:
                     self._table.setColumnWidth(col_idx, self._col_widths[col_name])
 
-        self._rename_file_btn.setEnabled(True)
+        # self._rename_file_btn.setEnabled(True)
         self._export_btn.setEnabled(True)
 
     def _populate_table(self) -> None:
@@ -2102,14 +2117,14 @@ class BomEditDialogV2(QDialog):
         _collect(target_product)
 
         if not plan:
-            QMessageBox.information(self, "无子节点", "选中节点下没有找到可改名的子节点。")
+            QMessageBox.information(self, "无子节点", "选中节点下没有子节点。")
             return
 
         # ── 确认对话框 ────────────────────────────────────────────────────────
         already_ok = sum(1 for r, n in plan if r.get(BOM_INSTANCE_NAME_COLUMN) == n)
         need_change = len(plan) - already_ok
         if need_change == 0:
-            QMessageBox.information(self, "无需修改", "所有实例名已符合 PartNumber.X 规则。")
+            QMessageBox.information(self, "无需修改", "所有实例名已符合 PartNumber.n 规则。")
             return
 
         reply = QMessageBox.question(
