@@ -23,7 +23,7 @@ from catia_copilot.constants import (
     SOURCE_TO_DISPLAY,
 )
 from catia_copilot.utils import estimate_column_width
-from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def export_bom_to_excel(
             file_ext = ".csv" if use_csv else ".xlsx"
             dest = dest_dir / f"{src_name.stem}{bom_suffix}{file_ext}"
 
-            rows = collect_bom_rows(None, columns, custom_columns,
+            rows = collect_bom_rows_archive(None, columns, custom_columns,
                                      row_progress_callback)
             if summarize:
                 rows = flatten_bom_to_summary(
@@ -230,7 +230,7 @@ def export_bom_to_excel(
                 pass
 
         logger.info(f"Opening: {src}")
-        rows = collect_bom_rows(str(src), columns, custom_columns,
+        rows = collect_bom_rows_archive(str(src), columns, custom_columns,
                                 row_progress_callback)
         if summarize:
             rows = flatten_bom_to_summary(

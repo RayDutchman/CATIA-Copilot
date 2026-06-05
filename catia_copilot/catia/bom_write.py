@@ -3,7 +3,7 @@ BOM 写回 CATIA 模块。
 
 提供：
 - write_bom_to_catia() – 遍历产品树并通过 COM 将编辑后的属性写回
-- write_cell_fast()    – 通过缓存 COM 引用直接写入单个单元格（无树遍历）
+- write_cell()    – 通过缓存 COM 引用直接写入单个单元格（无树遍历）
 """
 
 import logging
@@ -82,7 +82,7 @@ def _set_user_prop(product, name: str, value: str) -> None:
             continue
 
 
-def write_cell_fast(
+def write_cell(
     product,
     col: str,
     value: str,
@@ -113,7 +113,7 @@ def write_cell_fast(
         try:
             product.Name = value
         except Exception as e:
-            logger.debug("write_cell_fast: 无法设置实例名 → %s", e)
+            logger.debug("write_cell: 无法设置实例名 → %s", e)
     elif col == "Part Number":
         try:
             product.PartNumber = value

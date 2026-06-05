@@ -46,10 +46,10 @@ from catia_copilot.constants import (
     TYPE_DISPLAY_NAMES,
 )
 from catia_copilot.catia.bom_collect import (
-    collect_bom_rows_full, build_hierarchical_rows, flatten_bom_to_summary,
+    collect_bom_rows, build_hierarchical_rows, flatten_bom_to_summary,
     refresh_row_from_com,
 )
-from catia_copilot.catia.bom_write import write_bom_to_catia, write_cell_fast
+from catia_copilot.catia.bom_write import write_bom_to_catia, write_cell
 from catia_copilot.utils import read_catia_thumbnail
 from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
@@ -88,14 +88,14 @@ class BomEditDialogV2(QDialog):
     - 每次单元格编辑后立即通过缓存的 COM 引用写回 CATIA （无批量提交）。
     - 不维护 ``_modified_keys`` / ``_snapshot_data`` 脏标记。
     - "完成"按钮直接关闭对话框，无需写回（所有修改已即时写入 CATIA ）。
-    - "按零件编号修改文件名"移入右键菜单，重命名为"自动修改文件名"。
+    - "按零件编号修改文件名"移入右键菜单，重命名为"自动修改文件名（子树范围）"。
     - "另存为"按键删除（右键菜单中已有）。
     - 底部状态栏显示上次写入结果（成功/失败）。
     """
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("BOM 工作台 V2（即时写回）")
+        self.setWindowTitle("BOM 工作台 V2")
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
         self.setWindowFlags(
@@ -131,8 +131,8 @@ class BomEditDialogV2(QDialog):
             c for c in saved_hideable if c in BOM_HIDEABLE_COLUMNS
         ]
 
-        self._summarize: bool = self._edit_settings.value("summarize", False, type=bool)
         self._full_bom: bool  = self._edit_settings.value("full_bom",  False, type=bool)
+        self._summarize: bool = self._edit_settings.value("summarize", False, type=bool)
         # 完整 BOM 与汇总 BOM 互斥；若两者同时为 True（异常存档），以完整 BOM 优先
         if self._full_bom:
             self._summarize = False
@@ -166,10 +166,10 @@ class BomEditDialogV2(QDialog):
         self._item_by_row: list[QTreeWidgetItem] = []
         # BOM成功加载至少一次后置为True
         self._bom_loaded: bool = False
-        # 原始（层级）BOM行，由 build_hierarchical_rows(_full_rows) 派生；切换显示模式时用于重建行数据
-        self._raw_rows: list[dict] = []
-        # 完整（逐实例）BOM行，由 collect_bom_rows_full() 加载；与 _raw_rows 同时在 _load_bom 中填充
+        # 完整（逐实例）BOM行，由 collect_bom_rows() 加载；与 _hierarchical_rows 同时在 _load_bom 中填充
         self._full_rows: list[dict] = []
+        # 层级BOM行，由 build_hierarchical_rows(_full_rows) 派生；切换显示模式时用于重建行数据
+        self._hierarchical_rows: list[dict] = []
         # 零件编号→树形项索引，用于快速联动更新（性能优化）
         self._pn_to_items: dict[str, list[QTreeWidgetItem]] = {}
         # 列名→像素宽度缓存；在列可见性切换时保留用户调整的列宽
@@ -217,25 +217,25 @@ class BomEditDialogV2(QDialog):
         # 第一行：单选按钮 + 汇总选项
         bom_type_row = QHBoxLayout()
         self._bom_type_btn_group = QButtonGroup(self)
+        self._radio_full_bom     = QRadioButton("完整 BOM")
         self._radio_hierarchical = QRadioButton("层级 BOM")
         self._radio_summary_bom  = QRadioButton("汇总 BOM")
-        self._radio_full_bom     = QRadioButton("完整 BOM")
         self._radio_full_bom.setToolTip(
-            "显示完整产品树，每个实例单独一行，包含实例名列（可编辑）"
+            "显示完整产品树，每个实例单独一行，包含实例名列"
         )
-        self._radio_hierarchical.setMinimumHeight(24)
+        self._radio_full_bom.setMinimumHeight(24)
         if self._full_bom:
             self._radio_full_bom.setChecked(True)
         elif self._summarize:
             self._radio_summary_bom.setChecked(True)
         else:
             self._radio_hierarchical.setChecked(True)
+        self._bom_type_btn_group.addButton(self._radio_full_bom)
         self._bom_type_btn_group.addButton(self._radio_hierarchical)
         self._bom_type_btn_group.addButton(self._radio_summary_bom)
-        self._bom_type_btn_group.addButton(self._radio_full_bom)
+        self._radio_full_bom.toggled.connect(self._on_full_bom_toggled)
         self._radio_hierarchical.toggled.connect(self._on_hierarchical_bom_toggled)
         self._radio_summary_bom.toggled.connect(self._on_bom_type_changed)
-        self._radio_full_bom.toggled.connect(self._on_full_bom_toggled)
         bom_type_row.addWidget(self._radio_full_bom)
         bom_type_row.addWidget(self._radio_hierarchical)
         bom_type_row.addWidget(self._radio_summary_bom)
@@ -407,7 +407,6 @@ class BomEditDialogV2(QDialog):
         self._export_btn.clicked.connect(self._export_table)
         btn_row.addWidget(self._export_btn)
 
-        # V2：无"应用"按钮（编辑即时写回 CATIA ，无需批量提交）
         self._finish_btn = QPushButton("关闭")
         self._finish_btn.setDefault(True)
         self._finish_btn.setEnabled(True)
@@ -454,9 +453,9 @@ class BomEditDialogV2(QDialog):
         self._edit_settings.setValue("full_bom", False)
         self._edit_settings.setValue("summarize", True)
         self._summary_opts_widget.setVisible(True)
-        if self._raw_rows:
+        if self._hierarchical_rows:
             self._rows = flatten_bom_to_summary(
-                self._raw_rows,
+                self._hierarchical_rows,
                 include_assemblies=self._summary_include_assemblies,
                 sort_column=None,
             )
@@ -489,17 +488,17 @@ class BomEditDialogV2(QDialog):
         self._edit_settings.setValue("full_bom", False)
         self._edit_settings.setValue("summarize", False)
         self._summary_opts_widget.setVisible(False)
-        if self._raw_rows:
-            self._rows = self._raw_rows
+        if self._hierarchical_rows:
+            self._rows = self._hierarchical_rows
             self._rebuild_columns_and_repopulate()
 
     def _on_include_assemblies_toggled(self, checked: bool) -> None:
         self._summary_include_assemblies = checked
         self._edit_settings.setValue("summary_include_assemblies", checked)
         # 若BOM已加载且汇总模式激活，则重建汇总显示
-        if self._summarize and self._raw_rows:
+        if self._summarize and self._hierarchical_rows:
             self._rows = flatten_bom_to_summary(
-                self._raw_rows,
+                self._hierarchical_rows,
                 include_assemblies=checked,
                 sort_column=None,
             )
@@ -736,7 +735,7 @@ class BomEditDialogV2(QDialog):
                 BOM_EDIT_COLUMN_ORDER
                 + [c for c in self._all_custom_columns if c not in BOM_EDIT_COLUMN_ORDER]
             ))
-            rows = collect_bom_rows_full(
+            rows = collect_bom_rows(
                 file_path, all_read_cols, self._all_custom_columns,
                 progress_callback=_on_row_collected,
             )
@@ -758,19 +757,19 @@ class BomEditDialogV2(QDialog):
 
         # 保存完整逐实例行（唯一 COM 遍历结果）并派生层级行，切换显示模式无需重新遍历
         self._full_rows = rows
-        self._raw_rows  = build_hierarchical_rows(rows)
+        self._hierarchical_rows  = build_hierarchical_rows(rows)
 
         # 根据当前模式决定显示行
         if self._full_bom:
             display_rows = self._full_rows
         elif self._summarize:
             display_rows = flatten_bom_to_summary(
-                self._raw_rows,
+                self._hierarchical_rows,
                 include_assemblies=self._summary_include_assemblies,
                 sort_column=None,
             )
         else:
-            display_rows = self._raw_rows
+            display_rows = self._hierarchical_rows
 
         self._rows = display_rows
 
@@ -781,7 +780,7 @@ class BomEditDialogV2(QDialog):
             + [c for c in self._all_custom_columns if c not in BOM_EDIT_COLUMN_ORDER]
         ))
         self._canonical_data = {}
-        for row in self._raw_rows:
+        for row in self._hierarchical_rows:
             pn = str(row.get("Part Number", ""))
             if pn and pn not in self._canonical_data:
                 data: dict[str, str] = {}
@@ -791,9 +790,7 @@ class BomEditDialogV2(QDialog):
                         val = SOURCE_TO_DISPLAY.get(val, val)
                     data[col] = val
                 self._canonical_data[pn] = data
-
-        # V2：无快照/脏标记，加载后即为当前状态
-        self._last_write_status = ""
+        
         # 加载新BOM时清空撤销/重做历史
         self._undo_stack.clear()
         self._redo_stack.clear()
@@ -822,7 +819,6 @@ class BomEditDialogV2(QDialog):
                 if col_name in self._col_widths:
                     self._table.setColumnWidth(col_idx, self._col_widths[col_name])
 
-        # self._rename_file_btn.setEnabled(True)
         self._export_btn.setEnabled(True)
 
     def _populate_table(self) -> None:
@@ -1002,7 +998,6 @@ class BomEditDialogV2(QDialog):
                     item.setToolTip(ci, no_file_tip)
 
         self._table.expandAll()
-        # V2：无脏标记，无需恢复视觉标记
         self._table.blockSignals(False)
         self._is_updating = False
 
@@ -1078,7 +1073,7 @@ class BomEditDialogV2(QDialog):
 
         对于独立文件（Type == Part / Product）：写一次，``ReferenceProduct``
         自动覆盖所有实例。
-        对于嵌入部件（Type == Component）：遍历 ``_raw_rows`` 中所有匹配行，
+        对于嵌入部件（Type == Component）：遍历 ``_hierarchical_rows`` 中所有匹配行，
         逐一写入 ``_product``（及 ``_product_extras``）。
 
         ``label`` 用于状态栏前缀（"已写回" / "已撤销" / "已重做"），
@@ -1090,14 +1085,14 @@ class BomEditDialogV2(QDialog):
 
         # 判断目标类型：先找任意一行的 Type
         target_type = ""
-        for r in self._raw_rows:
+        for r in self._hierarchical_rows:
             if str(r.get("Part Number", "")) == pn:
                 target_type = str(r.get("Type", ""))
                 break
 
         if target_type == BomNodeType.COMPONENT:
             # 嵌入部件：需写所有实例
-            for r in self._raw_rows:
+            for r in self._hierarchical_rows:
                 if str(r.get("Part Number", "")) != pn:
                     continue
                 if str(r.get("Type", "")) != BomNodeType.COMPONENT:
@@ -1112,8 +1107,8 @@ class BomEditDialogV2(QDialog):
                         written_ids.add(id(extra))
         else:
             # 独立文件：写一次即可（ReferenceProduct 覆盖所有实例）
-            # 使用 _raw_rows（而非可能是汇总摘要行的 _rows）取第一个有 _product 的匹配行
-            for r in self._raw_rows:
+            # 使用 _hierarchical_rows（而非可能是汇总摘要行的 _rows）取第一个有 _product 的匹配行
+            for r in self._hierarchical_rows:
                 if str(r.get("Part Number", "")) == pn:
                     p = r.get("_product")
                     if p is not None:
@@ -1128,13 +1123,13 @@ class BomEditDialogV2(QDialog):
         errors: list[str] = []
         for p in products_to_write:
             try:
-                write_cell_fast(p, col_name, value, self._all_custom_columns)
+                write_cell(p, col_name, value, self._all_custom_columns)
             except Exception as e:
                 errors.append(str(e))
 
         if errors:
             self._last_write_status = f"写入失败：{errors[0]}"
-            logger.error("V2 write_cell_fast error for pn=%s col=%s: %s",
+            logger.error("V2 write_cell error for pn=%s col=%s: %s",
                          pn, col_name, errors)
         else:
             self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
@@ -1168,7 +1163,6 @@ class BomEditDialogV2(QDialog):
             if pn in self._canonical_data:
                 old_vals[pn] = self._canonical_data[pn].get("Source", "")
                 self._canonical_data[pn]["Source"] = text
-                # V2：即时写回 CATIA
                 self._write_cell_to_catia(pn, "Source", text)
 
         # 性能优化：使用零件编号→树形项索引，避免全树遍历
@@ -1221,7 +1215,6 @@ class BomEditDialogV2(QDialog):
             if pn in self._canonical_data:
                 old_vals[pn] = self._canonical_data[pn].get(col_name, "")
                 self._canonical_data[pn][col_name] = text
-                # V2：即时写回 CATIA
                 self._write_cell_to_catia(pn, col_name, text)
 
         # 性能优化：使用零件编号→树形项索引，避免全树遍历
@@ -1314,8 +1307,6 @@ class BomEditDialogV2(QDialog):
                     self._is_updating = False
                     return
 
-            # V2：即时写回，无需与快照比对冲突（_canonical_data 即当前状态）
-
         selected_row_indices = {
             it.data(0, Qt.ItemDataRole.UserRole)
             for it in self._table.selectedItems()
@@ -1333,7 +1324,6 @@ class BomEditDialogV2(QDialog):
                 if r_pn in self._canonical_data:
                     old_vals[r_pn] = self._canonical_data[r_pn].get(col_name, "")
                     self._canonical_data[r_pn][col_name] = new_value
-                    # V2：即时写回 CATIA
                     self._write_cell_to_catia(r_pn, col_name, new_value)
 
         # 性能优化：使用零件编号→树形项索引，避免全树遍历
@@ -1408,18 +1398,18 @@ class BomEditDialogV2(QDialog):
         if self._full_rows and row_idx < len(self._full_rows):
             self._full_rows[row_idx][BOM_INSTANCE_NAME_COLUMN] = new_value
 
-        # V2：即时写回 CATIA
+        # 即时写回 CATIA
         product = row_data.get("_product")
         if product is not None:
             try:
-                write_cell_fast(product, BOM_INSTANCE_NAME_COLUMN,
+                write_cell(product, BOM_INSTANCE_NAME_COLUMN,
                                 new_value, self._all_custom_columns)
                 self._last_write_status = (
                     f"已写回：实例名 {old_val!r} → {new_value!r}"
                 )
             except Exception as e:
                 self._last_write_status = f"实例名写入失败：{e}"
-                logger.error("write_cell_fast instance name error: %s", e)
+                logger.error("write_cell instance name error: %s", e)
         else:
             self._last_write_status = f"⚠ 未找到实例 COM 引用（行 {row_idx + 1}）"
         self._update_status()
@@ -1460,7 +1450,7 @@ class BomEditDialogV2(QDialog):
                 old_vals[(pn, col_name)] = old_val
             self._canonical_data[pn][col_name] = new_value
             pns_to_update.add(pn)
-            # V2：即时写回 CATIA
+            # 即时写回 CATIA
             self._write_cell_to_catia(pn, col_name, new_value)
 
         if not pns_to_update:
@@ -1563,7 +1553,7 @@ class BomEditDialogV2(QDialog):
                     continue
 
                 self._canonical_data[pn][col_name] = value
-                # V2：undo/redo 也即时写回 CATIA
+                # 即时写回 CATIA
                 self._write_cell_to_catia(pn, col_name, value, label=_label)
 
                 # 更新界面中所有关联该零件编号的单元格
@@ -1977,7 +1967,7 @@ class BomEditDialogV2(QDialog):
     def _refresh_pns_appearance(self, pns: set[str]) -> None:
         """刷新指定零件编号对应所有行的视觉外观。
 
-        V2 无脏标记——所有单元格始终显示默认外观（已即时写回 CATIA）。
+        无脏标记——所有单元格始终显示默认外观（已即时写回 CATIA）。
         锁定行（文件未找到/轻量化）不受影响。
         """
         # 纯视觉更新（setFont/setForeground/setData role）会触发 itemChanged 信号，
@@ -2065,7 +2055,7 @@ class BomEditDialogV2(QDialog):
     # ── 关闭 ───────────────────────────────────────────────────────────────────
 
     def _on_cancel(self) -> None:
-        """V2：所有修改均已即时写回，直接关闭。"""
+        """所有修改均已即时写回，直接关闭。"""
         self.reject()
 
     def done(self, result: int) -> None:
@@ -2074,7 +2064,7 @@ class BomEditDialogV2(QDialog):
         super().done(result)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """V2：所有修改均已即时写回，直接关闭（无需确认）。"""
+        """所有修改均已即时写回，直接关闭（无需确认）。"""
         super().closeEvent(event)
 
     # ── 写回CATIA ─────────────────────────────────────────────────────────────
@@ -2088,7 +2078,7 @@ class BomEditDialogV2(QDialog):
         - 若子节点为产品（Product）或部件（Component），则递归执行同样操作。
         - 叶节点（Part）不再递归。
         - 通过缓存的 ``_product.Name = value`` 即时写回 CATIA。
-        - 操作完成后重派生 ``_raw_rows``，刷新表格。
+        - 操作完成后重派生 ``_hierarchical_rows``，刷新表格。
         """
         target_row     = self._rows[row_idx]
         target_product = target_row.get("_product")
@@ -2128,7 +2118,7 @@ class BomEditDialogV2(QDialog):
             return
 
         reply = QMessageBox.question(
-            self, "自动修改实例名",
+            self, "自动修改实例名（子树范围）",
             f"共 {len(plan)} 个实例，其中 {need_change} 个需要修改。\n\n是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -2154,17 +2144,17 @@ class BomEditDialogV2(QDialog):
                 logger.error("auto_rename_instance_names error pn=%s: %s", pn, e)
 
         # ── 重派生层级行，刷新表格 ────────────────────────────────────────────
-        self._raw_rows = build_hierarchical_rows(self._full_rows)
+        self._hierarchical_rows = build_hierarchical_rows(self._full_rows)
         if self._full_bom:
             self._rows = self._full_rows
         elif self._summarize:
             self._rows = flatten_bom_to_summary(
-                self._raw_rows,
+                self._hierarchical_rows,
                 include_assemblies=self._summary_include_assemblies,
                 sort_column=None,
             )
         else:
-            self._rows = self._raw_rows
+            self._rows = self._hierarchical_rows
         self._populate_table()
 
         if errors:
@@ -2177,25 +2167,37 @@ class BomEditDialogV2(QDialog):
             self._update_status()
 
     def _auto_rename_files(self, row_idx: int) -> None:
-        """将选中产品/部件子树内所有文件名与零件编号不符的文件批量另存为改名。
+        """将选中节点及其子树内所有文件名与零件编号不符的文件批量另存为改名。
 
         规则：
-        - 作用范围：选中节点（不含自身）的整个子树中 ``Level >`` 当前层级的所有行。
+        - 作用范围：选中节点（包含自身）的整个子树中 ``Level >=`` 当前层级的所有行。
+          若选中节点是零件（无子行），或当前处于汇总 BOM 状态，则仅作用于自身。
         - 跳过部件（Component）—— 部件共享父产品文件，没有独立文件可改名。
         - 跳过 ``_not_found`` / ``_no_file`` 行。
         - 同一文件路径只处理一次（去重）。
-        - 改名完成后同步更新 ``_rows``、``_raw_rows``、``_full_rows`` 并刷新表格。
+        - 改名完成后同步更新 ``_rows``、``_hierarchical_rows``、``_full_rows`` 并刷新表格。
         """
         target_row   = self._rows[row_idx]
         target_level = int(target_row.get("Level", 0))
 
-        # ── 收集子树行（不含 target_row 本身） ───────────────────────────────
+        # ── 收集子树行（含 target_row 本身） ─────────────────────────────────
+        # 两种情况只改自身：
+        #   1. 汇总 BOM 模式：各行不展开子树，遍历子行无意义
+        #   2. 选中节点是零件（下一行不存在或 Level 未增大）：本就无子行
+        is_self_only = self._summarize or (
+            row_idx + 1 >= len(self._rows)
+            or int(self._rows[row_idx + 1].get("Level", 0)) <= target_level
+        )
+
         subtree: list[dict] = []
-        for i in range(row_idx + 1, len(self._rows)):
-            r = self._rows[i]
-            if int(r.get("Level", 0)) <= target_level:
-                break
-            subtree.append(r)
+        if is_self_only:
+            subtree = [target_row]
+        else:
+            for i in range(row_idx, len(self._rows)):
+                r = self._rows[i]
+                if i > row_idx and int(r.get("Level", 0)) < target_level:
+                    break
+                subtree.append(r)
 
         # ── 过滤出需要改名的 (filepath, new_stem) ────────────────────────────
         to_rename: list[tuple[str, str]] = []
@@ -2215,7 +2217,7 @@ class BomEditDialogV2(QDialog):
                 to_rename.append((fp, pn))
 
         if not to_rename:
-            QMessageBox.information(self, "无需改名", "子树内所有文件名已与零件编号一致。")
+            QMessageBox.information(self, "无需改名", "选中节点及其子树内所有文件名已与零件编号一致。")
             return
 
         delete_old = (
@@ -2254,7 +2256,7 @@ class BomEditDialogV2(QDialog):
                 continue
 
             # 同步更新三个行列表的 filepath / filename
-            for pool in (self._rows, self._raw_rows, self._full_rows):
+            for pool in (self._rows, self._hierarchical_rows, self._full_rows):
                 for row in pool:
                     if str(row.get("_filepath", "")) == fp:
                         row["_filepath"] = new_fp
@@ -2292,7 +2294,7 @@ class BomEditDialogV2(QDialog):
         # 注意：此处不检查 Path(fp).exists()；
         # 未保存过的零件（文件尚不在磁盘上但在CATIA内存中打开）同样允许另存为。
 
-        # V2：属性已即时写回，无需前置写回检查
+        # 属性已即时写回，无需前置写回检查
         dlg = _FileRenameDialog(fp, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -2335,7 +2337,7 @@ class BomEditDialogV2(QDialog):
                 row["_filepath"] = new_fp
                 row["Filename"]  = new_stem
                 row["_no_file"]  = False   # 另存为成功后文件已落盘
-        for row in self._raw_rows:
+        for row in self._hierarchical_rows:
             if str(row.get("_filepath", "")) == fp:
                 row["_filepath"] = new_fp
                 row["Filename"]  = new_stem
@@ -2345,14 +2347,7 @@ class BomEditDialogV2(QDialog):
             self, "操作成功",
             f"文件已成功另存为：\n{new_fp}",
         )
-
-    # ── 写回CATIA（V2 - 即时写回，此方法仅为兼容保留，不再执行批量写回）────────
-
-    def _write_back(self, *, close_on_success: bool) -> None:
-        """V2：属性已即时写回，此方法不再执行批量写回。"""
-        if close_on_success:
-            self.accept()
-
+    
     # ── 导出表格 ──────────────────────────────────────────────────────────────
 
     def _export_table(self) -> None:
@@ -2361,11 +2356,10 @@ class BomEditDialogV2(QDialog):
             QMessageBox.warning(self, "无数据", "请先加载 BOM 。")
             return
 
-        # V2：属性已即时写回，无需前置检查
         # 根据根产品零件编号建议默认文件名（格式：<零件编号>_BOM 或 <零件编号>_汇总BOM）
         # 始终从原始层级行的第一行取根产品零件编号，不受当前汇总/层级显示模式影响
-        suffix_hint = "_汇总 BOM" if self._summarize else "_BOM"
-        root_pn = str(self._raw_rows[0].get("Part Number", "")).strip() if self._raw_rows else ""
+        suffix_hint = "_汇总BOM" if self._summarize else "_BOM"
+        root_pn = str(self._hierarchical_rows[0].get("Part Number", "")).strip() if self._hierarchical_rows else ""
         # 去除 Windows 文件名中不合法的字符（本工具目标平台为 Windows）
         invalid_chars = r'\/:*?"<>|'
         safe_stem = "".join(c if c not in invalid_chars else "_" for c in root_pn)
@@ -2562,13 +2556,9 @@ class BomEditDialogV2(QDialog):
             for row in rows:
                 writer.writerow([row.get(c, "") for c in cols])
         logger.info(f"BOM table exported (csv) -> {dest}")
-
-    def _apply_changes(self) -> None:
-        """V2：属性已即时写回，此按钮已移除，保留方法签名供内部兼容。"""
-        pass
-
+    
     def _finish_and_close(self) -> None:
-        """V2：属性已即时写回，直接关闭。"""
+        """所有修改均已即时写回，直接关闭。"""
         self.accept()
 
     # ── 右键上下文菜单 ────────────────────────────────────────────────────────
@@ -2711,20 +2701,17 @@ class BomEditDialogV2(QDialog):
         act_edit_path.setEnabled(bool(fp) and not is_component and not not_found)
 
         # ── 自动修改文件名（子树范围）────────────────────────────────────────
-        act_auto_rename_files = menu.addAction("自动修改文件名")
+        act_auto_rename_files = menu.addAction("自动修改文件名（子树范围）")
         act_auto_rename_files.setToolTip(
-            "将选中产品/部件子树内所有文件名与零件编号不符的文件批量另存为改名\n"
+            "将选中节点及其子树内所有文件名与零件编号不符的文件批量另存为改名\n"
             "（部件共享父产品文件，自动跳过）"
         )
-        act_auto_rename_files.setEnabled(
-            self._bom_loaded and is_assembly
-            and (self._full_bom or not self._summarize)
-        )
+        act_auto_rename_files.setEnabled(self._bom_loaded)
 
         menu.addSeparator()
 
         # ── 自动修改实例名（仅完整 BOM 模式）────────────────────────────────
-        act_auto_rename_instances = menu.addAction("自动修改实例名")
+        act_auto_rename_instances = menu.addAction("自动修改实例名（子树范围）")
         act_auto_rename_instances.setToolTip(
             "将选中产品/部件的子节点实例名批量改为 PartNumber.X 格式，并递归处理子装配\n"
             "（仅完整 BOM 模式可用）"
@@ -2736,8 +2723,8 @@ class BomEditDialogV2(QDialog):
         menu.addSeparator()
 
         # ── 刷新属性值（从 CATIA 重新读取）───────────────────────────────────
-        act_refresh = menu.addAction("刷新属性值（选中行）")
-        act_refresh.setToolTip("从 CATIA COM 重新读取选中行的属性值，覆盖表格中的当前显示值")
+        act_refresh = menu.addAction("刷新属性值（子树范围）")
+        act_refresh.setToolTip("从 CATIA COM 重新读取选中节点及其子树内所有行的属性值，覆盖表格中的当前显示值")
         act_refresh.setEnabled(self._bom_loaded and bool(selected_row_indices))
 
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -2761,17 +2748,35 @@ class BomEditDialogV2(QDialog):
         elif action == act_auto_rename_instances:
             self._auto_rename_instance_names(row_idx)
         elif action == act_refresh:
-            self._refresh_rows_from_catia(selected_row_indices)
+            # 收集选中节点的子树行号（包含自身）；汇总模式或零件节点退化为仅自身
+            target_level = int(self._rows[row_idx].get("Level", 0))
+            is_self_only = self._summarize or (
+                row_idx + 1 >= len(self._rows)
+                or int(self._rows[row_idx + 1].get("Level", 0)) <= target_level
+            )
+            if is_self_only:
+                refresh_indices = [row_idx]
+            else:
+                refresh_indices = []
+                for i in range(row_idx, len(self._rows)):
+                    if i > row_idx and int(self._rows[i].get("Level", 0)) < target_level:
+                        break
+                    refresh_indices.append(i)
+            self._refresh_rows_from_catia(refresh_indices)
 
     def _refresh_rows_from_catia(self, row_indices: list[int]) -> None:
-        """从 CATIA COM 引用重新读取选中行的属性值并刷新表格。
+        """从 CATIA COM 引用重新读取指定行的属性值并刷新表格。
+
+        通常由右键菜单"刷新属性值（子树范围）"触发，传入选中节点及其子树的行号列表。
+        汇总 BOM 模式或叶节点时退化为仅传入单行。
 
         以 ``_full_rows`` 为唯一数据源进行更新；完成后重新派生
-        ``_raw_rows = build_hierarchical_rows(_full_rows)``，按当前模式重新
+        ``_hierarchical_rows = build_hierarchical_rows(_full_rows)``，按当前模式重新
         设置 ``_rows``，并调用 ``_populate_table()`` 重绘整张表格。
 
         对于独立文件（有自己的 backing file），同一 ``_filepath`` 只读一次；
-        对于嵌入部件（Component），每个实例单独读取。
+        对于嵌入部件（Component），每个实例单独读取，且不走 ReferenceProduct
+        （Component 的 ReferenceProduct 指向父产品，会读到父产品属性）。
         """
         if not row_indices:
             return
@@ -2818,13 +2823,14 @@ class BomEditDialogV2(QDialog):
 
                 try:
                     new_props = refresh_row_from_com(
-                        product, all_read_cols, self._all_custom_columns
+                        product, all_read_cols, self._all_custom_columns,
+                        is_component=is_embedded,
                     )
                 except Exception as e:
                     logger.warning("刷新行 %d 失败：%s", row_idx, e)
                     continue
 
-                # 只更新 _full_rows（源数据）；_raw_rows 稍后整体重新派生
+                # 只更新 _full_rows（源数据）；_hierarchical_rows 稍后整体重新派生
                 for r in self._full_rows:
                     if is_embedded:
                         if (str(r.get("Part Number", "")) == pn
@@ -2853,18 +2859,18 @@ class BomEditDialogV2(QDialog):
 
         if refreshed_pns:
             # 重新派生层级行，确保与已更新的 _full_rows 保持一致
-            self._raw_rows = build_hierarchical_rows(self._full_rows)
+            self._hierarchical_rows = build_hierarchical_rows(self._full_rows)
             # 按当前模式重新设置 _rows
             if self._full_bom:
                 self._rows = self._full_rows
             elif self._summarize:
                 self._rows = flatten_bom_to_summary(
-                    self._raw_rows,
+                    self._hierarchical_rows,
                     include_assemblies=self._summary_include_assemblies,
                     sort_column=None,
                 )
             else:
-                self._rows = self._raw_rows
+                self._rows = self._hierarchical_rows
             self._populate_table()
             n = len(refreshed_pns)
             self._last_write_status = f"已刷新：{n} 个零件（{n} PNs）"

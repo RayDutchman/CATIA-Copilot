@@ -45,7 +45,7 @@ def get_product_filepath(product) -> str:
         return ""
 
 
-def collect_bom_rows(
+def collect_bom_rows_archive(
     file_path: str | None,
     columns: list[str],
     custom_columns: list[str],
@@ -260,7 +260,7 @@ def collect_bom_rows(
     return rows
 
 
-def collect_bom_rows_full(
+def collect_bom_rows(
     file_path: str | None,
     columns: list[str],
     custom_columns: list[str],
@@ -545,6 +545,7 @@ def refresh_row_from_com(
     product,
     columns: list[str],
     custom_columns: list[str],
+    is_component: bool = False,
 ) -> dict[str, str]:
     """Re-read attribute values for a single product COM object.
 
@@ -562,6 +563,9 @@ def refresh_row_from_com(
         Internal column names to re-read.
     custom_columns:
         Column names that are user-defined properties.
+    is_component:
+        若为 True，表示该行是嵌入部件（Component），不尝试读取 ReferenceProduct。
+        Component 的 ReferenceProduct 指向父产品，读取会得到父产品的属性值。
     """
     DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
 
@@ -575,10 +579,14 @@ def refresh_row_from_com(
             pass
 
     targets = [product]
-    try:
-        targets.insert(0, product.ReferenceProduct)
-    except Exception:
-        pass
+    # Component 嵌入部件不走 ReferenceProduct：
+    # Component 实例的 ReferenceProduct 返回的是父产品对象，
+    # 读取会得到父产品的属性，导致属性值被父产品值覆盖。
+    if not is_component:
+        try:
+            targets.insert(0, product.ReferenceProduct)
+        except Exception:
+            pass
 
     result: dict[str, str] = {}
     for col in columns:

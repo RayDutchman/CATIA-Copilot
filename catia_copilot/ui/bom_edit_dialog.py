@@ -43,7 +43,7 @@ from catia_copilot.constants import (
     BomNodeType,
     TYPE_DISPLAY_NAMES,
 )
-from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
 from catia_copilot.catia.bom_write import write_bom_to_catia
 from catia_copilot.utils import read_catia_thumbnail
 from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
@@ -157,7 +157,7 @@ class BomEditDialog(QDialog):
         self._item_by_row: list[QTreeWidgetItem] = []
         # BOM成功加载至少一次后置为True
         self._bom_loaded: bool = False
-        # 原始（层级）BOM行，由 collect_bom_rows() 返回；切换显示模式时用于重建行数据
+        # 原始（层级）BOM行，由 collect_bom_rows_archive() 返回；切换显示模式时用于重建行数据
         self._raw_rows: list[dict] = []
         # 零件编号→树形项索引，用于快速联动更新（性能优化）
         self._pn_to_items: dict[str, list[QTreeWidgetItem]] = {}
@@ -698,7 +698,7 @@ class BomEditDialog(QDialog):
                 BOM_EDIT_COLUMN_ORDER
                 + [c for c in self._all_custom_columns if c not in BOM_EDIT_COLUMN_ORDER]
             ))
-            rows = collect_bom_rows(
+            rows = collect_bom_rows_archive(
                 file_path, all_read_cols, self._all_custom_columns,
                 progress_callback=_on_row_collected,
             )
@@ -2716,6 +2716,6 @@ class BomEditDialog(QDialog):
     def _open_in_catia(self, fp: str) -> None:
         """在 CATIA 中打开 *fp* 指向的文档，并将 CATIA V5 主窗口置于前台。"""
         try:
-                open_document(fp, foreground=True)
+            open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")

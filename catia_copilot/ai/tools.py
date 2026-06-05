@@ -33,7 +33,7 @@ from catia_copilot.constants import (
     PRESET_USER_REF_PROPERTIES,
     PRESET_USER_REF_PROPERTY_OPTIONS,
 )
-from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
 from catia_copilot.catia.bom_export import export_bom_to_excel
 from catia_copilot.catia.bom_write import write_bom_to_catia
 from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
@@ -308,7 +308,7 @@ def tool_collect_bom(
     custom_cols = custom_columns or []
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
 
-    rows = collect_bom_rows(file_path, cols, custom_cols, progress_callback=cb)
+    rows = collect_bom_rows_archive(file_path, cols, custom_cols, progress_callback=cb)
 
     # 过滤内部键（以 _ 开头），只保留可读字段
     _INTERNAL = {"_filepath", "_not_found", "_no_file", "_unreadable",

@@ -62,7 +62,7 @@ from catia_copilot.ui.ui_colors import get_colors as _get_colors
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.ui.ui_layout import L
 
-from catia_copilot.catia.bom_collect import collect_bom_rows, check_unsaved_docs
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, check_unsaved_docs
 from catia_copilot.constants import (
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_EDIT_COLUMN_ORDER,
@@ -225,7 +225,7 @@ class _BomPreviewWorker(QThread):
                 + [c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER]
             ))
             custom_cols = [c for c in all_cols if c in PRESET_USER_REF_PROPERTIES]
-            rows = collect_bom_rows(
+            rows = collect_bom_rows_archive(
                 None,           # file_path=None：使用当前活动 CATIA 文档
                 all_cols,
                 custom_cols,
