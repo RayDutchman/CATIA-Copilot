@@ -384,6 +384,13 @@ class PlmWorkbench(QMainWindow):
         if hasattr(self, "_grp_cfg") and hasattr(self, "_grp_conn_log"):
             self._grp_conn_log.setFixedHeight(self._grp_cfg.sizeHint().height())
 
+    def keyPressEvent(self, event) -> None:
+        """ESC 键关闭窗口。"""
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
     def closeEvent(self, event):  # noqa: N802
         """关闭时保存窗口几何（位置和尺寸）。"""
         s = QSettings(_S_ORG, _S_WB)
