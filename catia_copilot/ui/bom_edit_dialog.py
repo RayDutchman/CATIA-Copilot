@@ -67,7 +67,6 @@ def _make_tree_combo(items: list[str]) -> QComboBox:
     """创建嵌入 QTreeWidget 行的 QComboBox。
 
     不使用 setStyleSheet，避免创建独立样式上下文导致下拉列表位置偏移。
-    外观跟随 qdarkstyle 默认 QComboBox 样式。
     """
     combo = QComboBox()
     combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -226,7 +225,7 @@ class BomEditDialog(QDialog):
 
         self._include_assemblies_chk = QCheckBox("包含产品和部件")
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总 BOM 中也会列出产品和部件（子装配体），而不仅限于零件。"
+            "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。"
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
@@ -406,7 +405,7 @@ class BomEditDialog(QDialog):
         self._save_btn.clicked.connect(self._apply_changes)
 
         self._finish_btn = QPushButton("完成")
-        self._finish_btn.setDefault(True)
+        self._finish_btn.setDefault(False)
         self._finish_btn.setEnabled(False)
         self._finish_btn.setToolTip("将修改写回 CATIA ，然后关闭对话框（Ctrl+Enter）")
         self._finish_btn.setShortcut(QKeySequence("Ctrl+Return"))
@@ -469,7 +468,7 @@ class BomEditDialog(QDialog):
                 include_assemblies=checked,
                 sort_column=None,
             )
-            # 包含装配体时显示"类型"列；否则隐藏
+            # 包含产品时显示"类型"列；否则隐藏
             self._rebuild_columns_and_repopulate()
 
     # ── 表格辅助方法 ──────────────────────────────────────────────────────────
@@ -600,7 +599,7 @@ class BomEditDialog(QDialog):
         # 过滤已隐藏的可隐藏列
         base = [c for c in base if c not in BOM_HIDEABLE_COLUMNS or c in self._visible_hideable_cols]
         if self._summarize:
-            # 汇总模式下层级列无意义；不含装配体时也隐藏类型列
+            # 汇总模式下层级列无意义；不含产品时也隐藏类型列
             cols_to_hide = {"Level"}
             if not self._summary_include_assemblies:
                 cols_to_hide.add("Type")
@@ -948,9 +947,9 @@ class BomEditDialog(QDialog):
                     item.setForeground(ci, grey)
                     item.setBackground(ci, bg)
                 tip = (
-                    "该零件/装配体的文件未被 CATIA 检索到，行内容不可编辑。"
+                    "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
                     if not_found else
-                    "该零件/装配体处于轻量化模式，无法读取属性。"
+                    "该零件/产品处于轻量化模式，无法读取属性。"
                 )
                 for ci in range(len(self._columns)):
                     item.setToolTip(ci, tip)
@@ -1881,8 +1880,8 @@ class BomEditDialog(QDialog):
                                              QColor(c.MODIFIED_FG))
                                 widget.setPalette(pal)
                             else:
-                                # 恢复默认调色板
-                                widget.setPalette(widget.style().standardPalette())
+                                # 清除之前设置的显式 palette，让控件重新继承应用 palette
+                                widget.setPalette(QPalette())
                         else:
                             if is_modified:
                                 font = item.font(col_idx)
