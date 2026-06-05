@@ -56,7 +56,10 @@ from pathlib import Path
 
 
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType
+from catia_copilot.constants import (
+    FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType,
+    CATIA_DESIGN_MODE, CATIA_VISUALIZATION_MODE,
+)
 from catia_copilot.catia.document import get_bom_node_type
 from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 
@@ -936,10 +939,6 @@ def collect_mass_props_rows(
           Density, Weight, CogX, CogY, CogZ, Ixx, Iyy, Izz, Ixy, Ixz, Iyz,
           _filepath, _placement, _not_found, _no_file, _unreadable, _meas_failed
     """
-
-    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
-    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
-    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
 
     _total_count: int = 0
     # 以文件路径为键缓存质量特性测量结果，避免同一零件多实例重复测量

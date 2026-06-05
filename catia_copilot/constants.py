@@ -131,6 +131,24 @@ DOC_EXT_TYPE_MAP: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# CATIA COM 工作模式 / 宏库类型常量
+#
+# ApplyWorkMode / GetWorkMode 对应 CATWorkModeType 枚举：
+#   catWorkModeVisualization = 1
+#   catWorkModeDesign        = 2
+#
+# SystemService.ExecuteScript 的 iLibraryType 参数：
+#   1 = 目录模式（CATScript / .catvbs / .catscript，iLibraryName 为目录路径）
+#   2 = VBA 项目文件模式（.catvba，iLibraryName 为文件完整路径）
+# ---------------------------------------------------------------------------
+
+CATIA_VISUALIZATION_MODE: int = 1  # catWorkModeVisualization
+CATIA_DESIGN_MODE:        int = 2  # catWorkModeDesign
+
+CATIA_MACRO_LIBRARY_DIR: int = 1   # ExecuteScript iLibraryType: 目录（CATScript）
+CATIA_MACRO_LIBRARY_VBA: int = 2   # ExecuteScript iLibraryType: VBA 项目文件（.catvba）
+
+# ---------------------------------------------------------------------------
 # CATIA COM 属性映射
 #
 # 将 BOM 列名（用户可见的显示名）映射到 win32com Product 对象的 COM 属性名。
@@ -188,6 +206,9 @@ FILENAME_UNSAVED: str = "未保存"
 # Sentinel internal column name for the row-number column (always first, read-only)
 BOM_ROW_NUMBER_COLUMN: str = "#"
 
+# Column name for per-instance name in "完整 BOM" mode (maps to product.Name)
+BOM_INSTANCE_NAME_COLUMN: str = "Instance Name"
+
 # Columns that are structural / derived – shown read-only in the edit table
 BOM_READONLY_COLUMNS: frozenset[str] = frozenset({"#", "Level", "Type", "Filename", "Filepath", "Quantity"})
 
@@ -215,6 +236,7 @@ BOM_COLUMN_DISPLAY_NAMES: dict[str, str] = {
     "Source":       "源",
     "Description":  "描述",
     "Quantity":     "数量",
+    "Instance Name": "实例名",
 }
 
 # Minimum column widths (Excel character units) for standard BOM columns

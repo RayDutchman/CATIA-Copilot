@@ -36,6 +36,8 @@ from catia_copilot.constants import (
     ISO_XML_FILE_PATH,
     CRACK_DIR_PATH,
     AI_TAB_LABEL,
+    CATIA_MACRO_LIBRARY_DIR,
+    CATIA_MACRO_LIBRARY_VBA,
 )
 import win32gui
 import win32con
@@ -50,6 +52,7 @@ from catia_copilot.ui.convert_dialog import FileConvertDialog
 from catia_copilot.ui.export_bom_dialog import ExportBomDialog
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.bom_edit_dialog import BomEditDialog
+from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
@@ -518,6 +521,10 @@ class MainWindow(QMainWindow):
         btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并写回 CATIA")
         btn_bom_edit.clicked.connect(self._open_bom_edit_dialog)
 
+        btn_bom_edit_v2 = QPushButton("BOM 工作台 V2（即时写回）")
+        btn_bom_edit_v2.setToolTip("编辑即时写回 CATIA 的新版 BOM 工作台（对比测试用）")
+        btn_bom_edit_v2.clicked.connect(self._open_bom_edit_dialog_v2)
+
         btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
             "遍历产品树，读取零件质量/重心/转动惯量，计算装配体总质量特性并导出"
@@ -530,7 +537,7 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        for btn in (btn_bom_edit, btn_mass_props, btn_plm_workbench):
+        for btn in (btn_bom_edit, btn_bom_edit_v2, btn_mass_props, btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -1362,6 +1369,10 @@ class MainWindow(QMainWindow):
     def _open_bom_edit_dialog(self) -> None:
         self._show_dialog("_dlg_bom_edit", lambda: BomEditDialog(self))
 
+    @Slot()
+    def _open_bom_edit_dialog_v2(self) -> None:
+        self._show_dialog("_dlg_bom_edit_v2", lambda: BomEditDialogV2(self))
+
     def _open_mass_props_dialog(self) -> None:
         self._show_dialog("_dlg_mass_props", lambda: MassPropsDialog(self))
 
@@ -1699,7 +1710,7 @@ class MainWindow(QMainWindow):
             SystemService.ExecuteScript(iLibraryName, iLibraryType,
                                         iProgramName, iFunctionName, iParameters)
 
-        此处使用 iLibraryType=1（目录模式）：
+        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_DIR（目录模式）：
           - iLibraryName：宏文件所在目录
           - iProgramName：宏文件名（含扩展名）
           - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
@@ -1707,7 +1718,7 @@ class MainWindow(QMainWindow):
         """
         lib_dir = str(macro_path.parent)
         app.SystemService.ExecuteScript(
-            lib_dir, 1, macro_path.name, func_name, params
+            lib_dir, CATIA_MACRO_LIBRARY_DIR, macro_path.name, func_name, params
         )
 
     def _execute_catvba(
@@ -1719,7 +1730,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         """调用 CATIA SystemService.ExecuteScript 执行 VBA 宏（.catvba）。
 
-        此处使用 iLibraryType=2（VBA 项目文件模式）：
+        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_VBA（VBA 项目文件模式）：
           - iLibraryName：.catvba 文件完整路径
           - iProgramName：VBA 模块名（中文 CATIA 默认为 "模块1"，英文/法语等环境为 "Module1"）
           - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
@@ -1732,7 +1743,7 @@ class MainWindow(QMainWindow):
         for module_name in ("模块1", "Module1"):
             try:
                 app.SystemService.ExecuteScript(
-                    str(macro_path), 2, module_name, func_name, params
+                    str(macro_path), CATIA_MACRO_LIBRARY_VBA, module_name, func_name, params
                 )
                 return
             except Exception as e:

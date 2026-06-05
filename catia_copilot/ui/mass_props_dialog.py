@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QGroupBox, QMessageBox, QApplication,
     QFileDialog, QProgressDialog, QLineEdit, QGridLayout, QFrame,
     QRadioButton, QButtonGroup, QWidget, QComboBox,
-    QStyledItemDelegate, QMenu,
+    QMenu,
 )
 from PySide6.QtGui import QBrush, QFont, QDesktopServices, QShortcut, QKeySequence
 from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
@@ -62,7 +62,7 @@ from catia_copilot.ui.ui_colors import (
     get_colors as _get_colors,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem
+from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem, _RowHeightDelegate
 from catia_copilot.ui.ui_layout import L
 from catia_copilot.utils import estimate_column_width
 from catia_copilot.catia.connection import open_document
@@ -101,8 +101,11 @@ _EXCL_FONT.setItalic(True)
 _MIRROR_TOOLTIP: str = "对称件（虚拟行），相对 ZX 平面与原件对称，不可直接编辑。"
 
 
-class _MassPropsDelegate(QStyledItemDelegate):
-    """只允许对未锁定零件行的"Weight"列进行编辑，其余列一律只读。"""
+class _MassPropsDelegate(_RowHeightDelegate):
+    """只允许对未锁定零件行的"Weight"列进行编辑，其余列一律只读。
+
+    继承 :class:`_RowHeightDelegate`，获得行高保证与列 0 防溢出能力。
+    """
 
     def __init__(self, cols_fn, tree) -> None:
         super().__init__(tree)
@@ -125,12 +128,6 @@ class _MassPropsDelegate(QStyledItemDelegate):
         if col_name == "Density" and item.data(0, _DENSITY_LOCKED_ROLE):
             return None
         return super().createEditor(parent, option, index)
-
-    def sizeHint(self, option, index):
-        hint = super().sizeHint(option, index)
-        if hint.height() < L.TABLE_ROW_HEIGHT:
-            hint.setHeight(L.TABLE_ROW_HEIGHT)
-        return hint
 
 
 def _fmt(value) -> str:

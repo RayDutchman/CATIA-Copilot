@@ -1,6 +1,6 @@
 ﻿"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem
 from PySide6.QtCore import Qt, QSize, QModelIndex, QRect
 from PySide6.QtGui import QPainter, QPen, QColor
 
@@ -14,12 +14,20 @@ _ITEM_LOCKED_ROLE: int = Qt.ItemDataRole.UserRole + 1
 
 
 class _RowHeightDelegate(QStyledItemDelegate):
-    """仅负责固定行高的基础委托。
+    """行高保证 + 列 0 溢出防护的基础委托。
 
-    QSS 的 ``QTreeWidget::item { min-height }`` 规则会触发样式引擎接管 item
-    背景，导致 ``BackgroundRole`` 被 QSS 继承背景色覆盖。
-    改用此 delegate 的 :meth:`sizeHint` 设置行高，完全绕开 QSS 对 item 背景
-    的干扰，使 ``setBackground`` 能在任何状态下正常生效。
+    所有 BOM/质量属性树的专用委托均应继承此类，以共享以下行为：
+
+    **行高**：QSS 的 ``QTreeWidget::item { min-height }`` 规则会触发样式引擎接管
+    item 背景，导致 ``BackgroundRole`` 被 QSS 继承背景色覆盖。改用此委托的
+    :meth:`sizeHint` 设置行高，完全绕开 QSS 对 item 背景的干扰，使 ``setBackground``
+    能在任何状态下正常生效。
+
+    **列 0 防溢出**：:meth:`paint` 对列 0 始终把画家裁剪到列宽范围内。
+    Qt 传给委托的 ``option.rect`` 左边界已含缩进偏移，右边界恒等于列右缘减一；
+    理论上文字不应溢出，但 windows11/windowsvista 风格下样式实现可能在
+    ``option.rect`` 之外绘制，因此用 ``setClipRect`` 兜底。
+    缩进量超出列宽时（``option.rect.left() >= col_right``）直接跳过绘制。
     """
 
     def sizeHint(self, option, index) -> QSize:
@@ -27,6 +35,26 @@ class _RowHeightDelegate(QStyledItemDelegate):
         if hint.height() < L.TABLE_ROW_HEIGHT:
             hint.setHeight(L.TABLE_ROW_HEIGHT)
         return hint
+
+    def paint(self, painter: QPainter, option, index: QModelIndex) -> None:
+        """列 0：裁剪到列宽，防止缩进过深时内容溢出到相邻列。"""
+        if index.column() == 0:
+            tree = self.parent()
+            col_right = tree.columnViewportPosition(0) + tree.columnWidth(0)
+            if option.rect.left() >= col_right:
+                # 缩进已超出列宽，无空间绘制
+                return
+            # option.rect.right() 恒等于 col_right - 1，理论上不会溢出；
+            # 但部分风格实现会在 rect 外绘制，setClipRect 作为兜底保障。
+            painter.save()
+            painter.setClipRect(
+                QRect(option.rect.left(), option.rect.top(),
+                      col_right - option.rect.left(), option.rect.height())
+            )
+            super().paint(painter, option, index)
+            painter.restore()
+            return
+        super().paint(painter, option, index)
 
 
 class _BomSortItem(QTreeWidgetItem):
@@ -48,13 +76,12 @@ class _BomSortItem(QTreeWidgetItem):
             return a < b
 
 
-class _BomTreeDelegate(QStyledItemDelegate):
+class _BomTreeDelegate(_RowHeightDelegate):
     """BOM QTreeWidget 的逐列只读强制委托。
 
-    QTreeWidgetItem 的 flags 是按行设置的；此委托对内部名称属于
-    :data:`~catia_copilot.constants.BOM_READONLY_COLUMNS` 的列，
-    以及被标记为锁定的行（文件未找到/不可读）从 :meth:`createEditor`
-    返回 ``None``，从而阻止编辑。
+    继承 :class:`_RowHeightDelegate`，获得行高保证与列 0 防溢出能力。
+    自身只负责 :meth:`createEditor`：对 :data:`~catia_copilot.constants.BOM_READONLY_COLUMNS`
+    中的列，以及被标记为锁定的行（文件未找到/不可读）返回 ``None``，阻止编辑。
     """
 
     def __init__(self, cols_fn, tree: QTreeWidget) -> None:
@@ -71,22 +98,22 @@ class _BomTreeDelegate(QStyledItemDelegate):
             return None
         return super().createEditor(parent, option, index)
 
-    def sizeHint(self, option, index) -> QSize:
-        hint = super().sizeHint(option, index)
-        if hint.height() < L.TABLE_ROW_HEIGHT:
-            hint.setHeight(L.TABLE_ROW_HEIGHT)
-        return hint
-
 
 class _BomTreeWidget(QTreeWidget):
     """BOM 用 QTreeWidget 封装。
 
-    树状连接线由 :meth:`drawBranches` 自绘（1px 点状虚线，相位对齐），
-    不依赖 QSS branch 规则，避免 windows11 风格下 CSS border 与原生箭头错位。
-    展开/折叠箭头仍由系统风格的 PE_IndicatorBranch 原生绘制。
-    构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item`` 规则。
-    子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——替换后行高
-    由新委托的 :meth:`sizeHint` 负责（见 :class:`_BomTreeDelegate`）。
+    **为何自绘树状连接线**：Windows 11 / Windows Vista 风格在应用全局 QSS 时，
+    原生的 ``PE_IndicatorBranch`` 竖线/横线会消失或与展开箭头错位。
+    :meth:`drawBranches` 在 ``super()`` 画完原生箭头后，为这两种风格额外叠加
+    1 px 点状虚线（其他风格自带连接线，不重复叠加）。
+
+    **防溢出**：两处绘制均把画家裁剪到列 0 右边缘。Qt 传入的 branch ``rect``
+    宽度 = ``indent * depth``，深度较大时可能超出列宽；不加裁剪则连接线/箭头
+    会溢入相邻列。
+
+    构造时自动安装 :class:`_RowHeightDelegate` 以保证行高，无需 QSS ``::item``
+    规则。子类或外部代码可通过 :meth:`setItemDelegate` 替换为更专用的委托——
+    替换后行高由新委托的 :meth:`sizeHint` 负责。
     行高由 ``L.TABLE_ROW_HEIGHT`` 统一控制（ui_layout.py）。
     """
 
@@ -104,9 +131,18 @@ class _BomTreeWidget(QTreeWidget):
 
         虚线采用 1px 实点 + 1px 间隔，通过 setDashOffset(rect.top() % 2)
         根据行的绝对 y 坐标对齐相位，确保相邻行的竖线点阵在视觉上连续。
+
+        ``rect`` 由 Qt 按 ``indent * depth`` 计算，深度较大时宽度可能超出列宽；
+        两处 ``setClipRect`` 均使用列 0 实际右边缘而非 ``rect.right()`` 作为上限。
         """
+        col_right = self.columnViewportPosition(0) + self.columnWidth(0)
+        clip_w    = max(0, col_right - rect.left())
+
         # 先让系统风格画原生箭头（PE_IndicatorBranch）
+        painter.save()
+        painter.setClipRect(QRect(rect.left(), rect.top(), clip_w, rect.height()))
         super().drawBranches(painter, rect, index)
+        painter.restore()
 
         # 只有 windows11/windowsvista 风格需要手动补虚线；
         # 其他风格（windows 经典、Fusion 等）自带连接线，不叠加避免双线。
@@ -149,6 +185,7 @@ class _BomTreeWidget(QTreeWidget):
         pen.setDashPattern([1.0, 1.0])   # 1px 实点 + 1px 间隔
         pen.setDashOffset(rect.top() % 2)  # 根据行绝对 y 坐标对齐相位，确保竖线连续
         painter.save()
+        painter.setClipRect(QRect(rect.left(), rect.top(), clip_w, rect.height()))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(pen)
 
