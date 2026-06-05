@@ -321,7 +321,7 @@ class PlmApiClient:
                 # PLM-06（ProductManagerBean:3509 NPE）已于 2026-05-20 服务端修复，
                 # 此处不再对 500 静默跳过，直接抛出，避免掩盖真实服务端错误。
                 raise
-        raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
+        raise PlmApiError(f"零件 {part_number} 不存在（A/B/C 均未找到）", 404)
 
     def update_iteration(
         self,

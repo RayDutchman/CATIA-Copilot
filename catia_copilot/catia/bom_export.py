@@ -186,6 +186,7 @@ def export_bom_to_excel(
             else:
                 wb   = openpyxl.Workbook()
                 ws   = wb.active
+                assert ws is not None
                 ws.title = "汇总 BOM" if summarize else "BOM"
                 _write_sheet(ws, rows)
                 wb.save(dest)
@@ -244,6 +245,7 @@ def export_bom_to_excel(
         else:
             wb       = openpyxl.Workbook()
             ws       = wb.active
+            assert ws is not None
             ws.title = "汇总 BOM" if summarize else "BOM"
             _write_sheet(ws, rows)
             wb.save(dest)

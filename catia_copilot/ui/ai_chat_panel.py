@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings, QThread
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -1486,7 +1486,7 @@ class AIChatPanel(QWidget):
         # session_id → AgentWorker（后台正在运行）
         self._workers: dict[str, AgentWorker] = {}
         # session_id → ChatSession 对象（用于后台 session 的消息写入）
-        self._bg_sessions: dict[str, object] = {}
+        self._bg_sessions: dict[str, ChatSession] = {}
 
         # 当前可见 session 的前端快照（切换时保存到 _gen_states，切回时恢复）
         self._current_ai_widget: AIMessageWidget | None = None
@@ -1549,7 +1549,7 @@ class AIChatPanel(QWidget):
         self._input_splitter.setStretchFactor(0, 1)
         self._input_splitter.setStretchFactor(1, 0)
         # 恢复上次保存的输入区高度
-        saved = QSettings("CATIACopilot", "AIChatPanel").value("input_height", L.INPUT_BOX_HEIGHT + 16, type=int)
+        saved = int(QSettings("CATIACopilot", "AIChatPanel").value("input_height", L.INPUT_BOX_HEIGHT + 16, type=int))  # type: ignore[arg-type]
         self._input_splitter.setSizes([9999, saved])
         self._input_splitter.splitterMoved.connect(self._save_input_height)
         chat_layout.addWidget(self._input_splitter, 1)
@@ -1906,8 +1906,9 @@ class AIChatPanel(QWidget):
             self._typing_indicator.stop_animation()
         while self._chat_layout.count() > 1:
             item = self._chat_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget() if item else None
+            if w:
+                w.deleteLater()
         self._current_ai_widget = None
         self._current_tool_widget = None
         self._pending_tool_call = None
@@ -1916,6 +1917,8 @@ class AIChatPanel(QWidget):
     def _rebuild_chat_widgets(self):
         """根据当前会话的 messages 重建聊天区 widget。"""
         self._clear_chat_widgets()
+        if self._current_session is None:
+            return
         # 重建后需要滚到底部，提前把标志置 True，
         # 避免上一个会话停留在中间位置时 rangeChanged 不跟随
         self._scroll.reset_to_bottom()
@@ -2009,6 +2012,7 @@ class AIChatPanel(QWidget):
 
         def _on_clear():
             self._clear_chat_widgets()
+            assert self._current_session is not None
             self._sm.save_session(self._current_session)
 
         dlg = SessionConfigDialog(self._current_session, self, on_clear=_on_clear)
@@ -2021,7 +2025,7 @@ class AIChatPanel(QWidget):
 
     def eventFilter(self, obj, event: QEvent) -> bool:
         if obj is self._input_box and event.type() == QEvent.Type.KeyPress:
-            key_event = event
+            key_event = event  # type: QKeyEvent
             if (key_event.key() == Qt.Key.Key_Return
                     and key_event.modifiers() & Qt.KeyboardModifier.ControlModifier):
                 self._send_message()

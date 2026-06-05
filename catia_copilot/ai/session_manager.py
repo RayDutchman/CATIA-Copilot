@@ -140,6 +140,7 @@ class SessionManager:
         """
         _ensure_dir()
         # 生成唯一 session_id（碰撞时重试，最多 5 次）
+        session_id = uuid.uuid4().hex[:12]  # 先赋初值，避免 possibly-unbound
         for _ in range(5):
             session_id = uuid.uuid4().hex[:12]
             if not _session_path(session_id).exists():

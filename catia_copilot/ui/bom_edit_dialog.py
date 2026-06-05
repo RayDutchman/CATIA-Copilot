@@ -8,9 +8,7 @@ BOM 编辑对话框模块。
 import copy
 import csv
 import ctypes
-import os
 import logging
-import subprocess
 from pathlib import Path
 
 import openpyxl
@@ -987,7 +985,9 @@ class BomEditDialog(QDialog):
             for i in range(parent.childCount()):
                 yield from _walk(parent.child(i))
         for i in range(self._table.topLevelItemCount()):
-            yield from _walk(self._table.topLevelItem(i))
+            item = self._table.topLevelItem(i)
+            if item is not None:
+                yield from _walk(item)
 
     # ── 主题切换响应 ──────────────────────────────────────────────────────────
 
@@ -2463,6 +2463,7 @@ class BomEditDialog(QDialog):
 
         wb = openpyxl.Workbook()
         ws = wb.active
+        assert ws is not None  # 新建工作簿 active 必然非 None
         ws.title = "汇总 BOM" if self._summarize else "BOM"
 
         center      = Alignment(horizontal="center", vertical="center")
@@ -2508,7 +2509,7 @@ class BomEditDialog(QDialog):
         # Calibri 11pt 默认字体约为每字符7像素，作为近似换算基准
         PX_PER_CHAR = 7.0
         for col_idx, col_name in enumerate(cols, start=1):
-            col_letter = ws.cell(row=1, column=col_idx).column_letter
+            col_letter = ws.cell(row=1, column=col_idx).column_letter  # type: ignore[union-attr]
             px = px_widths.get(col_name, 80)
             char_width = max(8.0, px / PX_PER_CHAR)
             ws.column_dimensions[col_letter].width = round(char_width, 1)

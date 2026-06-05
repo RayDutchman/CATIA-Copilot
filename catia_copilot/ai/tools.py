@@ -1171,8 +1171,10 @@ def tool_run_modeling_script(
     try:
         sys.modules.pop("_catia_generated_model", None)
         spec   = importlib.util.spec_from_file_location("_catia_generated_model", script_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"无法为 {script_path} 创建 ModuleSpec")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
     except Exception:
         err = traceback.format_exc()
         logger.error(f"[MODELING] 脚本加载失败:\n{err}")

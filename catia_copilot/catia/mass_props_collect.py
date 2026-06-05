@@ -124,7 +124,7 @@ def _row_inertia_to_root(row: dict) -> list[list[float]]:
         for i in range(3)
     ]
     I_root = [
-        [sum(RI[i][k] * RT[k][j] for k in range(3)) for j in range(3)]
+        [sum((RI[i][k] * RT[k][j] for k in range(3)), 0.0) for j in range(3)]
         for i in range(3)
     ]
     return I_root
@@ -942,7 +942,7 @@ def collect_mass_props_rows(
 
     _total_count: int = 0
     # 以文件路径为键缓存质量特性测量结果，避免同一零件多实例重复测量
-    _mass_cache: dict[str, dict] = {}
+    _mass_cache: dict[str, dict | None] = {}
 
     def _get_prop(product, name: str) -> str:
         """读取直接属性（Nomenclature / Revision）。"""

@@ -1,7 +1,7 @@
 ﻿"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem
-from PySide6.QtCore import Qt, QSize, QModelIndex, QRect
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PySide6.QtCore import Qt, QSize, QModelIndex, QRect, QPersistentModelIndex
 from PySide6.QtGui import QPainter, QPen, QColor
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
@@ -36,10 +36,11 @@ class _RowHeightDelegate(QStyledItemDelegate):
             hint.setHeight(L.TABLE_ROW_HEIGHT)
         return hint
 
-    def paint(self, painter: QPainter, option, index: QModelIndex) -> None:
+    def paint(self, painter: QPainter, option, index: QModelIndex | QPersistentModelIndex) -> None:  # type: ignore[override]
         """列 0：裁剪到列宽，防止缩进过深时内容溢出到相邻列。"""
         if index.column() == 0:
             tree = self.parent()
+            assert isinstance(tree, QTreeWidget)
             col_right = tree.columnViewportPosition(0) + tree.columnWidth(0)
             if option.rect.left() >= col_right:
                 # 缩进已超出列宽，无空间绘制
@@ -88,8 +89,9 @@ class _BomTreeDelegate(_RowHeightDelegate):
         super().__init__(tree)
         self._cols_fn = cols_fn  # callable: () -> list[str]
 
-    def createEditor(self, parent, option, index):
+    def createEditor(self, parent, option, index) -> QWidget | None:  # type: ignore[override]
         tree = self.parent()
+        assert isinstance(tree, QTreeWidget)
         item = tree.itemFromIndex(index)
         if item is not None and item.data(0, _ITEM_LOCKED_ROLE):
             return None
@@ -122,7 +124,7 @@ class _BomTreeWidget(QTreeWidget):
         # 安装默认行高委托；setItemDelegate 会替换它，新委托需自行保证行高
         self.setItemDelegate(_RowHeightDelegate(self))
 
-    def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex) -> None:
+    def drawBranches(self, painter: QPainter, rect: QRect, index: QModelIndex | QPersistentModelIndex) -> None:  # type: ignore[override]
         """绘制 Windows 注册表编辑器风格点状连接线。
 
         先调用 super() 让系统风格画展开/折叠箭头，再叠加虚线连接线。

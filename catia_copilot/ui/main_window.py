@@ -19,7 +19,7 @@ from ctypes import wintypes
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
+    QLabel, QMessageBox, QPushButton, QFileDialog, QInputDialog,
     QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )

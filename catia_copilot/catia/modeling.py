@@ -279,8 +279,8 @@ def _get_y_axis_ref(part_doc_com):
 def make_line_from_points(part_doc_com,
                           name: str,
                           pt_start: tuple, pt_end: tuple,
-                          pt_start_name: str = None,
-                          pt_end_name:   str = None):
+                          pt_start_name: str | None = None,
+                          pt_end_name:   str | None = None):
     """通用：在 MainBody 中创建命名直线（两点式），构造点作为其子节点。
 
     参数

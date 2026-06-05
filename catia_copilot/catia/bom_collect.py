@@ -14,6 +14,7 @@ BOM 数据收集辅助模块。
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from catia_copilot.constants import (
     FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType, PRODUCT_ATTR_READ_MAP,
@@ -653,7 +654,7 @@ def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
         return result  # 至少返回第一段结果
 
     # 构建 resolved_path → doc 的映射
-    open_docs: dict[Path, object] = {}
+    open_docs: dict[Path, Any] = {}
     for i in range(1, documents.Count + 1):
         try:
             doc = documents.Item(i)
