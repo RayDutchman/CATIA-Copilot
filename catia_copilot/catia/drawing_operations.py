@@ -28,11 +28,11 @@ def sync_to_drawing_parameters(
 ) -> dict:
     """同步零件属性到图纸参数
     
-    从零件/装配体文档读取标准属性和用户自定义属性，写入图纸参数。
+    从零件/产品文档读取标准属性和用户自定义属性，写入图纸参数。
     图纸中若不存在对应参数，则跳过（不自动新建，不报错）。
     
     Args:
-        part_doc: 零件或装配体文档 COM 对象
+        part_doc: 零件或产品文档 COM 对象
         drawing_doc: 图纸文档 COM 对象
         property_names: 需要同步的用户自定义属性名列表，
                        默认为 DRAWING_SYNC_USER_PROPS（["物料编码", "材料", "重量"]）
@@ -185,12 +185,12 @@ def generate_drawing(
         - "drawing_doc": COM 对象 - 创建的图纸文档（成功时）
         
     Raises:
-        RuntimeError: 当前文档不是零件/装配体，或创建图纸失败时
+        RuntimeError: 当前文档不是零件/产品，或创建图纸失败时
     """
     try:
         app = get_catia_v5_application()
         
-        # 1. 验证当前活动文档是否为零件或装配体
+        # 1. 验证当前活动文档是否为零件或产品
         active_doc = app.ActiveDocument
         doc_type = get_document_type(active_doc)
         
@@ -253,7 +253,7 @@ def refresh_drawing(
 ) -> dict:
     """刷新当前活动图纸的参数信息
     
-    从图纸参数中读取 PartNumber，在已打开的文档中查找对应的零件/装配体，
+    从图纸参数中读取 PartNumber，在已打开的文档中查找对应的零件/产品，
     然后同步属性到图纸参数。
     
     Args:
@@ -269,7 +269,7 @@ def refresh_drawing(
         - "details": list[str] - 详细日志列表
         
     Raises:
-        RuntimeError: 当前文档不是图纸，或找不到对应的零件/装配体时
+        RuntimeError: 当前文档不是图纸，或找不到对应的零件/产品时
     """
     try:
         app = get_catia_v5_application()
@@ -307,7 +307,7 @@ def refresh_drawing(
                 "请先手动设置图纸的 PartNumber 参数。"
             )
             
-        # 3. 在所有已打开文档中查找匹配零件编号的零件或装配体
+        # 3. 在所有已打开文档中查找匹配零件编号的零件或产品
         documents = app.Documents
         found_doc = None
         
@@ -329,7 +329,7 @@ def refresh_drawing(
                 
         if found_doc is None:
             raise RuntimeError(
-                f'未找到零件编号为 "{target_pn}" 的零件或装配体文档。\n'
+                f'未找到零件编号为 "{target_pn}" 的零件或产品文档。\n'
                 f'请确保对应文档已在 CATIA 中打开。'
             )
             

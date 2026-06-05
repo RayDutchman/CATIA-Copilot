@@ -628,7 +628,7 @@ class PlmWorkbench(QMainWindow):
         chk_row1 = QHBoxLayout()
         chk_row1.setSpacing(20)
         self._chk_incremental  = QCheckBox("增量同步（跳过属性无变化的零件）")
-        self._chk_reg_product  = QCheckBox("注册顶层装配体为产品配置（PLM Product）")
+        self._chk_reg_product  = QCheckBox("注册顶层产品为产品配置（PLM Product）")
         self._chk_incremental.setChecked(True)
         chk_row1.addWidget(self._chk_incremental)
         chk_row1.addWidget(self._chk_reg_product)

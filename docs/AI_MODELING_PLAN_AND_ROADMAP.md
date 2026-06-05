@@ -190,7 +190,7 @@ add_hole_on_face(part, face_ref, x, y, diameter, depth)
 | 法兰盘 | draw_circle + shaft + circ_pattern |
 | 壳体 | + fillet + shell |
 | 多特征组合件 | 综合 |
-| 装配体 | ProductDocument + 摆放位置 |
+| 产品 | ProductDocument + 摆放位置 |
 
 ---
 

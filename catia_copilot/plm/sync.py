@@ -107,7 +107,7 @@ class SyncOptions:
     # 同上，定位逻辑待实现。
     upload_drawing_file: bool = False
 
-    # 同步完成后是否将顶层装配体注册为 PLM Product
+    # 同步完成后是否将顶层产品注册为 PLM Product
     register_product: bool = False
 
     # Tag 自动映射规则：[{"catia_value": "发布", "plm_tag": "已归档"}, ...]
@@ -175,7 +175,7 @@ class SyncResult:
     # ── 扩展字段 ────────────────────────────────────────────────────────────
     unchanged: int = 0           # 增量判断：属性无变化，主动跳过
     step_uploaded: int = 0       # 成功上传 STEP 文件的零件数
-    product_registered: bool = False  # 顶层装配体是否成功注册为 PLM Product
+    product_registered: bool = False  # 顶层产品是否成功注册为 PLM Product
 
     @property
     def total(self) -> int:

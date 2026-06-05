@@ -112,7 +112,7 @@
 ### 新增 — 图纸功能 Python 改写
 
 - **新建图纸 (Python)**：新增 `drawing_operations.py` 核心模块，实现 `generate_drawing()` 从 CATPart/CATProduct 生成新图纸；解决 `win32com CDispatch` 类型检测问题（`get_document_type()`）。
-- **刷新图纸 (Python)**：实现 `refresh_drawing()` 将图纸参数与对应零件/装配体同步（零件编号、术语、版本及自定义属性）；保留 VBScript 版本用于对比。
+- **刷新图纸 (Python)**：实现 `refresh_drawing()` 将图纸参数与对应零件/产品同步（零件编号、术语、版本及自定义属性）；保留 VBScript 版本用于对比。
 
 ### 新增 — 主题
 
@@ -266,7 +266,7 @@
 
 ### 修复 — 宏（hide_wireframe.catvbs）
 
-- 修复装配体场景下线框隐藏逻辑的多处问题：正确使用 `SelectedElement.Value.VisProperties` 读取每个元素的可见性；修正 `catVisNoShow`（showVal=1）的判断逻辑；仅对 ProductDocument 节点执行 InWorkObject 切换，跳过 PartDocument 节点。
+- 修复产品场景下线框隐藏逻辑的多处问题：正确使用 `SelectedElement.Value.VisProperties` 读取每个元素的可见性；修正 `catVisNoShow`（showVal=1）的判断逻辑；仅对 ProductDocument 节点执行 InWorkObject 切换，跳过 PartDocument 节点。
 
 ---
 

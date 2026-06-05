@@ -527,7 +527,7 @@ class MainWindow(QMainWindow):
 
         btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
-            "遍历产品树，读取零件质量/重心/转动惯量，计算装配体总质量特性并导出"
+            "遍历产品树，读取零件质量/重心/转动惯量，计算产品总质量特性并导出"
         )
         btn_mass_props.clicked.connect(self._open_mass_props_dialog)
 
@@ -589,7 +589,7 @@ class MainWindow(QMainWindow):
         btn_new_py.clicked.connect(self._open_generate_drawing_dialog_python)
 
         btn_refresh_py = QPushButton(self._ACTION_LABELS["drawing_refresh"])
-        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- Python 实现版本")
+        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- Python 实现版本")
         btn_refresh_py.clicked.connect(self._open_refresh_drawing_dialog_python)
 
         for btn in (btn_new_py, btn_refresh_py):
@@ -603,7 +603,7 @@ class MainWindow(QMainWindow):
         btn_new.clicked.connect(self._open_generate_drawing_dialog)
 
         btn_refresh = QPushButton("刷新图纸 (VBScript)")
-        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- VBScript 宏版本")
+        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- VBScript 宏版本")
         btn_refresh.clicked.connect(self._open_refresh_drawing_dialog)
 
         for btn in (btn_new, btn_refresh):
@@ -653,10 +653,10 @@ class MainWindow(QMainWindow):
         asm_row = QHBoxLayout()
         asm_row.setSpacing(6)
         btn_fastener = QPushButton(self._ACTION_LABELS["fastener_asm"])
-        btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
+        btn_fastener.setToolTip("在产品中连续放置紧固件实例")
         btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
         btn_nut = QPushButton(self._ACTION_LABELS["nut_plate_asm"])
-        btn_nut.setToolTip("在装配体中连续放置托板螺母实例")
+        btn_nut.setToolTip("在产品中连续放置托板螺母实例")
         btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
         asm_row.addWidget(btn_fastener)
         asm_row.addWidget(btn_nut)

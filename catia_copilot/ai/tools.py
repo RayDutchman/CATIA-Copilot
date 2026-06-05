@@ -520,7 +520,7 @@ def tool_generate_drawing(
     **_kwargs,
 ) -> str:
     """
-    从当前活动零件/装配体生成图纸。
+    从当前活动零件/产品生成图纸。
     property_values: {属性名: 属性值} 字典，AI 需预先提供所有需要的属性值。
     property_names: 要同步的属性名列表，默认 ["物料编码","材料","重量"]。
     """
@@ -1359,7 +1359,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "include_assemblies": {
                         "type": "boolean",
-                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
                     },
                     "sort_column": {
                         "type": ["string", "null"],
@@ -1398,7 +1398,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "summary_include_assemblies": {
                         "type": "boolean",
-                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
                     },
                     "summary_sort_column": {
                         "type": ["string", "null"],
@@ -1533,7 +1533,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "find_reverse_dependencies",
-            "description": ("反向依赖查询：在当前 CATIA 中已打开的文档里，查找哪些文档直接引用了指定文件。""只检查已打开的 CATProduct 和 CATDrawing，不会主动打开新文件。""典型用途：删除零件前确认哪些装配体/图纸引用了它。""返回 {dependency_count, dependencies}。"),
+            "description": ("反向依赖查询：在当前 CATIA 中已打开的文档里，查找哪些文档直接引用了指定文件。""只检查已打开的 CATProduct 和 CATDrawing，不会主动打开新文件。""典型用途：删除零件前确认哪些产品/图纸引用了它。""返回 {dependency_count, dependencies}。"),
             "parameters": {
                 "type": "object",
                 "properties": {

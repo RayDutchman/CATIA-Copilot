@@ -96,7 +96,7 @@ QGroupBox "同步选项"
     更新后操作：      ● 自动签入  ○ 保留签出
     增量判断：        ☑ 仅同步有变化的零件（取消勾选=强制全量）
     STEP 上传：       ☐ 同步完成后上传 STEP 几何文件
-    注册产品：        ☐ 同步完成后将顶层装配体注册为 PLM Product
+    注册产品：        ☐ 同步完成后将顶层产品注册为 PLM Product
 
 QHBoxLayout（预设按钮）
   [新建模式]  [更新模式]
@@ -128,7 +128,7 @@ QTableWidget  同步结果表格
 - 上传结果在同步结果表格中单独展示
 
 **Product 注册逻辑（G-04）**：
-- 勾选后，整体同步完成后调用 `POST /products`，以顶层装配体的 Part Number 为
+- 勾选后，整体同步完成后调用 `POST /products`，以顶层产品的 Part Number 为
   `designItemNumber`，Nomenclature 为 `designItemName`
 - 已存在则跳过，日志提示
 

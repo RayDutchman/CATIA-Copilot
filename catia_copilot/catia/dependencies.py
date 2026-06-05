@@ -19,7 +19,7 @@ CATIA 依赖项查找器。
   对每个已打开文档调用 find_dependencies，取其直接依赖列表，
   检查目标路径是否在其中。相当于对所有已打开文档各做一次正向查询，
   找出哪些文档直接引用了目标文件。
-  典型用途：想删除某个零件前，先确认哪些已打开的装配体/图纸直接用到了它。
+  典型用途：想删除某个零件前，先确认哪些已打开的产品/图纸直接用到了它。
 
 启发式补充策略（DRAWING_SEARCH_STRATEGIES / PART_TO_DRAWING_STRATEGIES）：
   pn_param_open_docs     – 读图纸 Parameters["PartNumber"]，在已打开文档中匹配

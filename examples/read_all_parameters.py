@@ -199,7 +199,7 @@ def main():
         try:
             product = doc.Product   # ProductDocument
             params_com = product.Parameters
-            print("  文档类型：ProductDocument（产品/装配体）")
+            print("  文档类型：ProductDocument（产品/部件）")
         except Exception as exc:
             print(f"[错误] 无法获取 Parameters 集合：{exc}")
             return

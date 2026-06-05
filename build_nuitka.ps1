@@ -80,9 +80,6 @@ $NuitkaArgs = @(
     # openpyxl 将 XML 模板和 schema 文件放在包目录下，需显式包含。
     '--include-package-data=openpyxl',
 
-    # ── qdarkstyle Qt 资源文件（深/浅色主题图标）────────────────────────────
-    '--include-package-data=qdarkstyle',
-
     # ── 显式包含静态分析可能遗漏的包 ──────────────────────────────────────
     # pywin32 系列：--include-package 会让 Nuitka 自动把
     # pywin32_system32/*.dll 一并打包，无需手动 --include-data-files。
@@ -93,14 +90,9 @@ $NuitkaArgs = @(
     '--include-package=pythoncom',
     '--include-package=pywintypes',
 
-    # openpyxl / qdarkstyle / pycatia（含所有子包）
+    # openpyxl / pycatia（含所有子包）
     '--include-package=openpyxl',
-    '--include-package=qdarkstyle',
     '--include-package=pycatia',
-
-    # qdarkstyle Qt 资源注册模块（等价于 PyInstaller hiddenimports）
-    '--include-module=qdarkstyle.dark.darkstyle_rc',
-    '--include-module=qdarkstyle.light.lightstyle_rc',
 
     # ── 不跟随导入：排除项目未用到的 Qt 模块（等价于 build.spec excludes[]）
     # QML / Quick
@@ -269,9 +261,6 @@ $NuitkaArgs = @(
     # openpyxl 将 XML 模板和 schema 文件放在包目录下，需显式包含。
     '--include-package-data=openpyxl',
 
-    # ── qdarkstyle Qt 资源文件（深/浅色主题图标）────────────────────────────
-    '--include-package-data=qdarkstyle',
-
     # ── 显式包含 PyInstaller 分析可能遗漏的包 ──────────────────────────────
     # pywin32 系列：COM、Win32 API、GUI（win32com/win32api/win32gui/win32con 等）
     '--include-package=win32com',
@@ -282,14 +271,9 @@ $NuitkaArgs = @(
     '--include-package=pywintypes',
     '--include-package=win32con',
 
-    # openpyxl / qdarkstyle / pycatia（含所有子包）
+    # openpyxl / pycatia（含所有子包）
     '--include-package=openpyxl',
-    '--include-package=qdarkstyle',
     '--include-package=pycatia',
-
-    # qdarkstyle Qt 资源注册模块（等价于 PyInstaller hiddenimports）
-    '--include-module=qdarkstyle.dark.darkstyle_rc',
-    '--include-module=qdarkstyle.light.lightstyle_rc',
 
     # ── 不跟随导入：排除项目未用到的 Qt 模块（等价于 build.spec excludes[]）
     # QML / Quick

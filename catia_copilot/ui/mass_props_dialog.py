@@ -11,7 +11,7 @@
                       • 惯量单位 g·mm²/g·m²/kg·mm²/kg·m² 独立选择（4 种）
                       • 惯量包络体读取模式：只读.1 / 最大编号 / 全部汇总
                       • 文件名 / 零件编号 / 术语 / 版本列可隐藏
-                      • 自动汇总装配体总质量特性并导出 Excel
+                      • 自动汇总产品总质量特性并导出 Excel
 """
 
 import csv
@@ -157,7 +157,7 @@ class MassPropsDialog(QDialog):
     - 仅零件节点的"重量"列可编辑；修改后等比缩放该行惯量，
       并同步更新所有相同零件编号的行（及 _rows 中全部同PN数据）。
     - 单位可在 kg/g 间切换（影响重量列与转动惯量列的显示和导出）。
-    - 修改密度或重量后自动重新计算装配体总质量特性，汇总结果实时更新。
+    - 修改密度或重量后自动重新计算产品总质量特性，汇总结果实时更新。
     - "导出表格"将当前数据（含汇总行）写入 Excel 。
     """
 
@@ -2641,13 +2641,13 @@ class MassPropsDialog(QDialog):
         elif row_locked:
             if not_found:
                 bg  = c.ROW_NOT_FOUND_BG
-                tip = "该零件/装配体的文件未被 CATIA 检索到，行内容不可编辑。"
+                tip = "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
             elif meas_failed:
                 bg  = c.ROW_MEAS_FAILED_BG
                 tip = "该零件的质量特性测量失败，行内容不可编辑。"
             else:
                 bg  = c.ROW_LIGHTWEIGHT_BG
-                tip = "该零件/装配体处于轻量化模式，无法读取属性。"
+                tip = "该零件/产品处于轻量化模式，无法读取属性。"
             for ci in range(col_count):
                 item.setForeground(ci, c.ROW_LOCKED_FG)
                 item.setBackground(ci, bg)

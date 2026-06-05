@@ -6,8 +6,8 @@ Option Explicit
 ' 功能概述：
 '   一键隐藏 CATIA V5 活动文档中所有点、线、三维曲线、草图、轴系、平面（不含曲面）。
 '   · 零件（CATPart）：直接对该文档的 Selection 执行搜索+隐藏。
-'   · 装配体（CATProduct）：直接对根文档的 Selection 以 "All" 范围搜索，
-'     CATIA V5 在装配体上下文中会自动跨越所有子孙零件返回结果，
+'   · 产品（CATProduct）：直接对根文档的 Selection 以 "All" 范围搜索，
+'     CATIA V5 在产品上下文中会自动跨越所有子孙零件返回结果，
 '     因此无需逐零件切换 InWorkObject 或递归遍历产品树。
 '
 ' 隐藏的几何类型：
@@ -20,13 +20,13 @@ Option Explicit
 '   不包含曲面（Surface）。
 '
 ' 用法：
-'   在 CATIA 中打开零件或装配体并激活对应文档后，运行本脚本。
+'   在 CATIA 中打开零件或产品并激活对应文档后，运行本脚本。
 '   不依赖 iParameters，可通过 Tools > Macros 直接执行，
 '   也可由外部程序通过 SystemService.ExecuteScript 调用。
 '
 ' ── 已修复的问题 ──────────────────────────────────────────────────────────
 '
-' Bug 1：InWorkObject 不是根产品时搜索可能抛出异常（仅装配体）
+' Bug 1：InWorkObject 不是根产品时搜索可能抛出异常（仅产品）
 '   若用户双击进入了某个子零件的上下文（即 InWorkObject 不是根 Product），
 '   Selection.Search 在部分 CATIA 版本中会抛出异常或仅在当前上下文内搜索。
 '   修复：仅对 ProductDocument，在搜索前将 InWorkObject 设置为根 Product，
@@ -43,7 +43,7 @@ Sub CATMain()
     Set oCATIA = GetObject(, "CATIA.Application")
 
     If oCATIA.Documents.Count = 0 Then
-        MsgBox "没有打开的文档，请先打开零件或装配体。", vbExclamation, "hide_wireframe"
+        MsgBox "没有打开的文档，请先打开零件或产品。", vbExclamation, "hide_wireframe"
         Exit Sub
     End If
 
@@ -55,12 +55,12 @@ Sub CATMain()
     docType = TypeName(oDoc)
 
     If docType <> "PartDocument" And docType <> "ProductDocument" Then
-        MsgBox "当前活动文档不是零件（CATPart）或装配体（CATProduct），无法执行。", _
+        MsgBox "当前活动文档不是零件（CATPart）或产品（CATProduct），无法执行。", _
                vbExclamation, "hide_wireframe"
         Exit Sub
     End If
 
-    ' ── 仅对装配体将 InWorkObject 设为根产品，避免子上下文导致搜索异常 ─────
+    ' ── 仅对产品将 InWorkObject 设为根产品，避免子上下文导致搜索异常 ─────
     ' Bug 1 修复：保存原 InWorkObject，设为根，执行后恢复
     ' 零件文档无需切换 InWorkObject
     Dim oOldInWork
