@@ -1,4 +1,4 @@
-"""
+﻿"""
 DocdokuPLM REST API 客户端。
 
 仅使用标准库（urllib），不引入任何第三方依赖。
@@ -16,6 +16,7 @@ import base64
 import http.cookiejar
 import json
 import logging
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -320,7 +321,7 @@ class PlmApiClient:
                 # PLM-06（ProductManagerBean:3509 NPE）已于 2026-05-20 服务端修复，
                 # 此处不再对 500 静默跳过，直接抛出，避免掩盖真实服务端错误。
                 raise
-        raise PlmApiError(404, f"零件 {part_number} 不存在（A/B/C 均未找到）")
+        raise PlmApiError(f"零件 {part_number} 不存在（A/B/C 均未找到）", 404)
 
     def update_iteration(
         self,
@@ -435,7 +436,6 @@ class PlmApiClient:
         参数：
             step_path: 本地 .stp 文件的绝对路径
         """
-        import os
         ws  = urllib.parse.quote(workspace,   safe="")
         pn  = urllib.parse.quote(part_number, safe="")
         filename = os.path.basename(step_path)
@@ -567,7 +567,6 @@ class PlmApiClient:
         参数：
             file_path: 本地文件的绝对路径
         """
-        import os
         ws  = urllib.parse.quote(workspace,   safe="")
         pn  = urllib.parse.quote(part_number, safe="")
         # 附件端点 base_url 同根，只需替换路径前缀

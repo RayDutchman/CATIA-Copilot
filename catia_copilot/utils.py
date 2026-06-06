@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA Copilot 实用工具函数模块。
 
 提供：
@@ -16,12 +16,21 @@ import ctypes.wintypes as _wt
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unicodedata
 import winreg
 import logging
 from pathlib import Path
+
+import pythoncom
+import win32gui
+import win32con
+import win32com.client as _wcc
+from win32com.client import dynamic as _dyn
+from win32com.client import dynamic as _wcc_dynamic
+from win32com.client import gencache as _gencache
 
 try:
     import win32com.client as _win32com_client
@@ -85,8 +94,6 @@ def _find_catia_v5_in_rot():
     if _win32com_client is None:
         return None
     try:
-        import pythoncom
-        from win32com.client import dynamic as _wcc_dynamic
         rot = pythoncom.GetRunningObjectTable()
         enum = rot.EnumRunning()
         # 用于获取 moniker 显示名的 bind context
@@ -214,8 +221,6 @@ def _try_get_active_object_by_clsid(clsid: str):
     if _win32com_client is None:
         return None
     try:
-        import win32com.client as _wcc
-        from win32com.client import dynamic as _dyn
         _raw = _wcc.GetActiveObject(clsid)
         _oleobj = getattr(_raw, "_oleobj_", None)
         return _dyn.Dispatch(_oleobj) if _oleobj is not None else _raw
@@ -364,7 +369,6 @@ def _is_catia_process_running() -> bool:
     通过调用 ``tasklist /FI "IMAGENAME eq CNEXT.exe" /NH`` 检测，
     无需管理员权限。返回 True 表示进程存在，False 表示不存在或检测失败。
     """
-    import subprocess
     # CREATE_NO_WINDOW 防止打包为无控制台 exe 时子进程弹出黑色终端窗口
     no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
@@ -400,9 +404,6 @@ def get_catia_v5_com_dispatch():
     """
     if _win32com_client is None:
         return None
-
-    import win32com.client as _wcc
-    from win32com.client import dynamic as _dyn
 
     def _try_get(key: str):
         try:
@@ -477,9 +478,6 @@ def check_catia_connection() -> str:
 
     if _win32com_client is None:
         return _report("disconnected")
-
-    import win32com.client as _wcc
-    from win32com.client import dynamic as _dyn
 
     def _try_key(key: str):
         try:
@@ -580,7 +578,6 @@ def diagnose_catia_connection() -> dict:
     gen_py_path: Path | None = None
     if _win32com_client is not None:
         try:
-            from win32com.client import gencache as _gencache
             gen_py_path = Path(_gencache.GetGeneratePath())
         except Exception:
             pass
@@ -596,9 +593,6 @@ def diagnose_catia_connection() -> dict:
     if _win32com_client is None:
         result["error"] = "win32com 未安装，无法进行 COM 调用"
         return result
-
-    import win32com.client as _wcc
-    from win32com.client import dynamic as _dyn
 
     def _try_get(key: str):
         """尝试用 ProgID 或 CLSID 获取晚绑定 dispatch，返回 (app, last_error_str)。"""
@@ -691,7 +685,6 @@ def ensure_clean_gencache() -> None:
     # 1. 通过 gencache 模块获取版本特定路径（最准确）
     if _win32com_client is not None:
         try:
-            from win32com.client import gencache as _gencache
             candidates.add(Path(_gencache.GetGeneratePath()))  # e.g., …/gen_py/3.13
         except Exception:
             pass
@@ -890,11 +883,6 @@ def _find_catia_hwnd() -> int:
 
     找不到时返回 0。win32gui 不可用时同样返回 0。
     """
-    try:
-        import win32gui  # type: ignore[import]
-    except ImportError:
-        return 0
-
     catia_hwnd = 0
 
     def _enum_cb(hwnd: int, _) -> bool:
@@ -1007,16 +995,7 @@ def safe_set_visible(application) -> None:
         # 已经可见，无需设置，直接返回（避免触发 CATIA 内部 ShowWindow）
         return
 
-    try:
-        import win32gui  # type: ignore[import]
-        import win32con  # type: ignore[import]
-    except ImportError:
-        # win32gui 不可用，退化为直接设置
-        application.Visible = True
-        return
-
-    # 记录设置前的窗口状态
-    catia_hwnd = _find_catia_hwnd()
+    # 记录设置前的窗口状态    catia_hwnd = _find_catia_hwnd()
     show_cmd_before = 0
     if catia_hwnd:
         try:
@@ -1048,13 +1027,6 @@ def bring_catia_to_foreground() -> None:
     - 若找不到 CATIA V5 窗口，记录 warning 但不抛出异常。
     """
     _log = logging.getLogger(__name__)
-
-    try:
-        import win32gui  # type: ignore[import]
-        import win32con  # type: ignore[import]
-    except ImportError:
-        _log.warning("bring_catia_to_foreground: win32gui 不可用，跳过置前台")
-        return
 
     catia_hwnd = _find_catia_hwnd()
 

@@ -2,17 +2,26 @@
 BOM 数据收集辅助模块。
 
 提供：
-- get_product_filepath()     – 解析 CATIA 产品的支持文件路径
-- collect_bom_rows()         – 遍历产品树并返回行字典列表
-- flatten_bom_to_summary()   – 将层级 BOM 压缩为平面汇总
-                               （唯一零件及累计数量）
+- get_product_filepath()       – 解析 CATIA 产品的支持文件路径
+- collect_bom_rows()           – 遍历产品树并返回层级行字典列表（按 PN 分组）
+- collect_bom_rows_full()      – 遍历产品树并返回逐实例行字典列表（不分组）
+- build_hierarchical_rows()    – 将逐实例行纯 Python 后处理为层级行
+                                 （无 COM 调用，等效于 collect_bom_rows 输出）
+- flatten_bom_to_summary()     – 将层级 BOM 压缩为平面汇总
+                                 （唯一零件及累计数量）
 """
 
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from catia_copilot.constants import FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType
+from catia_copilot.constants import (
+    FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType, PRODUCT_ATTR_READ_MAP,
+    CATIA_DESIGN_MODE, CATIA_VISUALIZATION_MODE, BOM_INSTANCE_NAME_COLUMN,
+)
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +46,7 @@ def get_product_filepath(product) -> str:
         return ""
 
 
-def collect_bom_rows(
+def collect_bom_rows_archive(
     file_path: str | None,
     columns: list[str],
     custom_columns: list[str],
@@ -60,14 +69,6 @@ def collect_bom_rows(
         is appended to the result list.  May raise an exception to abort the
         traversal (e.g. when the user cancels).
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.constants import PRODUCT_ATTR_READ_MAP
-    from catia_copilot.catia.document import get_bom_node_type
-
-    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
-    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
-    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
-
     # win32com Product 对象的内置属性（CamelCase COM 属性名）
     # 集中定义在 constants.PRODUCT_ATTR_READ_MAP，此处直接引用
     DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
@@ -236,7 +237,7 @@ def collect_bom_rows(
 
     # ── CATIA connection ────────────────────────────────────────────────────
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if file_path is None:
@@ -251,6 +252,351 @@ def collect_bom_rows(
     rows = []
     _traverse(root_product, rows, level=0)
     return rows
+
+
+def collect_bom_rows(
+    file_path: str | None,
+    columns: list[str],
+    custom_columns: list[str],
+    progress_callback: Callable[[int], None] | None = None,
+) -> list[dict]:
+    """Return a list of row dicts for the full (per-instance) BOM.
+
+    Unlike :func:`collect_bom_rows`, this function does **not** group instances
+    by PartNumber.  Every instance in the assembly tree produces its own row.
+
+    Additional fields per row compared to :func:`collect_bom_rows`:
+
+    ``BOM_INSTANCE_NAME_COLUMN`` (``"Instance Name"``)
+        The COM ``product.Name`` value – the per-instance name that is unique
+        within its parent assembly.  Writable via ``product.Name = value``.
+
+    ``"_parent_product"``
+        The parent COM product object.  ``None`` for the root row.  Used by the
+        dialog to enforce sibling-level instance-name uniqueness before writing.
+
+    Parameters
+    ----------
+    file_path, columns, custom_columns, progress_callback:
+        Same semantics as :func:`collect_bom_rows`.
+    """
+    DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
+
+    def _get_prop(product, name: str) -> str:
+        attr = DIRECT_ATTR_MAP.get(name)
+        if not attr:
+            return ""
+        targets = [product]
+        try:
+            targets.insert(0, product.ReferenceProduct)
+        except Exception:
+            pass
+        for target in targets:
+            try:
+                value = getattr(target, attr)
+                if value is not None:
+                    return str(value)
+            except Exception as e:
+                logger.debug(f"无法从 {target} 获取属性 {name}: {e}")
+        return ""
+
+    def _get_user_prop(product, name: str) -> str:
+        targets = [product]
+        try:
+            targets.insert(0, product.ReferenceProduct)
+        except Exception:
+            pass
+        for target in targets:
+            try:
+                prop  = target.UserRefProperties.Item(name)
+                value = prop.Value
+                if value is not None and str(value).strip():
+                    return str(value)
+            except Exception:
+                pass
+        return ""
+
+    _total_count: int = 0
+    _props_cache: dict[str, dict] = {}
+
+    def _traverse(product, rows: list, level: int,
+                  parent_filepath: str = "",
+                  parent_product=None) -> None:
+        nonlocal _total_count
+        try:
+            pn = product.PartNumber
+        except Exception:
+            name = product.Name
+            pn   = name.rsplit(".", 1)[0] if "." in name else name
+
+        try:
+            instance_name = product.Name
+        except Exception:
+            instance_name = ""
+
+        filepath  = get_product_filepath(product)
+        not_found = not bool(filepath)
+        no_file   = bool(filepath) and not Path(filepath).exists()
+        is_embedded = (bool(filepath) and bool(parent_filepath)
+                       and filepath == parent_filepath)
+
+        cached = (not is_embedded
+                  and bool(filepath) and filepath in _props_cache)
+        is_readable = True
+
+        if not_found:
+            props = {col: "" for col in columns}
+            props["_is_readable"] = True
+        elif not cached:
+            try:
+                current_mode = product.GetWorkMode()
+                if current_mode != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
+            except Exception:
+                try:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
+                except Exception:
+                    is_readable = False
+
+            props: dict = {}
+            for col in columns:
+                if col in DIRECT_ATTR_MAP:
+                    props[col] = _get_prop(product, col)
+                elif col in custom_columns:
+                    props[col] = _get_user_prop(product, col)
+            props["_is_readable"] = is_readable
+
+            if filepath and not is_embedded:
+                _props_cache[filepath] = props
+        else:
+            props       = _props_cache[filepath]
+            is_readable = bool(props.get("_is_readable", True))
+
+        row: dict = {
+            "Level":                  level,
+            "Part Number":            pn,
+            BOM_INSTANCE_NAME_COLUMN: instance_name,
+            "Filename":               (FILENAME_UNSAVED    if no_file   else
+                                       Path(filepath).name  if filepath  else
+                                       FILENAME_NOT_FOUND),
+            "_filepath":              filepath,
+            "_not_found":             not_found,
+            "_no_file":               no_file,
+            "_unreadable":            not is_readable,
+            "_product":               product,
+            "_parent_product":        parent_product,
+        }
+
+        try:
+            row["Type"] = get_bom_node_type(product, parent_filepath, filepath=filepath)
+        except Exception:
+            row["Type"] = ""
+
+        for col in columns:
+            if col in DIRECT_ATTR_MAP or col in custom_columns:
+                row[col] = props.get(col, "")
+
+        rows.append(row)
+        _total_count += 1
+        if progress_callback is not None:
+            progress_callback(_total_count)
+
+        try:
+            # Navigate via ReferenceProduct.Products so that the stored child
+            # COM reference is the actual editable instance within the
+            # sub-assembly document.  Accessing children via instance.Products
+            # directly returns a lightweight proxy whose .Name setter is
+            # silently a no-op at Level 2+ – writing the instance name would
+            # appear to succeed but have no effect in CATIA.
+            try:
+                products = product.ReferenceProduct.Products
+            except Exception:
+                products = product.Products
+            count    = products.Count
+            if count == 0:
+                return
+            for i in range(1, count + 1):
+                try:
+                    child = products.Item(i)
+                    _traverse(child, rows, level + 1,
+                              parent_filepath=filepath,
+                              parent_product=product)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    # ── CATIA connection ────────────────────────────────────────────────────
+    application = get_catia_v5_application()
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
+    documents   = application.Documents
+
+    if file_path is None:
+        root_product = application.ActiveDocument.Product
+        rows: list[dict] = []
+        _traverse(root_product, rows, level=0, parent_product=None)
+        return rows
+
+    from catia_copilot.utils import open_catia_file  # noqa: PLC0415
+    target_doc = open_catia_file(documents, file_path)
+    root_product = target_doc.Product
+    rows = []
+    _traverse(root_product, rows, level=0, parent_product=None)
+    return rows
+
+
+def _hierarchical_range(
+    full_rows: list[dict],
+    start: int,
+    end: int,
+    result: list[dict],
+) -> None:
+    """Internal recursive helper for :func:`build_hierarchical_rows`.
+
+    Processes ``full_rows[start:end]``, which contains sibling nodes at one
+    level plus their subtrees.  Siblings with the same Part Number under the
+    same parent are collapsed into a single representative row; the
+    representative's subtree is then recursed into.
+    """
+    # First pass: collect direct children at this level (walk over subtrees)
+    groups: dict[tuple, list] = {}      # key → [(row_dict, row_i, sub_end)]
+    seen_order: list[tuple]   = []      # insertion-ordered keys
+
+    i = start
+    while i < end:
+        row      = full_rows[i]
+        root_lvl = row["Level"]
+        # Find exclusive end of this row's subtree within [start, end)
+        sub_end  = i + 1
+        while sub_end < end and full_rows[sub_end]["Level"] > root_lvl:
+            sub_end += 1
+
+        pn     = str(row.get("Part Number", ""))
+        parent = row.get("_parent_product")
+        key    = (id(parent) if parent is not None else None, pn)
+
+        if key not in groups:
+            groups[key] = []
+            seen_order.append(key)
+        groups[key].append((row, i, sub_end))
+        i = sub_end
+
+    # Second pass: build representative rows and recurse
+    for key in seen_order:
+        instances                         = groups[key]
+        first_row, first_i, first_sub_end = instances[0]
+
+        rep             = dict(first_row)      # shallow copy
+        rep["Quantity"] = len(instances)
+
+        result.append(rep)
+
+        # Recurse into the representative's subtree only
+        if first_sub_end > first_i + 1:
+            _hierarchical_range(full_rows, first_i + 1, first_sub_end, result)
+
+
+def build_hierarchical_rows(full_rows: list[dict]) -> list[dict]:
+    """Derive hierarchical BOM rows from per-instance full BOM rows.
+
+    This is the pure-Python counterpart of :func:`collect_bom_rows`.  It
+    converts the flat, per-instance list produced by
+    :func:`collect_bom_rows_full` into a grouped, hierarchical list that
+    matches the structure :func:`collect_bom_rows` would return — without any
+    additional COM traversal.
+
+    Instances of the same Part Number under the same parent are collapsed into
+    a single *representative* row.  The representative's ``Quantity`` is set
+    to the sibling-group count.
+
+    Only the representative instance's subtree is included in the result;
+    identical subtrees of extra instances are silently discarded.
+
+    Parameters
+    ----------
+    full_rows:
+        The list returned by :func:`collect_bom_rows_full`.
+
+    Returns
+    -------
+    list[dict]
+        Hierarchical BOM rows equivalent to :func:`collect_bom_rows` output,
+        but derived purely from *full_rows* without additional COM calls.
+    """
+    result: list[dict] = []
+    _hierarchical_range(full_rows, 0, len(full_rows), result)
+    return result
+
+
+def refresh_row_from_com(
+    product,
+    columns: list[str],
+    custom_columns: list[str],
+    is_component: bool = False,
+) -> dict[str, str]:
+    """Re-read attribute values for a single product COM object.
+
+    Switches the product to DESIGN_MODE if needed, then reads every column
+    listed in *columns* (built-in attributes and user-defined properties).
+
+    Returns a ``{column_name: value}`` dict for all columns successfully read.
+    Columns that cannot be read are omitted; the caller keeps the existing value.
+
+    Parameters
+    ----------
+    product:
+        A win32com Product object with a live COM connection.
+    columns:
+        Internal column names to re-read.
+    custom_columns:
+        Column names that are user-defined properties.
+    is_component:
+        若为 True，表示该行是嵌入部件（Component），不尝试读取 ReferenceProduct。
+        Component 的 ReferenceProduct 指向父产品，读取会得到父产品的属性值。
+    """
+    DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
+
+    try:
+        if product.GetWorkMode() != CATIA_DESIGN_MODE:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+    except Exception:
+        try:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+        except Exception:
+            pass
+
+    targets = [product]
+    # Component 嵌入部件不走 ReferenceProduct：
+    # Component 实例的 ReferenceProduct 返回的是父产品对象，
+    # 读取会得到父产品的属性，导致属性值被父产品值覆盖。
+    if not is_component:
+        try:
+            targets.insert(0, product.ReferenceProduct)
+        except Exception:
+            pass
+
+    result: dict[str, str] = {}
+    for col in columns:
+        if col in DIRECT_ATTR_MAP:
+            attr = DIRECT_ATTR_MAP[col]
+            for target in targets:
+                try:
+                    v = getattr(target, attr)
+                    if v is not None:
+                        result[col] = str(v)
+                        break
+                except Exception:
+                    pass
+        elif col in custom_columns:
+            for target in targets:
+                try:
+                    prop_obj = target.UserRefProperties.Item(col)
+                    if prop_obj.Value is not None and str(prop_obj.Value).strip():
+                        result[col] = str(prop_obj.Value)
+                        break
+                except Exception:
+                    pass
+    return result
 
 
 def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
@@ -294,7 +640,7 @@ def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
         return result  # 至少返回第一段结果
 
     # 构建 resolved_path → doc 的映射
-    open_docs: dict[Path, object] = {}
+    open_docs: dict[Path, Any] = {}
     for i in range(1, documents.Count + 1):
         try:
             doc = documents.Item(i)

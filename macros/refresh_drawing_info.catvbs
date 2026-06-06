@@ -43,7 +43,7 @@ Sub CATMain()
         Exit Sub
     End If
 
-    '--- 3. 在所有已打开文档中查找匹配零件编号的零件或装配体 ---
+    '--- 3. 在所有已打开文档中查找匹配零件编号的零件或产品 ---
     Dim foundDoc
     Set foundDoc = Nothing
 
@@ -69,7 +69,7 @@ Sub CATMain()
     Next
 
     If foundDoc Is Nothing Then
-        MsgBox "未找到零件编号为 """ & targetPN & """ 的零件或装配体文档。" & Chr(10) & _
+        MsgBox "未找到零件编号为 """ & targetPN & """ 的零件或产品文档。" & Chr(10) & _
                "请确保对应文档已在 CATIA 中打开。", vbExclamation, "刷新图纸信息"
         Exit Sub
     End If

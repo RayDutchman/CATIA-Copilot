@@ -1,10 +1,11 @@
-"""
+﻿"""
 BOM 导出对话框。
 
 提供：
 - ExportBomDialog – 用于选择 CATProduct 、选择列并将 BOM 导出到 Excel 的对话框。
 """
 
+import ctypes
 import logging
 import subprocess
 from pathlib import Path
@@ -157,9 +158,9 @@ class ExportBomDialog(QDialog):
         summary_opts_layout.setContentsMargins(0, 0, 0, 0)
         summary_opts_layout.setSpacing(8)
 
-        self._include_assemblies_chk = QCheckBox("包含产品和部件（子装配体）")
+        self._include_assemblies_chk = QCheckBox("包含产品和部件（子产品）")
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总 BOM 中也会列出产品和部件（子装配体），而不仅限于零件。"
+            "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。"
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
@@ -502,7 +503,6 @@ class ExportBomDialog(QDialog):
         使用 ShellExecuteW（宽字符 Unicode API）调用 explorer，避免经过
         cmd.exe / PowerShell 时中文路径因 OEM 代码页转换而乱码。
         """
-        import ctypes
         p = Path(fp).resolve()
         try:
             if p.exists():

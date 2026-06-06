@@ -1,7 +1,7 @@
-"""
+﻿"""
 PLM 工作台主窗口。
 
-独立非模态 QMainWindow，通过 QTabWidget 整合所有 PLM 对接功能：
+独立非模态 QDialog，通过 QTabWidget 整合所有 PLM 对接功能：
   Tab 1 - 连接：配置与测试 PLM 服务端连接
   Tab 2 - 同步： BOM 预览 + 增量同步（附件上传可选）
   Tab 3 - 标签：Tag 管理与自动映射规则
@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pythoncom
 import tempfile
 from datetime import datetime
 
@@ -28,6 +29,8 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -35,11 +38,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QListWidgetItem,
-    QMainWindow,
-    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSizePolicy,
@@ -59,6 +60,7 @@ from catia_copilot.ui.ui_colors import get_colors as _get_colors
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.ui.ui_layout import L
 
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, check_unsaved_docs
 from catia_copilot.constants import (
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_EDIT_COLUMN_ORDER,
@@ -66,6 +68,17 @@ from catia_copilot.constants import (
     PRESET_USER_REF_PROPERTIES,
     PLM_SYNC_MAX_NODES,
     PLM_MEMBER_TABLE_COLUMNS,
+    BomNodeType,
+)
+from catia_copilot.plm.api_client import PlmApiClient
+from catia_copilot.plm.sync import (
+    _rows_to_bom_tree as rows_to_bom_tree,
+    sync_bom_to_plm,
+    AfterUpdatePolicy,
+    CheckedOutByOtherPolicy,
+    ExistingPartPolicy,
+    OwnCheckedOutPolicy,
+    SyncOptions,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,7 +180,6 @@ class _ConnectWorker(QThread):
 
     def run(self):
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
             users = c.list_users(self._workspace) or []
@@ -201,19 +213,17 @@ class _BomPreviewWorker(QThread):
     progress = Signal(int)    # 已收集节点数，用于进度条
 
     def run(self):
-        import pythoncom  # noqa: PLC0415
         # QThread 工作线程需手动初始化 COM（STA 模式），否则 win32com 调用会抛
         # "CoInitialize has not been called"
         pythoncom.CoInitialize()
         try:
-            from catia_copilot.catia.bom_collect import collect_bom_rows
             # 构造需要读取的列：标准列 + 预设自定义属性列
             all_cols = list(dict.fromkeys(
                 BOM_EDIT_COLUMN_ORDER
                 + [c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER]
             ))
             custom_cols = [c for c in all_cols if c in PRESET_USER_REF_PROPERTIES]
-            rows = collect_bom_rows(
+            rows = collect_bom_rows_archive(
                 None,           # file_path=None：使用当前活动 CATIA 文档
                 all_cols,
                 custom_cols,
@@ -244,10 +254,6 @@ class _SyncWorker(QThread):
 
     def run(self):
         try:
-            from catia_copilot.plm.sync import _rows_to_bom_tree as rows_to_bom_tree
-            from catia_copilot.plm.api_client import PlmApiClient
-            from catia_copilot.plm.sync import sync_bom_to_plm
-
             self.progress.emit("正在构建 BOM 树……")
             bom_root = rows_to_bom_tree(self._rows)
             if bom_root is None:
@@ -292,7 +298,6 @@ class _TagsWorker(QThread):
 
     def run(self):
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
             self.success.emit(c.list_tags(self._workspace) or [])
@@ -313,7 +318,6 @@ class _CreateTagWorker(QThread):
 
     def run(self):
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
             # DocdokuPLM: POST /workspaces/{ws}/tags  body: {"label": "..."}
@@ -327,7 +331,7 @@ class _CreateTagWorker(QThread):
 # 主窗口
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PlmWorkbench(QMainWindow):
+class PlmWorkbench(QDialog):
     """PLM 工作台主窗口（非模态）。"""
 
     def __init__(self, parent=None):
@@ -343,14 +347,11 @@ class PlmWorkbench(QMainWindow):
             self.restoreGeometry(saved_geom)
 
         try:
-            from catia_copilot.ui.theme_manager import theme_manager
             theme_manager.register(self)
         except Exception:
             pass
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
+        root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
 
         self._tabs = QTabWidget()
@@ -623,7 +624,7 @@ class PlmWorkbench(QMainWindow):
         chk_row1 = QHBoxLayout()
         chk_row1.setSpacing(20)
         self._chk_incremental  = QCheckBox("增量同步（跳过属性无变化的零件）")
-        self._chk_reg_product  = QCheckBox("注册顶层装配体为产品配置（PLM Product）")
+        self._chk_reg_product  = QCheckBox("注册顶层产品为产品配置（PLM Product）")
         self._chk_incremental.setChecked(True)
         chk_row1.addWidget(self._chk_incremental)
         chk_row1.addWidget(self._chk_reg_product)
@@ -1054,10 +1055,6 @@ class PlmWorkbench(QMainWindow):
     # ── 构建 SyncOptions ─────────────────────────────────────────────────────
 
     def _build_sync_options(self):
-        from catia_copilot.plm.sync import (
-            AfterUpdatePolicy, CheckedOutByOtherPolicy,
-            ExistingPartPolicy, OwnCheckedOutPolicy, SyncOptions,
-        )
         return SyncOptions(
             existing_part_policy=(
                 ExistingPartPolicy.SKIP
@@ -1102,7 +1099,6 @@ class PlmWorkbench(QMainWindow):
             return
 
         # ── 前置校验：BOM 中不允许存在"部件"节点 ─────────────────────────────
-        from catia_copilot.constants import BomNodeType
         component_rows = [
             r for r in self._bom_rows
             if r.get("Type") == BomNodeType.COMPONENT
@@ -1124,20 +1120,17 @@ class PlmWorkbench(QMainWindow):
 
 
         try:
-            from catia_copilot.catia.bom_collect import check_unsaved_docs
             unsaved = check_unsaved_docs(self._bom_rows)
         except Exception as exc:
             logger.warning(f"未保存文档检查失败，跳过：{exc}")
             unsaved = []
 
         if unsaved:
-            from PySide6.QtWidgets import QDialog, QDialogButtonBox, QListWidget, QVBoxLayout as _VBox
             dlg = QDialog(self)
             dlg.setWindowTitle("存在未保存的文档")
             dlg.setMinimumWidth(480)
-            vbox = _VBox(dlg)
-            from PySide6.QtWidgets import QLabel as _Lbl
-            warn_lbl = _Lbl(
+            vbox = QVBoxLayout(dlg)
+            warn_lbl = QLabel(
                 "以下 CATIA 文档存在未保存问题（见各条目说明）：\n"
                 "  • 从未保存到磁盘：该零件的属性与几何体完全无法上传\n"
                 "  • 有未提交修改：将上传磁盘上的旧版本，本次修改不会包含在内\n\n"
@@ -1167,7 +1160,6 @@ class PlmWorkbench(QMainWindow):
         self._btn_load_preview.setEnabled(False)
 
         # 进度条：只计 level>0 的节点（根节点 Product 不产生终态日志行）
-        from catia_copilot.constants import BomNodeType
         syncable_rows = [r for r in self._bom_rows if int(r.get("Level", 0)) > 0]
         total_nodes = len(syncable_rows)
         self._pgb_sync.setMaximum(max(total_nodes, 1))

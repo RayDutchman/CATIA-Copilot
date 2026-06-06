@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA 单文档操作模块。
 
 提供以单个 CATIA 文档为操作对象的工具函数，与 bom_collect.py（遍历产品树）
@@ -19,6 +19,9 @@ import logging
 import os
 from pathlib import Path
 
+import pywintypes
+
+from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.constants import (
     PRODUCT_ATTR_READ_MAP,
     PRODUCT_ATTR_WRITE_MAP,
@@ -45,7 +48,6 @@ def _is_catia_com_error(exc: Exception) -> bool:
     后者是普通 Python 异常，必须始终报告给用户。
     """
     try:
-        import pywintypes  # noqa: PLC0415
         return isinstance(exc, pywintypes.com_error)
     except ImportError:
         return False
@@ -171,7 +173,6 @@ def find_open_document(file_path: str):
     ----
     COM 文档对象，或 None（未找到时）。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     target = Path(file_path).resolve()
     try:
@@ -232,7 +233,6 @@ def rename_document(
     - 不使用 doc_cache：每次调用内部自行查找文档，避免调用方持有 COM 对象引用。
       批量场景下文件数量通常不超过几十个，性能影响可忽略。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     src    = Path(file_path).resolve()
     ext    = Path(file_path).suffix
@@ -372,7 +372,6 @@ def get_document_properties(
     ``RuntimeError``
         CATIA 未连接，或文档类型不支持属性读取（如 CATDrawing）。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     app = get_catia_v5_application()
     doc = find_open_document(file_path)
@@ -500,7 +499,6 @@ def set_document_properties(
     ``RuntimeError``
         CATIA 未连接，或文档类型不支持属性写入。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
 
     get_catia_v5_application()  # 确认 CATIA 已连接，未连接时抛出 RuntimeError
     doc = find_open_document(file_path)

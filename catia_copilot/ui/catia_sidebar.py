@@ -158,9 +158,6 @@ class CATIASidebarManager(QObject):
         直接使用 win32 物理像素坐标调用 SetWindowPos，绕过 Qt 逻辑像素换算，
         避免多显示器 DPI 混用时 move()/resize() 坐标不准的问题。
         """
-        import win32gui as _w32
-        import win32con as _wc
-
         left, top, right, bottom = catia_rect
         catia_h = bottom - top
 
@@ -171,7 +168,7 @@ class CATIASidebarManager(QObject):
 
         # 获取当前侧栏物理宽度（win32 rect 差值）
         try:
-            cl, ct, cr, cb_ = _w32.GetWindowRect(int(self._window.winId()))
+            cl, ct, cr, cb_ = win32gui.GetWindowRect(int(self._window.winId()))
             target_w = cr - cl  # 保持当前物理宽度
         except Exception:
             target_w = self._sidebar_width  # 回退到记录值
@@ -189,10 +186,10 @@ class CATIASidebarManager(QObject):
 
         # 直接用 win32 API 移动，物理像素，无 DPI 换算误差
         hwnd = int(self._window.winId())
-        _w32.SetWindowPos(
-            hwnd, _wc.HWND_TOP,
+        win32gui.SetWindowPos(
+            hwnd, win32con.HWND_TOP,
             target_x, target_y, target_w, target_h,
-            _wc.SWP_SHOWWINDOW,
+            win32con.SWP_SHOWWINDOW,
         )
 
         if not self._is_active:

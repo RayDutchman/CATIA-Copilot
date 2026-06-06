@@ -1,4 +1,4 @@
-"""
+﻿"""
 catia_embed.py
 
 将 win32 原生小面板嵌入 CATIA V5 的每个 3D 视图角落（默认右上角，避开罗盘）。
@@ -34,13 +34,19 @@ catia_embed.py
 import ctypes
 import ctypes.wintypes
 import logging
+import os
+import subprocess
+import sys
 import threading
+from pathlib import Path
 from typing import Callable, Optional
 
 import win32api
 import win32con
 import win32gui
 import win32process
+
+from catia_copilot.utils import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -908,8 +914,11 @@ class CATIAEmbedManager:
             ctypes.windll.user32.AppendMenuW(menu, flags, item_id, text)
 
         # 从主窗口的 _ACTION_LABELS 读取文字，保持与主菜单一致
+        # 注意：main_window 在顶层导入了本模块（catia_embed），因此这里必须保留
+        # 函数级懒加载以避免循环导入，PyInstaller 能通过 main_window 的顶层导入
+        # 链追踪到此模块，不会漏打包。
         try:
-            from catia_copilot.ui.main_window import MainWindow
+            from catia_copilot.ui.main_window import MainWindow  # noqa: PLC0415 — 循环依赖，必须懒加载
             L = MainWindow._ACTION_LABELS
         except Exception:
             L = {}
@@ -982,9 +991,7 @@ class CATIAEmbedManager:
 
     def _get_macro_files(self):
         """扫描宏文件夹，返回所有宏文件的 Path 列表。"""
-        from pathlib import Path
         try:
-            from catia_copilot.utils import resource_path
             macros_dir = resource_path("macros")
             if not macros_dir.is_dir():
                 return []
@@ -1085,10 +1092,6 @@ class CATIAEmbedManager:
         未提供 callback 时的降级模式：子进程启动对应对话框。
         会导致 CATIA 短暂闪烁，仅作兜底。
         """
-        import subprocess
-        import sys
-        import os
-
         project_root = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )

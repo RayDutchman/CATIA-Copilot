@@ -1,4 +1,4 @@
-"""
+﻿"""
 CATIA V5 建模操作模块。
 
 提供面向 AI 工具层的高层建模函数，封装 pycatia / win32com 细节。
@@ -23,7 +23,17 @@ CATIA V5 建模操作模块。
 """
 
 import logging
+import traceback as _tb
 from typing import Literal
+
+from pycatia.in_interfaces.reference import Reference as PyRef
+from pycatia.mec_mod_interfaces.part_document import PartDocument
+
+from catia_copilot.catia.connection import (
+    get_catia_v5_application,
+    wrap_application,
+    wrap_product,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +43,6 @@ logger = logging.getLogger(__name__)
 
 def _get_part_from_active_doc():
     """从当前活动文档获取 pycatia Part 对象。"""
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from pycatia.mec_mod_interfaces.part_document import PartDocument
     app_com = get_catia_v5_application()
     return PartDocument(app_com.ActiveDocument).part
 
@@ -82,9 +90,6 @@ def create_part(name: str = "Part"):
     ----
     pycatia ``Part`` 对象
     """
-    from catia_copilot.catia.connection import wrap_application, get_catia_v5_application
-    from pycatia.mec_mod_interfaces.part_document import PartDocument
-
     app_py  = wrap_application()
     app_com = get_catia_v5_application()
 
@@ -107,9 +112,6 @@ def get_active_part():
 
     若活动文档不是 CATPart，抛出 RuntimeError。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from pycatia.mec_mod_interfaces.part_document import PartDocument
-
     app_com = get_catia_v5_application()
     try:
         part_doc = PartDocument(app_com.ActiveDocument)
@@ -134,7 +136,6 @@ def save_part(part, path: str) -> None:
     part : pycatia Part 对象
     path : 目标文件完整路径（含 .CATPart 扩展名）
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
     app_com = get_catia_v5_application()
     app_com.ActiveDocument.SaveAs(path)
     logger.debug(f"[MODELING] save_part -> {path}")
@@ -178,7 +179,6 @@ def add_sketch_at_height(part, height: float, base_plane: Literal["xy", "yz", "z
     ----
     pycatia ``Sketch`` 对象（尚未进入编辑状态）
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
     app_com = get_catia_v5_application()
     raw_part = app_com.ActiveDocument.Part
 
@@ -279,8 +279,8 @@ def _get_y_axis_ref(part_doc_com):
 def make_line_from_points(part_doc_com,
                           name: str,
                           pt_start: tuple, pt_end: tuple,
-                          pt_start_name: str = None,
-                          pt_end_name:   str = None):
+                          pt_start_name: str | None = None,
+                          pt_end_name:   str | None = None):
     """通用：在 MainBody 中创建命名直线（两点式），构造点作为其子节点。
 
     参数
@@ -308,7 +308,6 @@ def make_line_from_points(part_doc_com,
     - 构造点**不单独** InsertHybridShape，CATIA 会自动将其作为线的输入子节点显示
     - 若同名线已存在则直接复用，不重复插入
     """
-    from pycatia.in_interfaces.reference import Reference as PyRef
     part_com = part_doc_com.Part
     body_com = part_com.MainBody
     hsf      = part_com.HybridShapeFactory
@@ -378,7 +377,6 @@ def add_shaft(part, sketch, axis: str = "z"):
     ----
     pycatia ``Shaft`` 对象
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
     app_com = get_catia_v5_application()
 
     shaft   = part.shape_factory.add_new_shaft(sketch)
@@ -402,7 +400,6 @@ def add_groove(part, sketch, axis: str = "z"):
     ----
     pycatia ``Groove`` 对象
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
     app_com = get_catia_v5_application()
 
     groove   = part.shape_factory.add_new_groove(sketch)
@@ -438,7 +435,6 @@ def ensure_revolute_axis(part, axis: str = "z"):
         shaft = ctx.add_shaft(part, sk, axis="y")
         ctx.update_part(part)
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
     app_com = get_catia_v5_application()
     return _get_named_axis_ref(app_com.ActiveDocument, axis)
 
@@ -458,8 +454,6 @@ def ensure_revolute_axis(part, axis: str = "z"):
         return _get_z_axis_ref(part_doc_com)
     else:
         raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
-
-
 
 
 def add_pad(part, sketch, depth: float):
@@ -623,7 +617,6 @@ def get_mass_props(part) -> dict | None:
         "inertia": [[3×3]],        # kg·m²，重心处
       }
     """
-    from catia_copilot.catia.connection import wrap_product, get_catia_v5_application
     try:
         app_com = get_catia_v5_application()
         analyze = wrap_product(app_com.ActiveDocument.Product).analyze
@@ -721,7 +714,6 @@ class ModelingContext:
         fn         : 要调用的函数
         *args/**kwargs : 传给 fn 的参数
         """
-        import traceback as _tb
         try:
             result = fn(*args, **kwargs)
             # 成功：记录步骤

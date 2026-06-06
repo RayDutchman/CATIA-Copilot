@@ -8,6 +8,7 @@ CATPart 模板刷写。
 import logging
 from pathlib import Path
 
+from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.constants import PRESET_USER_REF_PROPERTIES
 
 logger = logging.getLogger(__name__)
@@ -60,10 +61,8 @@ def apply_part_template(
         ``(success_count, failed_messages)``，其中 *failed_messages* 包含
         每个无法刷写的文件的一个人类可读字符串。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
 
     succeeded: list[str] = []
     failed:    list[str] = []

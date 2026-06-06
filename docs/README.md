@@ -28,6 +28,11 @@
 | [PLAN_TRAY_AUTOSTART.md](PLAN_TRAY_AUTOSTART.md) | 托盘化与开机自启计划 |
 | [THEMING.md](THEMING.md) | 主题系统实现说明 |
 | [DEPENDENSIES.md](DEPENDENSIES.md) | CATIA 文件依赖关系调研笔记 |
+| [AI_MODELING_PLAN_AND_ROADMAP.md](AI_MODELING_PLAN_AND_ROADMAP.md) | AI 驱动建模功能架构、设计决策与路线图 |
+| [MODELING_HANDOFF.md](MODELING_HANDOFF.md) | AI 建模当前状态、已知问题与实现路线图 |
+| [CATIA_PART_DOCUMENT_API.md](CATIA_PART_DOCUMENT_API.md) | CATIA Part Document COM API 参考 |
+| [PYCATIA_OVERVIEW.md](PYCATIA_OVERVIEW.md) | pycatia 库概览与使用说明 |
+| [BREP_NAMING_REFERENCE.md](BREP_NAMING_REFERENCE.md) | CATIA B-Rep 面命名规则参考 |
 
 ---
 
@@ -147,7 +152,7 @@
 
 ### 关键信息标记
 
-- **版本号**：`v1.9.0`（带 `v` 前缀）
+- **版本号**：`v2.1.0`（带 `v` 前缀）
 - **问题编号**：`PLM-01`、`PLM-06`（大写前缀 + 连字符 + 数字）
 - **文件路径**：`catia_copilot/constants.py:274`（相对路径 + 冒号 + 行号）
 - **配置项**：`` `PRESET_USER_REF_PROPERTIES` ``（反引号包裹）
@@ -181,3 +186,5 @@
 - **我遇到了错误** → [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - **我想了解 PLM 集成** → [PLM_WORKBENCH_PLAN.md](PLM_WORKBENCH_PLAN.md)
 - **我遇到了 PLM 问题** → [PLM_ISSUES.md](PLM_ISSUES.md)
+- **我想了解 AI 建模功能** → [AI_MODELING_PLAN_AND_ROADMAP.md](AI_MODELING_PLAN_AND_ROADMAP.md)
+- **我想了解 AI 建模当前状态** → [MODELING_HANDOFF.md](MODELING_HANDOFF.md)

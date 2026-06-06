@@ -3,6 +3,7 @@ BOM 写回 CATIA 模块。
 
 提供：
 - write_bom_to_catia() – 遍历产品树并通过 COM 将编辑后的属性写回
+- write_cell()    – 通过缓存 COM 引用直接写入单个单元格（无树遍历）
 """
 
 import logging
@@ -12,9 +13,119 @@ from pathlib import Path
 from catia_copilot.constants import (
     BOM_READONLY_COLUMNS,
     SOURCE_FROM_DISPLAY,
+    PRODUCT_ATTR_WRITE_MAP,
+    CATIA_DESIGN_MODE,
+    BOM_INSTANCE_NAME_COLUMN,
 )
+from catia_copilot.catia.connection import get_catia_v5_application
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_design_mode(product) -> None:
+    """将产品切换到设计模式（如已处于设计模式则跳过）。"""
+    try:
+        if product.GetWorkMode() != CATIA_DESIGN_MODE:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+    except Exception:
+        try:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+        except Exception:
+            pass
+
+
+def _set_prop(product, name: str, value: str) -> None:
+    """通过 COM 写入内置产品属性（优先写 ReferenceProduct）。"""
+    attr = PRODUCT_ATTR_WRITE_MAP.get(name)
+    if not attr:
+        return
+    targets: list = []
+    try:
+        targets.append(product.ReferenceProduct)
+    except Exception:
+        pass
+    targets.append(product)
+    for target in targets:
+        try:
+            setattr(
+                target,
+                attr,
+                int(SOURCE_FROM_DISPLAY.get(value, value))
+                if name == "Source" else value,
+            )
+            return
+        except Exception:
+            continue
+
+
+def _set_user_prop(product, name: str, value: str) -> None:
+    """通过 COM 写入用户自定义属性（优先写 ReferenceProduct）。"""
+    targets: list = []
+    try:
+        targets.append(product.ReferenceProduct)
+    except Exception:
+        pass
+    targets.append(product)
+    # Try to update an existing property first
+    for target in targets:
+        try:
+            target.UserRefProperties.Item(name).Value = value
+            return
+        except Exception:
+            pass
+    # Property does not exist – create it on the first available target
+    for target in targets:
+        try:
+            target.UserRefProperties.CreateString(name, value)
+            return
+        except Exception:
+            continue
+
+
+def write_cell(
+    product,
+    col: str,
+    value: str,
+    custom_columns: list[str],
+) -> None:
+    """通过缓存的 COM 引用直接将单个单元格值写入 CATIA 。
+
+    与 ``write_bom_to_catia()`` 不同，此函数不遍历产品树——
+    直接写入存储在 BOM 行中的 COM 引用 ``product``。
+
+    适用于 V2 对话框的即时写回路径。对于独立文件（非嵌入部件），
+    通过 ``ReferenceProduct`` 写入一次即可覆盖所有实例；
+    对于嵌入部件，调用方应为每个实例分别调用此函数。
+
+    参数：
+        product: win32com ``Product`` 对象（缓存的 COM 引用）
+        col:     BOM 列名（与常量中的映射键一致）
+        value:   要写入的新值
+        custom_columns: 用户自定义属性的列名列表（通过 UserRefProperties 写入）
+    """
+    if col in BOM_READONLY_COLUMNS:
+        return
+    _ensure_design_mode(product)
+    if col == BOM_INSTANCE_NAME_COLUMN:
+        # Per-instance name – written directly to the instance object, NOT
+        # ReferenceProduct (which would affect the part definition, not the
+        # instance name within the assembly).
+        try:
+            product.Name = value
+        except Exception as e:
+            logger.debug("write_cell: 无法设置实例名 → %s", e)
+    elif col == "Part Number":
+        try:
+            product.PartNumber = value
+        except Exception:
+            try:
+                product.ReferenceProduct.PartNumber = value
+            except Exception:
+                pass
+    elif col in PRODUCT_ATTR_WRITE_MAP:
+        _set_prop(product, col, value)
+    elif col in custom_columns:
+        _set_user_prop(product, col, value)
 
 
 def write_bom_to_catia(
@@ -35,60 +146,9 @@ def write_bom_to_catia(
                           可抛出异常以中止。遍历顺序为后序（子节点在父节点之前），
                           因此较深层级在父级之前写入 CATIA 。
     """
-    from catia_copilot.catia.connection import get_catia_v5_application
-    from catia_copilot.constants import PRODUCT_ATTR_WRITE_MAP
-
-    # CatWorkModeType 枚举值（来自 CATIA V5 COM API）
-    CATIA_DESIGN_MODE        = 2  # catWorkModeDesign
-    CATIA_VISUALIZATION_MODE = 1  # catWorkModeVisualization
-
     # win32com Product 对象的可写内置属性（CamelCase COM 属性名）
     # 集中定义在 constants.PRODUCT_ATTR_WRITE_MAP，此处直接引用
     WRITABLE_DIRECT = PRODUCT_ATTR_WRITE_MAP
-
-    def _set_prop(product, name: str, value: str) -> None:
-        attr = WRITABLE_DIRECT.get(name)
-        if not attr:
-            return
-        targets: list = []
-        try:
-            targets.append(product.ReferenceProduct)
-        except Exception:
-            pass
-        targets.append(product)
-        for target in targets:
-            try:
-                setattr(
-                    target,
-                    attr,
-                    int(SOURCE_FROM_DISPLAY.get(value, value))
-                    if name == "Source" else value,
-                )
-                return
-            except Exception:
-                continue
-
-    def _set_user_prop(product, name: str, value: str) -> None:
-        targets: list = []
-        try:
-            targets.append(product.ReferenceProduct)
-        except Exception:
-            pass
-        targets.append(product)
-        # Try to update an existing property first
-        for target in targets:
-            try:
-                target.UserRefProperties.Item(name).Value = value
-                return
-            except Exception:
-                pass
-        # Property does not exist – create it on the first available target
-        for target in targets:
-            try:
-                target.UserRefProperties.CreateString(name, value)
-                return
-            except Exception:
-                continue
 
     _total_count: int = 0
 
@@ -197,7 +257,7 @@ def write_bom_to_catia(
 
     # ── CATIA connection ────────────────────────────────────────────────────
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if file_path is None:

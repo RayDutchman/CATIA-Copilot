@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSettings
 
+from catia_copilot.catia.connection import get_active_document_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -342,7 +344,6 @@ class FileConvertDialog(QDialog):
         if use_active:
             # 从 CATIA 获取当前活动文档路径
             try:
-                from catia_copilot.catia.connection import get_active_document_path
                 active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(

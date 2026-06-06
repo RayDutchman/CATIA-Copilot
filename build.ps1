@@ -1,4 +1,4 @@
-# build.ps1 — CATIA Copilot 打包脚本
+﻿# build.ps1 — CATIA Copilot 打包脚本
 #
 # 用法（在项目根目录执行）：
 #   .\build.ps1
@@ -27,7 +27,7 @@ Set-Location $ProjectRoot
 # --distpath  : 指定产物输出目录，PyInstaller 会将其注入为 DISTPATH 内置变量
 # --workpath  : 中间文件（.toc、.pkg 等）放到项目内的 build/，不影响产物
 # --noconfirm : 覆盖已有输出目录时不询问
-pyinstaller `
+python -m PyInstaller `
     --distpath "$DistPath" `
     --workpath "build" `
     --noconfirm `

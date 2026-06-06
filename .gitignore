@@ -68,9 +68,5 @@ memory.md
 !.opencode/instructions.md
 
 # ── 临时 / 探查 / 开发笔记（不属于正式代码库）────────────────────────────────
-AI_answer.md
-OPENCODE_TEST.md
-DRAWING_PYTHON_SUMMARY.md
-DRAWING_PYTHON_TEST_GUIDE.md
-PYTHON_COM_TYPE_CHECK.md
-TEST_DRAWING_VALIDATION.md
+tests/
+experiments/

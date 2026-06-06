@@ -22,7 +22,7 @@
 
 ## 1. 项目概览
 
-**版本**：1.9.0（2026-05-30）  
+**版本**：2.0.0（2026-06-04）  
 **入口**：`main.py`  
 **主窗口**：`catia_copilot/ui/main_window.py`（`MainWindow` 类）
 
@@ -375,7 +375,82 @@ ctx.get_mass_props(part)
 
 ---
 
-## 10. 在 Windows PowerShell 下写入长文件的正确方法
+## 12. 打包规则：禁止函数体内懒加载（PyInstaller / Nuitka）
+
+PyInstaller 和 Nuitka 的静态分析器均无法追踪函数体内的 `import` 语句（懒加载），
+导致相关模块在打包产物中缺失，运行时抛出 `ModuleNotFoundError`。
+
+### 规则：所有 `import` 必须位于模块顶层
+
+**禁止：**
+```python
+def some_function():
+    from catia_copilot.catia.connection import get_catia_v5_application  # ❌ 函数体内
+    import openpyxl                                                        # ❌ 函数体内
+```
+
+**要求：**
+```python
+# 文件顶部
+from catia_copilot.catia.connection import get_catia_v5_application       # ✓ 模块顶层
+import openpyxl                                                            # ✓ 模块顶层
+
+def some_function():
+    ...  # 直接使用，不再 import
+```
+
+### 唯一例外
+
+`catia_copilot/ui/catia_embed.py` 中有一处循环依赖懒加载被保留，并加有注释标记：
+
+```python
+from catia_copilot.ui.main_window import MainWindow  # noqa: PLC0415 — circular import, must stay lazy
+```
+
+**其他所有文件不得有任何函数体内 `import`。**
+
+### 验证方法
+
+在项目根目录运行以下 PowerShell 扫描脚本，输出结果应为 0（或仅含上述例外行）：
+
+```powershell
+$root = "catia_copilot"
+Get-ChildItem -Path $root -Filter "*.py" -Recurse | ForEach-Object {
+    $file = $_.FullName; $lines = [IO.File]::ReadAllLines($file, [Text.Encoding]::UTF8)
+    $inFunc = $false; $indent = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        if ($line -match '^(\s*)(def |class )\w') { $inFunc = $true; $indent = $Matches[1].Length }
+        if ($inFunc -and $line -match '^(\s+)(import |from \S+ import )') {
+            if (($line -replace '^(\s+).*','$1').Length -gt $indent) {
+                if ($line -notmatch 'MainWindow.*circular') {
+                    Write-Host "$($file):$($i+1): $($line.Trim())"
+                }
+            }
+        }
+    }
+}
+```
+
+### 已覆盖的文件（2026-06-04 全部清理完毕）
+
+以下文件已由 AI Agent 完成懒加载提升，不得再次引入函数体内 import：
+
+- `ai/tools.py`、`ai/agent.py`
+- `catia/bom_collect.py`、`catia/bom_export.py`、`catia/bom_write.py`
+- `catia/connection.py`、`catia/conversion.py`、`catia/dependencies.py`
+- `catia/document.py`、`catia/drawing_operations.py`、`catia/mass_props_collect.py`
+- `catia/modeling.py`、`catia/template.py`
+- `plm/api_client.py`、`plm/sync.py`
+- `ui/ai_chat_panel.py`、`ui/bom_edit_dialog.py`、`ui/bom_widgets.py`
+- `ui/catia_embed.py`（含唯一例外）、`ui/catia_sidebar.py`
+- `ui/convert_dialog.py`、`ui/export_bom_dialog.py`
+- `ui/find_deps_dialog.py`、`ui/main_window.py`、`ui/mass_props_dialog.py`
+- `ui/plm_sync_dialog.py`、`ui/plm_workbench.py`、`ui/session_config_dialog.py`
+- `utils.py`
+
+---
+
 
 `filesystem_write_file` 和 `write` 工具对含中文或特殊字符的长内容会报 JSON 解析错误。
 
@@ -401,3 +476,37 @@ python "D:\tmp\gen_xxx.py"
 - Python 脚本中的中文必须用 `\u` 转义（如 `\u914d\u7f6e`）
 - 临时脚本目录：`D:\tmp`（已存在）
 - `filesystem_edit_file` 工具可正常工作，适合小段内容的替换
+
+---
+
+## 13. 版本号维护规范
+
+### 单一来源
+
+版本号的**唯一权威来源**是 `catia_copilot/constants.py` 中的 `APP_VERSION`。
+
+所有其他文件必须与其保持一致，**不得单独硬编码版本号**：
+
+| 文件 | 字段 / 位置 |
+|------|-------------|
+| `catia_copilot/constants.py` | `APP_VERSION = "x.y.z"` 和 `APP_DATE = "YYYY-MM-DD"` |
+| `pyproject.toml` | `version = "x.y.z"` |
+| `README.md` | `**版本：** x.y.z \|... **发布日期：** YYYY-MM-DD` |
+| `docs/README.md` | `- **版本号**：\`vx.y.z\`` |
+| `CHANGELOG.md` | 新增 `## [x.y.z] — YYYY-MM-DD` 章节 |
+| `build_nuitka.ps1` | 动态读取 `constants.py`，不硬编码 |
+| `build.spec` | 动态读取 `constants.py`，不硬编码 |
+
+### 升版触发条件
+
+| 变更类型 | 版本位 | 示例 |
+|----------|--------|------|
+| 破坏性变更（API / 架构重构） | Major（x） | 1.9.0 → 2.0.0 |
+| 新功能 / 新模块 | Minor（y） | 2.0.0 → 2.1.0 |
+| Bug 修复 / 小改动 | Patch（z） | 2.1.0 → 2.1.1 |
+
+**不应该**在每次 commit 时升版，应在功能完成、准备发布时统一升版。
+
+### 升版操作清单
+
+升版时必须同步更新以上所有文件，并在 `CHANGELOG.md` 中记录本版本的主要变更。

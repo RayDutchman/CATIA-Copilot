@@ -1,4 +1,4 @@
-"""
+﻿"""
 PLM 同步对话框。
 
 在后台线程中执行 BOM 提取 + DocdokuPLM 同步，主线程保持 UI 响应。
@@ -28,6 +28,18 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QTextEdit,
     QVBoxLayout,
+)
+from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
+
+from catia_copilot.plm.api_client import PlmApiClient, PlmApiError
+from catia_copilot.plm.sync import (
+    AfterUpdatePolicy,
+    CheckedOutByOtherPolicy,
+    ExistingPartPolicy,
+    OwnCheckedOutPolicy,
+    SyncOptions,
+    extract_bom,
+    sync_bom_to_plm,
 )
 
 logger = logging.getLogger(__name__)
@@ -186,13 +198,6 @@ class _SyncOptionsDialog(QDialog):
 
     def to_sync_options(self):
         """将当前 UI 状态转换为 SyncOptions 实例（须在 accept() 后调用）。"""
-        from catia_copilot.plm.sync import (
-            AfterUpdatePolicy,
-            CheckedOutByOtherPolicy,
-            ExistingPartPolicy,
-            OwnCheckedOutPolicy,
-            SyncOptions,
-        )
         return SyncOptions(
             create_new_parts=self._rb_create_new.isChecked(),
             existing_part_policy=(
@@ -257,8 +262,6 @@ class _SyncWorker(QThread):
 
     def prepare(self) -> bool:
         """在主线程中提取 BOM （COM 调用）。返回 False 表示失败。"""
-        from catia_copilot.plm.sync import extract_bom
-
         self.log_line.emit("正在读取 CATIA BOM……")
         try:
             self._bom_root = extract_bom(
@@ -277,9 +280,6 @@ class _SyncWorker(QThread):
 
     def run(self) -> None:
         """后台线程：登录 PLM → 同步 BOM 。"""
-        from catia_copilot.plm.api_client import PlmApiClient, PlmApiError
-        from catia_copilot.plm.sync import sync_bom_to_plm
-
         cfg = self._cfg
         self.log_line.emit(f"正在连接 PLM 服务端：{cfg['base_url']} …")
         client = PlmApiClient(cfg["base_url"])
@@ -469,7 +469,6 @@ class PlmSyncDialog(QDialog):
     def _append_log(self, msg: str) -> None:
         # 含 @username 的锁定行（跳过-被@xxx / 撤销失败-@xxx）用橙色高亮
         if "@" in msg and ("跳过-被@" in msg or "撤销失败-@" in msg):
-            from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
             cursor = self._log.textCursor()
             cursor.movePosition(QTextCursor.End)
             fmt = QTextCharFormat()

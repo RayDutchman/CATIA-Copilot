@@ -46,7 +46,8 @@ from catia_copilot.constants import (
     SEARCH_MAX_LEVELS,
     BOM_THUMBNAIL_MAX_SIZE,
 )
-from catia_copilot.utils import read_catia_thumbnail
+from catia_copilot.utils import read_catia_thumbnail, bring_catia_to_foreground
+from catia_copilot.catia.connection import get_active_document_path, open_document
 from catia_copilot.ui.ui_colors import get_colors
 from catia_copilot.ui.theme_manager import theme_manager
 
@@ -289,7 +290,6 @@ class FindDependenciesDialog(QDialog):
     def _resolve_target(self) -> str | None:
         if self._use_active_chk.isChecked():
             try:
-                from catia_copilot.catia.connection import get_active_document_path
                 active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(
@@ -636,8 +636,6 @@ class FindDependenciesDialog(QDialog):
         paths = self._iter_result_paths()
         errors: list[str] = []
         try:
-            from catia_copilot.catia.connection import open_document
-            from catia_copilot.utils import bring_catia_to_foreground
             for p in paths:
                 try:
                     open_document(p)
@@ -659,7 +657,6 @@ class FindDependenciesDialog(QDialog):
 
     def _open_in_catia(self, fp: str) -> None:
         try:
-            from catia_copilot.catia.connection import open_document
             open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.critical(

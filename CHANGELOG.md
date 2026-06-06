@@ -4,6 +4,132 @@
 
 ---
 
+## [2.1.0] — 2026-06-06
+
+### 新增
+
+- **BOM 多实例同步（V2 对话框）**：修改任意实例的属性（PartNumber、Nomenclature 等）后，同 PartNumber 的所有其他实例（完整 BOM 模式）及不同父节点下的同零件汇总行（层级 BOM 模式）均自动同步更新界面，无需刷新。
+- **BOM V2 `PlmWorkbench` 改为 `QDialog`**：移除中间 `QWidget` 壳，原生支持 ESC 关闭，与其他对话框风格一致。
+- **质量属性对话框 — "刷新质量特性"右键菜单**：
+  - 完整 BOM 模式：新增"刷新质量特性（子树范围）"，通过缓存 `_product` COM 引用直接重测选中子树内所有零件的质量特性（含 mat4 重读）及子树外同 PN 兄弟实例（复用测量结果，保留各自 mat4），按当前面板选择的 Analyze / 惯量包络体方式执行。
+  - 汇总 BOM 模式：新增"刷新质量特性"，仅重测当前行对应零件，不涉及 mat4。
+  - 两种模式均通过 `_product` COM 引用直接测量，无需文件已保存到磁盘。
+- **质量属性对话框 — 实例名（Instance Name）列**：完整 BOM 模式下显示每个节点的 `product.Name`（实例名）；汇总 BOM 模式下强制隐藏（多实例合并后无意义）。
+- **质量属性对话框 — 对称件实例名标识**：对称件的 Instance Name 列显示为"原件实例名（对称件）"，直接指明是哪个实例的对称件。
+- **质量属性对话框 — "完整 BOM" 改名**：原"层级 BOM"按钮及相关文案统一改为"完整 BOM"，与 BOM 工作台术语一致。
+- **`bom_collect.py` 同步改进**：引入 `_com_unk()` / `_inst_to_product` / `_inst_to_items` / `_ref_to_insts` / `_inst_to_ref_unk` 索引体系，以 `id(product)` 为实例 key，以 PartNumber 为同零件识别 key，实现 O(1) 兄弟行查找。删除已无用的 `_product_extras` 字段。
+
+### 修复
+
+- **BOM V2 PN 修改时兄弟行不联动**：修改 PartNumber 时，`_canonical_data` 已更新为新值，但 `_ref_to_insts` key 仍为旧 PN 导致查找失败；修复为用旧 PN 完成同步后再迁移 key。
+- **BOM V2 PN 冲突检查误拦同零件实例**：同文件多实例的 PartNumber 相同，被冲突检查误判为冲突；修复为跳过同 `_inst_to_ref_unk` 的所有兄弟实例。
+- **BOM V2 `_auto_rename_instance_names` 使用旧 PN**：自动改名时从 `_full_rows` 读取 PN，未查 `_canonical_data`；修复为优先读取规范数据。
+- **质量属性对话框"重新读取质量特性"不区分数据来源**：原菜单项始终用 `keep_inertia` 路径；已删除，统一由新"刷新质量特性"替代，按当前面板设置执行。
+
+### 杂项
+
+- `collect_bom_rows_archive` 与 `bom_collect.py f003fda` 版本对齐：删除 `extras` 收集逻辑，row dict 去除 `_product` / `_reference_product` 字段，保持作为对比测试基准的独立性。
+- `mass_props_collect.py`：row dict 新增 `"_product"` 字段供子树刷新使用；`_SERIALIZE_SKIP` 增加 `"_product"`，保持 `.mpd` 文件向前兼容。
+- `mass_props_collect.py`：row dict 新增 `"Instance Name"` 字段（`product.Name`）。
+
+---
+
+## [2.0.1] — 2026-06-05
+
+### 新增 — BOM 工作台 V2（即时写回版）
+
+- **`bom_edit_dialog_v2.py`**：全新 BOM 工作台 V2，每次单元格编辑后立即通过缓存 COM 引用写回 CATIA，无需点击"应用"按钮批量提交。
+- **完整 BOM 模式**：新增"完整 BOM"单选按钮，每个装配实例单独一行；含可编辑"实例名"列，直接写回 `product.Name`。
+- **`collect_bom_rows_full()`**：逐实例遍历产品树，经 `ReferenceProduct.Products.Item(i)` 取得可写实例引用（修复 `instance.Products.Item(i)` 代理对象 `.Name` setter 静默 no-op 的根因）。
+- **`build_hierarchical_rows()`**：纯 Python 后处理，将完整行重组为层级视图，切换显示模式无需重新遍历 CATIA。
+- **`write_cell()`**：通过缓存 COM 引用单格直接写入，含实例名分支。
+- **右键菜单新增"自动修改实例名（子树范围）"**：对选中节点的子树按 `PartNumber.n` 规则递归重命名实例名。
+- **右键菜单新增"自动修改文件名（子树范围）"**：对选中节点子树中文件名与零件编号不符的文件批量另存为改名；替代原工具栏"按零件编号修改文件名"按钮。
+
+### 修复
+
+- **实例名列切换后不消失**：从"完整 BOM"切换到"层级 BOM"时，实例名列仍然显示的问题——为"层级 BOM"单选按钮补充 `_on_hierarchical_bom_toggled` handler，正确重置 `_full_bom = False` 并重建列。
+- **`_on_bom_type_changed` 逻辑简化**：各 BOM 模式的单选按钮均只在 `checked=True` 时处理，消除旧代码中 `False` 分支互相干扰的问题。
+
+### 样式
+
+- BOM 类型选择器顺序调整："完整 BOM"移至最前（完整 BOM → 层级 BOM → 汇总 BOM）。
+
+---
+
+## [2.0.0] — 2026-06-04
+
+### 新增 — AI Copilot 助手
+
+- **AI 对话面板**：新增独立 AI Tab，支持流式 SSE 输出、Markdown 渲染、工具调用卡片展示；对话历史持久化，重启后自动恢复。
+- **多会话管理**：左侧会话列表，支持新建 / 删除 / 重命名会话；工作区沙盒限制（AI 只能操作项目内文件）。
+- **多 Provider 支持**：支持 OpenAI、Anthropic、Gemini 等多家服务商；Settings 对话框可配置 API key、base URL、模型；一键刷新可用模型列表。
+- **CATIA 工具集（24 个）**：AI 可直接操作 CATIA —— 读写文档属性（零件编号、术语、版本、来源、描述、自定义 `UserRefProperties`）、BOM 采集/写回、导出 PDF/STP、查找依赖、执行宏、读写文件系统、运行建模脚本等。
+- **默认系统提示**：内置工具使用指引（文档属性 vs. BOM 写回的适用场景、建模规范、错误自纠正策略）。
+- **AI 对话界面优化**：统一气泡颜色（`QPalette` 动态读取）、工具调用卡片布局、分隔线 2px 统一、`AISplitter` 可拖动手柄。
+
+### 新增 — AI 驱动建模（Phase 1）
+
+- **建模层 `catia/modeling.py`**：封装 pycatia CATPart API —— `create_part` / `add_sketch` / `draw_rect` / `draw_circle` / `add_pad` / `add_pocket` / `add_hole_from_sketch` / `add_edge_fillet` / `add_chamfer` / `add_rect_pattern` / `add_circ_pattern` / `list_features` / `get_mass_props` 等。
+- **`run_modeling_script` 工具**：AI 生成 Python 建模脚本 → 通过 `importlib` 动态执行 `build()` 函数 → 返回零件名 + 特征列表 + 质量特性；失败时返回完整 traceback 供 AI 自纠正。
+- **`ModelingContext`**：逐步执行上下文，结构化反馈每一步的执行状态。
+- **质量特性新增 `source=analyze` 模式**：通过 pycatia 直接调用 CATIA 质量分析（原只支持 COM 读取缓存值）。
+- **质量特性内部单位切换**：内部长度单位从 m 统一切换至 mm，避免换算误差。
+
+### 新增 — BOM 编辑增强
+
+- **首行内容填充**：右键菜单「首行内容填充」——多行选中时，将最上方所选行的值批量填入其余选中行；支持文本列与下拉列。
+- **序列填充**：右键菜单「序列填充」——对话框驱动，支持数字递增和字母（A–ZZ）递增，可设前缀/后缀（带 `QSettings` 持久化）、3 行实时预览；自动去重重复 PN、冲突检查。
+
+### 新增 — 对话框置顶开关
+
+- 主界面新增「置顶」开关按钮；不置顶时停止监听 CATIA 最小化状态，降低后台 CPU 占用。
+
+### 重构 — 主题系统完全重写
+
+- **统一切换为 Windows 原生主题**：移除 qdarkstyle 和深色/浅色手动主题；始终使用 Qt `windows11` 风格渲染器 + DWM 系统配色；`native.qss` 只保留项目专属控件样式。
+- **`ui_colors.py`**：`ChatColors` 改为 `get_chat_colors()` 动态函数，在调用时从系统 `QPalette` 读取颜色，随系统深浅色自动切换。
+- **移除主题切换按钮**：主窗口不再有主题切换入口；深浅色跟随系统。
+- **DWM 标题栏**：跟随系统深浅色配置，消除 DWM 深色边框警告。
+- 从 `requirements.txt` 移除 `qdarkstyle` 依赖。
+
+### 重构 — COM 层下沉
+
+- **`catia/connection.py`**：新增 `get_active_document_path()` 和 `open_document()`，统一 6 处调用点；调用方不再需要直接持有 CATIA `Application` 对象。
+- **`catia/document.py`**：将 `rename_document` / `save_as_document` COM 逻辑从 UI 层下沉；集中文档/节点类型判断逻辑（`get_document_type`）；集中 `_READABLE_ATTRS` / `_WRITABLE_ATTRS` / `_SOURCE_TO_DISPLAY` 常量。
+- **`constants.py`**：集中 COM 属性映射表（`PRODUCT_ATTR_READ_MAP`、`PRODUCT_ATTR_WRITE_MAP`）。
+- **`utils.py`**：合并 `catia/utils.py`，统一 `open_catia_file` / `bring_catia_to_foreground` 入口。
+
+### 重构 — UI 布局常量集中化
+
+- **`ui_layout.L`**：新增字体常量块（`MONO_FONT_FAMILY`、`MONO/SMALL/NORMAL/LARGE_FONT_SIZE_PT`、`TABLE_ROW_HEIGHT`、`TABLE/LABEL/HINT/STATUS_FONT_SIZE_PT`、`BUTTON_FONT_SIZE_PT`、`TAB_FONT_SIZE_PT`）；全库所有硬编码尺寸替换为 `L.*` 引用。
+
+### 重构 — 对话框行为简化
+
+- **彻底移除对话框跟随 CATIA 最小化/还原逻辑**：删除 `_start_catia_monitor`、`_check_catia_state`、`_hidden_dialogs`、`_dialog_geometries` 及相关回调，主窗口减少约 83 行；对话框完全由用户自主管理。
+
+### 重构 — 全库消除懒加载
+
+- **所有模块提升到顶层导入**：全面扫描并将 `ai/`、`catia/`、`plm/`、`ui/`、`utils.py` 中所有函数体内的懒加载 `import` 提升至模块顶层，确保 PyInstaller / Nuitka 静态分析可正确检测所有依赖，无需 `hiddenimports` / `collect_all` 绕过。
+- **唯一保留的懒加载**：`ui/catia_embed.py` 中 `from catia_copilot.ui.main_window import MainWindow` 因循环依赖须保持懒加载（已加 `# noqa: PLC0415` 注释说明）。
+- **Bug 修正**：`plm/sync.py` 中 `catia_utils` 模块引用修正为 `catia_copilot.catia.connection`。
+- **死代码清理**：`utils.py` 移除空 `try/except ImportError` 块；`catia/dependencies.py` 去除重复常量 `SEARCH_MAX_LEVELS`。
+
+### 新增 — Nuitka 构建支持
+
+- **`build_nuitka.ps1`**：新增 Nuitka 等价打包脚本，动态读取 `constants.py` 中的 `APP_VERSION`，自动处理 pywin32 DLL 收集（通过 `--include-package` 避免手动 `--include-data-files` 引起的 DLL 冲突）。
+- **`build.ps1`**：改为 `python -m PyInstaller` 调用，消除 PATH 依赖。
+- **`build.spec`**：移除 `collect_all('pycatia')` 和多余 `hiddenimports`；pywin32 DLL 改为双路径搜索（系统目录 + 用户目录）。
+
+### 修复
+
+- `Description`（`DescriptionRef`）属性可写，修正为不加入只读集合。
+- `QToolButton` 全部替换为 `QPushButton`，统一按钮行为和样式。
+- 树控件分支线：通过 `drawBranches` override + `native.qss` dotted border 恢复点线分支；修复坐标偏移、箭头下方叠加、相位对齐等细节问题。
+- 所有树控件启用交替行颜色（`setAlternatingRowColors`）。
+
+---
+
 ## [1.9.0] — 2026-05-30
 
 ### 新增 — CATIA 3D 视图嵌入面板
@@ -16,7 +142,7 @@
 ### 新增 — 图纸功能 Python 改写
 
 - **新建图纸 (Python)**：新增 `drawing_operations.py` 核心模块，实现 `generate_drawing()` 从 CATPart/CATProduct 生成新图纸；解决 `win32com CDispatch` 类型检测问题（`get_document_type()`）。
-- **刷新图纸 (Python)**：实现 `refresh_drawing()` 将图纸参数与对应零件/装配体同步（零件编号、术语、版本及自定义属性）；保留 VBScript 版本用于对比。
+- **刷新图纸 (Python)**：实现 `refresh_drawing()` 将图纸参数与对应零件/产品同步（零件编号、术语、版本及自定义属性）；保留 VBScript 版本用于对比。
 
 ### 新增 — 主题
 
@@ -170,7 +296,7 @@
 
 ### 修复 — 宏（hide_wireframe.catvbs）
 
-- 修复装配体场景下线框隐藏逻辑的多处问题：正确使用 `SelectedElement.Value.VisProperties` 读取每个元素的可见性；修正 `catVisNoShow`（showVal=1）的判断逻辑；仅对 ProductDocument 节点执行 InWorkObject 切换，跳过 PartDocument 节点。
+- 修复产品场景下线框隐藏逻辑的多处问题：正确使用 `SelectedElement.Value.VisProperties` 读取每个元素的可见性；修正 `catVisNoShow`（showVal=1）的判断逻辑；仅对 ProductDocument 节点执行 InWorkObject 切换，跳过 PartDocument 节点。
 
 ---
 

@@ -10,18 +10,21 @@ import os
 import re
 import shutil
 import subprocess
+import ctypes
+import tempfile
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from ctypes import wintypes
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QFileDialog, QGroupBox, QInputDialog,
+    QLabel, QMessageBox, QPushButton, QFileDialog, QInputDialog,
     QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
     QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
 )
 from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics, QGuiApplication
-from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint
+from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint, QByteArray
 
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.constants import (
@@ -33,20 +36,31 @@ from catia_copilot.constants import (
     ISO_XML_FILE_PATH,
     CRACK_DIR_PATH,
     AI_TAB_LABEL,
+    CATIA_MACRO_LIBRARY_DIR,
+    CATIA_MACRO_LIBRARY_VBA,
 )
+import win32gui
+import win32con
 from catia_copilot.utils import resource_path, detect_catia_root, check_catia_connection, diagnose_catia_connection
 from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
 from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
 from catia_copilot.catia.template import apply_part_template
+from catia_copilot.catia.connection import get_catia_v5_application, open_document
+from catia_copilot.catia.dependencies import find_drawing_for_part, find_part_for_drawing
+from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
 from catia_copilot.ui.convert_dialog import FileConvertDialog
 from catia_copilot.ui.export_bom_dialog import ExportBomDialog
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.bom_edit_dialog import BomEditDialog
+from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
 from catia_copilot.ui.catia_sidebar import CATIASidebarManager
-from catia_copilot.ui.catia_embed import CATIAEmbedManager
+from catia_copilot.ui.plm_workbench import PlmWorkbench
+from catia_copilot.ui.template_dialog import TemplateDialog
+from catia_copilot.ui.catia_embed import CATIAEmbedManager, DEFAULT_ANCHOR, DEFAULT_ANCHOR_DX, DEFAULT_ANCHOR_DY
+from catia_copilot.ui.ai_chat_panel import AIChatPanel
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +115,6 @@ class MainWindow(QMainWindow):
 
         # CATIA 3D 视图嵌入管理器（默认关闭）
         # 从 QSettings 读取上次保存的面板位置，首次使用时取模块默认值
-        from catia_copilot.ui.catia_embed import (
-            DEFAULT_ANCHOR, DEFAULT_ANCHOR_DX, DEFAULT_ANCHOR_DY,
-        )
         _embed_settings = QSettings("CATIACopilot", "EmbedPanel")
         _anchor    = _embed_settings.value("position/anchor",    DEFAULT_ANCHOR,    type=str)
         _anchor_dx = _embed_settings.value("position/anchor_dx", DEFAULT_ANCHOR_DX, type=int)
@@ -279,9 +290,6 @@ class MainWindow(QMainWindow):
                   ``False`` 表示用户取消 UAC 或系统调用失败。
                   返回 True **不保证**文件一定写入成功，调用方需自行验证目标文件。
         """
-        import ctypes
-        from ctypes import wintypes
-        import tempfile
 
         if not operations:
             return True
@@ -373,8 +381,7 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._build_drawing_page(),   "图纸")    # 2
         self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
 
-        # AI 助手 Tab（延迟导入，避免启动时加载 AI 模块影响速度）
-        from catia_copilot.ui.ai_chat_panel import AIChatPanel
+        # AI 助手 Tab
         self._ai_chat_panel = AIChatPanel()
         self._tab_widget.addTab(self._ai_chat_panel, AI_TAB_LABEL)       # 4
 
@@ -514,9 +521,13 @@ class MainWindow(QMainWindow):
         btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并写回 CATIA")
         btn_bom_edit.clicked.connect(self._open_bom_edit_dialog)
 
+        btn_bom_edit_v2 = QPushButton("BOM 工作台 V2（即时写回）")
+        btn_bom_edit_v2.setToolTip("编辑即时写回 CATIA 的新版 BOM 工作台（对比测试用）")
+        btn_bom_edit_v2.clicked.connect(self._open_bom_edit_dialog_v2)
+
         btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
-            "遍历产品树，读取零件质量/重心/转动惯量，计算装配体总质量特性并导出"
+            "遍历产品树，读取零件质量/重心/转动惯量，计算产品总质量特性并导出"
         )
         btn_mass_props.clicked.connect(self._open_mass_props_dialog)
 
@@ -526,7 +537,7 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        for btn in (btn_bom_edit, btn_mass_props, btn_plm_workbench):
+        for btn in (btn_bom_edit, btn_bom_edit_v2, btn_mass_props, btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -578,7 +589,7 @@ class MainWindow(QMainWindow):
         btn_new_py.clicked.connect(self._open_generate_drawing_dialog_python)
 
         btn_refresh_py = QPushButton(self._ACTION_LABELS["drawing_refresh"])
-        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- Python 实现版本")
+        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- Python 实现版本")
         btn_refresh_py.clicked.connect(self._open_refresh_drawing_dialog_python)
 
         for btn in (btn_new_py, btn_refresh_py):
@@ -592,7 +603,7 @@ class MainWindow(QMainWindow):
         btn_new.clicked.connect(self._open_generate_drawing_dialog)
 
         btn_refresh = QPushButton("刷新图纸 (VBScript)")
-        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/装配体同步属性）- VBScript 宏版本")
+        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- VBScript 宏版本")
         btn_refresh.clicked.connect(self._open_refresh_drawing_dialog)
 
         for btn in (btn_new, btn_refresh):
@@ -642,10 +653,10 @@ class MainWindow(QMainWindow):
         asm_row = QHBoxLayout()
         asm_row.setSpacing(6)
         btn_fastener = QPushButton(self._ACTION_LABELS["fastener_asm"])
-        btn_fastener.setToolTip("在装配体中连续放置紧固件实例")
+        btn_fastener.setToolTip("在产品中连续放置紧固件实例")
         btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
         btn_nut = QPushButton(self._ACTION_LABELS["nut_plate_asm"])
-        btn_nut.setToolTip("在装配体中连续放置托板螺母实例")
+        btn_nut.setToolTip("在产品中连续放置托板螺母实例")
         btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
         asm_row.addWidget(btn_fastener)
         asm_row.addWidget(btn_nut)
@@ -805,7 +816,6 @@ class MainWindow(QMainWindow):
 
     def _open_template_dialog(self) -> None:
         """打开模板对话框。"""
-        from catia_copilot.ui.template_dialog import TemplateDialog
         self._show_dialog("_dlg_template", lambda: TemplateDialog(self))
 
     # ── 非模态对话框管理 ──────────────────────────────────────────────────
@@ -840,7 +850,6 @@ class MainWindow(QMainWindow):
             setattr(self, attr, dlg)
 
             # setParent(None) 会重建原生窗口并重置位置，在此之后重新恢复几何
-            from PySide6.QtCore import QByteArray
             if hasattr(dlg, "_settings"):
                 saved = dlg._settings.value("geometry")
                 if isinstance(saved, QByteArray) and not saved.isEmpty():
@@ -882,9 +891,6 @@ class MainWindow(QMainWindow):
         HWND_NOTOPMOST (-2)：取消置顶
         """
         try:
-            import ctypes
-            import win32gui
-            import win32con
             hwnd = int(dlg.winId())
             SWP_NOMOVE    = 0x0002
             SWP_NOSIZE    = 0x0001
@@ -917,17 +923,12 @@ class MainWindow(QMainWindow):
                 geom = getattr(self, "_dialog_geometries", {}).get(attr)
                 value.show()
                 if geom:
-                    from PySide6.QtCore import QByteArray
-                    value.restoreGeometry(QByteArray(geom))
+                            value.restoreGeometry(QByteArray(geom))
         self._hidden_dialogs = set()
         self._dialog_geometries = {}
 
     def _check_catia_state(self) -> None:
         """检查 CATIA 窗口状态，同步对话框的显示/隐藏（仅置顶模式下运行）。"""
-        try:
-            import win32gui
-        except ImportError:
-            return
         catia_hwnd = self._get_catia_hwnd()
         if not catia_hwnd:
             return
@@ -949,17 +950,12 @@ class MainWindow(QMainWindow):
                         value.show()
                         geom = self._dialog_geometries.get(attr)
                         if geom:
-                            from PySide6.QtCore import QByteArray
                             value.restoreGeometry(QByteArray(geom))
                 self._hidden_dialogs.clear()
                 self._dialog_geometries.clear()
 
     def _get_catia_hwnd(self) -> int:
         """查找 CATIA V5 主窗口句柄，未找到返回 0。"""
-        try:
-            import win32gui
-        except ImportError:
-            return 0
         catia_hwnd = 0
         def _find(hwnd: int, _) -> bool:
             nonlocal catia_hwnd
@@ -1240,7 +1236,6 @@ class MainWindow(QMainWindow):
         嵌入面板位置变化后的回调（在 win32 后台线程中调用）。
         通过 QTimer.singleShot 派发到主线程写入 QSettings。
         """
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(
             0,
             lambda: self._save_embed_position(anchor, dx, dy),
@@ -1318,8 +1313,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "文件不存在", f"宏文件不存在：\n{macro_path}")
             return
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _catia
-            caa = _catia()
+            caa = get_catia_v5_application()
             app = caa
             if macro_path.suffix.lower() == ".catvba":
                 self._execute_catvba(app, macro_path, "CATMain", [])
@@ -1375,6 +1369,10 @@ class MainWindow(QMainWindow):
     def _open_bom_edit_dialog(self) -> None:
         self._show_dialog("_dlg_bom_edit", lambda: BomEditDialog(self))
 
+    @Slot()
+    def _open_bom_edit_dialog_v2(self) -> None:
+        self._show_dialog("_dlg_bom_edit_v2", lambda: BomEditDialogV2(self))
+
     def _open_mass_props_dialog(self) -> None:
         self._show_dialog("_dlg_mass_props", lambda: MassPropsDialog(self))
 
@@ -1389,7 +1387,6 @@ class MainWindow(QMainWindow):
 
     def _open_plm_workbench(self) -> None:
         """打开 PLM 工作台（非模态独立窗口，单例）。"""
-        from catia_copilot.ui.plm_workbench import PlmWorkbench
         self._show_dialog("_dlg_plm_workbench", lambda: PlmWorkbench(self))
 
     def _open_stamp_part_template_dialog(self) -> None:
@@ -1418,11 +1415,6 @@ class MainWindow(QMainWindow):
         - CATDrawing → 正向查询（COM 视图链接）+ 启发式查找对应 CATPart / CATProduct
         - 其他格式 → 提示不支持
         """
-        from catia_copilot.catia.connection import get_catia_v5_application
-        from catia_copilot.catia.dependencies import (
-            find_drawing_for_part,
-            find_part_for_drawing,
-        )
 
         # 1. 获取当前活跃文档
         try:
@@ -1482,7 +1474,6 @@ class MainWindow(QMainWindow):
         # 4. 单结果直接打开；多结果弹选择框
         chosen = self._pick_one_file(candidates, pick_title)
         if chosen:
-            from catia_copilot.catia.connection import open_document
             try:
                 open_document(chosen, foreground=True)
             except Exception as e:
@@ -1617,7 +1608,6 @@ class MainWindow(QMainWindow):
 
     def _open_generate_drawing_dialog_python(self) -> None:
         """新建图纸 - Python 实现版本"""
-        from catia_copilot.catia.drawing_operations import generate_drawing
         
         templates_dir = self._drawing_templates_dir()
         templates_dir.mkdir(parents=True, exist_ok=True)
@@ -1677,7 +1667,6 @@ class MainWindow(QMainWindow):
 
     def _open_refresh_drawing_dialog_python(self) -> None:
         """刷新图纸 - Python 实现版本"""
-        from catia_copilot.catia.drawing_operations import refresh_drawing
         
         # 定义输入回调函数（当属性不存在时弹窗询问用户）
         def input_callback(prop_name: str, part_number: str) -> tuple[str, bool]:
@@ -1721,7 +1710,7 @@ class MainWindow(QMainWindow):
             SystemService.ExecuteScript(iLibraryName, iLibraryType,
                                         iProgramName, iFunctionName, iParameters)
 
-        此处使用 iLibraryType=1（目录模式）：
+        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_DIR（目录模式）：
           - iLibraryName：宏文件所在目录
           - iProgramName：宏文件名（含扩展名）
           - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
@@ -1729,7 +1718,7 @@ class MainWindow(QMainWindow):
         """
         lib_dir = str(macro_path.parent)
         app.SystemService.ExecuteScript(
-            lib_dir, 1, macro_path.name, func_name, params
+            lib_dir, CATIA_MACRO_LIBRARY_DIR, macro_path.name, func_name, params
         )
 
     def _execute_catvba(
@@ -1741,7 +1730,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         """调用 CATIA SystemService.ExecuteScript 执行 VBA 宏（.catvba）。
 
-        此处使用 iLibraryType=2（VBA 项目文件模式）：
+        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_VBA（VBA 项目文件模式）：
           - iLibraryName：.catvba 文件完整路径
           - iProgramName：VBA 模块名（中文 CATIA 默认为 "模块1"，英文/法语等环境为 "Module1"）
           - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
@@ -1754,7 +1743,7 @@ class MainWindow(QMainWindow):
         for module_name in ("模块1", "Module1"):
             try:
                 app.SystemService.ExecuteScript(
-                    str(macro_path), 2, module_name, func_name, params
+                    str(macro_path), CATIA_MACRO_LIBRARY_VBA, module_name, func_name, params
                 )
                 return
             except Exception as e:
@@ -1770,8 +1759,7 @@ class MainWindow(QMainWindow):
         并将模板文件路径作为参数传入，宏内可通过 iParameters 直接获取。
         """
         try:
-            from catia_copilot.catia.connection import get_catia_v5_application as _catia
-            caa = _catia()
+            caa = get_catia_v5_application()
             app = caa
             # 将模板路径作为单一字符串参数传递给宏的 CATMain 函数
             self._execute_catscript(app, macro_path, "CATMain", [template_path])

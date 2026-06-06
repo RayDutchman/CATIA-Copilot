@@ -12,8 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 APP_NAME    = "CATIA Copilot"
-APP_VERSION = "1.9.0"
-APP_DATE    = "2026-05-30"
+APP_VERSION = "2.1.0"
+APP_DATE    = "2026-06-06"
 APP_AUTHOR  = "CHEN Weibo"
 APP_CONTACT = "thucwb@gmail.com"
 
@@ -131,6 +131,24 @@ DOC_EXT_TYPE_MAP: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# CATIA COM 工作模式 / 宏库类型常量
+#
+# ApplyWorkMode / GetWorkMode 对应 CATWorkModeType 枚举：
+#   catWorkModeVisualization = 1
+#   catWorkModeDesign        = 2
+#
+# SystemService.ExecuteScript 的 iLibraryType 参数：
+#   1 = 目录模式（CATScript / .catvbs / .catscript，iLibraryName 为目录路径）
+#   2 = VBA 项目文件模式（.catvba，iLibraryName 为文件完整路径）
+# ---------------------------------------------------------------------------
+
+CATIA_VISUALIZATION_MODE: int = 1  # catWorkModeVisualization
+CATIA_DESIGN_MODE:        int = 2  # catWorkModeDesign
+
+CATIA_MACRO_LIBRARY_DIR: int = 1   # ExecuteScript iLibraryType: 目录（CATScript）
+CATIA_MACRO_LIBRARY_VBA: int = 2   # ExecuteScript iLibraryType: VBA 项目文件（.catvba）
+
+# ---------------------------------------------------------------------------
 # CATIA COM 属性映射
 #
 # 将 BOM 列名（用户可见的显示名）映射到 win32com Product 对象的 COM 属性名。
@@ -188,6 +206,9 @@ FILENAME_UNSAVED: str = "未保存"
 # Sentinel internal column name for the row-number column (always first, read-only)
 BOM_ROW_NUMBER_COLUMN: str = "#"
 
+# Column name for per-instance name in "完整 BOM" mode (maps to product.Name)
+BOM_INSTANCE_NAME_COLUMN: str = "Instance Name"
+
 # Columns that are structural / derived – shown read-only in the edit table
 BOM_READONLY_COLUMNS: frozenset[str] = frozenset({"#", "Level", "Type", "Filename", "Filepath", "Quantity"})
 
@@ -215,6 +236,7 @@ BOM_COLUMN_DISPLAY_NAMES: dict[str, str] = {
     "Source":       "源",
     "Description":  "描述",
     "Quantity":     "数量",
+    "Instance Name": "实例名",
 }
 
 # Minimum column widths (Excel character units) for standard BOM columns
@@ -227,7 +249,7 @@ BOM_COLUMN_MIN_WIDTHS: dict[str, int] = {
     "Definition":   20,
     "Revision":     10,
     "Source":       8,
-    "Description":  20,
+    "Description":  40,
     "Quantity":     8,
 }
 
@@ -250,39 +272,40 @@ BOM_THUMBNAIL_MAX_SIZE: int = 130
 # ---------------------------------------------------------------------------
 
 MASS_PROPS_COLUMNS: list[str] = [
-    "Level", "Type", "Filename", "Part Number", "Nomenclature", "Revision",
+    "Level", "Type", "Filename", "Part Number", "Instance Name", "Nomenclature", "Revision",
     "Density", "Weight", "CogX", "CogY", "CogZ",
     "Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz",
 ]
 
 MASS_PROPS_COLUMN_DISPLAY_NAMES: dict[str, str] = {
-    "#":            "#",
-    "Level":        "层级",
-    "Type":         "类型",
-    "Filename":     "文件名",
-    "Part Number":  "零件编号",
-    "Nomenclature": "术语（中文名称）",
-    "Revision":     "版本",
-    "Quantity":     "数量",
-    "Status":       "状态",
-    "Density":      "密度 (kg/m³)",
-    "Weight":       "重量 (kg)",
-    "CogX":         "重心 X (mm)",
-    "CogY":         "重心 Y (mm)",
-    "CogZ":         "重心 Z (mm)",
-    "Ixx":          "Ixx (kg·mm²)",
-    "Iyy":          "Iyy (kg·mm²)",
-    "Izz":          "Izz (kg·mm²)",
-    "Ixy":          "Ixy (kg·mm²)",
-    "Ixz":          "Ixz (kg·mm²)",
-    "Iyz":          "Iyz (kg·mm²)",
+    "#":             "#",
+    "Level":         "层级",
+    "Type":          "类型",
+    "Filename":      "文件名",
+    "Part Number":   "零件编号",
+    "Instance Name": "实例名",
+    "Nomenclature":  "术语（中文名称）",
+    "Revision":      "版本",
+    "Quantity":      "数量",
+    "Status":        "状态",
+    "Density":       "密度 (kg/m³)",
+    "Weight":        "重量 (kg)",
+    "CogX":          "重心 X (mm)",
+    "CogY":          "重心 Y (mm)",
+    "CogZ":          "重心 Z (mm)",
+    "Ixx":           "Ixx (kg·mm²)",
+    "Iyy":           "Iyy (kg·mm²)",
+    "Izz":           "Izz (kg·mm²)",
+    "Ixy":           "Ixy (kg·mm²)",
+    "Ixz":           "Ixz (kg·mm²)",
+    "Iyz":           "Iyz (kg·mm²)",
 }
 
 # Columns that are read-only in the mass properties dialog
 # (only "Weight" and "Density" with valid data are editable for part rows;
 #  density with value -1.0 is additionally locked in the delegate)
 MASS_PROPS_READONLY_COLUMNS: frozenset[str] = frozenset({
-    "#", "Level", "Type", "Filename", "Part Number",
+    "#", "Level", "Type", "Filename", "Part Number", "Instance Name",
     "Nomenclature", "Revision", "Quantity",
     "CogX", "CogY", "CogZ",
     "Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz",
@@ -290,7 +313,7 @@ MASS_PROPS_READONLY_COLUMNS: frozenset[str] = frozenset({
 
 # Columns in the mass properties dialog that can be hidden by the user
 MASS_PROPS_HIDEABLE_COLUMNS: tuple[str, ...] = (
-    "Filename", "Part Number", "Nomenclature", "Revision",
+    "Filename", "Part Number", "Instance Name", "Nomenclature", "Revision",
 )
 
 # ---------------------------------------------------------------------------
@@ -308,7 +331,6 @@ PART_NUMBER_VALID_PATTERN: re.Pattern = re.compile(
 # ---------------------------------------------------------------------------
 
 # DocdokuPLM 内置属性列（对应 PartRevision 的标准字段，作为 instanceAttributes 上传）
-# "Description" 是 PLM 创建零件时的描述字段，其余四项与 BOM_HIDEABLE_COLUMNS 一致
 PLM_BUILTIN_ATTR_COLS: list[str] = ["Nomenclature", "Definition", "Revision", "Source", "Description"]
 
 # ---------------------------------------------------------------------------

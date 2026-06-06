@@ -39,16 +39,24 @@ _dist_root = DISTPATH      # noqa: F821
 # pywintypes / pythoncom DLL 位于 site-packages/pywin32_system32/，
 # PyInstaller 默认不会自动收集，必须手动声明为 binaries。
 # 文件名含 Python 版本号（如 pywintypes313.dll），动态构造避免硬编码。
-import sys as _sys, glob as _glob
+import sys as _sys, glob as _glob, site as _site
 _pyver = f"{_sys.version_info.major}{_sys.version_info.minor}"
 _site_pkgs = _os.path.join(_os.path.dirname(_sys.executable), 'Lib', 'site-packages')
-_pywin32_dir = _os.path.join(_site_pkgs, 'pywin32_system32')
-_pywin32_binaries = [
-    (dll, '.')
-    for dll in _glob.glob(_os.path.join(_pywin32_dir, '*.dll'))
-]
+# 同时搜索用户 site-packages（pip install --user 的包装在这里）
+_user_site_pkgs = _site.getusersitepackages()
+
+# ── pywin32 DLL 动态查找 ────────────────────────────────────────────────────
+# pywintypes / pythoncom DLL 位于 pywin32_system32/，
+# 可能在系统 site-packages 也可能在用户 site-packages，两处都搜索。
+_pywin32_binaries = []
+for _sp in [_site_pkgs, _user_site_pkgs]:
+    _pywin32_dir = _os.path.join(_sp, 'pywin32_system32')
+    _pywin32_binaries += [
+        (dll, '.')
+        for dll in _glob.glob(_os.path.join(_pywin32_dir, '*.dll'))
+    ]
 if not _pywin32_binaries:
-    print(f"[warn] pywin32_system32 DLL not found in {_pywin32_dir}")
+    print(f"[warn] pywin32_system32 DLL not found in {_site_pkgs} or {_user_site_pkgs}")
 
 block_cipher = None
 
@@ -62,12 +70,6 @@ a = Analysis(
         ('drawing_templates', 'drawing_templates'),
         ('crack', 'crack'),
         ('catia_copilot', 'catia_copilot'),
-    ],
-    hiddenimports=[
-        # qdarkstyle 通过 Qt 资源系统注册图标，PyInstaller 静态分析找不到这两个模块，
-        # 缺失时深色/浅色主题的图标（滚动条箭头、复选框等）会显示为空白。
-        'qdarkstyle.dark.darkstyle_rc',
-        'qdarkstyle.light.lightstyle_rc',
     ],
     hookspath=[],
     hooksconfig={},

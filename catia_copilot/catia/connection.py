@@ -17,6 +17,16 @@ import subprocess
 import time
 from pathlib import Path
 
+from pycatia.in_interfaces.application import Application as _PyApplication
+from pycatia.product_structure_interfaces.product import Product as _PyProduct
+
+from catia_copilot.utils import (
+    detect_catia_root,
+    get_catia_v5_com_dispatch,
+    _is_catia_process_running,
+    open_catia_file,
+)
+
 logger = logging.getLogger(__name__)
 
 # CATIA V5 启动等待超时（秒）和轮询间隔（秒）
@@ -30,7 +40,6 @@ _CATIA_V5_POLL_INTERVAL = 2
 
 def _get_cnext_exe() -> Path | None:
     """返回 CATIA V5 主可执行文件（CNEXT.exe）的路径，未找到返回 None。"""
-    from catia_copilot.utils import detect_catia_root
     catia_root = detect_catia_root()
     if catia_root is None:
         return None
@@ -56,7 +65,6 @@ def _get_v5_com_object():
 
     返回 COM dispatch 对象，或 None（CATIA V5 未运行）。
     """
-    from catia_copilot.utils import get_catia_v5_com_dispatch
     return get_catia_v5_com_dispatch()
 
 
@@ -119,8 +127,6 @@ def get_catia_v5_application():
     抛出：
         RuntimeError：无法连接到 CATIA V5（未安装、启动失败或 COM 连接被拒绝）时。
     """
-    from catia_copilot.utils import _is_catia_process_running
-
     com_obj = _get_v5_com_object()
     if com_obj is None:
         if _is_catia_process_running():
@@ -181,7 +187,6 @@ def open_document(file_path: str, foreground: bool = False) -> None:
     foreground:
         是否将 CATIA 窗口切换到前台，默认 False。
     """
-    from catia_copilot.utils import open_catia_file
     app = get_catia_v5_application()
     open_catia_file(app.Documents, file_path, foreground=foreground)
 
@@ -217,7 +222,6 @@ def wrap_application():
         root = wrap_product(doc.product.product)   # pycatia Product
 
     """
-    from pycatia.in_interfaces.application import Application as _PyApplication
     return _PyApplication(get_catia_v5_application())
 
 
@@ -227,6 +231,7 @@ def wrap_product(product_com):
     获得 pycatia Product 后可直接调用：
       - ``product.position.get_components()``  → 12 元素 tuple，位置/旋转
       - ``product.analyze.mass``               → 质量 kg（基于材料属性）
+      - ``product.analyze.volume``             → 体积 mm³
       - ``product.analyze.get_gravity_center()``  → 重心坐标 mm
       - ``product.analyze.get_inertia()``         → 9 元素惯量矩阵
       - ``product.products``                   → 子件集合
@@ -243,6 +248,5 @@ def wrap_product(product_com):
     ----
     ``pycatia.product_structure_interfaces.product.Product``
     """
-    from pycatia.product_structure_interfaces.product import Product as _PyProduct
     return _PyProduct(product_com)
 

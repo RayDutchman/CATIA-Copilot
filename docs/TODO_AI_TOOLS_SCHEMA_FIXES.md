@@ -87,7 +87,7 @@
 **现状**：`summary_include_assemblies` 和 `summary_sort_column` 两个参数被硬编码为默认值，AI 无法控制汇总 BOM 的行为。
 
 **建议**：在包装函数和 schema 中暴露这两个参数：
-- `summary_include_assemblies: bool = false` — 汇总模式是否包含装配体行
+- `summary_include_assemblies: bool = false` — 汇总模式是否包含产品行
 - `summary_sort_column: string | null = null` — 汇总模式的排序列名
 
 ---

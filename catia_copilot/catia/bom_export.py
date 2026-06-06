@@ -5,9 +5,16 @@ Provides:
 - export_bom_to_excel() – export a hierarchical or summarised BOM to an .xlsx or .csv file
 """
 
+import csv
 import logging
 from collections.abc import Callable
 from pathlib import Path
+
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from PySide6.QtWidgets import QMessageBox
+
+from catia_copilot.catia.connection import get_catia_v5_application
 
 from catia_copilot.constants import (
     BOM_DEFAULT_COLUMNS,
@@ -16,7 +23,7 @@ from catia_copilot.constants import (
     SOURCE_TO_DISPLAY,
 )
 from catia_copilot.utils import estimate_column_width
-from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +77,6 @@ def export_bom_to_excel(
     list[Path]
         The file paths that were successfully written.
     """
-    import openpyxl
-    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-    from catia_copilot.catia.connection import get_catia_v5_application
-
     if columns is None:
         columns = BOM_DEFAULT_COLUMNS
     if custom_columns is None:
@@ -88,7 +91,7 @@ def export_bom_to_excel(
 
     caa         = get_catia_v5_application()
     application = caa
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     # ── Shared xlsx style objects ────────────────────────────────────────────
@@ -146,7 +149,6 @@ def export_bom_to_excel(
             ws.column_dimensions[col_letter].width = max_width + 2
 
     def _write_csv_file(dest: Path, rows: list[dict]) -> None:
-        import csv
         headers = [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
         with open(dest, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
@@ -171,7 +173,7 @@ def export_bom_to_excel(
             file_ext = ".csv" if use_csv else ".xlsx"
             dest = dest_dir / f"{src_name.stem}{bom_suffix}{file_ext}"
 
-            rows = collect_bom_rows(None, columns, custom_columns,
+            rows = collect_bom_rows_archive(None, columns, custom_columns,
                                      row_progress_callback)
             if summarize:
                 rows = flatten_bom_to_summary(
@@ -184,6 +186,7 @@ def export_bom_to_excel(
             else:
                 wb   = openpyxl.Workbook()
                 ws   = wb.active
+                assert ws is not None
                 ws.title = "汇总 BOM" if summarize else "BOM"
                 _write_sheet(ws, rows)
                 wb.save(dest)
@@ -201,7 +204,6 @@ def export_bom_to_excel(
                 with open(dest, "a+b"):
                     pass
             except PermissionError:
-                from PySide6.QtWidgets import QMessageBox
                 reply = QMessageBox.question(
                     None, "文件正在使用",
                     f"该文件当前在 Excel 中已打开：\n{dest}\n\n"
@@ -229,7 +231,7 @@ def export_bom_to_excel(
                 pass
 
         logger.info(f"Opening: {src}")
-        rows = collect_bom_rows(str(src), columns, custom_columns,
+        rows = collect_bom_rows_archive(str(src), columns, custom_columns,
                                 row_progress_callback)
         if summarize:
             rows = flatten_bom_to_summary(
@@ -243,6 +245,7 @@ def export_bom_to_excel(
         else:
             wb       = openpyxl.Workbook()
             ws       = wb.active
+            assert ws is not None
             ws.title = "汇总 BOM" if summarize else "BOM"
             _write_sheet(ws, rows)
             wb.save(dest)

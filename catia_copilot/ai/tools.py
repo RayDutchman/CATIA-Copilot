@@ -12,10 +12,46 @@ CATIA Copilot AI Agent 工具定义模块。
 
 from __future__ import annotations
 
+import fnmatch
+import importlib.util
 import json
 import logging
+import sys
+import tempfile
 import traceback
+from pathlib import Path
 from typing import Any, Callable
+
+from catia_copilot.utils import (
+    check_catia_connection,
+    diagnose_catia_connection,
+    get_catia_v5_com_dispatch,
+    open_catia_file,
+)
+from catia_copilot.constants import (
+    BOM_DEFAULT_COLUMNS,
+    PRESET_USER_REF_PROPERTIES,
+    PRESET_USER_REF_PROPERTY_OPTIONS,
+)
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
+from catia_copilot.catia.bom_export import export_bom_to_excel
+from catia_copilot.catia.bom_write import write_bom_to_catia
+from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
+from catia_copilot.catia.dependencies import (
+    find_dependencies,
+    find_reverse_dependencies,
+    find_part_for_drawing,
+    find_drawing_for_part,
+)
+from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
+from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
+from catia_copilot.catia.template import apply_part_template
+from catia_copilot.catia.document import (
+    get_document_type,
+    get_document_properties,
+    set_document_properties,
+)
+from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +264,6 @@ def _wrap(fn: Callable, *args, **kwargs) -> str:
 # --- 1. check_catia_connection ---
 
 def tool_check_catia_connection(**_kwargs) -> str:
-    from catia_copilot.utils import check_catia_connection
     status = check_catia_connection()
     return json.dumps({"status": status}, ensure_ascii=False)
 
@@ -236,7 +271,6 @@ def tool_check_catia_connection(**_kwargs) -> str:
 # --- 2. diagnose_catia_connection ---
 
 def tool_diagnose_catia_connection(**_kwargs) -> str:
-    from catia_copilot.utils import diagnose_catia_connection
     info = diagnose_catia_connection()
     # 过滤掉不可序列化的字段
     safe = {k: v for k, v in info.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
@@ -246,8 +280,6 @@ def tool_diagnose_catia_connection(**_kwargs) -> str:
 # --- 3. open_catia_file ---
 
 def tool_open_catia_file(file_path: str, foreground: bool = True, **_kwargs) -> str:
-    from catia_copilot.utils import get_catia_v5_com_dispatch
-    from catia_copilot.utils import open_catia_file
     app = get_catia_v5_com_dispatch()
     if app is None:
         return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
@@ -271,14 +303,12 @@ def tool_collect_bom(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.bom_collect import collect_bom_rows, flatten_bom_to_summary
-    from catia_copilot.constants import BOM_DEFAULT_COLUMNS
 
     cols = columns or BOM_DEFAULT_COLUMNS
     custom_cols = custom_columns or []
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
 
-    rows = collect_bom_rows(file_path, cols, custom_cols, progress_callback=cb)
+    rows = collect_bom_rows_archive(file_path, cols, custom_cols, progress_callback=cb)
 
     # 过滤内部键（以 _ 开头），只保留可读字段
     _INTERNAL = {"_filepath", "_not_found", "_no_file", "_unreadable",
@@ -313,7 +343,6 @@ def tool_export_bom_to_excel(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.bom_export import export_bom_to_excel
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     paths = export_bom_to_excel(
@@ -344,7 +373,6 @@ def tool_write_bom_to_catia(
 ) -> str:
     if not pn_data:
         return json.dumps({"error": "pn_data 不能为空"}, ensure_ascii=False)
-    from catia_copilot.catia.bom_write import write_bom_to_catia
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     write_bom_to_catia(file_path, pn_data, custom_columns or [], progress_callback=cb)
@@ -362,7 +390,6 @@ def tool_convert_to_pdf(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.conversion import convert_drawing_to_pdf
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     count = convert_drawing_to_pdf(
@@ -389,7 +416,6 @@ def tool_convert_to_step(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.conversion import convert_part_to_step
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     count = convert_part_to_step(
@@ -413,7 +439,6 @@ def tool_find_dependencies(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.dependencies import find_dependencies
 
     cb = make_str_progress_callback(progress_signal.emit) if progress_signal else None
     deps = find_dependencies(target_path, progress_callback=cb, activate=activate)
@@ -430,7 +455,6 @@ def tool_find_reverse_dependencies(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.dependencies import find_reverse_dependencies
 
     cb = make_str_progress_callback(progress_signal.emit) if progress_signal else None
     deps = find_reverse_dependencies(target_path, progress_callback=cb)
@@ -451,7 +475,6 @@ def tool_collect_mass_props(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     rows = collect_mass_props_rows(
@@ -497,11 +520,10 @@ def tool_generate_drawing(
     **_kwargs,
 ) -> str:
     """
-    从当前活动零件/装配体生成图纸。
+    从当前活动零件/产品生成图纸。
     property_values: {属性名: 属性值} 字典，AI 需预先提供所有需要的属性值。
     property_names: 要同步的属性名列表，默认 ["物料编码","材料","重量"]。
     """
-    from catia_copilot.catia.drawing_operations import generate_drawing
 
     values = property_values or {}
 
@@ -531,7 +553,6 @@ def tool_refresh_drawing(
     刷新当前活动图纸的参数（从对应零件同步属性）。
     property_values: {属性名: 属性值} 字典，AI 需预先提供所有需要的属性值。
     """
-    from catia_copilot.catia.drawing_operations import refresh_drawing
 
     values = property_values or {}
 
@@ -554,7 +575,6 @@ def tool_apply_part_template(
     progress_signal=None,
     **_kwargs,
 ) -> str:
-    from catia_copilot.catia.template import apply_part_template
 
     cb_list: list[str] = []
 
@@ -583,8 +603,6 @@ def tool_apply_part_template(
 
 def tool_get_open_documents(**_kwargs) -> str:
     """返回当前 CATIA 中所有已打开文档的完整路径列表及活动文档路径。"""
-    from catia_copilot.utils import get_catia_v5_com_dispatch
-    from catia_copilot.catia.document import get_document_type
 
     app = get_catia_v5_com_dispatch()
     if app is None:
@@ -625,7 +643,6 @@ def tool_save_catia_document(
     **_kwargs,
 ) -> str:
     """保存 CATIA 文档。file_path 为 null 时保存当前活动文档。"""
-    from catia_copilot.utils import get_catia_v5_com_dispatch
 
     app = get_catia_v5_com_dispatch()
     if app is None:
@@ -668,8 +685,6 @@ def tool_get_document_properties(
 
     file_path 为 null 时读取当前活动文档。
     """
-    from catia_copilot.utils import get_catia_v5_com_dispatch
-    from catia_copilot.catia.document import get_document_properties
 
     # 解析目标路径：null → 活动文档
     if file_path is None:
@@ -705,12 +720,6 @@ def tool_set_document_properties(
 
     file_path 为 null 时操作当前活动文档。
     """
-    from catia_copilot.utils import get_catia_v5_com_dispatch
-    from catia_copilot.catia.document import set_document_properties
-    from catia_copilot.constants import (
-        PRESET_USER_REF_PROPERTIES,
-        PRESET_USER_REF_PROPERTY_OPTIONS,
-    )
 
     if not standard and not user_defined:
         return json.dumps(
@@ -793,10 +802,9 @@ def tool_update_memory(
       "prepend" — 插入到文件开头
       "replace" — 完全替换文件内容
     """
-    from pathlib import Path as _Path
 
     # memory.md 位于项目根目录（此文件在 catia_copilot/ai/tools.py）
-    memory_path = _Path(__file__).parent.parent.parent / "memory.md"
+    memory_path = Path(__file__).parent.parent.parent / "memory.md"
 
     try:
         if mode == "replace":
@@ -822,7 +830,6 @@ def tool_find_part_for_drawing(
     **_kwargs,
 ) -> str:
     """给定 CATDrawing 路径，启发式查找对应的 CATPart/CATProduct 文件路径列表。"""
-    from catia_copilot.catia.dependencies import find_part_for_drawing
 
     matches = find_part_for_drawing(
         drawing_path,
@@ -841,7 +848,6 @@ def tool_find_drawing_for_part(
     **_kwargs,
 ) -> str:
     """给定 CATPart/CATProduct 路径，启发式查找对应的 CATDrawing 文件路径列表。"""
-    from catia_copilot.catia.dependencies import find_drawing_for_part
 
     matches = find_drawing_for_part(
         part_path,
@@ -873,7 +879,6 @@ def tool_read_file(
     仅支持文本格式（txt/csv/json/md/log/xml/yaml/ini/cfg/toml/jsonl）。
     文件大小超过 1 MB 时拒绝读取。
     """
-    from pathlib import Path
 
     path = Path(file_path)
 
@@ -949,8 +954,6 @@ def tool_list_directory(
     recursive=True 时递归列出，最大深度由 max_depth 控制（默认 2，最小有效值 1）。
     pattern 支持 glob 通配符过滤文件名，例如 *.CATDrawing、*.csv；目录始终列出。
     """
-    import fnmatch
-    from pathlib import Path
 
     path = Path(dir_path)
 
@@ -1024,7 +1027,6 @@ def tool_write_file(
     mode: overwrite=覆盖（默认）；append=追加；create_new=仅当文件不存在时创建。
     写入内容超过 2 MB 时拒绝。
     """
-    from pathlib import Path
 
     path = Path(file_path)
 
@@ -1144,12 +1146,6 @@ def tool_run_modeling_script(
 
             ctx.update_part(part)
     """
-    import importlib.util
-    import sys
-    import tempfile
-    import traceback as _traceback
-    from pathlib import Path
-    from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
 
     if progress_signal:
         progress_signal.emit("正在执行建模脚本...")
@@ -1175,10 +1171,12 @@ def tool_run_modeling_script(
     try:
         sys.modules.pop("_catia_generated_model", None)
         spec   = importlib.util.spec_from_file_location("_catia_generated_model", script_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"无法为 {script_path} 创建 ModuleSpec")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
     except Exception:
-        err = _traceback.format_exc()
+        err = traceback.format_exc()
         logger.error(f"[MODELING] 脚本加载失败:\n{err}")
         return json.dumps(
             {"error": "脚本语法错误或 import 失败", "traceback": err,
@@ -1212,7 +1210,7 @@ def tool_run_modeling_script(
 
     except Exception:
         # build() 本身（非 _run 包裹的代码）抛出的异常
-        err = _traceback.format_exc()
+        err = traceback.format_exc()
         logger.error(f"[MODELING] build() 执行失败:\n{err}")
         return json.dumps(
             {
@@ -1363,7 +1361,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "include_assemblies": {
                         "type": "boolean",
-                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
                     },
                     "sort_column": {
                         "type": ["string", "null"],
@@ -1402,7 +1400,7 @@ tools_schema: list[dict[str, Any]] = [
                     },
                     "summary_include_assemblies": {
                         "type": "boolean",
-                        "description": "汇总模式下是否包含装配体行，默认 false（仅在 summarize=true 时生效）",
+                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
                     },
                     "summary_sort_column": {
                         "type": ["string", "null"],
@@ -1537,7 +1535,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "find_reverse_dependencies",
-            "description": ("反向依赖查询：在当前 CATIA 中已打开的文档里，查找哪些文档直接引用了指定文件。""只检查已打开的 CATProduct 和 CATDrawing，不会主动打开新文件。""典型用途：删除零件前确认哪些装配体/图纸引用了它。""返回 {dependency_count, dependencies}。"),
+            "description": ("反向依赖查询：在当前 CATIA 中已打开的文档里，查找哪些文档直接引用了指定文件。""只检查已打开的 CATProduct 和 CATDrawing，不会主动打开新文件。""典型用途：删除零件前确认哪些产品/图纸引用了它。""返回 {dependency_count, dependencies}。"),
             "parameters": {
                 "type": "object",
                 "properties": {
