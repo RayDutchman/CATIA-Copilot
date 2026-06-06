@@ -12,8 +12,8 @@ import re
 # ---------------------------------------------------------------------------
 
 APP_NAME    = "CATIA Copilot"
-APP_VERSION = "2.0.1"
-APP_DATE    = "2026-06-05"
+APP_VERSION = "2.1.0"
+APP_DATE    = "2026-06-06"
 APP_AUTHOR  = "CHEN Weibo"
 APP_CONTACT = "thucwb@gmail.com"
 
@@ -272,39 +272,40 @@ BOM_THUMBNAIL_MAX_SIZE: int = 130
 # ---------------------------------------------------------------------------
 
 MASS_PROPS_COLUMNS: list[str] = [
-    "Level", "Type", "Filename", "Part Number", "Nomenclature", "Revision",
+    "Level", "Type", "Filename", "Part Number", "Instance Name", "Nomenclature", "Revision",
     "Density", "Weight", "CogX", "CogY", "CogZ",
     "Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz",
 ]
 
 MASS_PROPS_COLUMN_DISPLAY_NAMES: dict[str, str] = {
-    "#":            "#",
-    "Level":        "层级",
-    "Type":         "类型",
-    "Filename":     "文件名",
-    "Part Number":  "零件编号",
-    "Nomenclature": "术语（中文名称）",
-    "Revision":     "版本",
-    "Quantity":     "数量",
-    "Status":       "状态",
-    "Density":      "密度 (kg/m³)",
-    "Weight":       "重量 (kg)",
-    "CogX":         "重心 X (mm)",
-    "CogY":         "重心 Y (mm)",
-    "CogZ":         "重心 Z (mm)",
-    "Ixx":          "Ixx (kg·mm²)",
-    "Iyy":          "Iyy (kg·mm²)",
-    "Izz":          "Izz (kg·mm²)",
-    "Ixy":          "Ixy (kg·mm²)",
-    "Ixz":          "Ixz (kg·mm²)",
-    "Iyz":          "Iyz (kg·mm²)",
+    "#":             "#",
+    "Level":         "层级",
+    "Type":          "类型",
+    "Filename":      "文件名",
+    "Part Number":   "零件编号",
+    "Instance Name": "实例名",
+    "Nomenclature":  "术语（中文名称）",
+    "Revision":      "版本",
+    "Quantity":      "数量",
+    "Status":        "状态",
+    "Density":       "密度 (kg/m³)",
+    "Weight":        "重量 (kg)",
+    "CogX":          "重心 X (mm)",
+    "CogY":          "重心 Y (mm)",
+    "CogZ":          "重心 Z (mm)",
+    "Ixx":           "Ixx (kg·mm²)",
+    "Iyy":           "Iyy (kg·mm²)",
+    "Izz":           "Izz (kg·mm²)",
+    "Ixy":           "Ixy (kg·mm²)",
+    "Ixz":           "Ixz (kg·mm²)",
+    "Iyz":           "Iyz (kg·mm²)",
 }
 
 # Columns that are read-only in the mass properties dialog
 # (only "Weight" and "Density" with valid data are editable for part rows;
 #  density with value -1.0 is additionally locked in the delegate)
 MASS_PROPS_READONLY_COLUMNS: frozenset[str] = frozenset({
-    "#", "Level", "Type", "Filename", "Part Number",
+    "#", "Level", "Type", "Filename", "Part Number", "Instance Name",
     "Nomenclature", "Revision", "Quantity",
     "CogX", "CogY", "CogZ",
     "Ixx", "Iyy", "Izz", "Ixy", "Ixz", "Iyz",
@@ -312,7 +313,7 @@ MASS_PROPS_READONLY_COLUMNS: frozenset[str] = frozenset({
 
 # Columns in the mass properties dialog that can be hidden by the user
 MASS_PROPS_HIDEABLE_COLUMNS: tuple[str, ...] = (
-    "Filename", "Part Number", "Nomenclature", "Revision",
+    "Filename", "Part Number", "Instance Name", "Nomenclature", "Revision",
 )
 
 # ---------------------------------------------------------------------------

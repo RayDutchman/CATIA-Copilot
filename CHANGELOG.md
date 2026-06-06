@@ -4,6 +4,36 @@
 
 ---
 
+## [2.1.0] — 2026-06-06
+
+### 新增
+
+- **BOM 多实例同步（V2 对话框）**：修改任意实例的属性（PartNumber、Nomenclature 等）后，同 PartNumber 的所有其他实例（完整 BOM 模式）及不同父节点下的同零件汇总行（层级 BOM 模式）均自动同步更新界面，无需刷新。
+- **BOM V2 `PlmWorkbench` 改为 `QDialog`**：移除中间 `QWidget` 壳，原生支持 ESC 关闭，与其他对话框风格一致。
+- **质量属性对话框 — "刷新质量特性"右键菜单**：
+  - 完整 BOM 模式：新增"刷新质量特性（子树范围）"，通过缓存 `_product` COM 引用直接重测选中子树内所有零件的质量特性（含 mat4 重读）及子树外同 PN 兄弟实例（复用测量结果，保留各自 mat4），按当前面板选择的 Analyze / 惯量包络体方式执行。
+  - 汇总 BOM 模式：新增"刷新质量特性"，仅重测当前行对应零件，不涉及 mat4。
+  - 两种模式均通过 `_product` COM 引用直接测量，无需文件已保存到磁盘。
+- **质量属性对话框 — 实例名（Instance Name）列**：完整 BOM 模式下显示每个节点的 `product.Name`（实例名）；汇总 BOM 模式下强制隐藏（多实例合并后无意义）。
+- **质量属性对话框 — 对称件实例名标识**：对称件的 Instance Name 列显示为"原件实例名（对称件）"，直接指明是哪个实例的对称件。
+- **质量属性对话框 — "完整 BOM" 改名**：原"层级 BOM"按钮及相关文案统一改为"完整 BOM"，与 BOM 工作台术语一致。
+- **`bom_collect.py` 同步改进**：引入 `_com_unk()` / `_inst_to_product` / `_inst_to_items` / `_ref_to_insts` / `_inst_to_ref_unk` 索引体系，以 `id(product)` 为实例 key，以 PartNumber 为同零件识别 key，实现 O(1) 兄弟行查找。删除已无用的 `_product_extras` 字段。
+
+### 修复
+
+- **BOM V2 PN 修改时兄弟行不联动**：修改 PartNumber 时，`_canonical_data` 已更新为新值，但 `_ref_to_insts` key 仍为旧 PN 导致查找失败；修复为用旧 PN 完成同步后再迁移 key。
+- **BOM V2 PN 冲突检查误拦同零件实例**：同文件多实例的 PartNumber 相同，被冲突检查误判为冲突；修复为跳过同 `_inst_to_ref_unk` 的所有兄弟实例。
+- **BOM V2 `_auto_rename_instance_names` 使用旧 PN**：自动改名时从 `_full_rows` 读取 PN，未查 `_canonical_data`；修复为优先读取规范数据。
+- **质量属性对话框"重新读取质量特性"不区分数据来源**：原菜单项始终用 `keep_inertia` 路径；已删除，统一由新"刷新质量特性"替代，按当前面板设置执行。
+
+### 杂项
+
+- `collect_bom_rows_archive` 与 `bom_collect.py f003fda` 版本对齐：删除 `extras` 收集逻辑，row dict 去除 `_product` / `_reference_product` 字段，保持作为对比测试基准的独立性。
+- `mass_props_collect.py`：row dict 新增 `"_product"` 字段供子树刷新使用；`_SERIALIZE_SKIP` 增加 `"_product"`，保持 `.mpd` 文件向前兼容。
+- `mass_props_collect.py`：row dict 新增 `"Instance Name"` 字段（`product.Name`）。
+
+---
+
 ## [2.0.1] — 2026-06-05
 
 ### 新增 — BOM 工作台 V2（即时写回版）

@@ -734,9 +734,11 @@ def recompute_product_rows(rows: list[dict]) -> None:
 # 用记事本等文本编辑器打开只显示乱码；只能通过本模块的接口读取。
 # ---------------------------------------------------------------------------
 
-# 序列化时跳过的内部字段：_root_mp 可由 _post_process_rows() 重新计算，
-# _rows_idx 是显示层临时注入的索引，均无需持久化。
-_SERIALIZE_SKIP: frozenset[str] = frozenset({"_root_mp", "_rows_idx"})
+# 序列化时跳过的内部字段：
+#   _root_mp     可由 _post_process_rows() 重新计算，无需持久化
+#   _rows_idx    显示层临时注入的索引，无需持久化
+#   _product     COM IDispatch 指针，下次加载时已失效，跳过以保持 .mpd 向前兼容
+_SERIALIZE_SKIP: frozenset[str] = frozenset({"_root_mp", "_rows_idx", "_product"})
 
 
 def save_rows(rows: list[dict], file_path: str) -> None:
@@ -871,7 +873,7 @@ def remeasure_part_mass_props(
     """
     try:
         application = get_catia_v5_application()
-        application.Visible = True
+        # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
         documents = application.Documents
 
         fp_resolved = Path(filepath).resolve()
@@ -1028,6 +1030,12 @@ def collect_mass_props_rows(
             name = product.Name
             pn   = name.rsplit(".", 1)[0] if "." in name else name
 
+        # 读取实例名（product.Name，每个实例在父装配中唯一）
+        try:
+            instance_name = product.Name
+        except Exception:
+            instance_name = ""
+
         # 可见性探测：仅当用户勾选"忽略隐藏的节点"（skip_hidden=True）时才发起
         # COM 调用（Selection.VisProperties.GetShow）；skip_hidden=False 时完全不
         # 调用 _is_hidden()，从而避免任何多余的 COM 开销。
@@ -1127,9 +1135,10 @@ def collect_mass_props_rows(
         inertia = mp.get("inertia", [[0.0]*3 for _ in range(3)])
 
         row: dict = {
-            "Level":        level,
-            "Type":         node_type,
-            "Part Number":  pn,
+            "Level":         level,
+            "Type":          node_type,
+            "Part Number":   pn,
+            "Instance Name": instance_name,
             # Filename 三态：文件路径为空 → "未检索到"；路径非空但磁盘不存在 → "未保存"；正常 → 文件名（不含扩展名）
             "Filename":     (FILENAME_UNSAVED   if no_file
                              else Path(filepath).stem if filepath
@@ -1148,12 +1157,13 @@ def collect_mass_props_rows(
             "Ixz":          inertia[0][2] if mp else None,
             "Iyz":          inertia[1][2] if mp else None,
             "_filepath":    filepath,
-            "_placement":   abs_mat4,   # 零件局部坐标系 → 根产品坐标系的 4×4 变换矩阵
-            "_not_found":   not_found,  # True： CATIA 无法解析文件引用（路径丢失）
-            "_no_file":     no_file,    # True：路径有效但文件尚未保存到磁盘
+            "_placement":   abs_mat4,     # 零件局部坐标系 → 根产品坐标系的 4×4 变换矩阵
+            "_not_found":   not_found,    # True：CATIA 无法解析文件引用（路径丢失）
+            "_no_file":     no_file,      # True：路径有效但文件尚未保存到磁盘
             "_unreadable":  not is_readable,
             "_meas_failed": meas_failed,  # True：零件文档可访问但惯量包络体参数不存在
             "_mass_props":  mass_props,   # 原始测量值，供联动修改时使用
+            "_product":     product,      # COM 实例引用，用于子树范围刷新；序列化时跳过
         }
 
         rows.append(row)
@@ -1179,7 +1189,7 @@ def collect_mass_props_rows(
 
     # ── CATIA 连接与文档处理 ─────────────────────────────────────────────────
     application = get_catia_v5_application()
-    application.Visible = True  # 确保 CATIA 窗口可见，避免后台静默状态下 COM 调用挂起
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if file_path is None:

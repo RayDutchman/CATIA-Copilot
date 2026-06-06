@@ -66,7 +66,6 @@ logger = logging.getLogger(__name__)
 _MAX_HISTORY = 10  # 撤销/重做最大步数
 
 
-
 def _make_tree_combo(items: list[str]) -> QComboBox:
     """创建嵌入 QTreeWidget 行的 QComboBox。
 
@@ -152,10 +151,10 @@ class BomEditDialogV2(QDialog):
         self._columns: list[str] = self._build_visible_columns()
 
         # ── 内部状态 ──────────────────────────────────────────────────────────
-        # {id(product): {列名: 值}}，以 IDispatch（COM 对象）的 Python id 为键，每实例独立
+        # {id(product): {列名: 值}}，以 COM 实例 id() 为键，每实例独立（_inst_to_product 持有引用防 GC）
         self._canonical_data: dict = {}
-        # id(product) → 写回用的 COM product 对象
-        self._ckey_to_product: dict = {}
+        # id(product) → 写回用的 COM product 对象（同时防止 GC 使 id() 复用）
+        self._inst_to_product: dict = {}
         # 按遍历顺序排列的所有BOM行
         self._rows: list[dict] = []
         # 上次即时写回的状态文本（空字符串=尚未写入）
@@ -171,10 +170,14 @@ class BomEditDialogV2(QDialog):
         # 层级BOM行，由 build_hierarchical_rows(_full_rows) 派生；切换显示模式时用于重建行数据
         self._hierarchical_rows: list[dict] = []
         # id(product) → 树形项列表，用于快速联动更新（性能优化）
-        self._key_to_items: dict = {}
+        self._inst_to_items: dict = {}
+        # PartNumber 字符串 → list[inst_key]，用于跨实例同步界面（同零件多实例/多父节点）
+        self._ref_to_insts: dict = {}
+        # id(product) → PartNumber 字符串，O(1) 查同零件兄弟用
+        self._inst_to_ref_unk: dict = {}
         # 列名→像素宽度缓存；在列可见性切换时保留用户调整的列宽
         self._col_widths: dict[str, int] = {}
-        # 撤销/重做历史栈（最多 _MAX_HISTORY 步）；每项为若干 (ckey, col_name, old_val, new_val) 元组的列表
+        # 撤销/重做历史栈（最多 _MAX_HISTORY 步）；每项为若干 (inst_key, col_name, old_val, new_val) 元组的列表
         self._undo_stack: list[list[tuple]] = []
         self._redo_stack: list[list[tuple]] = []
         # 当前搜索过滤文本（全小写）；空字符串表示无过滤
@@ -782,15 +785,15 @@ class BomEditDialogV2(QDialog):
         self._canonical_data = {}
         for row in self._full_rows:
             _p = row.get("_product")
-            ckey = id(_p) if _p is not None else None
-            if ckey and ckey not in self._canonical_data:
+            inst_key = id(_p) if _p is not None else None
+            if inst_key and inst_key not in self._canonical_data:
                 data: dict[str, str] = {}
                 for col in all_data_cols:
                     val = str(row.get(col, ""))
                     if col == "Source":
                         val = SOURCE_TO_DISPLAY.get(val, val)
                     data[col] = val
-                self._canonical_data[ckey] = data
+                self._canonical_data[inst_key] = data
         
         # 加载新BOM时清空撤销/重做历史
         self._undo_stack.clear()
@@ -836,8 +839,10 @@ class BomEditDialogV2(QDialog):
         self._table.setColumnCount(len(headers))     # Qt 不会自动缩减列数
         self._table.setHeaderLabels(headers)
         self._item_by_row = []
-        self._key_to_items.clear()   # 重置 ckey→树形项索引
-        self._ckey_to_product.clear()  # 重置 ckey→COM product 索引
+        self._inst_to_items.clear()    # 重置 inst_key→树形项索引
+        self._inst_to_product.clear()  # 重置 inst_key→COM product 索引
+        self._ref_to_insts.clear()     # 重置 ref_unk→[inst_key] 跨实例索引
+        self._inst_to_ref_unk.clear()  # 重置 inst_key→ref_unk 索引
 
         # parent_stack：(层级, 树形项|None) 的列表
         # 索引0处的哨兵代表不可见根节点（层级为−1）
@@ -869,22 +874,24 @@ class BomEditDialogV2(QDialog):
             unreadable = bool(row_data.get("_unreadable"))
             row_locked = unreadable or not_found
 
-            # 构建 id(product)→树形项索引和 id(product)→product 索引
+            # 构建 inst_key→树形项/product 索引，以及 pn→[inst_key] 跨实例索引
             _p2 = row_data.get("_product")
-            ckey = id(_p2) if _p2 is not None else None
-            if ckey:
-                self._key_to_items.setdefault(ckey, []).append(item)
-                if ckey not in self._ckey_to_product:
-                    p = row_data.get("_product")
-                    if p is not None:
-                        self._ckey_to_product[ckey] = p
+            inst_key = id(_p2) if _p2 is not None else None
+            if inst_key:
+                self._inst_to_items.setdefault(inst_key, []).append(item)
+                if inst_key not in self._inst_to_product:
+                    self._inst_to_product[inst_key] = _p2
+                pn_key = str(row_data.get("Part Number", ""))
+                if pn_key:
+                    self._ref_to_insts.setdefault(pn_key, []).append(inst_key)
+                    self._inst_to_ref_unk[inst_key] = pn_key  # 此处存 pn 字符串
 
             for col_idx, col_name in enumerate(self._columns):
 
                 # 来源列 → QComboBox（覆盖控件；不存储为项文本）
                 if col_name == "Source":
                     raw    = str(row_data.get("Source", ""))
-                    pn_val = self._canonical_data.get(ckey, {}).get(
+                    pn_val = self._canonical_data.get(inst_key, {}).get(
                         "Source", SOURCE_TO_DISPLAY.get(raw, raw)
                     )
                     if pn_val not in SOURCE_OPTIONS:
@@ -905,7 +912,7 @@ class BomEditDialogV2(QDialog):
                 # 具有受限选项的用户自定义属性列 → QComboBox
                 opts = PRESET_USER_REF_PROPERTY_OPTIONS.get(col_name)
                 if opts is not None:
-                    pn_val = self._canonical_data.get(ckey, {}).get(
+                    pn_val = self._canonical_data.get(inst_key, {}).get(
                         col_name, str(row_data.get(col_name, ""))
                     )
                     # 构建有效选项列表：
@@ -956,7 +963,7 @@ class BomEditDialogV2(QDialog):
                     value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
                 else:
                     value = str(
-                        self._canonical_data.get(ckey, {}).get(
+                        self._canonical_data.get(inst_key, {}).get(
                             col_name, row_data.get(col_name, "")
                         )
                     )
@@ -1077,33 +1084,94 @@ class BomEditDialogV2(QDialog):
 
     # ── V2 即时写回核心方法 ───────────────────────────────────────────────────
 
-    def _write_cell_to_catia(self, ckey, col_name: str, value: str,
+    def _write_cell_to_catia(self, inst_key, col_name: str, value: str,
                              label: str = "已写回") -> None:
-        """通过缓存 COM 引用将单个单元格值立即写入 CATIA 。
+        """通过缓存 COM 引用将单个单元格值立即写入 CATIA。
 
         参数：
-            ckey: ``id(product)``，COM product 对象的 Python id。
+            inst_key: ``id(product)``，COM 实例对象的 IUnknown，作为唯一标识。
             col_name / value: 列名与新值。
             label: 状态栏前缀（"已写回" / "已撤销" / "已重做"）。
 
-        写入目标通过 ``_ckey_to_product[ckey]`` 直接取得：
+        写入目标通过 ``_inst_to_product[inst_key]`` 直接取得：
         - 独立文件：写一次，``write_cell`` 内部经由 ``ReferenceProduct`` 覆盖所有实例。
         - Component：写对应的实例 COM 对象，不走 ``ReferenceProduct``。
         """
-        product = self._ckey_to_product.get(ckey)
+        product = self._inst_to_product.get(inst_key)
         if product is None:
-            self._last_write_status = f"⚠ 未找到 COM 引用（ckey={ckey!r}）"
+            self._last_write_status = f"⚠ 未找到 COM 引用（inst_key={inst_key!r}）"
             self._update_status()
             return
 
-        pn = str(self._canonical_data.get(ckey, {}).get("Part Number", ""))
+        pn = str(self._canonical_data.get(inst_key, {}).get("Part Number", ""))
         try:
             write_cell(product, col_name, value, self._all_custom_columns)
             self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
         except Exception as e:
             self._last_write_status = f"写入失败：{e}"
-            logger.error("V2 write_cell error for ckey=%r col=%s: %s", ckey, col_name, e)
+            logger.error("V2 write_cell error for inst_key=%r col=%s: %s", inst_key, col_name, e)
         self._update_status()
+
+    def _sync_siblings_in_ui(
+        self,
+        written_insts: set,
+        col_name: str,
+        value: str,
+        col_idx: int | None = None,
+    ) -> None:
+        """将已写回 CATIA 的变更同步到 UI 中所有同零件兄弟行。
+
+        CATIA 属性绑定到文件，写一个实例即全部同步，此方法只负责更新
+        界面和 ``_canonical_data``，**不再调用 write_cell**。
+
+        以 PartNumber 为同零件识别键（通过 _inst_to_ref_unk 和 _ref_to_insts 索引）。
+
+        参数：
+            written_insts: 已直接写入 CATIA 的 inst_key 集合（这些行已更新，跳过）。
+            col_name:      被编辑的列名。
+            value:         新值。
+            col_idx:       列在 ``_columns`` 中的索引，None 时自动查找。
+        """
+        if col_idx is None:
+            col_idx = self._columns.index(col_name) if col_name in self._columns else None
+        if col_idx is None:
+            return
+
+        # 收集所有兄弟 inst_key（同 PartNumber 的其他实例，排除已写入的）
+        sibling_insts: set = set()
+        for inst_key in written_insts:
+            pn_key = self._inst_to_ref_unk.get(inst_key)  # 实为 PN 字符串
+            if pn_key is None:
+                continue
+            for sibling_inst in self._ref_to_insts.get(pn_key, []):
+                if sibling_inst not in written_insts:
+                    sibling_insts.add(sibling_inst)
+
+        if not sibling_insts:
+            return
+
+        # 更新兄弟行的 _canonical_data
+        for sibling_inst in sibling_insts:
+            if sibling_inst in self._canonical_data:
+                self._canonical_data[sibling_inst][col_name] = value
+
+        # 更新兄弟行的界面
+        self._is_updating = True
+        try:
+            for sibling_inst in sibling_insts:
+                for other_item in self._inst_to_items.get(sibling_inst, []):
+                    # Source / option 列：ComboBox 覆盖控件
+                    combo = self._table.itemWidget(other_item, col_idx)
+                    if isinstance(combo, QComboBox):
+                        if combo.currentText() != value:
+                            combo.blockSignals(True)
+                            combo.setCurrentText(value)
+                            combo.blockSignals(False)
+                    else:
+                        if other_item.text(col_idx) != value:
+                            other_item.setText(col_idx, value)
+        finally:
+            self._is_updating = False
 
     # ── "来源"下拉框变更 ──────────────────────────────────────────────────────
 
@@ -1121,26 +1189,26 @@ class BomEditDialogV2(QDialog):
         }
         direct_rows = selected_row_indices if row_idx in selected_row_indices else {row_idx}
 
-        ckeys_to_update: set = set()
+        insts_to_update: set = set()
         for r in direct_rows:
             _p = self._rows[r].get("_product")
-            ckey = id(_p) if _p is not None else None
-            if ckey:
-                ckeys_to_update.add(ckey)
+            inst_key = id(_p) if _p is not None else None
+            if inst_key:
+                insts_to_update.add(inst_key)
 
         # 记录旧值以支持撤销，同时更新规范数据并即时写回 CATIA
         old_vals: dict = {}
-        for ckey in ckeys_to_update:
-            if ckey in self._canonical_data:
-                old_vals[ckey] = self._canonical_data[ckey].get("Source", "")
-                self._canonical_data[ckey]["Source"] = text
-                self._write_cell_to_catia(ckey, "Source", text)
+        for inst_key in insts_to_update:
+            if inst_key in self._canonical_data:
+                old_vals[inst_key] = self._canonical_data[inst_key].get("Source", "")
+                self._canonical_data[inst_key]["Source"] = text
+                self._write_cell_to_catia(inst_key, "Source", text)
 
-        # 性能优化：使用 ckey→树形项索引，避免全树遍历
+        # 性能优化：使用 inst_key→树形项索引，避免全树遍历
         self._is_updating = True
-        for ckey in ckeys_to_update:
-            if ckey in self._key_to_items:
-                for other_item in self._key_to_items[ckey]:
+        for inst_key in insts_to_update:
+            if inst_key in self._inst_to_items:
+                for other_item in self._inst_to_items[inst_key]:
                     combo = self._table.itemWidget(other_item, src_col_idx)
                     if isinstance(combo, QComboBox) and combo.currentText() != text:
                         combo.blockSignals(True)
@@ -1150,13 +1218,15 @@ class BomEditDialogV2(QDialog):
 
         # 推入撤销栈并刷新视觉状态
         undo_actions = [
-            (ckey, "Source", old_vals[ckey], text)
-            for ckey in ckeys_to_update
-            if ckey in old_vals and old_vals[ckey] != text
+            (inst_key, "Source", old_vals[inst_key], text)
+            for inst_key in insts_to_update
+            if inst_key in old_vals and old_vals[inst_key] != text
         ]
         if undo_actions:
             self._push_undo(undo_actions)
-        self._refresh_keys_appearance(ckeys_to_update)
+        # 同步同零件兄弟行（CATIA 已自动同步，只需更新界面）
+        self._sync_siblings_in_ui(insts_to_update, "Source", text)
+        self._refresh_keys_appearance(insts_to_update)
 
     # ── 用户自定义选项列变更 ──────────────────────────────────────────────────
 
@@ -1174,26 +1244,26 @@ class BomEditDialogV2(QDialog):
         }
         direct_rows = selected_row_indices if row_idx in selected_row_indices else {row_idx}
 
-        ckeys_to_update: set = set()
+        insts_to_update: set = set()
         for r in direct_rows:
             _p = self._rows[r].get("_product")
-            ckey = id(_p) if _p is not None else None
-            if ckey:
-                ckeys_to_update.add(ckey)
+            inst_key = id(_p) if _p is not None else None
+            if inst_key:
+                insts_to_update.add(inst_key)
 
         # 记录旧值以支持撤销，同时更新规范数据并即时写回 CATIA
         old_vals: dict = {}
-        for ckey in ckeys_to_update:
-            if ckey in self._canonical_data:
-                old_vals[ckey] = self._canonical_data[ckey].get(col_name, "")
-                self._canonical_data[ckey][col_name] = text
-                self._write_cell_to_catia(ckey, col_name, text)
+        for inst_key in insts_to_update:
+            if inst_key in self._canonical_data:
+                old_vals[inst_key] = self._canonical_data[inst_key].get(col_name, "")
+                self._canonical_data[inst_key][col_name] = text
+                self._write_cell_to_catia(inst_key, col_name, text)
 
-        # 性能优化：使用 ckey→树形项索引，避免全树遍历
+        # 性能优化：使用 inst_key→树形项索引，避免全树遍历
         self._is_updating = True
-        for ckey in ckeys_to_update:
-            if ckey in self._key_to_items:
-                for other_item in self._key_to_items[ckey]:
+        for inst_key in insts_to_update:
+            if inst_key in self._inst_to_items:
+                for other_item in self._inst_to_items[inst_key]:
                     combo = self._table.itemWidget(other_item, col_idx)
                     if isinstance(combo, QComboBox) and combo.currentText() != text:
                         combo.blockSignals(True)
@@ -1203,13 +1273,15 @@ class BomEditDialogV2(QDialog):
 
         # 推入撤销栈并刷新视觉状态
         undo_actions = [
-            (ckey, col_name, old_vals[ckey], text)
-            for ckey in ckeys_to_update
-            if ckey in old_vals and old_vals[ckey] != text
+            (inst_key, col_name, old_vals[inst_key], text)
+            for inst_key in insts_to_update
+            if inst_key in old_vals and old_vals[inst_key] != text
         ]
         if undo_actions:
             self._push_undo(undo_actions)
-        self._refresh_keys_appearance(ckeys_to_update)
+        # 同步同零件兄弟行（CATIA 已自动同步，只需更新界面）
+        self._sync_siblings_in_ui(insts_to_update, col_name, text)
+        self._refresh_keys_appearance(insts_to_update)
 
     # ── 普通单元格编辑 ────────────────────────────────────────────────────────
 
@@ -1227,7 +1299,7 @@ class BomEditDialogV2(QDialog):
         new_value = item.text(col_idx)
         pn        = str(self._rows[row_idx].get("Part Number", ""))
         _this_p   = self._rows[row_idx].get("_product")
-        this_ckey = id(_this_p) if _this_p is not None else None
+        this_inst = id(_this_p) if _this_p is not None else None
 
         # ── 实例名称（完整 BOM 模式专用，按行而非按 PN 处理）──────────────────
         if col_name == BOM_INSTANCE_NAME_COLUMN:
@@ -1242,7 +1314,7 @@ class BomEditDialogV2(QDialog):
                     "零件编号不能为空或仅含空格，请输入有效的零件编号。",
                 )
                 self._is_updating = True
-                item.setText(col_idx, self._canonical_data.get(this_ckey, {}).get("Part Number", pn))
+                item.setText(col_idx, self._canonical_data.get(this_inst, {}).get("Part Number", pn))
                 self._is_updating = False
                 return
 
@@ -1262,13 +1334,15 @@ class BomEditDialogV2(QDialog):
                     "（\\ / : * ? \" < > |）。",
                 )
                 self._is_updating = True
-                item.setText(col_idx, self._canonical_data.get(this_ckey, {}).get("Part Number", pn))
+                item.setText(col_idx, self._canonical_data.get(this_inst, {}).get("Part Number", pn))
                 self._is_updating = False
                 return
 
-            # ── 与当前规范值冲突检查 ──────────────────────────────────────────
-            for other_ckey, data in self._canonical_data.items():
-                if other_ckey == this_ckey:
+            # ── 与当前规范值冲突检查（跳过同零件兄弟实例）────────────────────
+            this_pn_key = self._inst_to_ref_unk.get(this_inst)  # 实为 PN 字符串
+            same_pn_insts = set(self._ref_to_insts.get(this_pn_key, [])) if this_pn_key else set()
+            for other_inst, data in self._canonical_data.items():
+                if other_inst == this_inst or other_inst in same_pn_insts:
                     continue
                 if data.get("Part Number", "") == new_value:
                     QMessageBox.warning(
@@ -1276,7 +1350,7 @@ class BomEditDialogV2(QDialog):
                         f"零件编号 \"{new_value}\" 与现有零件编号冲突，不允许修改。",
                     )
                     self._is_updating = True
-                    item.setText(col_idx, self._canonical_data.get(this_ckey, {}).get("Part Number", pn))
+                    item.setText(col_idx, self._canonical_data.get(this_inst, {}).get("Part Number", pn))
                     self._is_updating = False
                     return
 
@@ -1289,35 +1363,53 @@ class BomEditDialogV2(QDialog):
 
         # 记录旧值并应用变更，然后即时写回 CATIA
         old_vals: dict = {}
-        ckeys_to_update: set = set()
+        insts_to_update: set = set()
         for r in direct_rows:
             _p = self._rows[r].get("_product")
-            r_ckey = id(_p) if _p is not None else None
-            if r_ckey:
-                ckeys_to_update.add(r_ckey)
-                if r_ckey in self._canonical_data:
-                    old_vals[r_ckey] = self._canonical_data[r_ckey].get(col_name, "")
-                    self._canonical_data[r_ckey][col_name] = new_value
-                    self._write_cell_to_catia(r_ckey, col_name, new_value)
+            r_inst = id(_p) if _p is not None else None
+            if r_inst:
+                insts_to_update.add(r_inst)
+                if r_inst in self._canonical_data:
+                    old_vals[r_inst] = self._canonical_data[r_inst].get(col_name, "")
+                    self._canonical_data[r_inst][col_name] = new_value
+                    self._write_cell_to_catia(r_inst, col_name, new_value)
 
-        # 性能优化：使用 ckey→树形项索引，避免全树遍历
+        # 性能优化：使用 inst_key→树形项索引，避免全树遍历
         self._is_updating = True
-        for ckey in ckeys_to_update:
-            if ckey in self._key_to_items:
-                for other_item in self._key_to_items[ckey]:
+        for inst_key in insts_to_update:
+            if inst_key in self._inst_to_items:
+                for other_item in self._inst_to_items[inst_key]:
                     if other_item.text(col_idx) != new_value:
                         other_item.setText(col_idx, new_value)
         self._is_updating = False
 
         # 推入撤销栈并刷新视觉状态
         undo_actions = [
-            (r_ckey, col_name, old_vals[r_ckey], new_value)
-            for r_ckey in ckeys_to_update
-            if r_ckey in old_vals and old_vals[r_ckey] != new_value
+            (r_inst, col_name, old_vals[r_inst], new_value)
+            for r_inst in insts_to_update
+            if r_inst in old_vals and old_vals[r_inst] != new_value
         ]
         if undo_actions:
             self._push_undo(undo_actions)
-        self._refresh_keys_appearance(ckeys_to_update)
+        # 同步同零件兄弟行（CATIA 已自动同步，只需更新界面）
+        # _sync_siblings_in_ui 通过 _inst_to_ref_unk（存 PN）查兄弟，
+        # 此时 _canonical_data 中已是新 PN，但 _ref_to_insts key 还是旧 PN，
+        # 需先用旧 PN 完成同步，再迁移 key。
+        if col_name == "Part Number":
+            old_pn = next(
+                (old_vals[k] for k in insts_to_update if k in old_vals), None
+            )
+            self._sync_siblings_in_ui(insts_to_update, col_name, new_value, col_idx=col_idx)
+            # 迁移 _ref_to_insts 和 _inst_to_ref_unk：旧 PN key → 新 PN key
+            if old_pn and old_pn != new_value:
+                old_list = self._ref_to_insts.pop(old_pn, [])
+                if old_list:
+                    self._ref_to_insts.setdefault(new_value, []).extend(old_list)
+                for k in old_list:
+                    self._inst_to_ref_unk[k] = new_value
+        else:
+            self._sync_siblings_in_ui(insts_to_update, col_name, new_value, col_idx=col_idx)
+        self._refresh_keys_appearance(insts_to_update)
 
     # ── 实例名称编辑（完整 BOM 模式） ────────────────────────────────────────
 
@@ -1404,8 +1496,8 @@ class BomEditDialogV2(QDialog):
         if not assignments:
             return
 
-        old_vals: dict = {}   # (ckey, col_name) → old_value
-        ckeys_to_update: set = set()
+        old_vals: dict = {}   # (inst_key, col_name) → old_value
+        insts_to_update: set = set()
 
         for row_idx, col_name, new_value in assignments:
             if row_idx < 0 or row_idx >= len(self._rows):
@@ -1414,21 +1506,21 @@ class BomEditDialogV2(QDialog):
             if row.get("_not_found") or row.get("_unreadable"):
                 continue
             _p = row.get("_product")
-            ckey = id(_p) if _p is not None else None
-            if not ckey or ckey not in self._canonical_data:
+            inst_key = id(_p) if _p is not None else None
+            if not inst_key or inst_key not in self._canonical_data:
                 continue
             if col_name in BOM_READONLY_COLUMNS:
                 continue
 
-            old_val = self._canonical_data[ckey].get(col_name, "")
-            if (ckey, col_name) not in old_vals:   # 只记录每个 ckey+列的第一次旧值
-                old_vals[(ckey, col_name)] = old_val
-            self._canonical_data[ckey][col_name] = new_value
-            ckeys_to_update.add(ckey)
+            old_val = self._canonical_data[inst_key].get(col_name, "")
+            if (inst_key, col_name) not in old_vals:   # 只记录每个 inst_key+列的第一次旧值
+                old_vals[(inst_key, col_name)] = old_val
+            self._canonical_data[inst_key][col_name] = new_value
+            insts_to_update.add(inst_key)
             # 即时写回 CATIA
-            self._write_cell_to_catia(ckey, col_name, new_value)
+            self._write_cell_to_catia(inst_key, col_name, new_value)
 
-        if not ckeys_to_update:
+        if not insts_to_update:
             return
 
         # 刷新界面（文本行 + combo 行）
@@ -1438,13 +1530,13 @@ class BomEditDialogV2(QDialog):
                 if row_idx < 0 or row_idx >= len(self._rows):
                     continue
                 _p = self._rows[row_idx].get("_product")
-                ckey = id(_p) if _p is not None else None
-                if not ckey or ckey not in self._key_to_items:
+                inst_key = id(_p) if _p is not None else None
+                if not inst_key or inst_key not in self._inst_to_items:
                     continue
                 col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                 if col_idx < 0:
                     continue
-                for tree_item in self._key_to_items[ckey]:
+                for tree_item in self._inst_to_items[inst_key]:
                     widget = self._table.itemWidget(tree_item, col_idx)
                     if isinstance(widget, QComboBox):
                         if widget.currentText() != new_value:
@@ -1457,26 +1549,35 @@ class BomEditDialogV2(QDialog):
         finally:
             self._is_updating = False
 
-        # 构建撤销动作（按 ckey+col_name 去重，只保留真正改变的条目）
+        # 构建撤销动作（按 inst_key+col_name 去重，只保留真正改变的条目）
         seen: set = set()
         undo_actions: list = []
         for row_idx, col_name, new_value in assignments:
             if row_idx < 0 or row_idx >= len(self._rows):
                 continue
             _p = self._rows[row_idx].get("_product")
-            ckey = id(_p) if _p is not None else None
-            key = (ckey, col_name)
+            inst_key = id(_p) if _p is not None else None
+            key = (inst_key, col_name)
             if key in seen:
                 continue
             seen.add(key)
             old_val = old_vals.get(key)
             if old_val is not None and old_val != new_value:
-                undo_actions.append((ckey, col_name, old_val, new_value))
+                undo_actions.append((inst_key, col_name, old_val, new_value))
 
         if undo_actions:
             self._push_undo(undo_actions)
 
-        self._refresh_keys_appearance(ckeys_to_update)
+        # 同步同零件兄弟行
+        for row_idx, col_name, new_value in assignments:
+            if row_idx < 0 or row_idx >= len(self._rows):
+                continue
+            _p = self._rows[row_idx].get("_product")
+            inst_key = id(_p) if _p is not None else None
+            if inst_key:
+                self._sync_siblings_in_ui({inst_key}, col_name, new_value)
+
+        self._refresh_keys_appearance(insts_to_update)
         self._update_status()
 
     # ── 撤销/重做 ─────────────────────────────────────────────────────────────
@@ -1485,7 +1586,7 @@ class BomEditDialogV2(QDialog):
         """将一组字段变更推入撤销栈（最多保留 _MAX_HISTORY 步）。
 
         Args:
-            actions: 每项为 ``(ckey, col_name, old_val, new_val)``。
+            actions: 每项为 ``(inst_key, col_name, old_val, new_val)``。
         """
         if not actions:
             return
@@ -1517,26 +1618,26 @@ class BomEditDialogV2(QDialog):
         """将一组字段变更应用到规范数据和界面。
 
         Args:
-            actions: 每项为 ``(ckey, col_name, old_val, new_val)``。
+            actions: 每项为 ``(inst_key, col_name, old_val, new_val)``。
             forward: ``True`` 应用 new_val（重做），``False`` 应用 old_val（撤销）。
         """
-        ckeys_affected: set = set()
+        insts_affected: set = set()
         _label = "已重做" if forward else "已撤销"
         self._is_updating = True
         try:
-            for ckey, col_name, old_val, new_val in actions:
+            for inst_key, col_name, old_val, new_val in actions:
                 value = new_val if forward else old_val
-                if ckey not in self._canonical_data:
+                if inst_key not in self._canonical_data:
                     continue
 
-                self._canonical_data[ckey][col_name] = value
+                self._canonical_data[inst_key][col_name] = value
                 # 即时写回 CATIA
-                self._write_cell_to_catia(ckey, col_name, value, label=_label)
+                self._write_cell_to_catia(inst_key, col_name, value, label=_label)
 
-                # 更新界面中所有关联该 ckey 的单元格
+                # 更新界面中所有关联该 inst_key 的单元格
                 col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                 if col_idx >= 0:
-                    for item in self._key_to_items.get(ckey, []):
+                    for item in self._inst_to_items.get(inst_key, []):
                         widget = self._table.itemWidget(item, col_idx)
                         if isinstance(widget, QComboBox):
                             widget.blockSignals(True)
@@ -1545,12 +1646,18 @@ class BomEditDialogV2(QDialog):
                         else:
                             item.setText(col_idx, value)
 
-                ckeys_affected.add(ckey)
+                insts_affected.add(inst_key)
         finally:
             self._is_updating = False
 
-        if ckeys_affected:
-            self._refresh_keys_appearance(ckeys_affected)
+        if insts_affected:
+            self._refresh_keys_appearance(insts_affected)
+            # 同步同零件兄弟行（undo/redo 路径；PN 列撤销/重做时 _inst_to_ref_unk 仍为旧 PN，
+            # 因为 PN 迁移只在 _on_item_changed 里做，此处直接查即可）
+            for inst_key, col_name, old_val, new_val in actions:
+                value = new_val if forward else old_val
+                col_idx = self._columns.index(col_name) if col_name in self._columns else None
+                self._sync_siblings_in_ui({inst_key}, col_name, value, col_idx=col_idx)
 
     # ── 相同内容填充 ──────────────────────────────────────────────────────────
 
@@ -1582,9 +1689,9 @@ class BomEditDialogV2(QDialog):
 
         # 取源值
         _src_p = self._rows[source_row_idx].get("_product")
-        src_ckey = id(_src_p) if _src_p is not None else None
-        if src_ckey and src_ckey in self._canonical_data:
-            src_value = self._canonical_data[src_ckey].get(col_name, "")
+        src_inst = id(_src_p) if _src_p is not None else None
+        if src_inst and src_inst in self._canonical_data:
+            src_value = self._canonical_data[src_inst].get(col_name, "")
         else:
             src_item = self._item_by_row[source_row_idx] if source_row_idx < len(self._item_by_row) else None
             if src_item is not None:
@@ -1622,19 +1729,19 @@ class BomEditDialogV2(QDialog):
 
         # 按视觉顺序排序，并按 id(product) 去重（每个 COM 实例唯一，正常不会重复；
         # 保险起见仍去重，避免同一行被多选导致重复赋值）。
-        seen_ckeys: set = set()
+        seen_insts: set = set()
         ordered_row_indices: list[int] = []
         duplicated_pns: set[str] = set()
         for r in sorted(row_indices):
             if r >= len(self._rows):
                 continue
             _p = self._rows[r].get("_product")
-            ckey = id(_p) if _p is not None else None
+            inst_key = id(_p) if _p is not None else None
             pn = str(self._rows[r].get("Part Number", ""))
-            if ckey in seen_ckeys:
+            if inst_key in seen_insts:
                 duplicated_pns.add(pn)
                 continue
-            seen_ckeys.add(ckey)
+            seen_insts.add(inst_key)
             ordered_row_indices.append(r)
 
         if duplicated_pns:
@@ -1932,8 +2039,8 @@ class BomEditDialogV2(QDialog):
             # 将本次填充对象的当前值排除（它们本身会被替换）
             for r_idx in ordered_row_indices:
                 _p = self._rows[r_idx].get("_product")
-                own_ckey = id(_p) if _p is not None else None
-                existing_pns.discard(self._canonical_data.get(own_ckey, {}).get("Part Number", ""))
+                own_inst = id(_p) if _p is not None else None
+                existing_pns.discard(self._canonical_data.get(own_inst, {}).get("Part Number", ""))
             for val in generated:
                 if val in existing_pns:
                     QMessageBox.warning(
@@ -1945,8 +2052,8 @@ class BomEditDialogV2(QDialog):
         assignments = list(zip(ordered_row_indices, [col_name] * len(ordered_row_indices), generated))
         self._apply_cell_values(assignments)
 
-    def _refresh_keys_appearance(self, ckeys: set) -> None:
-        """刷新指定 ckey 对应所有行的视觉外观。
+    def _refresh_keys_appearance(self, inst_keys: set) -> None:
+        """刷新指定 inst_key 对应所有行的视觉外观。
 
         无脏标记——所有单元格始终显示默认外观（已即时写回 CATIA）。
         锁定行（文件未找到/轻量化）不受影响。
@@ -1956,8 +2063,8 @@ class BomEditDialogV2(QDialog):
         # 用 _is_updating 标志屏蔽这些信号，避免循环触发。
         self._is_updating = True
         try:
-            for ckey in ckeys:
-                items = self._key_to_items.get(ckey, [])
+            for inst_key in inst_keys:
+                items = self._inst_to_items.get(inst_key, [])
                 for item in items:
                     if item.data(0, _ITEM_LOCKED_ROLE):
                         continue  # 锁定行保持固定的灰色/红色样式
@@ -2078,7 +2185,11 @@ class BomEditDialogV2(QDialog):
             ]
             pn_counter: dict[str, int] = {}
             for row in children:
-                pn = str(row.get("Part Number", "")).strip()
+                _p   = row.get("_product")
+                inst_key = id(_p) if _p is not None else None
+                pn   = str(self._canonical_data.get(inst_key, {}).get(
+                    "Part Number", row.get("Part Number", "")
+                )).strip()
                 if not pn:
                     continue
                 pn_counter[pn] = pn_counter.get(pn, 0) + 1
@@ -2195,8 +2306,8 @@ class BomEditDialogV2(QDialog):
             seen_fps.add(fp)
             orig_pn = str(row.get("Part Number", ""))
             _p = row.get("_product")
-            ckey    = id(_p) if _p is not None else None
-            pn      = str(self._canonical_data.get(ckey, {}).get("Part Number", orig_pn))
+            inst_key    = id(_p) if _p is not None else None
+            pn      = str(self._canonical_data.get(inst_key, {}).get("Part Number", orig_pn))
             if pn and Path(fp).stem != pn:
                 to_rename.append((fp, pn))
 
@@ -2390,16 +2501,16 @@ class BomEditDialogV2(QDialog):
         rows_data: list[dict] = []
         for row_data in self._rows:
             _p = row_data.get("_product")
-            ckey = id(_p) if _p is not None else None
+            inst_key = id(_p) if _p is not None else None
             row_out: dict = {}
             for col_name in export_cols:
                 if col_name == "Source":
                     raw = str(row_data.get("Source", ""))
-                    val = self._canonical_data.get(ckey, {}).get(
+                    val = self._canonical_data.get(inst_key, {}).get(
                         "Source", SOURCE_TO_DISPLAY.get(raw, raw)
                     )
                 elif col_name in PRESET_USER_REF_PROPERTY_OPTIONS:
-                    val = self._canonical_data.get(ckey, {}).get(
+                    val = self._canonical_data.get(inst_key, {}).get(
                         col_name, str(row_data.get(col_name, ""))
                     )
                 elif col_name == "Filename":
@@ -2413,7 +2524,7 @@ class BomEditDialogV2(QDialog):
                     val = str(row_data.get(col_name, ""))
                 else:
                     val = str(
-                        self._canonical_data.get(ckey, {}).get(
+                        self._canonical_data.get(inst_key, {}).get(
                             col_name, row_data.get(col_name, "")
                         )
                     )
@@ -2812,11 +2923,11 @@ class BomEditDialogV2(QDialog):
 
                 # 同步规范数据（以 id(product) 为键）
                 _p = row_data.get("_product")
-                ckey = id(_p) if _p is not None else None
-                if ckey and ckey in self._canonical_data:
+                inst_key = id(_p) if _p is not None else None
+                if inst_key and inst_key in self._canonical_data:
                     for col, val in new_props.items():
                         disp_val = SOURCE_TO_DISPLAY.get(val, val) if col == "Source" else val
-                        self._canonical_data[ckey][col] = disp_val
+                        self._canonical_data[inst_key][col] = disp_val
 
                 if pn:
                     refreshed_pns.add(pn)

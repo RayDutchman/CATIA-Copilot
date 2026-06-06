@@ -186,7 +186,6 @@ def collect_bom_rows_archive(
             "_not_found":   not_found,
             "_no_file":     no_file,
             "_unreadable":  not is_readable,
-            "_product":     product,   # 缓存的 COM 引用，供 V2 即时写回路径使用
         }
 
         try:
@@ -223,9 +222,7 @@ def collect_bom_rows_archive(
                 except Exception:
                     continue
                 if cpn not in children:
-                    children[cpn] = {"product": child, "qty": 0, "extras": []}
-                else:
-                    children[cpn]["extras"].append(child)
+                    children[cpn] = {"product": child, "qty": 0}
                 children[cpn]["qty"] += 1
 
             for cpn, data in children.items():
@@ -234,17 +231,13 @@ def collect_bom_rows_archive(
                           parent_filepath=filepath)
                 if child_rows:
                     child_rows[0]["Quantity"] = data["qty"]
-                    if data["extras"]:
-                        # 同一父节点下相同 PN 的额外实例（嵌入部件多实例），
-                        # 供 V2 即时写回路径逐一写入。
-                        child_rows[0]["_product_extras"] = data["extras"]
                 rows.extend(child_rows)
         except Exception:
             pass
 
     # ── CATIA connection ────────────────────────────────────────────────────
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if file_path is None:
@@ -435,7 +428,7 @@ def collect_bom_rows(
 
     # ── CATIA connection ────────────────────────────────────────────────────
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if file_path is None:
@@ -495,12 +488,6 @@ def _hierarchical_range(
 
         rep             = dict(first_row)      # shallow copy
         rep["Quantity"] = len(instances)
-        if len(instances) > 1:
-            rep["_product_extras"] = [
-                inst[0].get("_product") for inst in instances[1:]
-            ]
-        else:
-            rep.pop("_product_extras", None)
 
         result.append(rep)
 
@@ -520,8 +507,7 @@ def build_hierarchical_rows(full_rows: list[dict]) -> list[dict]:
 
     Instances of the same Part Number under the same parent are collapsed into
     a single *representative* row.  The representative's ``Quantity`` is set
-    to the sibling-group count; extra COM product objects are stored in
-    ``_product_extras`` (same contract as :func:`collect_bom_rows`).
+    to the sibling-group count.
 
     Only the representative instance's subtree is included in the result;
     identical subtrees of extra instances are silently discarded.

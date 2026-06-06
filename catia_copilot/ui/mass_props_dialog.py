@@ -5,7 +5,7 @@
 - MassPropsDialog – 遍历产品树，展示每个零件实例的质量/重心/转动惯量，
                     支持：
                       • 手动编辑重量（等比缩放惯量，联动同型号零件）
-                      • 层级 BOM / 汇总 BOM 切换
+                      • 完整 BOM / 汇总 BOM 切换
                       • 重量单位 g/kg 独立选择
                       • 长度单位 mm/m 独立选择
                       • 惯量单位 g·mm²/g·m²/kg·mm²/kg·m² 独立选择（4 种）
@@ -49,8 +49,10 @@ from catia_copilot.constants import (
 )
 from catia_copilot.catia.mass_props_collect import (
     collect_mass_props_rows, _row_inertia_to_root, recompute_product_rows,
-    save_rows, load_rows, merge_rows, remeasure_part_mass_props,
+    save_rows, load_rows, merge_rows,
     _compute_root_mp_from_placement, _rollup_one_product,
+    _measure_part_mass_props, _measure_part_mass_props_analyze,
+    _position_to_mat4, _mat4_mul, _identity_4x4,
 )
 from catia_copilot.catia.mass_props_calc import rollup_mass_properties
 from catia_copilot.ui.ui_colors import (
@@ -149,7 +151,7 @@ def _fmt(value) -> str:
 class MassPropsDialog(QDialog):
     """重量、重心、惯量统计对话框。
 
-    - 遍历 CATProduct 树，每个节点（零件/产品/部件实例）单独显示一行（层级 BOM 模式）。
+    - 遍历 CATProduct 树，每个节点（零件/产品/部件实例）单独显示一行（完整 BOM 模式）。
       Weight / CogX / CogY / CogZ / Ixx–Iyz 均在根产品坐标系下显示，与装配位置有关。
     - 汇总 BOM 模式：相同零件编号的零件实例合并为一行，并显示数量（Quantity）；
       仅列出零件（不含产品和部件）；Weight / CogX / CogY / CogZ / Ixx–Iyz
@@ -352,12 +354,15 @@ class MassPropsDialog(QDialog):
     def _build_columns(self) -> list[str]:
         """根据当前可见性设置和 BOM 模式，构建列名列表。
 
-        层级 BOM ：Level 在第 0 列（承载树形装饰线），# 在第 1 列。
+        完整 BOM ：Level 在第 0 列（承载树形装饰线），# 在第 1 列。
         汇总 BOM ：无 Level 列，# 在第 0 列（无装饰线需求），增加 Quantity 列。
+                   Instance Name 在汇总 BOM 中无意义（多实例合并为一行），强制隐藏。
         """
         if self._summarize:
             base = ["#", "Type"]
             for c in MASS_PROPS_HIDEABLE_COLUMNS:
+                if c == "Instance Name":
+                    continue  # 汇总 BOM 不显示实例名（多实例合并，无从区分）
                 if c in self._visible_hideable_cols:
                     base.append(c)
             base += ["Quantity", "Density", "Weight", "CogX", "CogY", "CogZ",
@@ -485,7 +490,7 @@ class MassPropsDialog(QDialog):
 
         # BOM 类型
         self._bom_type_group = QButtonGroup(self)
-        self._radio_hier = QRadioButton("层级 BOM")
+        self._radio_hier = QRadioButton("完整 BOM")
         self._radio_summ = QRadioButton("汇总 BOM")
         self._radio_summ.setToolTip(
             "汇总 BOM ：按零件编号合并同种零件，仅显示零件行。\n"
@@ -822,8 +827,8 @@ class MassPropsDialog(QDialog):
 
         self._export_btn = QPushButton("导出表格")
         self._export_btn.setToolTip(
-            "将层级 BOM 数据（含汇总行）导出为 Excel （.xlsx）或 CSV 文件。\n"
-            "无论当前显示层级 BOM 还是汇总 BOM ，导出内容始终为层级 BOM 。"
+            "将完整 BOM 数据（含汇总行）导出为 Excel （.xlsx）或 CSV 文件。\n"
+            "无论当前显示完整 BOM 还是汇总 BOM ，导出内容始终为完整 BOM 。"
         )
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_table)
@@ -847,7 +852,7 @@ class MassPropsDialog(QDialog):
                 "底部「汇总结果」在根产品坐标系下计算。"
             )
         return (
-            "【层级 BOM】展示零件节点和产品/部件节点。"
+            "【完整 BOM】展示零件节点和产品/部件节点。"
             "Weight / CogX / CogY / CogZ / Ixx–Iyz "
             "在根产品坐标系下显示，与零件的装配位置有关。"
             "底部「汇总结果」在根产品坐标系下计算。"
@@ -1347,7 +1352,7 @@ class MassPropsDialog(QDialog):
         return result
 
     def _build_hierarchy_columns(self) -> list[str]:
-        """返回层级 BOM 的列名列表（导出时始终使用，与当前显示模式无关）。"""
+        """返回完整 BOM 的列名列表（导出时始终使用，与当前显示模式无关）。"""
         base = ["Level", "#", "Type"]
         for c in MASS_PROPS_HIDEABLE_COLUMNS:
             if c in self._visible_hideable_cols:
@@ -1357,7 +1362,7 @@ class MassPropsDialog(QDialog):
         return base
 
     def _get_hierarchy_rows(self) -> list[dict]:
-        """返回层级 BOM 行列表（导出时始终使用，与当前显示模式无关）。
+        """返回完整 BOM 行列表（导出时始终使用，与当前显示模式无关）。
 
         与 _get_display_rows() 的非汇总分支相同：包含所有节点（零件、产品、
         部件、对称件），使用根产品坐标系下的 COG / 惯量值。
@@ -1572,7 +1577,7 @@ class MassPropsDialog(QDialog):
             self._table.addTopLevelItem(item)
 
     def _populate_tree(self, display_rows: list[dict]) -> None:
-        """层级 BOM 模式：按 Level 构建树形结构。"""
+        """完整 BOM 模式：按 Level 构建树形结构。"""
         parent_stack: list[tuple[int, QTreeWidgetItem | None]] = [(-1, None)]
 
         for di, row_data in enumerate(display_rows):
@@ -1838,7 +1843,7 @@ class MassPropsDialog(QDialog):
         self._update_summary_labels(result)
 
     def _refresh_product_items(self) -> None:
-        """刷新树形表格中所有产品/部件行的显示值（仅层级 BOM 模式有效）。
+        """刷新树形表格中所有产品/部件行的显示值（仅完整 BOM 模式有效）。
 
         在 _calculate() 调用 recompute_product_rows() 更新 self._rows 后，
         调用本方法将新的汇总值写回对应的 QTreeWidgetItem，以保持表格与数据同步。
@@ -2378,13 +2383,15 @@ class MassPropsDialog(QDialog):
             "density": density,
         }
 
-        source_pn = str(source_row.get("Part Number", ""))
+        source_pn            = str(source_row.get("Part Number", ""))
+        source_instance_name = str(source_row.get("Instance Name", ""))
         return {
-            "Level":        source_row.get("Level", 0),
-            "Type":         BomNodeType.MIRROR,    # 虚拟叶节点：对称件以独立类型标识，
+            "Level":         source_row.get("Level", 0),
+            "Type":          BomNodeType.MIRROR,    # 虚拟叶节点：对称件以独立类型标识，
                                         # 直接贡献质量特性汇总（不参与层级汇总）
-            "Part Number":  source_pn + " (对称件)",
-            "Filename":     "(虚拟)",
+            "Part Number":   source_pn + " (对称件)",
+            "Instance Name": (source_instance_name + " (对称件)") if source_instance_name else " (对称件)",
+            "Filename":      "(虚拟)",
             "Nomenclature": source_row.get("Nomenclature", ""),
             "Revision":     source_row.get("Revision", ""),
             "Density":      density,
@@ -2728,28 +2735,31 @@ class MassPropsDialog(QDialog):
 
         menu.addSeparator()
 
-        # ── 重新读取质量特性（多选：只要有满足条件的零件行即可）──────────
-        act_reread = menu.addAction("重新读取质量特性")
-        reread_idxs = [
-            ri for ri in selected_idxs
-            if not self._rows[ri].get("_is_mirror")
-            and self._rows[ri].get("Type") == BomNodeType.PART
-            and not self._rows[ri].get("_not_found")
-            and bool(self._rows[ri].get("_filepath", ""))
-            and Path(str(self._rows[ri].get("_filepath", ""))).exists()
-        ]
-        act_reread.setEnabled(bool(reread_idxs))
-        if reread_idxs:
-            if is_single:
-                pn = str(row_data.get("Part Number", ""))
-                act_reread.setToolTip(
-                    f"重新从 CATIA 读取零件「{pn}」的惯量包络体保持测量参数，"
-                    "并同步更新所有相同零件编号的节点。"
-                )
-            else:
-                act_reread.setToolTip(
-                    f"重新从 CATIA 读取选中的 {len(reread_idxs)} 个零件的质量特性。"
-                )
+        # ── 刷新质量特性 ──────────────────────────────────────────────────────
+        # 完整 BOM：刷新选中节点及其子树内所有零件（含 mat4 重读）+ 子树外同 PN 兄弟实例。
+        # 汇总 BOM：仅刷新当前行对应零件的质量特性（不涉及 mat4）。
+        # 两种模式均通过 _product COM 引用直接测量，无需文件已保存到磁盘。
+        act_refresh = menu.addAction(
+            "刷新质量特性（子树范围）" if not self._summarize else "刷新质量特性"
+        )
+        refresh_available = (
+            is_single
+            and not is_mirror
+            and self._rows[clicked_row_idx].get("_product") is not None
+        )
+        act_refresh.setEnabled(refresh_available)
+        if not self._summarize:
+            act_refresh.setToolTip(
+                "通过 CATIA COM 引用直接重新测量选中节点及其子树内所有零件的质量特性。\n"
+                "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
+                "无需零件文件已保存到磁盘，适用于尚未保存的新建零件。"
+            )
+        else:
+            act_refresh.setToolTip(
+                "通过 CATIA COM 引用重新测量当前零件的质量特性。\n"
+                "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
+                "无需零件文件已保存到磁盘。"
+            )
 
         # ── 层级BOM专属：增加对称件 / 参与计算 / 删除 ─────────────────────
         # act_toggle / act_delete / act_add_mirror 预置 None，以便在条件块外统一分发 action
@@ -2794,8 +2804,11 @@ class MassPropsDialog(QDialog):
             QApplication.clipboard().setText(fp)
         elif action == act_open_catia:
             self._open_in_catia(fp)
-        elif action == act_reread:
-            self._reread_mass_props_for_rows(reread_idxs)
+        elif action == act_refresh:
+            if self._summarize:
+                self._refresh_mass_props_single(clicked_row_idx)
+            else:
+                self._refresh_mass_props_subtree(clicked_row_idx)
         elif act_toggle is not None and action == act_toggle:
             self._toggle_excluded_multi(selected_idxs)
         elif act_delete is not None and action == act_delete:
@@ -2842,142 +2855,264 @@ class MassPropsDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")
 
-    # ── 重新读取质量特性 ────────────────────────────────────────────────────
+    # ── 刷新质量特性 ─────────────────────────────────────────────────────────
 
-    def _reread_mass_props_for_rows(self, row_idxs: list[int]) -> None:
-        """批量重新从 CATIA 读取多个零件行的质量特性，最后统一刷新。
+    def _refresh_mass_props_single(self, row_idx: int) -> None:
+        """汇总 BOM 模式下，仅刷新当前行对应零件的质量特性（不更新 mat4）。
 
-        按 (filepath, Part Number) 去重后逐个调用 remeasure_part_mass_props，
-        所有读取完成后统一更新 _rows、刷新可见树节点、重新计算产品/部件汇总行。
-
-        若所有零件均读取失败，则弹出错误提示并返回；
-        若部分失败，则在刷新成功零件后弹出警告；
-        全部成功时弹出成功提示。
+        汇总 BOM 展示零件自身坐标系下的值，_root_mp 用 identity placement 计算。
+        刷新成功后同步所有同 PN 的行（汇总模式下通常只有一行，但保持一致性）。
         """
-        if not row_idxs:
+        if row_idx >= len(self._rows):
             return
+        r       = self._rows[row_idx]
+        product = r.get("_product")
+        pn      = str(r.get("Part Number", ""))
 
-        # 按 (fp, pn) 去重，避免对同一零件文件读取多次
-        seen: set[tuple[str, str]] = set()
-        unique_tasks: list[tuple[str, str]] = []
-        for ri in row_idxs:
-            r  = self._rows[ri]
-            fp = str(r.get("_filepath", ""))
-            pn = str(r.get("Part Number", ""))
-            key = (fp, pn)
-            if key not in seen:
-                seen.add(key)
-                unique_tasks.append(key)
-
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        results: dict[str, object] = {}  # pn -> new_mp
-        failed_filepaths: list[str] = []
-        try:
-            for fp, pn in unique_tasks:
-                new_mp = remeasure_part_mass_props(fp, pn, self._read_mode)
-                if new_mp is None:
-                    failed_filepaths.append(fp)
-                else:
-                    results[pn] = new_mp
-        finally:
-            QApplication.restoreOverrideCursor()
-
-        if not results:
-            _read_mode_desc = {
-                "first": "「惯量包络体.1」",
-                "last":  f"编号最大的「惯量包络体.N」（N ≤ {MAX_INERTIA_INDEX}）",
-                "all":   f"「惯量包络体.1」至「惯量包络体.{MAX_INERTIA_INDEX}」",
-            }.get(self._read_mode, "惯量包络体")
+        if product is None:
             QMessageBox.warning(
-                self, "重新读取失败",
-                f"未能从以下零件读取到有效的质量特性：\n"
-                + "\n".join(f"  • {f}" for f in failed_filepaths)
-                + "\n\n可能原因：\n"
-                "  • 该零件文档尚未在 CATIA 中打开\n"
-                f"  • 当前读取模式要求的 {_read_mode_desc} 保持测量不存在\n"
-                "  • 测量是在产品环境下建立的（使用产品坐标系，不会被读取）\n"
-                "  • 需单独打开零件文件，在SPA中建立惯量保持测量",
+                self, "无 COM 引用",
+                f"零件「{pn}」没有有效的 COM 引用（可能来自载入文件），无法刷新。",
             )
             return
 
-        # ── 更新 _rows 中所有匹配 PN 的零件实例 ──────────────────────────
-        total_updated = 0
-        for pn, new_mp in results.items():
-            target_rows: list[int] = [
-                i for i, r in enumerate(self._rows)
-                if str(r.get("Part Number", "")) == pn and r.get("Type") == BomNodeType.PART
-            ]
-            total_updated += len(target_rows)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            if self._source == "analyze":
+                new_mp = _measure_part_mass_props_analyze(product)
+            else:
+                part_doc_com = product.ReferenceProduct.Parent
+                part_com     = part_doc_com.Part
+                new_mp = _measure_part_mass_props(part_com, pn, self._read_mode)
+        except Exception as e:
+            new_mp = None
+            logger.warning("汇总 BOM 刷新：零件 %s 测量失败: %s", pn, e)
+        finally:
+            QApplication.restoreOverrideCursor()
 
-            for ri in target_rows:
-                r = self._rows[ri]
-                r["_mass_props"]  = new_mp
-                r["Density"]      = new_mp.get("density", None)
-                r["Weight"]       = new_mp["weight"]
-                cog_local         = new_mp["cog"]
-                r["CogX"]         = cog_local[0]
-                r["CogY"]         = cog_local[1]
-                r["CogZ"]         = cog_local[2]
-                I_local           = new_mp["inertia"]
-                r["Ixx"]          = I_local[0][0]
-                r["Iyy"]          = I_local[1][1]
-                r["Izz"]          = I_local[2][2]
-                r["Ixy"]          = I_local[0][1]
-                r["Ixz"]          = I_local[0][2]
-                r["Iyz"]          = I_local[1][2]
-                r["_meas_failed"] = False
+        if new_mp is None:
+            QMessageBox.warning(self, "刷新失败", f"零件「{pn}」质量特性测量失败。")
+            return
 
-                placement = r.get("_placement")
-                if placement is not None:
-                    r["_root_mp"] = _compute_root_mp_from_placement(placement, new_mp)
-                else:
-                    r["_root_mp"] = {
-                        "weight":  new_mp["weight"],
-                        "cog":     list(cog_local),
-                        "inertia": [list(row_i) for row_i in I_local],
-                    }
+        # 汇总 BOM 用零件自身坐标系，_placement 为 identity（不影响坐标变换）
+        self._apply_new_mp(r, new_mp, r.get("_placement"))
 
-        # ── 刷新可见树节点 ────────────────────────────────────────────────
+        # 同步所有同 PN 的行（_rows 中可能存在多个，保持数据一致）
+        for i, other_r in enumerate(self._rows):
+            if i == row_idx:
+                continue
+            if str(other_r.get("Part Number", "")) == pn and other_r.get("Type") == BomNodeType.PART:
+                self._apply_new_mp(other_r, new_mp, other_r.get("_placement"))
+
+        # 刷新可见树节点
+        all_updated_rows = {
+            i for i, other_r in enumerate(self._rows)
+            if str(other_r.get("Part Number", "")) == pn
+            and other_r.get("Type") == BomNodeType.PART
+        }
         self._is_updating = True
         try:
-            for pn in results:
-                for vis_item in self._pn_to_items.get(pn, []):
-                    vis_row_idx = vis_item.data(0, _ROW_IDX_ROLE)
-                    if vis_row_idx is None:
-                        continue
-                    vis_row = self._rows[vis_row_idx]
-                    if vis_row.get("Type") != BomNodeType.PART:
-                        continue
-                    self._refresh_part_item_after_reread(vis_item, vis_row)
+            for vis_item in self._pn_to_items.get(pn, []):
+                ri = vis_item.data(0, _ROW_IDX_ROLE)
+                if ri is not None and ri in all_updated_rows:
+                    self._refresh_part_item_after_reread(vis_item, self._rows[ri])
         finally:
             self._is_updating = False
 
-        # ── 重新计算产品/部件汇总行并刷新底部计算结果 ──────────────────
-        # recompute_product_rows / _refresh_product_items 由 _calculate() 内部
-        # 在 _sync_all_mirrors() 之后统一调用，此处无需提前调用。
+        self._rollup_result = None
+        self._clear_summary_labels()
+        self._calculate()
+        QMessageBox.information(self, "刷新完成", f"零件「{pn}」质量特性已刷新。")
+
+    @staticmethod
+    def _apply_new_mp(row: dict, new_mp: dict, placement) -> None:
+        """将新的质量特性写入行 dict，并用 placement 重算根坐标系质量特性。
+
+        参数：
+            row:       要更新的行 dict（in-place 修改）。
+            new_mp:    新的质量特性字典（内部单位）。
+            placement: 该行的 4×4 变换矩阵（None 时跳过坐标变换）。
+        """
+        cog_local = new_mp["cog"]
+        I_local   = new_mp["inertia"]
+        row["_mass_props"]  = new_mp
+        row["Density"]      = new_mp.get("density", None)
+        row["Weight"]       = new_mp["weight"]
+        row["CogX"]         = cog_local[0]
+        row["CogY"]         = cog_local[1]
+        row["CogZ"]         = cog_local[2]
+        row["Ixx"]          = I_local[0][0]
+        row["Iyy"]          = I_local[1][1]
+        row["Izz"]          = I_local[2][2]
+        row["Ixy"]          = I_local[0][1]
+        row["Ixz"]          = I_local[0][2]
+        row["Iyz"]          = I_local[1][2]
+        row["_meas_failed"] = False
+        if placement is not None:
+            row["_root_mp"] = _compute_root_mp_from_placement(placement, new_mp)
+        else:
+            row["_root_mp"] = {
+                "weight":  new_mp["weight"],
+                "cog":     list(cog_local),
+                "inertia": [list(row_i) for row_i in I_local],
+            }
+
+    def _refresh_mass_props_subtree(self, root_row_idx: int) -> None:
+        """通过 COM 引用直接重新测量选中节点及其子树内所有零件的质量特性。
+
+        按当前面板选择的「Analyze」或「惯量包络体」方式（及读取模式）执行。
+        通过行 dict 中缓存的 ``_product`` COM 引用直接调用测量函数，
+        无需零件文件已保存到磁盘（未保存零件仍在 CATIA 内存中时同样有效）。
+        由完整 BOM 模式下的右键菜单调用。
+
+        子树内实例：重测质量特性 + 重读 mat4（装配位置）+ 重算根坐标系质量特性。
+        子树外同零件兄弟实例（同 PartNumber）：复用已测量的质量特性（无需重测）
+            + 保留各自原有 mat4 + 重算根坐标系质量特性。
+
+        注：mat4 仅对子树内实例重读；若用户在 CATIA 中移动了零件位置，
+        应重新加载整个 BOM 而非使用此刷新功能。
+
+        参数：
+            root_row_idx: 右键点击行在 ``self._rows`` 中的索引。
+        """
+        if root_row_idx >= len(self._rows):
+            return
+
+        # ── 收集子树范围内的零件行索引 ────────────────────────────────────
+        root_level = int(self._rows[root_row_idx].get("Level", 0))
+        subtree_idxs: list[int] = []
+        for i in range(root_row_idx, len(self._rows)):
+            row = self._rows[i]
+            if i > root_row_idx and int(row.get("Level", 0)) <= root_level:
+                break  # 已超出子树范围
+            if row.get("Type") == BomNodeType.PART and not row.get("_is_mirror"):
+                subtree_idxs.append(i)
+
+        if not subtree_idxs:
+            QMessageBox.information(
+                self, "无零件行",
+                "选中节点及其子树内没有可刷新的零件行。",
+            )
+            return
+
+        # ── 逐行重新测量：刷新质量特性 + mat4 ────────────────────────────
+        # new_mp_by_pn: PartNumber → new_mp，供同 PN 其他实例复用（避免重复 COM 调用）
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        updated: list[int] = []
+        failed_pns: list[str] = []
+        new_mp_by_pn: dict[str, dict] = {}
+        try:
+            for ri in subtree_idxs:
+                r       = self._rows[ri]
+                product = r.get("_product")
+                pn      = str(r.get("Part Number", ""))
+                if product is None:
+                    failed_pns.append(f"{pn}（无 COM 引用，可能来自载入文件）")
+                    continue
+
+                # 重读 mat4：取父节点的累积矩阵 × 本节点局部矩阵
+                # 父节点的累积矩阵存在父行的 _placement 里；
+                # 根节点（Level 0）无父，用单位矩阵。
+                try:
+                    local_mat4 = _position_to_mat4(product)
+                    # 向上找最近已有 _placement 的祖先行作为父矩阵
+                    parent_mat4 = _identity_4x4()
+                    cur_level = int(r.get("Level", 0))
+                    for j in range(ri - 1, -1, -1):
+                        anc = self._rows[j]
+                        if int(anc.get("Level", 0)) < cur_level:
+                            p_mat = anc.get("_placement")
+                            if p_mat is not None:
+                                parent_mat4 = p_mat
+                            break
+                    new_abs_mat4 = _mat4_mul(parent_mat4, local_mat4)
+                    r["_placement"] = new_abs_mat4
+                except Exception as e:
+                    logger.warning("子树刷新：零件 %s mat4 刷新失败: %s", pn, e)
+                    new_abs_mat4 = r.get("_placement") or _identity_4x4()
+
+                # 重测质量特性（同 PN 则复用，避免对同一文件重复 COM 调用）
+                if pn and pn in new_mp_by_pn:
+                    new_mp = new_mp_by_pn[pn]
+                else:
+                    try:
+                        if self._source == "analyze":
+                            new_mp = _measure_part_mass_props_analyze(product)
+                        else:
+                            part_doc_com = product.ReferenceProduct.Parent
+                            part_com     = part_doc_com.Part
+                            new_mp = _measure_part_mass_props(part_com, pn, self._read_mode)
+                    except Exception as e:
+                        logger.warning("子树刷新：零件 %s 测量失败: %s", pn, e)
+                        new_mp = None
+
+                if new_mp is None:
+                    failed_pns.append(pn)
+                    continue
+
+                if pn:
+                    new_mp_by_pn[pn] = new_mp
+
+                # 写回 row dict
+                self._apply_new_mp(r, new_mp, new_abs_mat4)
+                updated.append(ri)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if not updated:
+            QMessageBox.warning(
+                self, "刷新失败",
+                "子树内所有零件均未能重新测量。\n\n失败零件：\n"
+                + "\n".join(f"  • {p}" for p in failed_pns[:10]),
+            )
+            return
+
+        # ── 子树外同零件兄弟实例：复用 new_mp + 保留各自 mat4 + 重算 _root_mp ──
+        subtree_set = set(subtree_idxs)
+        sibling_updated: list[int] = []
+        for i, r in enumerate(self._rows):
+            if i in subtree_set:
+                continue
+            if r.get("Type") != BomNodeType.PART or r.get("_is_mirror"):
+                continue
+            pn_r = str(r.get("Part Number", ""))
+            if not pn_r or pn_r not in new_mp_by_pn:
+                continue
+            self._apply_new_mp(r, new_mp_by_pn[pn_r], r.get("_placement"))  # 保留原 mat4
+            sibling_updated.append(i)
+
+        all_updated = set(updated) | set(sibling_updated)
+
+        # ── 刷新可见树节点 ────────────────────────────────────────────────
+        updated_pns: set[str] = {
+            str(self._rows[ri].get("Part Number", "")) for ri in all_updated
+        }
+        self._is_updating = True
+        try:
+            for pn in updated_pns:
+                for vis_item in self._pn_to_items.get(pn, []):
+                    ri = vis_item.data(0, _ROW_IDX_ROLE)
+                    if ri is not None and ri in all_updated:
+                        vis_row = self._rows[ri]
+                        if vis_row.get("Type") == BomNodeType.PART:
+                            self._refresh_part_item_after_reread(vis_item, vis_row)
+        finally:
+            self._is_updating = False
+
+        # ── 重新汇总并刷新底部结果 ─────────────────────────────────────────
         self._rollup_result = None
         self._clear_summary_labels()
         self._calculate()
 
-        if failed_filepaths:
-            QMessageBox.warning(
-                self, "部分读取失败",
-                f"成功更新了 {total_updated} 个节点，但以下零件读取失败：\n"
-                + "\n".join(f"  • {f}" for f in failed_filepaths),
-            )
-        elif len(results) == 1:
-            pn = next(iter(results))
-            QMessageBox.information(
-                self, "重新读取成功",
-                f"已成功重新读取零件「{pn}」的质量特性，\n"
-                f"共更新了 {total_updated} 个节点。",
-            )
+        msg = f"已刷新 {len(updated)} 个子树内零件节点"
+        if sibling_updated:
+            msg += f"，另同步 {len(sibling_updated)} 个子树外同零件实例"
+        msg += "。"
+        if failed_pns:
+            msg += f"\n\n以下零件刷新失败：\n" + "\n".join(f"  • {p}" for p in failed_pns[:10])
+            QMessageBox.warning(self, "部分刷新失败", msg)
         else:
-            QMessageBox.information(
-                self, "重新读取成功",
-                f"已成功重新读取 {len(results)} 个零件的质量特性，\n"
-                f"共更新了 {total_updated} 个节点。",
-            )
+            QMessageBox.information(self, "刷新完成", msg)
 
     def _refresh_part_item_after_reread(
         self,
