@@ -62,7 +62,7 @@ def apply_part_template(
         每个无法刷写的文件的一个人类可读字符串。
     """
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
 
     succeeded: list[str] = []
     failed:    list[str] = []

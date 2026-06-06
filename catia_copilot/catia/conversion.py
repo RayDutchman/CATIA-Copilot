@@ -111,7 +111,7 @@ def convert_drawing_to_pdf(
         成功导出的文件数量
     """
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents = application.Documents
 
     bulk_action: str | None = None  # "skip_all", "overwrite_all", or "cancel"
@@ -195,7 +195,7 @@ def convert_part_to_step(
         成功导出的文件数量
     """
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents = application.Documents
 
     bulk_action: str | None = None

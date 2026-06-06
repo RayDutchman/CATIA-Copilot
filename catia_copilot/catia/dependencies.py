@@ -91,7 +91,7 @@ def find_dependencies(
     ext_lower    = Path(target_path).suffix.lower()
 
     application = get_catia_v5_application()
-    application.Visible = True
+    # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
     if activate:
