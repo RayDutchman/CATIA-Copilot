@@ -1825,9 +1825,22 @@ class BomEditDialogV3(QDialog):
         # 按视觉顺序排序（row_idx 即 _rows 中的索引，对应表格从上到下的顺序）
         sorted_indices = sorted(row_indices)
         source_row_idx = sorted_indices[0]
-        target_row_indices = sorted_indices[1:]
+        # 目标行：排除锁定行（未找到文件 / 轻量化），_apply_cell_values 虽然也会跳过，
+        # 但提前过滤可避免锁定行占用 source 位置（若第一行是锁定行，整体直接跳过）
+        target_row_indices = [
+            r for r in sorted_indices[1:]
+            if r < len(self._rows)
+            and not self._rows[r].get("_not_found")
+            and not self._rows[r].get("_unreadable")
+        ]
 
         if source_row_idx >= len(self._rows):
+            return
+        # 源行本身若锁定，无意义填充，直接返回
+        if (self._rows[source_row_idx].get("_not_found")
+                or self._rows[source_row_idx].get("_unreadable")):
+            return
+        if not target_row_indices:
             return
 
         # 取源值（从 part_masters 读取，优先）
@@ -1869,17 +1882,21 @@ class BomEditDialogV3(QDialog):
         if len(row_indices) < 2:
             return
 
-        # 按视觉顺序排序，并按 id(product) 去重（每个 COM 实例唯一，正常不会重复；
-        # 保险起见仍去重，避免同一行被多选导致重复赋值）。
+        # 按视觉顺序排序，并按 inst_key 去重，同时过滤锁定行（未找到文件 / 轻量化）。
+        # 锁定行不可编辑，若不过滤会占用序列槽位导致序列与行错位。
         seen_insts: set = set()
         ordered_row_indices: list[int] = []
         duplicated_pns: set[str] = set()
         for r in sorted(row_indices):
             if r >= len(self._rows):
                 continue
-            _p = self._rows[r].get("_product")
+            row = self._rows[r]
+            # 跳过锁定行
+            if row.get("_not_found") or row.get("_unreadable"):
+                continue
+            _p = row.get("_product")
             inst_key = id(_p) if _p is not None else None
-            pn = str(self._rows[r].get("Part Number", ""))
+            pn = str(row.get("Part Number", ""))
             if inst_key in seen_insts:
                 duplicated_pns.add(pn)
                 continue
