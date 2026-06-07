@@ -383,8 +383,9 @@ def iter_full_rows(
     rows: list[dict] = []
 
     # 根节点行（level=0，无实例名，无父节点）
-    root_pm  = part_masters.get(root_bom_key, {})
-    root_row = _pm_to_root_row(root_bom_key, root_pm)
+    root_pm      = part_masters.get(root_bom_key, {})
+    root_row     = _pm_to_root_row(root_bom_key, root_pm)
+    root_inst_key = root_row["_inst_key"]   # id(root_product)，供直接子实例的 _parent_inst_key 使用
     rows.append(root_row)
 
     def _walk(bom_key: str, level: int, parent_inst_key: int | None,
@@ -399,7 +400,8 @@ def iter_full_rows(
                 _walk(child_bom_key, level + 1, inst_info["inst_key"],
                       ancestors | {bom_key})
 
-    _walk(root_bom_key, level=1, parent_inst_key=None,
+    # 直接子实例的 _parent_inst_key = root_inst_key（根节点的 inst_key）
+    _walk(root_bom_key, level=1, parent_inst_key=root_inst_key,
           ancestors=frozenset({root_bom_key}))
     return rows
 

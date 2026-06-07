@@ -1317,8 +1317,10 @@ class BomEditDialogV3(QDialog):
 
         # ── 实例名称（完整 BOM 模式专用，按行而非按 PN 处理）──────────────────
         if col_name == BOM_INSTANCE_NAME_COLUMN:
-            # 根节点（level=0，_parent_inst_key 为 None）没有实例名，拒绝编辑
-            if self._rows[row_idx].get("_parent_inst_key") is None:
+            # 根节点（Level=0）没有实例名，拒绝编辑
+            # 注意：不能用 _parent_inst_key is None 判断——根节点直接子实例的
+            # _parent_inst_key 也是 None（iter_full_rows 第一次调用传 parent_inst_key=None）
+            if int(self._rows[row_idx].get("Level", 0)) == 0:
                 self._is_updating = True
                 item.setText(col_idx, "")
                 self._is_updating = False
