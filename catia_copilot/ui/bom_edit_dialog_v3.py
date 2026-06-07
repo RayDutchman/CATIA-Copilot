@@ -1480,9 +1480,14 @@ class BomEditDialogV3(QDialog):
                     del old_bom_key_vals[row_bom_key]
 
         if not affected_bom_keys:
-            # 所有写入均失败，回滚触发行的界面显示
+            # 所有写入均失败，回滚触发行的界面显示为旧值
+            # 从已回滚的 part_master 重新读取旧值（内存已恢复）
+            bom_key_trigger = str(self._rows[row_idx].get("_bom_key", ""))
+            old_display = get_part_master_attr(
+                self._part_masters, bom_key_trigger, col_name, pn
+            )
             self._is_updating = True
-            item.setText(col_idx, pn)
+            item.setText(col_idx, old_display)
             self._is_updating = False
             return
 
@@ -1541,6 +1546,7 @@ class BomEditDialogV3(QDialog):
             self._is_updating = True
             item.setText(col_idx, old_val)
             self._is_updating = False
+            self._update_status()   # 立即刷新状态栏，不等外层调用
 
         if not new_value.strip():
             QMessageBox.warning(self, "实例名称不能为空",
