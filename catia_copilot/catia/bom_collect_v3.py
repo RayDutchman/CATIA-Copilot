@@ -173,9 +173,8 @@ def collect_bom_part_masters(
         返回该节点的 bom_key（供父节点将其加入自己的 instances 列表）。
         同一 bom_key 只处理一次：part_master 已存在则直接返回，不重复遍历子节点。
 
-        _hint_pn:       父节点侧已读取的 PartNumber，可省一次 COM 调用。
-        _hint_filepath: 父节点侧已知的 filepath（嵌入部件 == parent_filepath），
-                        可省一次 product.ReferenceProduct.Parent.FullName COM 调用。
+        _hint_pn:       父节点侧已读取的 PartNumber，省一次 COM 调用。
+        _hint_filepath: 父节点侧已读取的 filepath，省一次 ReferenceProduct.Parent.FullName。
         """
         nonlocal _total_count
 
@@ -296,28 +295,38 @@ def collect_bom_part_masters(
                     try:
                         child = products.Item(i)
 
-                        # ── 性能优化：提前用 child.PartNumber（1次COM）算出候选 bom_key ──
-                        # 若候选 key 已在 part_masters，直接跳过 _traverse 的完整递归
-                        # （避免在 _traverse 入口处重复读 PartNumber + filepath 的 2次COM）。
-                        # 嵌入部件候选：pn:child_host；独立文件候选：pn（两者都算，各查一次）
+                        # ── 性能优化：提前读 child 的 pn + filepath（各1次COM），
+                        # 精确计算 child_bom_key。已知节点直接跳过 _traverse（节省
+                        # _traverse 内部重复读 pn + filepath 的 2次COM + 函数调用开销）；
+                        # 首次遇到的节点将已读取的 pn + filepath 作为 hint 传入，各省1次COM。
                         try:
                             child_pn_raw = str(child.PartNumber)
                         except Exception:
                             n = child.Name
                             child_pn_raw = n.rsplit(".", 1)[0] if "." in n else n
 
-                        candidate_embedded    = f"{child_pn_raw}:{child_host}"
-                        candidate_standalone  = child_pn_raw
+                        try:
+                            child_filepath = child.ReferenceProduct.Parent.FullName
+                        except Exception:
+                            child_filepath = ""
 
-                        if candidate_embedded in part_masters:
-                            child_bom_key = candidate_embedded
-                        elif candidate_standalone in part_masters:
-                            child_bom_key = candidate_standalone
+                        child_is_embedded = (bool(child_filepath) and bool(filepath)
+                                             and child_filepath == filepath)
+                        child_bom_key_candidate = (f"{child_pn_raw}:{child_host}"
+                                                   if child_is_embedded else child_pn_raw)
+
+                        if child_bom_key_candidate in part_masters:
+                            # 已建立：直接用候选 key，跳过 _traverse 的属性读取
+                            child_bom_key = child_bom_key_candidate
+                            _total_count += 1
+                            if progress_callback is not None:
+                                progress_callback(_total_count)
                         else:
-                            # 首次遇到：完整递归，传已读取的 pn hint 省一次 COM
+                            # 首次遇到：完整递归；pn + filepath 已读取，传入各省一次 COM
                             child_bom_key = _traverse(
                                 child, level + 1, filepath, child_host,
                                 _hint_pn=child_pn_raw,
+                                _hint_filepath=child_filepath,
                             )
 
                         child_pn = part_masters[child_bom_key]["part_number"]
