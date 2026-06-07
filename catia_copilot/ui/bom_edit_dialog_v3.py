@@ -962,7 +962,11 @@ class BomEditDialogV3(QDialog):
                     raw = str(row_data.get(col_name, ""))
                     # Type 列存储英文 key，显示时转为中文
                     value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
+                elif col_name == BOM_INSTANCE_NAME_COLUMN:
+                    # 实例名是实例级属性，直接从行数据读取，不走 part_master
+                    value = str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
                 else:
+                    # PartMaster 级可写属性（Nomenclature/Revision/Definition/Description/自定义列等）
                     value = get_part_master_attr(
                         self._part_masters, pn, col_name,
                         str(row_data.get(col_name, ""))
@@ -1456,12 +1460,13 @@ class BomEditDialogV3(QDialog):
             _rollback()
             return
 
-        # 同父唯一性检查
+        # 同父唯一性检查（遍历 _full_rows，完整 BOM 的权威数据源）
         row_data       = self._rows[row_idx]
         parent_product = row_data.get("_parent_product")
+        cur_product    = row_data.get("_product")
         if parent_product is not None:
-            for other_idx, other_row in enumerate(self._rows):
-                if other_idx == row_idx:
+            for other_row in self._full_rows:
+                if other_row.get("_product") is cur_product:
                     continue
                 if other_row.get("_parent_product") is parent_product:
                     if other_row.get(BOM_INSTANCE_NAME_COLUMN, "") == new_value:
@@ -1473,13 +1478,9 @@ class BomEditDialogV3(QDialog):
                         _rollback()
                         return
 
-        # 更新内存行数据
+        # 更新当前行内存（完整 BOM 模式下 _rows is _full_rows，一次写入即可）
         old_val = str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
         self._rows[row_idx][BOM_INSTANCE_NAME_COLUMN] = new_value
-        # 同步到 _full_rows（_rows 在完整 BOM 模式下就是 _full_rows 的引用，
-        # 但在汇总/层级模式下可能不同；防御性地同步一次）
-        if self._full_rows and row_idx < len(self._full_rows):
-            self._full_rows[row_idx][BOM_INSTANCE_NAME_COLUMN] = new_value
 
         # 即时写回 CATIA，写入成功后推入撤销栈
         product = row_data.get("_product")
@@ -1574,7 +1575,8 @@ class BomEditDialogV3(QDialog):
             pn_key = str(row.get("Part Number", "")).strip()
             if not pn_key or pn_key not in self._part_masters:
                 continue
-            if col_name in BOM_READONLY_COLUMNS:
+            if col_name in BOM_READONLY_COLUMNS or col_name == BOM_INSTANCE_NAME_COLUMN:
+                # 只读列和实例名列不走 part_master 路径（实例名有专用方法处理）
                 continue
 
             old_val = get_part_master_attr(self._part_masters, pn_key, col_name, "")
@@ -1726,14 +1728,19 @@ class BomEditDialogV3(QDialog):
                 else:
                     # ── PartMaster 属性：key = pn (str) ────────────────────────
                     pn = key
-                    if pn not in self._part_masters:
-                        continue
 
                     if col_name == "Part Number":
-                        # PN 改名：forward = new_pn，backward = old_pn
-                        # undo: new_pn → old_pn；redo: old_pn → new_pn
-                        src_pn  = new_val if forward else old_val   # 当前存在的 PN
-                        dst_pn  = old_val if forward else new_val   # 目标 PN
+                        # PN 改名的撤销/重做：
+                        # 正向操作（用户编辑）：old_pn → new_pn，key 存的是 old_pn
+                        # 重做（forward=True）：当前 _part_masters 中存 old_pn，改为 new_pn
+                        #   src = old_val (old_pn)，dst = new_val (new_pn)
+                        # 撤销（forward=False）：当前 _part_masters 中存 new_pn，改回 old_pn
+                        #   src = new_val (new_pn)，dst = old_val (old_pn)
+                        src_pn = old_val if forward else new_val   # 当前在 _part_masters 中存在的 PN
+                        dst_pn = new_val if forward else old_val   # 目标 PN
+                        if src_pn not in self._part_masters:
+                            logger.warning("_apply_field_changes: PN 改名 src_pn=%r 不在 part_masters 中，跳过", src_pn)
+                            continue
                         rename_part_master(
                             self._part_masters, self._pn_to_inst_keys,
                             self._full_rows, src_pn, dst_pn,
@@ -1751,6 +1758,9 @@ class BomEditDialogV3(QDialog):
                                 self._write_cell_to_catia(ik, col_name, dst_pn, label=_label)
                                 break
                     else:
+                        # 非 PN 的 PartMaster 属性（Nomenclature/Revision 等）
+                        if pn not in self._part_masters:
+                            continue
                         set_part_master_attr(self._part_masters, pn, col_name, value)
                         # 写回 CATIA（任意一个有效实例）
                         wrote = False
