@@ -1562,6 +1562,15 @@ class BomEditDialogV3(QDialog):
         logger.debug("_handle_instance_name_changed: inst_key=%r inst_info=%s old_val=%r new_value=%r",
                      inst_key, "found" if inst_info is not None else "NONE", old_val, new_value)
 
+        # inst_info 为 None 表示数据层异常（非根节点却找不到实例信息），拒绝编辑
+        if inst_info is None:
+            logger.error("_handle_instance_name_changed: inst_info 为 None，inst_key=%r，拒绝编辑",
+                         inst_key)
+            self._is_updating = True
+            item.setText(col_idx, old_val)
+            self._is_updating = False
+            return
+
         def _rollback() -> None:
             self._is_updating = True
             item.setText(col_idx, old_val)
