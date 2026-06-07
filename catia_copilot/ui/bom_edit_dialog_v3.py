@@ -1112,15 +1112,15 @@ class BomEditDialogV3(QDialog):
         return self._inst_key_to_product.get(inst_key)
 
     def _write_cell_to_catia(self, inst_key, col_name: str, value: str,
-                             label: str = "已写回") -> None:
-        """通过缓存 COM 引用将单个单元格值立即写入 CATIA。
+                             label: str = "已写回") -> bool:
+        """通过缓存 COM 引用将单个单元格值立即写入 CATIA。返回是否成功。
 
         参数：
             inst_key: ``id(product)``，COM 实例对象的唯一标识。
             col_name / value: 列名与新值。
             label: 状态栏前缀（"已写回" / "已撤销" / "已重做"）。
 
-        写入目标通过 ``_inst_key_to_info[inst_key]["product"]`` 取得：
+        写入目标通过 ``_get_product(inst_key)`` 取得：
         - 独立文件：写一次，``write_cell`` 内部经由 ``ReferenceProduct`` 覆盖所有实例。
         - Component：写对应的实例 COM 对象，不走 ``ReferenceProduct``。
         """
@@ -1129,9 +1129,9 @@ class BomEditDialogV3(QDialog):
         if product is None:
             self._last_write_status = f"⚠ 未找到 COM 引用（inst_key={inst_key!r}）"
             self._update_status()
-            return
+            return False
 
-        # pn 用于日志：优先从 inst_info 取，根节点从 part_masters 反查
+        # pn 用于状态栏：优先从 inst_info 取，根节点从 part_masters 反查
         pn = inst_info.get("pn", "") if inst_info is not None else ""
         if not pn:
             for pm in self._part_masters.values():
@@ -1140,16 +1140,18 @@ class BomEditDialogV3(QDialog):
                     break
         try:
             success = write_cell(product, col_name, value, self._all_custom_columns)
+            # bom_write.py 内部已 warning 记录底层原因，此处只更新状态栏
             if success:
                 self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
             else:
-                self._last_write_status = f"⚠ 写入失败（CATIA 拒绝）：{pn!r}.{col_name} = {value!r}"
-                logger.warning("write_cell 返回失败 inst_key=%r col=%s value=%r",
-                               inst_key, col_name, value)
+                self._last_write_status = f"⚠ 写入失败：{pn!r}.{col_name} = {value!r}"
         except Exception as e:
-            self._last_write_status = f"⚠ 写入异常：{e}"
-            logger.error("write_cell 异常 inst_key=%r col=%s: %s", inst_key, col_name, e)
+            success = False
+            self._last_write_status = f"⚠ 写入异常：{pn!r}.{col_name}: {e}"
+            logger.error("_write_cell_to_catia: 异常 inst_key=%r col=%r: %s",
+                         inst_key, col_name, e)
         self._update_status()
+        return success
 
     def _sync_pn_siblings_in_ui(
         self,
@@ -1446,21 +1448,42 @@ class BomEditDialogV3(QDialog):
                     if row.get("_bom_key") == row_bom_key:
                         row["Part Number"] = new_value
                 # 写回 CATIA：用任意一个有效实例写一次
+                write_ok = False
                 for ik in self._bom_key_to_inst_keys.get(row_bom_key, []):
                     if self._get_product(ik) is not None:
-                        self._write_cell_to_catia(ik, col_name, new_value)
+                        write_ok = self._write_cell_to_catia(ik, col_name, new_value)
                         insts_to_update.add(ik)
                         break
+                if not write_ok:
+                    # 写入失败：回滚内存和 _rows 的 Part Number 字段
+                    rename_part_master(self._part_masters, self._bom_key_to_inst_keys,
+                                       row_bom_key, old_bom_key_vals[row_bom_key])
+                    for row in self._rows:
+                        if row.get("_bom_key") == row_bom_key:
+                            row["Part Number"] = old_bom_key_vals[row_bom_key]
+                    affected_bom_keys.discard(row_bom_key)
+                    del old_bom_key_vals[row_bom_key]
             else:
                 set_part_master_attr(self._part_masters, row_bom_key, col_name, new_value)
                 # 写回 CATIA：用任意一个有效实例写一次
+                write_ok = False
                 for ik in self._bom_key_to_inst_keys.get(row_bom_key, []):
                     if self._get_product(ik) is not None:
-                        self._write_cell_to_catia(ik, col_name, new_value)
+                        write_ok = self._write_cell_to_catia(ik, col_name, new_value)
                         insts_to_update.add(ik)
                         break
+                if not write_ok:
+                    # 写入失败：回滚内存
+                    set_part_master_attr(self._part_masters, row_bom_key, col_name,
+                                         old_bom_key_vals[row_bom_key])
+                    affected_bom_keys.discard(row_bom_key)
+                    del old_bom_key_vals[row_bom_key]
 
         if not affected_bom_keys:
+            # 所有写入均失败，回滚触发行的界面显示
+            self._is_updating = True
+            item.setText(col_idx, pn)
+            self._is_updating = False
             return
 
         # 更新所有同 bom_key 实例的界面（通过 _bom_key_to_inst_keys 遍历）
@@ -1501,19 +1524,22 @@ class BomEditDialogV3(QDialog):
         - 推入撤销栈，支持 Ctrl+Z 撤销。
         - 实例名唯一真相：_inst_key_to_info[inst_key]["instance_name"]（part_masters 树的引用）。
         """
-        row_data        = self._rows[row_idx]
-        cur_product     = row_data.get("_product")
-        inst_key        = row_data.get("_inst_key") or (id(cur_product) if cur_product else None)
-        inst_info       = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
-        parent_inst_key = row_data.get("_parent_inst_key")
+        row_data         = self._rows[row_idx]
+        cur_product      = row_data.get("_product")
+        inst_key         = row_data.get("_inst_key") or (id(cur_product) if cur_product else None)
+        inst_info        = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
+        parent_inst_key  = row_data.get("_parent_inst_key")
         parent_inst_info = self._inst_key_to_info.get(parent_inst_key) if parent_inst_key is not None else None
-        # parent_bom_key：父节点的 bom_key，用于从 part_masters 查同 bom_key 兄弟
-        parent_bom_key = parent_inst_info["bom_key"] if parent_inst_info is not None else self._root_bom_key
+        parent_bom_key   = parent_inst_info["bom_key"] if parent_inst_info is not None else self._root_bom_key
+
+        # old_val 提前计算，确保 _rollback 总能取到正确的旧值
+        # inst_info 为 None（理论上不应发生，但防御）时回退到行数据里的值
+        old_val = (inst_info["instance_name"] if inst_info is not None
+                   else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, "")))
 
         def _rollback() -> None:
-            old = inst_info["instance_name"] if inst_info is not None else item.text(col_idx)
             self._is_updating = True
-            item.setText(col_idx, old)
+            item.setText(col_idx, old_val)
             self._is_updating = False
 
         if not new_value.strip():
@@ -1537,18 +1563,14 @@ class BomEditDialogV3(QDialog):
                 _rollback()
                 return
 
-        # ── 读旧值 ────────────────────────────────────────────────────────────
-        old_val = inst_info["instance_name"] if inst_info is not None else ""
-
         # ── 即时写回 CATIA ────────────────────────────────────────────────────
         if cur_product is not None:
             try:
                 ok = write_cell(cur_product, BOM_INSTANCE_NAME_COLUMN,
                                 new_value, self._all_custom_columns)
                 if not ok:
-                    self._last_write_status = f"⚠ 实例名写入失败（CATIA 拒绝）：{old_val!r} → {new_value!r}"
-                    logger.warning("write_cell 实例名写入失败 inst_key=%r old=%r new=%r",
-                                   inst_key, old_val, new_value)
+                    # bom_write.py 已 warning 记录底层原因，此处只更新状态栏并回滚
+                    self._last_write_status = f"⚠ 写入失败：实例名 {old_val!r} → {new_value!r}"
                     _rollback()
                 else:
                     self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
@@ -1574,8 +1596,9 @@ class BomEditDialogV3(QDialog):
                         self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
 
             except Exception as e:
-                self._last_write_status = f"实例名写入失败：{e}"
-                logger.error("write_cell instance name error: %s", e)
+                self._last_write_status = f"⚠ 写入异常：实例名 {old_val!r}: {e}"
+                logger.error("_handle_instance_name_changed: 异常 inst_key=%r: %s", inst_key, e)
+                _rollback()
         else:
             self._last_write_status = f"⚠ 未找到实例 COM 引用（行 {row_idx + 1}）"
         self._update_status()
@@ -1621,11 +1644,17 @@ class BomEditDialogV3(QDialog):
             affected_bom_keys.add(bom_key)
 
             # 写回 CATIA：用任意一个有效实例写一次
+            write_ok = False
             for ik in self._bom_key_to_inst_keys.get(bom_key, []):
                 if self._get_product(ik) is not None:
+                    write_ok = self._write_cell_to_catia(ik, col_name, new_value)
                     insts_to_update.add(ik)
-                    self._write_cell_to_catia(ik, col_name, new_value)
                     break
+            if not write_ok:
+                # 写入失败：回滚内存，不更新界面
+                set_part_master_attr(self._part_masters, bom_key, col_name, old_val)
+                affected_bom_keys.discard(bom_key)
+                old_vals.pop(key, None)
 
         if not affected_bom_keys:
             return
