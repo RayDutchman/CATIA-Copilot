@@ -1,429 +1,568 @@
 """
 BOM 数据收集 V3 模块（part_master / instance 分离架构）。
 
-提供：
-- collect_bom_part_masters()  – 遍历产品树，返回 dict[str, dict]（PN → part_master）
-                                每条 part_master 包含 PartMaster 级属性（可写属性、只读属性）
-                                和 children 列表（装配结构）
-- build_hierarchical_rows_v3() – 从 part_master 树派生层级 BOM 扁平行列表
-                                  使用 (parent_pn, child_pn) 作为分组 key（替代不稳定的 id(parent)）
+设计原则：
+- part_master 是装配树的节点，instances 存该 part_master 内部的直接子实例列表。
+- 同一 bom_key 只建一份 part_master，所有引用共享同一份 instances。
+  （CATIA 中 product.ReferenceProduct.Products 是文件视角，
+   通过 Product3.1 或 Product3.2 导航到的 Part1.x COM 对象底层相同，
+   修改任意一个的 Name 全部同步。）
+- inst_info["product"] 持有 COM 引用防止 GC，inst_info["instance_name"] 是唯一真相。
+- inst_key_to_info 提供 O(1) 反向索引。
 
-内部仍调用 bom_collect.collect_bom_rows() 作为中间产物，
-collect_bom_rows() 本身不需要修改。
+bom_key 规则：
+- 独立文件节点（Part / Product）：bom_key = part_number
+- 嵌入部件（Component，filepath == parent_filepath）：
+    bom_key = f"{part_number}:{host_file_pn}"
+    host_file_pn 是宿主独立文件的 PartNumber（即包含该 Component 的 .CATProduct 的 pn）。
+  同一宿主文件内 PartNumber 唯一（CATIA 约束），因此 bom_key 全局唯一。
+  多层嵌套 Component 共享同一宿主文件，host_file_pn 透传不变，不会链式叠加。
+  分隔符使用 ":" （冒号），CATIA PartNumber 不允许包含 ":"（Windows 文件名禁用字符），绝无歧义。
 
-part_master 结构（每条对应一个零件文件）：
-    {
-        "part_number":  str,   # 唯一 key（PartNumber）
-        "nomenclature": str,   # 术语（中文名称）
-        "revision":     str,   # 版本
-        "definition":   str,   # 定义
-        "source":       str,   # 源（CATIA 原始值："0"/"1"/"2"）
-        "description":  str,   # 描述
+数据结构：
+
+    part_master = {
+        "part_number":  str,   # CATIA PartNumber 属性值（显示、写回用）
+        "bom_key":      str,   # part_masters 字典的唯一 key（查找用）
+        "nomenclature": str,
+        "revision":     str,
+        "definition":   str,
+        "source":       str,   # CATIA 原始值 "0"/"1"/"2"
+        "description":  str,
         # + 用户自定义列（dict 中额外 key）
-        "type":         str,   # "Part"/"Product"/"Component"（只读）
-        "filename":     str,   # 文件名（含扩展名，不含路径）
-        "filepath":     str,   # 文件完整路径（只读；未保存零件可能为空）
-        "_not_found":   bool,  # 文件未找到标志
-        "_no_file":     bool,  # 从未保存到磁盘标志
-        "_unreadable":  bool,  # COM 不可读标志
-        "children": [          # 子件列表（有序，保持 CATIA 产品树顺序）
+        "type":         str,   # BomNodeType 英文 key
+        "filename":     str,
+        "filepath":     str,
+        "_not_found":   bool,
+        "_no_file":     bool,
+        "_unreadable":  bool,
+        "instances": [         # 该 part_master 内部的直接子实例列表（文件视角，唯一一份）
             {
-                "child_pn": str,   # 子 part_master 的 part_number
-                "instances": [     # 该子件在本装配中的所有实例
-                    {
-                        "inst_key":      int,        # id(product)，写回用
-                        "instance_name": str,        # product.Name，实例级
-                        "placement":     list|None,  # 4×4 变换矩阵（可为 None）
-                    },
-                ]
+                "inst_key":      int,    # id(product)，任取一个 Python wrapper 的 id
+                "pn":            str,    # 子节点的 CATIA PartNumber（显示用）
+                "bom_key":       str,    # 子节点的 bom_key（查 part_masters 用）
+                "instance_name": str,    # product.Name，实例名唯一真相
+                "product":       object, # COM 引用，防 GC、写回实例名用
+                "placement":     None,   # 4×4 变换矩阵（mass props 用）
             },
+            ...
         ]
     }
+
+提供：
+- collect_bom_part_masters()  – 遍历 CATIA 产品树，返回
+                                (root_bom_key, part_masters, inst_key_to_info)
+- iter_full_rows()            – 完整 BOM（每实例一行）
+- iter_hierarchical_rows()    – 层级 BOM（同父节点同 bom_key 合并）
+- flatten_bom_to_summary()    – 汇总 BOM（复用 bom_collect）
+- get_part_master_attr()      – O(1) 读属性
+- set_part_master_attr()      – O(1) 写属性
+- rename_part_master()        – 统一处理 PN 改名
 """
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from catia_copilot.constants import (
-    BOM_EDIT_COLUMN_ORDER,
     BOM_INSTANCE_NAME_COLUMN,
-    SOURCE_TO_DISPLAY,
+    FILENAME_NOT_FOUND,
+    FILENAME_UNSAVED,
     BomNodeType,
+    PRODUCT_ATTR_READ_MAP,
+    CATIA_DESIGN_MODE,
 )
-from catia_copilot.catia.bom_collect import collect_bom_rows, build_hierarchical_rows
+from catia_copilot.catia.bom_collect import flatten_bom_to_summary  # noqa: F401
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
 
-# PartMaster 级可写属性（对应 CATIA ReferenceProduct 的属性）
-# Source 存原始值（"0"/"1"/"2"），显示层由调用方转换
-_PART_MASTER_WRITABLE_COLS: tuple[str, ...] = (
-    "Part Number", "Nomenclature", "Revision", "Definition", "Source", "Description",
-)
+# 列名 → part_master dict key 映射（标准列）
+_COL_TO_PM_KEY: dict[str, str] = {
+    "Part Number":  "part_number",
+    "Nomenclature": "nomenclature",
+    "Revision":     "revision",
+    "Definition":   "definition",
+    "Source":       "source",
+    "Description":  "description",
+    "Type":         "type",
+    "Filename":     "filename",
+    "Filepath":     "filepath",
+}
 
-# PartMaster 级只读属性（派生，不可写）
-_PART_MASTER_READONLY_COLS: tuple[str, ...] = (
-    "Type", "Filename",
+_WRITABLE_COLS:    frozenset[str] = frozenset(
+    {"Part Number", "Nomenclature", "Revision", "Definition", "Source", "Description"}
 )
+_READONLY_PM_COLS: frozenset[str] = frozenset({"Type", "Filename", "Filepath"})
 
+
+# ---------------------------------------------------------------------------
+# 核心收集函数
+# ---------------------------------------------------------------------------
 
 def collect_bom_part_masters(
     file_path: str | None,
     columns: list[str],
     custom_columns: list[str],
     progress_callback: Callable[[int], None] | None = None,
-) -> tuple[list[dict], dict[str, dict], dict[int, dict]]:
-    """遍历产品树，返回 (full_rows, part_masters, inst_key_to_info)。
+) -> tuple[str, dict[str, dict], dict[int, dict]]:
+    """遍历 CATIA 产品树，构建 part_masters 树和 inst_key_to_info 反向索引。
 
-    full_rows:
-        collect_bom_rows() 返回的逐实例扁平行列表，供显示层使用。
-        注意：full_rows 里的 BOM_INSTANCE_NAME_COLUMN 字段是初始快照，
-        后续实例名的修改只更新 part_masters 树，不回写 full_rows。
+    返回 (root_bom_key, part_masters, inst_key_to_info)。
+
+    root_bom_key:
+        根产品的 bom_key（== root PartNumber，根节点必为独立文件）。
+        遍历装配结构从 part_masters[root_bom_key]["instances"] 开始。
 
     part_masters:
-        dict[part_number → part_master dict]，每条 part_master 包含：
-        - PartMaster 级属性（可写：PN/Nomenclature/Revision/Definition/Source/Description/自定义列）
-        - 只读属性（Type/Filename/filepath/_flags）
-        - children 列表（装配结构，有序）
-          每个 instance_info = {"inst_key": int, "instance_name": str, "placement": None}
-          instance_name 是实例名的唯一真相，通过 inst_key_to_info 快速访问。
+        dict[bom_key → part_master dict]。
+        每个 part_master 含属性字段和 instances 列表。
+        instances 是该 part_master 内部的直接子实例列表（文件视角，唯一一份）。
+        同一 bom_key 只建一份，所有引用共享。
 
     inst_key_to_info:
-        dict[inst_key → inst_info dict]，反向索引，O(1) 读写实例名。
-        inst_info 是 part_masters children 中 instance_info 的同一对象引用，
-        修改 inst_info["instance_name"] 即同时更新 part_masters 树。
-
-    参数：
-        file_path, columns, custom_columns, progress_callback:
-            与 collect_bom_rows() 参数含义相同。
-
-    返回：
-        (full_rows, part_masters, inst_key_to_info)
+        dict[id(product) → inst_info dict]，O(1) 反向索引。
+        inst_info 是 part_master["instances"] 中的同一对象引用。
+        修改 inst_info["instance_name"] 即同步修改 part_masters 树。
     """
-    # ── Step 1: 调用现有 collect_bom_rows() 获取逐实例行列表 ────────────────
-    full_rows = collect_bom_rows(
-        file_path, columns, custom_columns,
-        progress_callback=progress_callback,
-    )
+    extra_cols = [c for c in custom_columns
+                  if c not in _WRITABLE_COLS and c not in _READONLY_PM_COLS]
 
-    # ── Step 2: 从 full_rows 构建 part_masters ───────────────────────────────
-    part_masters: dict[str, dict] = {}
+    _props_cache:     dict[str, dict] = {}
+    part_masters:     dict[str, dict] = {}
+    inst_key_to_info: dict[int, dict] = {}
+    _total_count                      = 0
 
-    # 确定所有需要存储的用户自定义列
-    extra_cols = [c for c in custom_columns if c not in _PART_MASTER_WRITABLE_COLS
-                  and c not in _PART_MASTER_READONLY_COLS]
-
-    for row in full_rows:
-        pn = str(row.get("Part Number", "")).strip()
-        if not pn:
-            # PN 为空的节点（异常情况），跳过 part_master 建立
-            logger.warning("collect_bom_part_masters: 跳过 PN 为空的节点 filename=%s",
-                           row.get("Filename", ""))
-            continue
-
-        if pn not in part_masters:
-            # 首次出现该 PN：建立 part_master
-            pm: dict = {
-                "part_number":  pn,
-                # ── 可写属性（直接从 row 读取原始值）──────────────────────────
-                "nomenclature": str(row.get("Nomenclature", "")),
-                "revision":     str(row.get("Revision", "")),
-                "definition":   str(row.get("Definition", "")),
-                "source":       str(row.get("Source", "")),   # 保留原始值 "0"/"1"/"2"
-                "description":  str(row.get("Description", "")),
-                # ── 用户自定义列 ──────────────────────────────────────────────
-                **{col: str(row.get(col, "")) for col in extra_cols},
-                # ── 只读属性 ──────────────────────────────────────────────────
-                "type":         str(row.get("Type", "")),
-                "filename":     str(row.get("Filename", "")),
-                "filepath":     str(row.get("_filepath", "")),
-                "_not_found":   bool(row.get("_not_found", False)),
-                "_no_file":     bool(row.get("_no_file", False)),
-                "_unreadable":  bool(row.get("_unreadable", False)),
-                # ── 装配结构 ──────────────────────────────────────────────────
-                "children":     [],  # 在第二次遍历中填充
-            }
-            part_masters[pn] = pm
-        else:
-            # 同 PN 已存在：不覆盖 PartMaster 级属性，但记录日志（供调试）
-            # （PN 相同视为同一零件文件的不同实例）
+    # ── 属性读取辅助 ──────────────────────────────────────────────────────────
+    def _prop_targets(product):
+        try:
+            yield product.ReferenceProduct
+        except Exception:
             pass
+        yield product
 
-    # ── Step 3: 填充 children 列表（装配结构）────────────────────────────────
-    # 按 full_rows 中的 _parent_product 关系构建父子关联
-    # 使用 id(parent_product) → parent_pn 的临时映射
-    _product_to_pn: dict[int, str] = {}
-    for row in full_rows:
-        _p = row.get("_product")
-        if _p is not None:
-            pn = str(row.get("Part Number", "")).strip()
-            if pn:
-                _product_to_pn[id(_p)] = pn
+    def _get_prop(product, name: str) -> str:
+        attr = PRODUCT_ATTR_READ_MAP.get(name)
+        if not attr:
+            return ""
+        for target in _prop_targets(product):
+            try:
+                v = getattr(target, attr, None)
+                if v is not None:
+                    return str(v)
+            except Exception:
+                pass
+        return ""
 
-    # 按（父 PN，子 PN）分组，保持 full_rows 的遍历顺序
-    # 每组维护一个有序的 instances 列表
-    # _children_map[parent_pn][child_pn] = list of instance dicts
-    _children_map: dict[str, dict[str, list]] = {}
+    def _get_user_prop(product, name: str) -> str:
+        for target in _prop_targets(product):
+            try:
+                v = target.UserRefProperties.Item(name).Value
+                if v is not None and str(v).strip():
+                    return str(v)
+            except Exception:
+                pass
+        return ""
 
-    for row in full_rows:
-        _p          = row.get("_product")
-        _pp         = row.get("_parent_product")
-        inst_key    = id(_p) if _p is not None else None
-        if inst_key is None:
-            continue
+    # ── 主遍历 ────────────────────────────────────────────────────────────────
+    def _traverse(product, level: int, parent_filepath: str, host_file_pn: str) -> str:
+        """遍历单个产品节点，确保其 part_master 已建立（含 instances）。
 
-        pn = str(row.get("Part Number", "")).strip()
-        if not pn:
-            continue
+        返回该节点的 bom_key（供父节点将其加入自己的 instances 列表）。
+        同一 bom_key 只处理一次：part_master 已存在则直接返回，不重复遍历子节点。
 
-        # 根节点（Level == 0）没有父节点，不加入任何 children 列表
-        if _pp is None:
-            continue
+        host_file_pn：当前节点所在宿主文件的 PartNumber（独立文件节点的 pn）。
+            - 根节点：""（根节点自身就是宿主，在取到 pn 后立即确定）
+            - 独立文件子节点：子节点自身的 pn（子节点是新宿主）
+            - 嵌入部件：与父节点相同的 host_file_pn，透传不变
+              （嵌入部件和其子 Component 都属于同一宿主文件）
+        bom_key 规则：
+            - 独立文件节点：bom_key = pn
+            - 嵌入部件：bom_key = "pn:host_file_pn"
+              同一宿主文件内 pn 唯一（CATIA 约束），故 bom_key 全局唯一。
+              多层嵌套 Component 的宿主始终是同一独立文件，host_file_pn 不会链式叠加。
+        """
+        nonlocal _total_count
 
-        parent_pn = _product_to_pn.get(id(_pp), "")
-        if not parent_pn:
-            # 父节点 PN 未知（异常情况），跳过
-            logger.debug("collect_bom_part_masters: 无法确定父节点 PN，inst_key=%d pn=%s",
-                         inst_key, pn)
-            continue
+        # ── PartNumber ───────────────────────────────────────────────────────
+        try:
+            pn = str(product.PartNumber)
+        except Exception:
+            name = product.Name
+            pn   = name.rsplit(".", 1)[0] if "." in name else name
 
-        instance_info: dict = {
-            "inst_key":      inst_key,
-            "instance_name": str(row.get(BOM_INSTANCE_NAME_COLUMN, "")),
-            "placement":     None,  # 由 mass_props_collect 在需要时填充
+        # ── 文件路径 ──────────────────────────────────────────────────────────
+        try:
+            filepath = product.ReferenceProduct.Parent.FullName
+        except Exception:
+            filepath = ""
+
+        not_found   = not bool(filepath)
+        no_file     = bool(filepath) and not Path(filepath).exists()
+        is_embedded = (bool(filepath) and bool(parent_filepath)
+                       and filepath == parent_filepath)
+
+        # ── bom_key 计算 ──────────────────────────────────────────────────────
+        # 独立文件节点：bom_key = pn
+        # 嵌入部件：bom_key = "pn:host_file_pn"（宿主文件内 pn 唯一，多层嵌套宿主相同，不叠加）
+        bom_key = f"{pn}:{host_file_pn}" if is_embedded else pn
+
+        # 同一 bom_key 只建一次：已存在则直接返回，不重复遍历
+        if bom_key in part_masters:
+            _total_count += 1
+            if progress_callback is not None:
+                progress_callback(_total_count)
+            return bom_key
+
+        # ── 读取 PartMaster 级属性（带文件级缓存）────────────────────────────
+        cached      = not is_embedded and bool(filepath) and filepath in _props_cache
+        is_readable = True
+
+        if not_found:
+            props = {col: "" for col in columns}
+        elif not cached:
+            try:
+                if product.GetWorkMode() != CATIA_DESIGN_MODE:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
+            except Exception:
+                try:
+                    product.ApplyWorkMode(CATIA_DESIGN_MODE)
+                except Exception:
+                    is_readable = False
+
+            props = {}
+            for col in columns:
+                if col in PRODUCT_ATTR_READ_MAP:
+                    props[col] = _get_prop(product, col)
+                elif col in custom_columns:
+                    props[col] = _get_user_prop(product, col)
+
+            if filepath and not is_embedded:
+                _props_cache[filepath] = props
+        else:
+            props = _props_cache[filepath]
+
+        # ── 节点类型 ──────────────────────────────────────────────────────────
+        try:
+            node_type = get_bom_node_type(product, parent_filepath, filepath=filepath)
+        except Exception:
+            node_type = ""
+
+        # ── 建立 part_master ──────────────────────────────────────────────────
+        part_masters[bom_key] = {
+            "part_number":  pn,           # CATIA 属性值，显示/写回用
+            "bom_key":      bom_key,      # 唯一查找 key
+            "host_file_pn": host_file_pn if is_embedded else "",
+            # host_file_pn：嵌入部件所属宿主文件的 pn（独立文件节点为空串）。
+            # 用于冲突检测：同一宿主文件内所有 Component 的 host_file_pn 相同。
+            # rename_part_master 改宿主 pn 时会同步更新所有子 Component 的此字段。
+            "nomenclature": str(props.get("Nomenclature", "")),
+            "revision":     str(props.get("Revision", "")),
+            "definition":   str(props.get("Definition", "")),
+            "source":       str(props.get("Source", "")),
+            "description":  str(props.get("Description", "")),
+            **{col: str(props.get(col, "")) for col in extra_cols},
+            "type":         node_type,
+            "filename":     (FILENAME_UNSAVED   if no_file   else
+                             Path(filepath).name if filepath  else
+                             FILENAME_NOT_FOUND),
+            "filepath":     filepath,
+            "_not_found":   not_found,
+            "_no_file":     no_file,
+            "_unreadable":  not is_readable,
+            "_product":     product,   # COM 引用，写回根产品属性用（根节点无 inst_info）
+            "instances":    [],        # 下方填充直接子实例
         }
 
-        # 初始化嵌套 dict
-        if parent_pn not in _children_map:
-            _children_map[parent_pn] = {}
-        parent_children = _children_map[parent_pn]
+        _total_count += 1
+        if progress_callback is not None:
+            progress_callback(_total_count)
 
-        if pn not in parent_children:
-            parent_children[pn] = []
-        parent_children[pn].append(instance_info)
+        # ── 遍历子节点（文件视角：通过 ReferenceProduct.Products）────────────
+        # 只需通过一个实例导航（文件视角，所有 Product3.x 共享同一套子实例）
+        is_assembly = (node_type in BomNodeType.ASSEMBLY_TYPES or level == 0)
+        if is_assembly:
+            try:
+                try:
+                    products = product.ReferenceProduct.Products
+                except Exception:
+                    products = product.Products
 
-    # 将 _children_map 写入各 part_master 的 children 列表
-    # 保持 full_rows 中 children 的出现顺序（已按遍历顺序插入 _children_map）
-    # 同时建立 inst_key → inst_info 反向索引（引用同一对象，修改反向索引即修改树）
-    inst_key_to_info: dict[int, dict] = {}
-    for parent_pn, child_groups in _children_map.items():
-        pm = part_masters.get(parent_pn)
-        if pm is None:
-            continue
-        for child_pn, instances in child_groups.items():
-            pm["children"].append({
-                "child_pn":  child_pn,
-                "instances": instances,
-            })
-            for inst_info in instances:
-                inst_key_to_info[inst_info["inst_key"]] = inst_info
+                for i in range(1, products.Count + 1):
+                    try:
+                        child = products.Item(i)
+                        # 嵌入部件的宿主文件不变，透传当前 host_file_pn；
+                        # 独立文件子节点自身成为新宿主，传入自身 pn。
+                        child_host    = host_file_pn if is_embedded else pn
+                        child_bom_key = _traverse(child, level + 1, filepath, child_host)
+                        child_pn      = part_masters[child_bom_key]["part_number"]
 
-    return full_rows, part_masters, inst_key_to_info
+                        # 将子节点注册为当前 part_master 的子实例
+                        inst_key  = id(child)
+                        inst_info = {
+                            "inst_key":      inst_key,
+                            "pn":            child_pn,       # 显示用
+                            "bom_key":       child_bom_key,  # 查 part_masters 用
+                            "instance_name": child.Name,
+                            "product":       child,          # COM 引用，防 GC、写回用
+                            "placement":     None,
+                        }
+                        part_masters[bom_key]["instances"].append(inst_info)
+                        inst_key_to_info[inst_key] = inst_info
+                    except Exception as exc:
+                        logger.debug("_traverse child error level=%d i=%d: %s",
+                                     level, i, exc)
+            except Exception:
+                pass
+
+        return bom_key
+
+    # ── CATIA 连接与根节点 ────────────────────────────────────────────────────
+    application = get_catia_v5_application()
+
+    if file_path is None:
+        root_product = application.ActiveDocument.Product
+    else:
+        from catia_copilot.utils import open_catia_file  # noqa: PLC0415
+        root_product = open_catia_file(application.Documents, file_path).Product
+
+    # 根节点始终是独立文件，bom_key == pn，host_file_pn 传 "" 即可（根节点不是嵌入部件）
+    root_bom_key = _traverse(root_product, level=0, parent_filepath="", host_file_pn="")
+
+    return root_bom_key, part_masters, inst_key_to_info
 
 
-def build_hierarchical_rows_v3(
-    full_rows: list[dict],
+# ---------------------------------------------------------------------------
+# 视图生成：完整 BOM（每实例一行，深度优先前序）
+# ---------------------------------------------------------------------------
+
+def iter_full_rows(
+    root_bom_key: str,
     part_masters: dict[str, dict],
 ) -> list[dict]:
-    """从逐实例行列表派生层级 BOM 行（V3 版本）。
+    """从 part_masters 树生成完整 BOM 行列表（每实例一行）。
 
-    与 bom_collect.build_hierarchical_rows() 等效，但使用 (parent_pn, child_pn)
-    作为分组 key，替代不稳定的 (id(parent_product), child_pn)。
-
-    同父节点（parent_pn 相同）下同 PN 的多个实例合并为一行（代表行取第一个实例），
-    Quantity 设为实例数。
-
-    参数：
-        full_rows:   collect_bom_rows() 返回的逐实例行列表。
-        part_masters: collect_bom_part_masters() 返回的 part_master 字典。
-
-    返回：
-        层级 BOM 行列表（与 build_hierarchical_rows() 输出格式一致）。
+    根节点（level=0）输出一行，instance_name 为空。
+    之后深度优先前序遍历所有实例。同一 part_master 的 instances 被多个父节点引用时，
+    每次引用都完整展开（因为遍历由父节点的 instances 驱动，不是由子 part_master 驱动）。
     """
-    # 构建 id(product) → part_number 映射
-    _product_to_pn: dict[int, str] = {}
-    for row in full_rows:
-        _p = row.get("_product")
-        if _p is not None:
-            pn = str(row.get("Part Number", "")).strip()
-            if pn:
-                _product_to_pn[id(_p)] = pn
+    rows: list[dict] = []
 
-    result: list[dict] = []
-    _hierarchical_range_v3(full_rows, 0, len(full_rows), result, _product_to_pn)
-    return result
+    # 根节点行（level=0，无实例名，无父节点）
+    root_pm  = part_masters.get(root_bom_key, {})
+    root_row = _pm_to_root_row(root_bom_key, root_pm)
+    rows.append(root_row)
+
+    def _walk(bom_key: str, level: int, parent_inst_key: int | None,
+              ancestors: frozenset[str] = frozenset()) -> None:
+        pm = part_masters.get(bom_key, {})
+        for inst_info in pm.get("instances", []):
+            child_bom_key = inst_info["bom_key"]
+            child_pm      = part_masters.get(child_bom_key, {})
+            rows.append(_inst_to_row(inst_info, child_pm, level, parent_inst_key))
+            # 祖先集合防止循环引用导致无限递归
+            if child_bom_key not in ancestors:
+                _walk(child_bom_key, level + 1, inst_info["inst_key"],
+                      ancestors | {bom_key})
+
+    _walk(root_bom_key, level=1, parent_inst_key=None,
+          ancestors=frozenset({root_bom_key}))
+    return rows
 
 
-def _hierarchical_range_v3(
-    full_rows: list[dict],
-    start: int,
-    end: int,
-    result: list[dict],
-    product_to_pn: dict[int, str],
-) -> None:
-    """内部递归辅助函数：处理 full_rows[start:end]，按 (parent_pn, child_pn) 分组。"""
-    # 第一遍：收集同层直接子节点（跳过子树）
-    groups: dict[tuple, list] = {}   # key → [(row, row_i, sub_end)]
-    seen_order: list[tuple]   = []   # 插入顺序的 key 列表
+# ---------------------------------------------------------------------------
+# 视图生成：层级 BOM（同父节点同 bom_key 合并）
+# ---------------------------------------------------------------------------
 
-    i = start
-    while i < end:
-        row      = full_rows[i]
-        root_lvl = row["Level"]
-        # 找出该节点子树的排他性结束位置
-        sub_end  = i + 1
-        while sub_end < end and full_rows[sub_end]["Level"] > root_lvl:
-            sub_end += 1
+def iter_hierarchical_rows(
+    root_bom_key: str,
+    part_masters: dict[str, dict],
+) -> list[dict]:
+    """从 part_masters 树生成层级 BOM 行（同父节点下同 bom_key 合并，Quantity = 实例数）。
 
-        pn = str(row.get("Part Number", ""))
+    根节点（level=0）Quantity=1。
+    子节点按 bom_key 分组，代表行取第一个实例，Quantity = 同 bom_key 实例数。
+    递归只进入代表行对应的 part_master 的 instances，避免重复展开。
+    """
+    rows: list[dict] = []
 
-        # 用父节点 PN 作为分组 key 的一部分（比 id(parent) 更稳定）
-        _pp = row.get("_parent_product")
-        parent_pn = product_to_pn.get(id(_pp), "") if _pp is not None else ""
-        key = (parent_pn, pn)
+    # 根节点行
+    root_pm  = part_masters.get(root_bom_key, {})
+    root_row = _pm_to_root_row(root_bom_key, root_pm)
+    root_row["Quantity"] = 1
+    rows.append(root_row)
 
-        if key not in groups:
-            groups[key] = []
-            seen_order.append(key)
-        groups[key].append((row, i, sub_end))
-        i = sub_end
+    def _expand(bom_key: str, level: int,
+                ancestors: frozenset[str] = frozenset()) -> None:
+        """将 part_masters[bom_key].instances 按 bom_key 分组输出，然后递归。"""
+        pm        = part_masters.get(bom_key, {})
+        instances = pm.get("instances", [])
 
-    # 第二遍：构建代表行并递归
-    for key in seen_order:
-        instances                         = groups[key]
-        first_row, first_i, first_sub_end = instances[0]
+        # 按 instances 顺序分组（保持 CATIA 树顺序）
+        seen_key:   dict[str, int]  = {}
+        rep_by_key: dict[str, dict] = {}
+        for inst in instances:
+            ck = inst["bom_key"]
+            if ck not in seen_key:
+                seen_key[ck]   = 0
+                rep_by_key[ck] = inst
+            seen_key[ck] += 1
 
-        rep             = dict(first_row)   # 浅拷贝
-        rep["Quantity"] = len(instances)
+        output_order: list[str] = []
+        for inst in instances:
+            ck = inst["bom_key"]
+            if ck not in output_order:
+                output_order.append(ck)
 
-        result.append(rep)
+        for ck in output_order:
+            rep      = rep_by_key[ck]
+            qty      = seen_key[ck]
+            child_pm = part_masters.get(ck, {})
+            row      = _inst_to_row(rep, child_pm, level)
+            row["Quantity"] = qty
+            rows.append(row)
+            # 祖先集合防止循环引用导致无限递归
+            if ck not in ancestors:
+                _expand(ck, level + 1, ancestors | {bom_key})
 
-        # 递归进入代表行的子树
-        if first_sub_end > first_i + 1:
-            _hierarchical_range_v3(
-                full_rows, first_i + 1, first_sub_end, result, product_to_pn
-            )
+    _expand(root_bom_key, level=1, ancestors=frozenset({root_bom_key}))
+    return rows
 
+
+# ---------------------------------------------------------------------------
+# 行 dict 构建辅助
+# ---------------------------------------------------------------------------
+
+def _pm_to_root_row(root_bom_key: str, pm: dict) -> dict:
+    """为根节点生成行 dict（level=0，无实例名，无父节点）。"""
+    root_product = pm.get("_product")
+    root_inst_key = id(root_product) if root_product is not None else None
+    row: dict = {
+        "Level":                  0,
+        "Part Number":            pm.get("part_number", root_bom_key),
+        "_bom_key":               root_bom_key,
+        BOM_INSTANCE_NAME_COLUMN: "",
+        "Quantity":               1,
+        "Type":                   pm.get("type", ""),
+        "Filename":               pm.get("filename", ""),
+        "_filepath":              pm.get("filepath", ""),
+        "_not_found":             pm.get("_not_found", False),
+        "_no_file":               pm.get("_no_file", False),
+        "_unreadable":            pm.get("_unreadable", False),
+        "_product":               root_product,
+        "_inst_key":              root_inst_key,
+        "_parent_inst_key":       None,
+        "Nomenclature":           pm.get("nomenclature", ""),
+        "Revision":               pm.get("revision", ""),
+        "Definition":             pm.get("definition", ""),
+        "Source":                 pm.get("source", ""),
+        "Description":            pm.get("description", ""),
+    }
+    _already_written = set(_COL_TO_PM_KEY.values()) | {"part_number", "bom_key", "host_file_pn"}
+    for k, v in pm.items():
+        if k not in _already_written and not k.startswith("_") and k != "instances":
+            row[k] = v
+    return row
+
+
+def _inst_to_row(
+    inst_info: dict,
+    pm: dict,
+    level: int,
+    parent_inst_key: int | None = None,
+) -> dict:
+    """将 inst_info + 子 part_master 转为行 dict（供 _populate_table 使用）。"""
+    row: dict = {
+        "Level":                  level,
+        "Part Number":            inst_info["pn"],
+        "_bom_key":               inst_info["bom_key"],
+        BOM_INSTANCE_NAME_COLUMN: inst_info["instance_name"],
+        "Quantity":               1,
+        "Type":                   pm.get("type", ""),
+        "Filename":               pm.get("filename", ""),
+        "_filepath":              pm.get("filepath", ""),
+        "_not_found":             pm.get("_not_found", False),
+        "_no_file":               pm.get("_no_file", False),
+        "_unreadable":            pm.get("_unreadable", False),
+        "_product":               inst_info["product"],
+        "_inst_key":              inst_info["inst_key"],
+        "_parent_inst_key":       parent_inst_key,
+        "Nomenclature":           pm.get("nomenclature", ""),
+        "Revision":               pm.get("revision", ""),
+        "Definition":             pm.get("definition", ""),
+        "Source":                 pm.get("source", ""),
+        "Description":            pm.get("description", ""),
+    }
+    _already_written = set(_COL_TO_PM_KEY.values()) | {"part_number", "bom_key", "host_file_pn"}
+    for k, v in pm.items():
+        if k not in _already_written and not k.startswith("_") and k != "instances":
+            row[k] = v
+    return row
+
+
+# ---------------------------------------------------------------------------
+# 属性读写辅助
+# ---------------------------------------------------------------------------
 
 def get_part_master_attr(
     part_masters: dict[str, dict],
-    pn: str,
+    bom_key: str,
     col_name: str,
     default: str = "",
 ) -> str:
-    """从 part_masters 读取指定列的属性值。
-
-    Source 列返回原始值（"0"/"1"/"2"），显示层由调用方用 SOURCE_TO_DISPLAY 转换。
-
-    参数：
-        part_masters: collect_bom_part_masters() 返回的字典。
-        pn:           part_number（唯一 key）。
-        col_name:     BOM 列名（"Part Number"/"Nomenclature"/... 或自定义列）。
-        default:      找不到时的默认值。
-    """
-    pm = part_masters.get(pn)
+    """O(1) 读 part_master 属性。Source 返回原始值 '0'/'1'/'2'。"""
+    pm = part_masters.get(bom_key)
     if pm is None:
         return default
-
-    # 列名到 part_master dict key 的映射（标准列）
-    _col_to_key: dict[str, str] = {
-        "Part Number":  "part_number",
-        "Nomenclature": "nomenclature",
-        "Revision":     "revision",
-        "Definition":   "definition",
-        "Source":       "source",
-        "Description":  "description",
-        "Type":         "type",
-        "Filename":     "filename",
-        "Filepath":     "filepath",
-    }
-
-    key = _col_to_key.get(col_name, col_name)  # 自定义列名 == dict key
+    key = _COL_TO_PM_KEY.get(col_name, col_name)
     return str(pm.get(key, default))
 
 
 def set_part_master_attr(
     part_masters: dict[str, dict],
-    pn: str,
+    bom_key: str,
     col_name: str,
     value: str,
 ) -> bool:
-    """在 part_masters 中写入指定列的属性值。
-
-    只允许写可写属性（PartMaster 级）。只读属性（Type/Filename/Filepath）忽略写入。
-
-    返回 True 表示写入成功，False 表示 pn 不存在或列名为只读列。
-    """
-    pm = part_masters.get(pn)
+    """O(1) 写 part_master 属性。只读列和 Part Number 拒绝写入。"""
+    pm = part_masters.get(bom_key)
     if pm is None:
         return False
-
-    _readonly = {"Type", "Filename", "Filepath", "type", "filename", "filepath"}
-    if col_name in _readonly:
+    if col_name in _READONLY_PM_COLS:
         return False
-
-    _col_to_key: dict[str, str] = {
-        "Part Number":  "part_number",
-        "Nomenclature": "nomenclature",
-        "Revision":     "revision",
-        "Definition":   "definition",
-        "Source":       "source",
-        "Description":  "description",
-    }
-    key = _col_to_key.get(col_name, col_name)
-
     if col_name == "Part Number":
-        # PN 修改需通过 _rename_part_master()，此处不允许直接写
         logger.warning("set_part_master_attr: PN 修改请使用 rename_part_master()")
         return False
-
+    key = _COL_TO_PM_KEY.get(col_name, col_name)
     pm[key] = value
     return True
 
 
 def rename_part_master(
     part_masters: dict[str, dict],
-    pn_to_inst_keys: dict[str, list[int]],
-    full_rows: list[dict],
-    old_pn: str,
+    bom_key_to_inst_keys: dict[str, list[int]],
+    bom_key: str,
     new_pn: str,
 ) -> bool:
-    """将 part_master 的 PartNumber 从 old_pn 改为 new_pn。
+    """将 part_master 的 PartNumber 改为 new_pn。
 
-    同步更新：
-    - part_masters dict key
-    - part_masters[new_pn]["part_number"]
-    - 所有引用该 PartMaster 的父 part_master 的 children[*]["child_pn"]
-    - pn_to_inst_keys dict key
-    - full_rows 中所有 "Part Number" == old_pn 的行
-
-    返回 True 表示成功，False 表示 old_pn 不存在或 new_pn 已存在（冲突）。
+    bom_key 永不变（基于 filepath/宿主，与 pn 无关）。
+    同步更新：pm["part_number"]，以及所有父 part_master 的 instances[*]["pn"]。
     """
-    if old_pn not in part_masters:
-        logger.warning("rename_part_master: old_pn=%r 不存在", old_pn)
+    pm = part_masters.get(bom_key)
+    if pm is None:
+        logger.warning("rename_part_master: bom_key=%r 不存在", bom_key)
         return False
 
-    if new_pn in part_masters:
-        logger.warning("rename_part_master: new_pn=%r 已存在（冲突）", new_pn)
-        return False
-
-    # 迁移 part_masters dict
-    pm = part_masters.pop(old_pn)
+    old_pn = pm["part_number"]
     pm["part_number"] = new_pn
-    part_masters[new_pn] = pm
 
-    # 更新所有引用该 PN 的父 part_master 的 children
+    # 更新所有父 part_master 的 instances 中引用了此 bom_key 的 pn 显示字段
     for other_pm in part_masters.values():
-        for child_entry in other_pm.get("children", []):
-            if child_entry.get("child_pn") == old_pn:
-                child_entry["child_pn"] = new_pn
+        for inst in other_pm.get("instances", []):
+            if inst["bom_key"] == bom_key:
+                inst["pn"] = new_pn
 
-    # 迁移 pn_to_inst_keys
-    if old_pn in pn_to_inst_keys:
-        pn_to_inst_keys[new_pn] = pn_to_inst_keys.pop(old_pn)
-
-    # 更新 full_rows 中的 "Part Number" 字段
-    for row in full_rows:
-        if str(row.get("Part Number", "")).strip() == old_pn:
-            row["Part Number"] = new_pn
-
+    logger.debug("rename_part_master: bom_key=%r  %r → %r", bom_key, old_pn, new_pn)
     return True

@@ -1,408 +1,237 @@
-# BOM 数据模型 V3 升级计划
+# BOM 数据模型 V3 设计文档
 
-## 背景
+## 一、背景与目标
 
-当前 V2 对话框（`bom_edit_dialog_v2.py`）使用扁平 row dict 列表作为数据层，以
-`id(product)`（inst_key）为 key 存储属性缓存（`_canonical_data`）。
-这导致若干结构性问题，本文档描述从"以实例为中心"升级为"part_master / instance 分离"
-的完整方案。
+V2 对话框（`bom_edit_dialog_v2.py`）以 `id(product)` 为 key，每个实例独立存一份
+属性缓存（`_canonical_data`），同文件多实例属性靠 `_sync_siblings_in_ui()` 手动同步，
+逻辑复杂且容易遗漏。
 
----
-
-## 一、现有模型的问题
-
-### 1.1 同文件多实例属性不一致
-
-`_canonical_data[inst_key]` 对同一零件文件的每个实例分别存一份属性（PartNumber、
-Nomenclature 等），而这些属性在 CATIA 端绑定到文件，所有实例天然共享。
-当前解决方式是维护 `_ref_to_insts` + `_inst_to_ref_unk` + `_sync_siblings_in_ui()`
-做跨实例同步，逻辑复杂且容易遗漏。
-
-### 1.2 实例名同步需要复杂逻辑
-
-修改 Product2.1 下 Part1.2 的实例名时，CATIA 端会自动同步引用同一 Product2 文件
-的 Product2.2 下的对应实例。但程序端需要手动找"父节点 PN 相同的兄弟父节点"并逐行
-比对，代码复杂且难以维护。
-
-在新架构下，单格编辑实例名后，程序端通过 `_pn_to_inst_keys[parent_pn]` 找到所有同
-父 PartMaster 的父实例，再找其下同 `child_pn` 的子实例，直接更新界面——无需任何
-COM 调用，也无需重建整张表格。
-
-### 1.3 撤销栈两套 key 并存
-
-PartMaster 属性走 `inst_key (int)`，实例名属性也走 `inst_key (int)`，但语义不同：
-前者一个 key 对应多行（同文件多实例），后者一个 key 只对应一行。
-
-### 1.4 `_hierarchical_range` 用 `id(parent)` 分组
-
-`build_hierarchical_rows` 按 `(id(parent_product), pn)` 分组，`id()` 是 Python
-内存地址，在不同 `collect_bom_rows` 调用之间不保证稳定（虽然单次会话内稳定）。
+V3 目标：**part_master / instance 分离**，PartMaster 级属性只存一份，
+装配结构和实例名以 `instances` 列表的形式存在 part_master 内部。
 
 ---
 
-## 二、新数据模型：part_master / instance 分离
+## 二、核心设计决策（基于实验验证）
 
-参考 PLM 系统（DocDokuPLM）的设计：
+### 2.1 `product.ReferenceProduct.Products` 是文件视角
 
-> **PartMaster** 是"什么"，**PartUsageLink** 是"谁用了谁"，**CADInstance** 是"放在哪里"。
+**实验结论**（已在 CATIA 中验证）：
 
-### 2.1 `part_master` 数据结构
+```
+Product2
+├── Product3.1
+│   ├── Part1.1
+│   └── Part1.2
+└── Product3.2
+    ├── Part1.1   ← 与 Product3.1/Part1.1 是同一个 COM 对象（底层相同）
+    └── Part1.2
+```
 
-一条 `part_master` 代表一个零件文件（`.CATPart` / `.CATProduct` / 嵌入 Component）。
-唯一标识：`part_number`（字符串）。
+通过 `Product3.1.ReferenceProduct.Products` 和
+`Product3.2.ReferenceProduct.Products` 导航到的 `Part1.x`，
+Python `id()` 不同（每次调用返回新的 wrapper 对象），
+但底层 COM 指针相同——修改任意一个的 `Name`，另一个立即同步。
+
+**推论**：
+- `part_masters["Product3"]["instances"]` 只需存**一份**（通过任意 Product3.x 导航收集）
+- 修改 `inst_info["instance_name"]` 后写入 CATIA，Product3.2 下的对应实例自动同步
+- 程序端不需要"兄弟同步"逻辑
+
+### 2.2 PartNumber 是 part_master 的唯一标识
+
+- 不用 `filepath`（未保存零件无完整路径）
+- 不用 `id(product.ReferenceProduct)`（PyIUnknown 每次调用返回新包装，`id()` 不稳定）
+- `pn` 字符串是唯一可靠的 part_master key
+
+### 2.3 根节点没有实例名
+
+根产品（level=0）是一个 part_master，不是任何父节点的子实例，
+因此没有 `inst_info`，`instance_name` 为空字符串。
+
+---
+
+## 三、数据结构
+
+### 3.1 part_master
 
 ```python
 part_master: dict = {
     # ── 唯一标识 ──────────────────────────────────────────────────────────
-    "part_number":  str,          # 唯一 key，修改时同步所有引用
+    "part_number":  str,          # 唯一 key，修改时同步 instances 里所有引用
 
-    # ── 可写属性（part_master 级，所有实例共享，直接映射 CATIA ReferenceProduct 属性）
-    "nomenclature": str,          # 术语（中文名称）
-    "revision":     str,          # 版本
-    "definition":   str,          # 定义
-    "source":       str,          # 源（制造 / 购买 等）
-    "description":  str,          # 描述
-    # + 用户自定义列，如：
-    # "零件类型":   str,
-    # "设计状态":   str,
-    # "材料":       str,
-    # ...
+    # ── PartMaster 级可写属性（绑定到文件，所有实例共享）───────────────────
+    "nomenclature": str,
+    "revision":     str,
+    "definition":   str,
+    "source":       str,          # CATIA 原始值："0"（未知）/"1"（自制）/"2"（外购）
+    "description":  str,
+    # + 用户自定义列（直接作为 dict key，key 为原始列名，如 "物料编码"）
 
-    # ── 只读/派生属性 ──────────────────────────────────────────────────────
-    "type":         str,          # "零件" / "产品" / "部件"（由文件类型决定，part_master 级）
+    # ── 只读属性（派生，不可通过 BOM 工作台写回）────────────────────────────
+    "type":         str,          # BomNodeType 英文 key："Part"/"Product"/"Component"
     "filename":     str,          # 文件名（含扩展名，不含路径）
-    "filepath":     str,          # 文件完整路径（只读；未保存零件为空或形如 Part1.CATPart）
+    "filepath":     str,          # 文件完整路径（只读；未保存零件可能为空）
+    "_not_found":   bool,         # 文件未被 CATIA 检索到
+    "_no_file":     bool,         # 从未保存到磁盘
+    "_unreadable":  bool,         # 处于轻量化模式，无法读取属性
 
-    # ── 子件列表（装配结构，有序）────────────────────────────────────────
-    # 按 CATIA 产品树 Products.Item(i) 顺序排列，严格保持 CATIA 顺序
-    "children": [
+    # ── 装配结构（该 part_master 内部的直接子实例，文件视角，唯一一份）────────
+    "instances": [
         {
-            "child_pn": str,      # 子 part_master 的 part_number
-            "instances": [        # 该子件在本装配中的所有实例（有序，按遍历顺序）
-                {
-                    "inst_key":      int,        # id(product)，写回用，session 内唯一
-                    "instance_name": str,        # product.Name，实例级，每实例独有
-                    "placement":     list|None,  # 4×4 变换矩阵（mass props 用，可为 None）
-                    # 父子关系由 children 列表结构隐含，不再需要 _parent_product
-                },
-                # 同一子件在本装配中出现 N 次，就有 N 个 instance
-            ]
+            "inst_key":      int,        # id(product)，任取一个 Python wrapper 的 id
+            "pn":            str,        # 子 part_master 的 part_number
+            "instance_name": str,        # product.Name，实例名唯一真相
+            "product":       object,     # COM 实例引用（防 GC、写回实例名用）
+            "placement":     list|None,  # 4×4 变换矩阵（mass props 用）
         },
-        # ... 其他子件（保持 CATIA 中的顺序）
+        # ...
     ]
 }
 ```
 
-### 2.2 关键设计决策
+### 3.2 顶层数据
 
-| 决策 | 说明 |
+```python
+root_pn:          str              # 根产品的 PartNumber（part_masters 入口 key）
+part_masters:     dict[str, dict]  # pn → part_master dict
+inst_key_to_info: dict[int, dict]  # id(product) → inst_info（O(1) 反向索引）
+```
+
+`inst_key_to_info` 中每个 value 是 `part_masters[parent_pn]["instances"][i]`
+的**同一对象引用**——修改 `inst_info["instance_name"]` 即同步修改 `part_masters` 树。
+
+### 3.3 与 V2 的对比
+
+| 维度 | V2 `_canonical_data[inst_key]` | V3 `part_masters[pn]` |
+|------|-------------------------------|----------------------|
+| key 类型 | `int`（id(product)） | `str`（PartNumber） |
+| 同文件多实例 | 每实例一条，需手动同步 | 共享一条，天然同步 |
+| 装配结构 | 无（靠 `_parent_product` 关联） | `instances` 列表，文件视角 |
+| 实例名存储 | 混在 `_canonical_data` 里 | `inst_info["instance_name"]`，唯一真相 |
+| 兄弟同步 | `_sync_siblings_in_ui()`，复杂 | 无需，文件视角天然同步 |
+
+---
+
+## 四、`collect_bom_part_masters` 的遍历策略
+
+```
+_traverse(product, level, parent_filepath):
+    1. 读 pn
+    2. 若 pn 已在 part_masters 中 → 直接返回 pn（不重复遍历子节点）
+    3. 读属性，建 part_master（含空 instances 列表）
+    4. 若是装配体：通过 product.ReferenceProduct.Products 遍历子节点
+       - 对每个子节点递归调用 _traverse(child, level+1, filepath)，得到 child_pn
+       - 建 inst_info 并 append 到 part_masters[pn]["instances"]
+       - 同时注册到 inst_key_to_info（O(1) 反向索引）
+    5. 返回 pn
+
+collect_bom_part_masters 调用 _traverse(root_product, 0, "")
+返回 (root_pn, part_masters, inst_key_to_info)
+```
+
+**关键**：同一 PN 只遍历一次。第二次遇到 Product3（通过 Product3.2 路径到达时）
+直接返回，因为 `part_masters["Product3"]` 已存在（含完整 instances）。
+
+---
+
+## 五、视图生成
+
+### 5.1 完整 BOM（iter_full_rows）
+
+```
+输出根节点行（level=0，instance_name=""，inst_key=None）
+遍历 part_masters[root_pn]["instances"]：
+    对每个 inst_info：
+        输出行（level=1，instance_name=inst_info["instance_name"]）
+        递归 part_masters[inst_info["pn"]]["instances"]：
+            对每个子 inst_info：
+                输出行（level=2，...）
+                ...（继续递归）
+```
+
+注意：完整 BOM 中 Product3.1 和 Product3.2 都会出现，
+它们的子节点（Part1.1、Part1.2）来自同一份 `part_masters["Product3"]["instances"]`，
+行数据相同（inst_key、instance_name 都一样），level 不同。
+
+### 5.2 层级 BOM（iter_hierarchical_rows）
+
+对每一层的 instances 按 PN 分组，同 PN 合并为一行，Quantity = 同 PN 实例数。
+代表行取 instances 中第一个同 PN 的 inst_info。
+递归只进入代表 inst_info 对应的 part_master 的 instances。
+
+### 5.3 汇总 BOM
+
+复用 `bom_collect.flatten_bom_to_summary()`，从层级 BOM 行列表派生。
+注意：`flatten_bom_to_summary` 输出不含 `_inst_key` 等 V3 内部字段，
+需要从层级行按 PN 回填后再使用。
+
+---
+
+## 六、实例名修改
+
+### 6.1 单格编辑（_handle_instance_name_changed）
+
+1. 写 CATIA：`product.Name = new_value`
+2. 更新唯一真相：`inst_info["instance_name"] = new_value`
+3. 同父唯一性检查：遍历 `part_masters[parent_pn]["instances"]`，
+   找同 PN 的其他实例，检查是否重名
+4. 同步界面：`part_masters[parent_pn]["instances"]` 中其他同 PN 实例
+   的 `instance_name` 也更新（同一 COM 对象，CATIA 端已自动同步），
+   并刷新对应 QTreeWidgetItem
+5. 推入撤销栈（key = inst_key: int，区别于 PartMaster 属性的 str key）
+
+### 6.2 批量改名（_auto_rename_instance_names）
+
+直接遍历 `part_masters[target_pn]["instances"]`，
+按 PartNumber.n 规则批量写入 CATIA 并更新 `inst_info["instance_name"]`。
+不需要兄弟同步（instances 是唯一一份，所有引用自动同步）。
+
+---
+
+## 七、PN 改名（rename_part_master）
+
+1. `part_masters.pop(old_pn)` → 修改 `pm["part_number"]` → `part_masters[new_pn] = pm`
+2. 遍历所有 part_master 的 instances，将 `inst["pn"] == old_pn` 的改为 `new_pn`
+3. 迁移 `pn_to_inst_keys`：`pn_to_inst_keys[new_pn] = pn_to_inst_keys.pop(old_pn)`
+4. 调用方负责更新 `inst_key_to_info` 中对应 inst_info 的 `"pn"` 字段
+
+---
+
+## 八、撤销栈 key 类型约定
+
+| key 类型 | 含义 | 对应属性 |
+|---------|------|---------|
+| `str` (pn) | PartMaster 属性 | Nomenclature、Revision、Definition、Source、Description、自定义列 |
+| `int` (inst_key) | 实例属性 | instance_name |
+
+PN 改名也用 `str` key（key = old_pn），`_apply_field_changes` 按 `isinstance(key, str)` 分发。
+
+---
+
+## 九、不需要的字段/逻辑（相比 V2）
+
+| 删除 | 原因 |
 |------|------|
-| `part_number` 作唯一 key | 不用 `id(product.ReferenceProduct)`（PyIUnknown 不可哈希、每次调用新对象） |
-| `filepath` 存在 `part_master` 中 | 存储但不作为 key，永远靠 `part_number` 区分 part_master |
-| `children` 有序 | 严格保持 CATIA 产品树的 `Products.Item(i)` 顺序 |
-| `placement` 属于 instance | 不同位置的同一零件各有不同 mat4，是实例级属性 |
-| `type` 属于 `part_master` | 同一零件文件的所有实例类型相同，由文件类型决定 |
-| `instance_name` 属于 instance | `product.Name` 是每个实例在父装配中的独有名称 |
-| 无 `_canonical_data` | `part_master` 完全替代，PartMaster 级属性只存一份，天然共享 |
-
-### 2.3 `_canonical_data` 的命运
-
-**`_canonical_data` 在新架构中消失。** 其职责完全由 `_part_masters` 承担：
-
-- 现在：`_canonical_data[inst_key]["Nomenclature"]` → 每实例一条，重复存储
-- 新方案：`_part_masters[pn]["nomenclature"]` → 每 PartMaster 一条，天然共享
+| `_canonical_data` | 完全由 `part_masters` 替代 |
+| `_ref_to_insts` / `_inst_to_ref_unk` | 由 `pn_to_inst_keys` 替代 |
+| `_sync_siblings_in_ui()` | instances 是唯一一份，天然同步 |
+| `_parent_product` 字段 | 父子关系通过 `inst_info["pn"]` → `part_masters` 树表达 |
+| `full_rows` / `hierarchical_rows` 缓存 | 由 `iter_full_rows` / `iter_hierarchical_rows` 按需生成 |
+| `build_hierarchical_rows_v3` | 由 `iter_hierarchical_rows` 替代 |
+| 兄弟同步的槽位匹配逻辑 | 不再需要，文件视角天然同步 |
 
 ---
 
-## 三、新程序侧数据结构
+## 十、相关文件
 
-### 3.1 核心存储
-
-```python
-# PartMaster 字典：part_number → part_master dict（含 children）
-_part_masters: dict[str, dict]
-
-# 实例快速索引（session 内，不持久化，在 _populate_table 时重建）
-_inst_to_product:  dict[int, COM]        # id(product) → COM 对象，写回用（保留）
-_inst_to_items:    dict[int, list]       # id(product) → QTreeWidgetItem 列表（保留）
-_pn_to_inst_keys:  dict[str, list[int]] # part_number → [inst_key, ...]
-                                         # 替代 _ref_to_insts，语义更清晰
-
-# 显示层（保留）
-_rows:             list[dict]            # 显示层扁平行列表，由 _full_rows 派生
-_full_rows:        list[dict]            # 完整 BOM 每实例一行（collect_bom_rows 返回）
-_hierarchical_rows: list[dict]           # 层级 BOM（build_hierarchical_rows 派生）
-```
-
-### 3.2 `_part_masters` 对比现有 `_canonical_data`
-
-| 维度 | 现有 `_canonical_data[inst_key]` | 新 `_part_masters[pn]` |
-|------|----------------------------------|----------------------|
-| key 类型 | `int`（id(product)，易混淆） | `str`（PartNumber，语义清晰） |
-| 同文件多实例 | 每实例一条（重复数据，需手动同步） | 共享一条（PartMaster 级，天然共享） |
-| 是否含 Instance Name | 是（不合理，实例级属性混入） | 否（实例级，存 instance） |
-| 是否含结构性列 | 是（Level/Type/Filename/Quantity） | 否（只含可写属性 + 只读属性） |
-| 装配关系 | 无（靠 `_parent_product` 的 `is` 比较） | 显式 `children` 列表 |
-| 是否含 filepath | 是（每实例存一次） | 是（part_master 级存一次） |
-
----
-
-## 四、可删除的代码
-
-新方案实施后，以下代码可以完全删除：
-
-| 代码 | 原因 |
+| 文件 | 说明 |
 |------|------|
-| `_canonical_data` | 完全由 `_part_masters` 替代 |
-| `_ref_to_insts: dict[str, list[int]]` | 由 `_pn_to_inst_keys` 替代（同等功能，更清晰命名） |
-| `_inst_to_ref_unk: dict[int, str]` | 不再需要"从 inst_key 反查 PN"（直接从 `_rows[i]["Part Number"]` 读） |
-| `_sync_siblings_in_ui()` | 整个函数删除，不再有"兄弟同步"概念 |
-| `_apply_field_changes` 中的 `_sync_siblings_in_ui` 调用 | 同上 |
-| `_on_item_changed` 末尾的 `_ref_to_insts` key 迁移逻辑 | 简化为 `_rename_part_master(old_pn, new_pn)` |
-| PN 冲突检查中的 `same_pn_insts` 逻辑 | 简化为 `new_pn in _part_masters` |
-| `_handle_instance_name_changed` 中的兄弟同步代码 | 通过 `_pn_to_inst_keys` 直接查找，无需复杂匹配 |
-| `_auto_rename_instance_names` 中的兄弟同步代码 | 同上 |
-| `build_hierarchical_rows` 中 `(id(parent), pn)` 分组 | 改为 `(parent_pn, pn)` 分组，更稳定 |
+| `catia_copilot/catia/bom_collect_v3.py` | V3 数据收集，`collect_bom_part_masters` + 视图生成函数 |
+| `catia_copilot/ui/bom_edit_dialog_v3.py` | V3 对话框，使用 `_part_masters` + `_inst_key_to_info` |
+| `catia_copilot/ui/bom_edit_dialog_v2.py` | V2（保留，与 V3 并行运行对比测试） |
+| `catia_copilot/catia/bom_collect.py` | V1/V2 收集（保留，V3 仅复用 `flatten_bom_to_summary`） |
 
 ---
 
-## 五、关键逻辑变化
-
-### 5.1 加载 BOM（`_load_bom`）
-
-```python
-# 现在：
-_full_rows = collect_bom_rows(...)
-_canonical_data = {inst_key: {col: val} for each instance}  # 重复存储
-
-# 新方案：
-_full_rows = collect_bom_rows(...)   # 不变，仍是每实例一行，作为中间产物
-
-# 从 _full_rows 构建 _part_masters 树
-_part_masters = {}
-for row in _full_rows:
-    pn = row["Part Number"]
-    if pn not in _part_masters:
-        _part_masters[pn] = {
-            "part_number":  pn,
-            "nomenclature": row.get("Nomenclature", ""),
-            "revision":     row.get("Revision", ""),
-            "definition":   row.get("Definition", ""),
-            "source":       SOURCE_TO_DISPLAY.get(row.get("Source", ""), ""),
-            "description":  row.get("Description", ""),
-            # + 自定义列...
-            "type":         row.get("Type", ""),
-            "filename":     row.get("Filename", ""),
-            "filepath":     row.get("_filepath", ""),
-            "children":     [],   # 在第二次遍历中填充
-        }
-
-# 第二次遍历填充 children（按 _full_rows 的顺序）
-# ...（构建父子关系的逻辑）
-```
-
-### 5.2 修改属性（如 Nomenclature）
-
-```python
-# 现在：
-_canonical_data[inst_key]["Nomenclature"] = new_val   # 只改一个实例
-_sync_siblings_in_ui(insts_to_update, ...)             # 再手动同步其他实例
-
-# 新方案：
-pn = _rows[row_idx]["Part Number"]
-_part_masters[pn]["nomenclature"] = new_val            # 改 part_master，天然共享
-# 写任意一个实例，CATIA 自动同步（属性绑定到文件）
-inst_key = next(k for k in _pn_to_inst_keys[pn] if _inst_to_product.get(k))
-_write_cell_to_catia(inst_key, "Nomenclature", new_val)
-# 更新所有同 PN 实例的界面（无需"兄弟同步"，直接遍历）
-for ik in _pn_to_inst_keys[pn]:
-    for tree_item in _inst_to_items.get(ik, []):
-        tree_item.setText(col_idx, new_val)
-```
-
-### 5.3 修改 PartNumber
-
-```python
-# 现在（复杂）：
-_canonical_data[inst_key]["Part Number"] = new_pn
-old_list = _ref_to_insts.pop(old_pn, [])
-_ref_to_insts[new_pn] = old_list
-for k in old_list: _inst_to_ref_unk[k] = new_pn
-# + 更新 _rows 中所有实例行
-
-# 新方案（封装为 _rename_part_master）：
-def _rename_part_master(self, old_pn: str, new_pn: str) -> None:
-    pm = _part_masters.pop(old_pn)
-    pm["part_number"] = new_pn
-    _part_masters[new_pn] = pm
-    _pn_to_inst_keys[new_pn] = _pn_to_inst_keys.pop(old_pn, [])
-    # 更新所有引用了该 PartMaster 的父 PartMaster 的 children
-    for other_pm in _part_masters.values():
-        for child_entry in other_pm["children"]:
-            if child_entry["child_pn"] == old_pn:
-                child_entry["child_pn"] = new_pn
-    # 更新 _rows 中的 "Part Number" 字段
-    for row in _full_rows:
-        if row.get("Part Number") == old_pn:
-            row["Part Number"] = new_pn
-```
-
-### 5.4 PN 冲突检查
-
-```python
-# 现在（复杂）：
-same_pn_insts = set(_ref_to_insts.get(old_pn, []))
-for other_inst, data in _canonical_data.items():
-    if other_inst == this_inst or other_inst in same_pn_insts:
-        continue
-    if data["Part Number"] == new_value:  # 冲突
-
-# 新方案（一行）：
-if new_pn in _part_masters and new_pn != old_pn:
-    # 冲突
-```
-
-### 5.5 撤销栈 tuple 格式
-
-```python
-# PartMaster 属性（PN/Nomenclature 等）：key 是 str
-(pn: str,       col_name: str, old_val: str, new_val: str)
-
-# 实例属性（Instance Name）：key 是 int
-(inst_key: int, col_name: str, old_val: str, new_val: str)
-
-# _apply_field_changes 按 isinstance(key, str) 区分路径：
-#   str  → _part_masters[pn][col] = val
-#          写任意一个 inst_key（CATIA 自动同步）
-#          更新 _pn_to_inst_keys[pn] 内所有实例的界面
-#   int  → product.Name = val
-#          更新 _rows 内存中对应行
-#          更新当前格 + 同父 PartMaster 下同 child_pn 的所有实例格
-```
-
-### 5.6 实例名修改
-
-```python
-# 单格编辑（_handle_instance_name_changed）：
-#   写入 CATIA（product.Name = new_value）
-#   更新当前行内存
-#   更新当前格界面
-#   推入撤销栈（inst_key, BOM_INSTANCE_NAME_COLUMN, old, new）
-#   同步界面：找所有"父 PartMaster PN 相同、子 PartMaster PN 相同"的其他实例
-#             通过 _pn_to_inst_keys[parent_pn] 和 part_master["children"] 索引
-#             直接更新对应 QTreeWidgetItem，无需 COM 调用，无需重建表格
-
-# 批量改名（_auto_rename_instance_names）：
-#   写入 CATIA（按规则批量 product.Name = new_name）
-#   更新 _full_rows 内存
-#   通过 _pn_to_inst_keys 找同 PartMaster 的其他父实例，
-#   用相同规则更新其子树内存（不写 COM）
-#   调用 _populate_table 重建表格
-#   保存/恢复滚动位置
-#   推入撤销栈
-```
-
-### 5.7 `build_hierarchical_rows` 分组 key
-
-```python
-# 现在：key = (id(parent_product), pn)   # id() 跨调用不稳定
-
-# 新方案：key = (parent_pn, pn)           # 字符串，稳定可靠
-# parent_pn 从行的 _parent_product 通过 _part_masters 反查，
-# 或直接在 _full_rows 遍历时记录父行的 "Part Number"
-```
-
----
-
-## 六、`collect_bom_rows` 返回格式
-
-当前 `collect_bom_rows` 返回扁平 row dict 列表，每行含 `_product`、`_parent_product`
-等内部字段。**新方案保持此格式不变**作为中间产物，在 `_load_bom` 中消费时构建
-`_part_masters` 树。
-
-`bom_collect.py` 本身不需要修改，保持稳定。
-
----
-
-## 七、`_rows` 的角色
-
-`_rows` 作为显示层的扁平行列表继续存在：
-
-```
-显示模式        _rows 来源
-──────────────  ─────────────────────────────────────────────────────
-完整 BOM        _full_rows（每实例一行，直接来自 collect_bom_rows）
-层级 BOM        build_hierarchical_rows(_full_rows)（PN 分组合并）
-汇总 BOM        flatten_bom_to_summary(...)（按 PN 去重累加）
-```
-
-每行的 `"Part Number"` 字段作为 `_part_masters` 的查找 key 读取 PartMaster 级属性。
-实例级属性（Instance Name）直接从行 dict 读取，不经过 `_part_masters`。
-
----
-
-## 八、实施方式：新建文件
-
-由于改动量大且涉及架构重构，采用**新建文件**方式实施：
-
-| 新文件 | 对应现有文件 | 说明 |
-|--------|------------|------|
-| `catia_copilot/catia/bom_collect_v3.py` | `bom_collect.py` | 新增 `collect_bom_part_masters()` 函数，直接返回 `part_master` 树；保留 `collect_bom_rows` 作为内部中间产物 |
-| `catia_copilot/catia/bom_write_v3.py` | `bom_write.py` | 适配 `part_master` 结构的写回函数 |
-| `catia_copilot/ui/bom_edit_dialog_v3.py` | `bom_edit_dialog_v2.py` | 全新对话框，使用 `_part_masters` 替代 `_canonical_data` |
-
-现有 V1/V2 文件**保持不变**，V3 与 V2 并行运行，通过 `main_window.py` 的
-`_show_dialog` 切换入口来对比测试。
-
----
-
-## 九、不需要修改的模块
-
-| 模块 | 原因 |
-|------|------|
-| `catia_copilot/catia/bom_collect.py` | row dict 格式不变，继续作为中间产物 |
-| `catia_copilot/catia/bom_write.py` | V2 继续使用，V3 有新版本 |
-| `catia_copilot/ui/bom_edit_dialog.py`（V1） | V1 仍以 PN 为 key，不受影响 |
-| `catia_copilot/ui/bom_edit_dialog_v2.py`（V2） | 保持运行，与 V3 并行 |
-| `catia_copilot/ui/plm_workbench.py` | 不依赖内部数据结构 |
-
----
-
-## 十、实施顺序
-
-1. **新建 `bom_collect_v3.py`**：实现 `collect_bom_part_masters()`，返回
-   `dict[str, part_master]` 树结构，内部仍调用现有 `collect_bom_rows` 作为中间产物。
-
-2. **新建 `bom_edit_dialog_v3.py`**（骨架）：复制 V2，将 `_canonical_data` 替换为
-   `_part_masters`，`_ref_to_insts`/`_inst_to_ref_unk` 替换为 `_pn_to_inst_keys`。
-
-3. **逐步迁移各功能**（每步可独立验证）：
-   - `_load_bom`：构建 `_part_masters`
-   - `_populate_table`：从 `_part_masters[pn]` 读属性
-   - `_on_item_changed` / `_on_source_changed` / `_on_option_col_changed`：写回路径
-   - `_apply_field_changes`：撤销/重做路径（区分 `str` / `int` key）
-   - PN 冲突检查、PN 改名逻辑
-   - 实例名修改（单格 + 批量）
-   - `build_hierarchical_rows_v3`：使用 `parent_pn` 分组
-
-4. **删除 `_sync_siblings_in_ui` 及所有调用点**
-
-5. **在 `main_window.py` 注册 V3 入口，与 V2 并行对比测试**
-
-6. **V3 稳定后，将 V2 标记为废弃，V1 继续保留**
-
----
-
-## 十一、风险点
-
-| 风险 | 缓解措施 |
-|------|---------|
-| PN 相同但文件不同的零件（理论上 CATIA 不允许，实践中可能存在） | 加载时记录警告，首次出现者优先，后续实例复用同一 part_master |
-| 嵌入 Component 的 PN 可能与父产品 PN 相同（罕见） | `type == "部件"` 可区分，或在 part_master 中加 `is_embedded: bool` |
-| `_pn_to_inst_keys[pn]` 中取任意实例写回时，COM 引用可能已失效 | 遍历列表找第一个 `_inst_to_product.get(k) is not None` 的实例 |
-| PN 修改时需同步所有引用该 PN 的父 part_master 的 children | 封装 `_rename_part_master(old_pn, new_pn)` 统一处理 |
-
----
-
-*文档版本：v1.1，2026-06-06*  
-*对应代码版本：CATIA Copilot v2.1.0*
+*文档版本：v2.0，2026-06-07*
+*对应代码版本：CATIA Copilot v2.1.0，分支 feat/bom-v3-part-master*
