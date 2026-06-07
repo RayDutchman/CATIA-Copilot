@@ -1139,11 +1139,16 @@ class BomEditDialogV3(QDialog):
                     pn = pm.get("part_number", "")
                     break
         try:
-            write_cell(product, col_name, value, self._all_custom_columns)
-            self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
+            success = write_cell(product, col_name, value, self._all_custom_columns)
+            if success:
+                self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
+            else:
+                self._last_write_status = f"⚠ 写入失败（CATIA 拒绝）：{pn!r}.{col_name} = {value!r}"
+                logger.warning("write_cell 返回失败 inst_key=%r col=%s value=%r",
+                               inst_key, col_name, value)
         except Exception as e:
-            self._last_write_status = f"写入失败：{e}"
-            logger.error("V2 write_cell error for inst_key=%r col=%s: %s", inst_key, col_name, e)
+            self._last_write_status = f"⚠ 写入异常：{e}"
+            logger.error("write_cell 异常 inst_key=%r col=%s: %s", inst_key, col_name, e)
         self._update_status()
 
     def _sync_pn_siblings_in_ui(
@@ -1426,6 +1431,12 @@ class BomEditDialogV3(QDialog):
                     new_value,
                 )
                 if not success:
+                    logger.error(
+                        "_on_item_changed: rename_part_master 失败 bom_key=%r new_pn=%r",
+                        row_bom_key, new_value,
+                    )
+                    self._last_write_status = f"⚠ 零件编号修改失败（bom_key={row_bom_key!r}）"
+                    self._update_status()
                     self._is_updating = True
                     item.setText(col_idx, old_val)
                     self._is_updating = False
@@ -1532,34 +1543,35 @@ class BomEditDialogV3(QDialog):
         # ── 即时写回 CATIA ────────────────────────────────────────────────────
         if cur_product is not None:
             try:
-                write_cell(cur_product, BOM_INSTANCE_NAME_COLUMN,
-                           new_value, self._all_custom_columns)
-                self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
+                ok = write_cell(cur_product, BOM_INSTANCE_NAME_COLUMN,
+                                new_value, self._all_custom_columns)
+                if not ok:
+                    self._last_write_status = f"⚠ 实例名写入失败（CATIA 拒绝）：{old_val!r} → {new_value!r}"
+                    logger.warning("write_cell 实例名写入失败 inst_key=%r old=%r new=%r",
+                                   inst_key, old_val, new_value)
+                    _rollback()
+                else:
+                    self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
 
-                # 更新当前实例的 inst_info（唯一真相）
-                # V3 架构：instances 是文件视角唯一一份，每个 inst_info 对应一个独立槽位。
-                # CATIA 端写入后，同一文件视角下"通过其他父节点路径访问到的同一对象"
-                # 已自动同步，无需任何兄弟遍历。
-                if inst_info is not None:
-                    inst_info["instance_name"] = new_value
+                    # 更新当前实例的 inst_info（唯一真相）
+                    if inst_info is not None:
+                        inst_info["instance_name"] = new_value
 
-                # 刷新所有共享同一 inst_key 的树形项（同一实例在 full BOM 中可能多行显示）
-                # 典型场景：Product3.1/Part1 和 Product3.2/Part1 共享同一 inst_info，
-                # inst_key 相同，两行都要同步为新值。
-                if inst_key is not None:
-                    col_idx_inst = self._columns.index(BOM_INSTANCE_NAME_COLUMN) if BOM_INSTANCE_NAME_COLUMN in self._columns else -1
-                    if col_idx_inst >= 0:
-                        self._is_updating = True
-                        try:
-                            for other_item in self._inst_to_items.get(inst_key, []):
-                                if other_item is not item and other_item.text(col_idx_inst) != new_value:
-                                    other_item.setText(col_idx_inst, new_value)
-                        finally:
-                            self._is_updating = False
+                    # 刷新所有共享同一 inst_key 的树形项
+                    if inst_key is not None:
+                        col_idx_inst = self._columns.index(BOM_INSTANCE_NAME_COLUMN) if BOM_INSTANCE_NAME_COLUMN in self._columns else -1
+                        if col_idx_inst >= 0:
+                            self._is_updating = True
+                            try:
+                                for other_item in self._inst_to_items.get(inst_key, []):
+                                    if other_item is not item and other_item.text(col_idx_inst) != new_value:
+                                        other_item.setText(col_idx_inst, new_value)
+                            finally:
+                                self._is_updating = False
 
-                # 推入撤销栈
-                if inst_key is not None:
-                    self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
+                    # 推入撤销栈（仅写入成功时）
+                    if inst_key is not None:
+                        self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
 
             except Exception as e:
                 self._last_write_status = f"实例名写入失败：{e}"
@@ -1754,6 +1766,10 @@ class BomEditDialogV3(QDialog):
                         success = rename_part_master(
                             self._part_masters, self._bom_key_to_inst_keys, bk, dst_pn)
                         if not success:
+                            logger.error(
+                                "_apply_field_changes: rename_part_master 失败 bom_key=%r dst_pn=%r",
+                                bk, dst_pn,
+                            )
                             continue
                         # 同步更新 _rows 里匹配 bom_key 的行的 Part Number 显示字段
                         for row in self._rows:
