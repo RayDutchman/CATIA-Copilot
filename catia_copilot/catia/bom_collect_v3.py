@@ -166,37 +166,37 @@ def collect_bom_part_masters(
         return ""
 
     # ── 主遍历 ────────────────────────────────────────────────────────────────
-    def _traverse(product, level: int, parent_filepath: str, host_file_pn: str) -> str:
+    def _traverse(product, level: int, parent_filepath: str, host_file_pn: str,
+                  _hint_pn: str = "", _hint_filepath: str | None = None) -> str:
         """遍历单个产品节点，确保其 part_master 已建立（含 instances）。
 
         返回该节点的 bom_key（供父节点将其加入自己的 instances 列表）。
         同一 bom_key 只处理一次：part_master 已存在则直接返回，不重复遍历子节点。
 
-        host_file_pn：当前节点所在宿主文件的 PartNumber（独立文件节点的 pn）。
-            - 根节点：""（根节点自身就是宿主，在取到 pn 后立即确定）
-            - 独立文件子节点：子节点自身的 pn（子节点是新宿主）
-            - 嵌入部件：与父节点相同的 host_file_pn，透传不变
-              （嵌入部件和其子 Component 都属于同一宿主文件）
-        bom_key 规则：
-            - 独立文件节点：bom_key = pn
-            - 嵌入部件：bom_key = "pn:host_file_pn"
-              同一宿主文件内 pn 唯一（CATIA 约束），故 bom_key 全局唯一。
-              多层嵌套 Component 的宿主始终是同一独立文件，host_file_pn 不会链式叠加。
+        _hint_pn:       父节点侧已读取的 PartNumber，可省一次 COM 调用。
+        _hint_filepath: 父节点侧已知的 filepath（嵌入部件 == parent_filepath），
+                        可省一次 product.ReferenceProduct.Parent.FullName COM 调用。
         """
         nonlocal _total_count
 
-        # ── PartNumber ───────────────────────────────────────────────────────
-        try:
-            pn = str(product.PartNumber)
-        except Exception:
-            name = product.Name
-            pn   = name.rsplit(".", 1)[0] if "." in name else name
+        # ── PartNumber（优先用父节点传入的 hint，省一次 COM）─────────────────
+        if _hint_pn:
+            pn = _hint_pn
+        else:
+            try:
+                pn = str(product.PartNumber)
+            except Exception:
+                name = product.Name
+                pn   = name.rsplit(".", 1)[0] if "." in name else name
 
-        # ── 文件路径 ──────────────────────────────────────────────────────────
-        try:
-            filepath = product.ReferenceProduct.Parent.FullName
-        except Exception:
-            filepath = ""
+        # ── 文件路径（优先用父节点传入的 hint，省一次 COM）──────────────────
+        if _hint_filepath is not None:
+            filepath = _hint_filepath
+        else:
+            try:
+                filepath = product.ReferenceProduct.Parent.FullName
+            except Exception:
+                filepath = ""
 
         not_found   = not bool(filepath)
         no_file     = bool(filepath) and not Path(filepath).exists()
@@ -289,14 +289,38 @@ def collect_bom_part_masters(
                 except Exception:
                     products = product.Products
 
+                # child_host：子节点的 host_file_pn 参数（嵌入部件透传，独立文件传自身 pn）
+                child_host = host_file_pn if is_embedded else pn
+
                 for i in range(1, products.Count + 1):
                     try:
                         child = products.Item(i)
-                        # 嵌入部件的宿主文件不变，透传当前 host_file_pn；
-                        # 独立文件子节点自身成为新宿主，传入自身 pn。
-                        child_host    = host_file_pn if is_embedded else pn
-                        child_bom_key = _traverse(child, level + 1, filepath, child_host)
-                        child_pn      = part_masters[child_bom_key]["part_number"]
+
+                        # ── 性能优化：提前用 child.PartNumber（1次COM）算出候选 bom_key ──
+                        # 若候选 key 已在 part_masters，直接跳过 _traverse 的完整递归
+                        # （避免在 _traverse 入口处重复读 PartNumber + filepath 的 2次COM）。
+                        # 嵌入部件候选：pn:child_host；独立文件候选：pn（两者都算，各查一次）
+                        try:
+                            child_pn_raw = str(child.PartNumber)
+                        except Exception:
+                            n = child.Name
+                            child_pn_raw = n.rsplit(".", 1)[0] if "." in n else n
+
+                        candidate_embedded    = f"{child_pn_raw}:{child_host}"
+                        candidate_standalone  = child_pn_raw
+
+                        if candidate_embedded in part_masters:
+                            child_bom_key = candidate_embedded
+                        elif candidate_standalone in part_masters:
+                            child_bom_key = candidate_standalone
+                        else:
+                            # 首次遇到：完整递归，传已读取的 pn hint 省一次 COM
+                            child_bom_key = _traverse(
+                                child, level + 1, filepath, child_host,
+                                _hint_pn=child_pn_raw,
+                            )
+
+                        child_pn = part_masters[child_bom_key]["part_number"]
 
                         # 将子节点注册为当前 part_master 的子实例
                         inst_key  = id(child)
