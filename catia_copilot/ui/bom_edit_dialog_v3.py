@@ -193,6 +193,9 @@ class BomEditDialogV3(QDialog):
         # part_number → list[inst_key]，替代 V2 的 _ref_to_insts
         # 用于跨实例同步界面（同零件多实例/多父节点）
         self._pn_to_inst_keys: dict[str, list[int]] = {}
+        # inst_key → inst_info dict（part_masters children 中的同一对象引用）
+        # 实例名的唯一真相：读写 inst_info["instance_name"] 即读写 part_masters 树
+        self._inst_key_to_info: dict[int, dict] = {}
         # 列名→像素宽度缓存；在列可见性切换时保留用户调整的列宽
         self._col_widths: dict[str, int] = {}
         # 撤销/重做历史栈（最多 _MAX_HISTORY 步）
@@ -758,7 +761,7 @@ class BomEditDialogV3(QDialog):
                 BOM_EDIT_COLUMN_ORDER
                 + [c for c in self._all_custom_columns if c not in BOM_EDIT_COLUMN_ORDER]
             ))
-            full_rows, part_masters = collect_bom_part_masters(
+            full_rows, part_masters, inst_key_to_info = collect_bom_part_masters(
                 file_path, all_read_cols, self._all_custom_columns,
                 progress_callback=_on_row_collected,
             )
@@ -778,9 +781,10 @@ class BomEditDialogV3(QDialog):
         self._load_btn.setEnabled(True)
         self._load_btn.setText("重新加载 BOM")
 
-        # 保存完整逐实例行（唯一 COM 遍历结果）和 part_masters 树
-        self._full_rows   = full_rows
-        self._part_masters = part_masters
+        # 保存完整逐实例行（唯一 COM 遍历结果）、part_masters 树和反向索引
+        self._full_rows        = full_rows
+        self._part_masters     = part_masters
+        self._inst_key_to_info = inst_key_to_info
         self._hierarchical_rows = build_hierarchical_rows_v3(full_rows, part_masters)
 
         # 根据当前模式决定显示行
@@ -963,8 +967,9 @@ class BomEditDialogV3(QDialog):
                     # Type 列存储英文 key，显示时转为中文
                     value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
                 elif col_name == BOM_INSTANCE_NAME_COLUMN:
-                    # 实例名是实例级属性，直接从行数据读取，不走 part_master
-                    value = str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
+                    # 实例名是实例级属性，唯一真相在 _inst_key_to_info[inst_key]["instance_name"]
+                    inst_info = self._inst_key_to_info.get(inst_key) if inst_key else None
+                    value = inst_info["instance_name"] if inst_info is not None else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
                 else:
                     # PartMaster 级可写属性（Nomenclature/Revision/Definition/Description/自定义列等）
                     value = get_part_master_attr(
@@ -1447,9 +1452,16 @@ class BomEditDialogV3(QDialog):
         - 同父节点下的兄弟实例名称不能重复（CATIA 约束）。
         - 通过 ``product.Name = value`` 写入 CATIA。
         - 推入撤销栈，支持 Ctrl+Z 撤销。
+        - 实例名唯一真相：_inst_key_to_info[inst_key]["instance_name"]（part_masters 树的引用）。
         """
+        row_data    = self._rows[row_idx]
+        cur_product = row_data.get("_product")
+        inst_key    = id(cur_product) if cur_product is not None else None
+        inst_info   = self._inst_key_to_info.get(inst_key) if inst_key else None
+
         def _rollback() -> None:
-            old = str(self._rows[row_idx].get(BOM_INSTANCE_NAME_COLUMN, ""))
+            # 从 inst_info 读真实旧值；若找不到则从 item 当前文本读（降级）
+            old = inst_info["instance_name"] if inst_info is not None else item.text(col_idx)
             self._is_updating = True
             item.setText(col_idx, old)
             self._is_updating = False
@@ -1460,51 +1472,53 @@ class BomEditDialogV3(QDialog):
             _rollback()
             return
 
-        # 同父唯一性检查（遍历 _full_rows，完整 BOM 的权威数据源）
-        row_data       = self._rows[row_idx]
+        # ── 同父唯一性检查（从 _inst_key_to_info 读各兄弟的实例名）──────────────
         parent_product = row_data.get("_parent_product")
-        cur_product    = row_data.get("_product")
         if parent_product is not None:
             for other_row in self._full_rows:
                 if other_row.get("_product") is cur_product:
                     continue
-                if other_row.get("_parent_product") is parent_product:
-                    if other_row.get(BOM_INSTANCE_NAME_COLUMN, "") == new_value:
-                        QMessageBox.warning(
-                            self, "实例名称冲突",
-                            f"同一父节点下已存在实例名称 \"{new_value}\"，\n"
-                            "请使用不同的实例名称。",
-                        )
-                        _rollback()
-                        return
+                if other_row.get("_parent_product") is not parent_product:
+                    continue
+                other_p  = other_row.get("_product")
+                other_ik = id(other_p) if other_p is not None else None
+                other_info = self._inst_key_to_info.get(other_ik) if other_ik else None
+                other_name = (other_info["instance_name"] if other_info is not None
+                              else other_row.get(BOM_INSTANCE_NAME_COLUMN, ""))
+                if other_name == new_value:
+                    QMessageBox.warning(
+                        self, "实例名称冲突",
+                        f"同一父节点下已存在实例名称 \"{new_value}\"，\n"
+                        "请使用不同的实例名称。",
+                    )
+                    _rollback()
+                    return
 
-        # 更新当前行内存（完整 BOM 模式下 _rows is _full_rows，一次写入即可）
-        old_val = str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
-        self._rows[row_idx][BOM_INSTANCE_NAME_COLUMN] = new_value
+        # ── 读旧值（来自 inst_info，即 part_masters 树）────────────────────────
+        old_val = inst_info["instance_name"] if inst_info is not None else ""
 
-        # 即时写回 CATIA，写入成功后推入撤销栈
-        product = row_data.get("_product")
-        if product is not None:
+        # ── 即时写回 CATIA ────────────────────────────────────────────────────
+        if cur_product is not None:
             try:
-                write_cell(product, BOM_INSTANCE_NAME_COLUMN,
-                                new_value, self._all_custom_columns)
-                self._last_write_status = (
-                    f"已写回：实例名 {old_val!r} → {new_value!r}"
-                )
-                # 写入成功，推入撤销栈（inst_key = id(product)，int key）
-                self._push_undo([(id(product), BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
+                write_cell(cur_product, BOM_INSTANCE_NAME_COLUMN,
+                           new_value, self._all_custom_columns)
+                self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
 
-                # ── V3：同步其他父节点下的对应实例 ────────────────────────────
-                # CATIA 端已自动同步，程序端只更新内存和界面。
+                # 更新当前实例的 inst_info（唯一真相，part_masters 树自动同步）
+                if inst_info is not None:
+                    inst_info["instance_name"] = new_value
+
+                # 推入撤销栈（key = inst_key: int，区别于 PartMaster 属性的 str key）
+                if inst_key is not None:
+                    self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
+
+                # ── 同步其他父节点下对应实例（CATIA 端已自动同步，程序端只更新内存+界面）
                 # 条件：父节点 PN 相同（parent_pn），子节点 PN 相同（cur_pn_key）
                 cur_pn_key = str(row_data.get("Part Number", "")).strip()
-
-                # 找父节点 PN
-                parent_pn = ""
+                parent_pn  = ""
                 if parent_product is not None:
                     for r in self._full_rows:
-                        _rp = r.get("_product")
-                        if _rp is not None and _rp is parent_product:
+                        if r.get("_product") is parent_product:
                             parent_pn = str(r.get("Part Number", "")).strip()
                             break
 
@@ -1514,23 +1528,16 @@ class BomEditDialogV3(QDialog):
                 )
 
                 if cur_pn_key and parent_pn:
-                    # 通过 _pn_to_inst_keys[parent_pn] 找所有同父 PN 的父实例
-                    # 再从 _part_masters[parent_pn].children 找同 cur_pn_key 的子实例
                     parent_pm = self._part_masters.get(parent_pn, {})
                     for child_entry in parent_pm.get("children", []):
                         if child_entry.get("child_pn") != cur_pn_key:
                             continue
-                        for inst_info in child_entry.get("instances", []):
-                            sib_ik = inst_info.get("inst_key")
-                            if sib_ik is None or sib_ik == id(product):
+                        for sib_info in child_entry.get("instances", []):
+                            sib_ik = sib_info.get("inst_key")
+                            if sib_ik is None or sib_ik == inst_key:
                                 continue
-                            # 更新内存（part_masters children 中的 instance_name）
-                            inst_info["instance_name"] = new_value
-                            # 更新 full_rows 内存
-                            for r in self._full_rows:
-                                _rp = r.get("_product")
-                                if _rp is not None and id(_rp) == sib_ik:
-                                    r[BOM_INSTANCE_NAME_COLUMN] = new_value
+                            # 唯一真相：只更新 inst_info（part_masters 树）
+                            sib_info["instance_name"] = new_value
                             # 更新界面
                             if sibling_inst_col >= 0:
                                 self._is_updating = True
@@ -1539,6 +1546,7 @@ class BomEditDialogV3(QDialog):
                                         tree_item.setText(sibling_inst_col, new_value)
                                 finally:
                                     self._is_updating = False
+
             except Exception as e:
                 self._last_write_status = f"实例名写入失败：{e}"
                 logger.error("write_cell instance name error: %s", e)
@@ -1700,24 +1708,17 @@ class BomEditDialogV3(QDialog):
                 if isinstance(key, int):
                     # ── 实例属性（Instance Name）：key = inst_key ──────────────
                     inst_key = key
-                    product = self._inst_to_product.get(inst_key)
+                    product  = self._inst_to_product.get(inst_key)
                     if product is not None:
                         try:
                             product.Name = value
                             self._last_write_status = f"{_label}：实例名 → {value!r}"
                         except Exception as e:
                             logger.error("undo/redo instance name write error: %s", e)
-                    # 同步 _rows 和 _full_rows 内存
-                    for _pool in (self._rows, self._full_rows):
-                        for row in _pool:
-                            if id(row.get("_product")) == inst_key:
-                                row[BOM_INSTANCE_NAME_COLUMN] = value
-                    # 同步 _part_masters children 中的 instance_name
-                    for pm in self._part_masters.values():
-                        for child_entry in pm.get("children", []):
-                            for inst_info in child_entry.get("instances", []):
-                                if inst_info.get("inst_key") == inst_key:
-                                    inst_info["instance_name"] = value
+                    # 唯一真相：只更新 _inst_key_to_info（即 part_masters 树）
+                    inst_info = self._inst_key_to_info.get(inst_key)
+                    if inst_info is not None:
+                        inst_info["instance_name"] = value
                     # 更新界面单元格
                     col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                     if col_idx >= 0:
@@ -2334,7 +2335,14 @@ class BomEditDialogV3(QDialog):
             return
 
         # ── 确认对话框 ────────────────────────────────────────────────────────────
-        already_ok  = sum(1 for r, n in plan if r.get(BOM_INSTANCE_NAME_COLUMN) == n)
+        # 用 _inst_key_to_info 读当前实例名（唯一真相），比较是否已符合规则
+        def _current_instance_name(row: dict) -> str:
+            _p = row.get("_product")
+            ik = id(_p) if _p is not None else None
+            info = self._inst_key_to_info.get(ik) if ik else None
+            return info["instance_name"] if info is not None else row.get(BOM_INSTANCE_NAME_COLUMN, "")
+
+        already_ok  = sum(1 for r, n in plan if _current_instance_name(r) == n)
         need_change = len(plan) - already_ok
         if need_change == 0:
             QMessageBox.information(self, "无需修改", "所有实例名已符合 PartNumber.n 规则。")
@@ -2348,31 +2356,36 @@ class BomEditDialogV3(QDialog):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # ── 写入 CATIA 并更新内存 ─────────────────────────────────────────────────
+        # ── 写入 CATIA 并更新 part_masters 树 ────────────────────────────────────
         errors: list[str] = []
         undo_actions: list[tuple] = []   # (inst_key, col, old, new)
         changed = 0
         for row, new_name in plan:
-            old_name = row.get(BOM_INSTANCE_NAME_COLUMN, "")
+            _p       = row.get("_product")
+            ik       = id(_p) if _p is not None else None
+            inst_inf = self._inst_key_to_info.get(ik) if ik else None
+            old_name = inst_inf["instance_name"] if inst_inf is not None else row.get(BOM_INSTANCE_NAME_COLUMN, "")
             if old_name == new_name:
                 continue
-            product = row.get("_product")
+            product = _p
             if product is None:
                 continue
             try:
                 product.Name = new_name
-                row[BOM_INSTANCE_NAME_COLUMN] = new_name
-                undo_actions.append(
-                    (id(product), BOM_INSTANCE_NAME_COLUMN, old_name, new_name)
-                )
+                # 唯一真相：只更新 inst_info
+                if inst_inf is not None:
+                    inst_inf["instance_name"] = new_name
+                if ik is not None:
+                    undo_actions.append(
+                        (ik, BOM_INSTANCE_NAME_COLUMN, old_name, new_name)
+                    )
                 changed += 1
             except Exception as e:
                 pn = row.get("Part Number", "?")
                 errors.append(f"{pn}: {e}")
                 logger.error("auto_rename_instance_names error pn=%s: %s", pn, e)
 
-        # ── 同 PN 兄弟父节点实例的子树：CATIA 端已自动同步，仅更新内存 ─────────────
-        # 找所有与 target_product 同 PN 但不同实例的产品/部件节点
+        # ── 同 PN 兄弟父节点实例的子树：CATIA 端已自动同步，仅更新 part_masters 树 ──
         target_pn = str(target_row.get("Part Number", "")).strip()
         if target_pn:
             for r in self._full_rows:
@@ -2381,15 +2394,17 @@ class BomEditDialogV3(QDialog):
                         or sib_product is target_product
                         or r.get("Type") not in BomNodeType.ASSEMBLY_TYPES):
                     continue
-                sib_inst_key = id(sib_product)
-                sib_pn = str(r.get("Part Number", "")).strip()
-                if sib_pn != target_pn:
+                if str(r.get("Part Number", "")).strip() != target_pn:
                     continue
-                # 用相同规则生成该兄弟节点子树的改名计划，只更新内存
+                # 用相同规则生成该兄弟节点子树的改名计划，只更新 inst_info
                 sib_plan: list[tuple[dict, str]] = []
                 _collect(sib_product, sib_plan)
                 for sib_row, sib_new_name in sib_plan:
-                    sib_row[BOM_INSTANCE_NAME_COLUMN] = sib_new_name
+                    sib_p  = sib_row.get("_product")
+                    sib_ik = id(sib_p) if sib_p is not None else None
+                    sib_info = self._inst_key_to_info.get(sib_ik) if sib_ik else None
+                    if sib_info is not None:
+                        sib_info["instance_name"] = sib_new_name
 
         # ── 推入撤销栈（整批作为一个原子步骤）────────────────────────────────────
         if undo_actions:

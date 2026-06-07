@@ -71,24 +71,33 @@ def collect_bom_part_masters(
     columns: list[str],
     custom_columns: list[str],
     progress_callback: Callable[[int], None] | None = None,
-) -> tuple[list[dict], dict[str, dict]]:
-    """遍历产品树，返回 (full_rows, part_masters)。
+) -> tuple[list[dict], dict[str, dict], dict[int, dict]]:
+    """遍历产品树，返回 (full_rows, part_masters, inst_key_to_info)。
 
     full_rows:
-        collect_bom_rows() 返回的逐实例扁平行列表，保持不变，供显示层使用。
+        collect_bom_rows() 返回的逐实例扁平行列表，供显示层使用。
+        注意：full_rows 里的 BOM_INSTANCE_NAME_COLUMN 字段是初始快照，
+        后续实例名的修改只更新 part_masters 树，不回写 full_rows。
 
     part_masters:
         dict[part_number → part_master dict]，每条 part_master 包含：
         - PartMaster 级属性（可写：PN/Nomenclature/Revision/Definition/Source/Description/自定义列）
         - 只读属性（Type/Filename/filepath/_flags）
         - children 列表（装配结构，有序）
+          每个 instance_info = {"inst_key": int, "instance_name": str, "placement": None}
+          instance_name 是实例名的唯一真相，通过 inst_key_to_info 快速访问。
+
+    inst_key_to_info:
+        dict[inst_key → inst_info dict]，反向索引，O(1) 读写实例名。
+        inst_info 是 part_masters children 中 instance_info 的同一对象引用，
+        修改 inst_info["instance_name"] 即同时更新 part_masters 树。
 
     参数：
         file_path, columns, custom_columns, progress_callback:
             与 collect_bom_rows() 参数含义相同。
 
     返回：
-        (full_rows, part_masters)
+        (full_rows, part_masters, inst_key_to_info)
     """
     # ── Step 1: 调用现有 collect_bom_rows() 获取逐实例行列表 ────────────────
     full_rows = collect_bom_rows(
@@ -194,6 +203,8 @@ def collect_bom_part_masters(
 
     # 将 _children_map 写入各 part_master 的 children 列表
     # 保持 full_rows 中 children 的出现顺序（已按遍历顺序插入 _children_map）
+    # 同时建立 inst_key → inst_info 反向索引（引用同一对象，修改反向索引即修改树）
+    inst_key_to_info: dict[int, dict] = {}
     for parent_pn, child_groups in _children_map.items():
         pm = part_masters.get(parent_pn)
         if pm is None:
@@ -203,8 +214,10 @@ def collect_bom_part_masters(
                 "child_pn":  child_pn,
                 "instances": instances,
             })
+            for inst_info in instances:
+                inst_key_to_info[inst_info["inst_key"]] = inst_info
 
-    return full_rows, part_masters
+    return full_rows, part_masters, inst_key_to_info
 
 
 def build_hierarchical_rows_v3(
