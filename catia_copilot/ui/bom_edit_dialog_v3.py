@@ -1558,20 +1558,17 @@ class BomEditDialogV3(QDialog):
         parent_inst_info = self._inst_key_to_info.get(parent_inst_key) if parent_inst_key is not None else None
         parent_bom_key   = parent_inst_info["bom_key"] if parent_inst_info is not None else self._root_bom_key
 
-        # old_val 提前计算，确保 _rollback 总能取到正确的旧值
-        old_val = (inst_info["instance_name"] if inst_info is not None
-                   else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, "")))
-        logger.debug("_handle_instance_name_changed: inst_key=%r inst_info=%s old_val=%r new_value=%r",
-                     inst_key, "found" if inst_info is not None else "NONE", old_val, new_value)
-
         # inst_info 为 None 表示数据层异常（非根节点却找不到实例信息），拒绝编辑
         if inst_info is None:
             logger.error("_handle_instance_name_changed: inst_info 为 None，inst_key=%r，拒绝编辑",
                          inst_key)
             self._is_updating = True
-            item.setText(col_idx, old_val)
+            item.setText(col_idx, str(row_data.get(BOM_INSTANCE_NAME_COLUMN, "")))
             self._is_updating = False
             return
+
+        # old_val 提前计算，确保 _rollback 总能取到正确的旧值（inst_info 已确认非 None）
+        old_val = inst_info["instance_name"]
 
         def _rollback() -> None:
             self._is_updating = True
@@ -1612,25 +1609,22 @@ class BomEditDialogV3(QDialog):
                 else:
                     self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
 
-                    # 更新当前实例的 inst_info（唯一真相）
-                    if inst_info is not None:
-                        inst_info["instance_name"] = new_value
+                    # 更新 inst_info（唯一真相）
+                    inst_info["instance_name"] = new_value
 
                     # 刷新所有共享同一 inst_key 的树形项
-                    if inst_key is not None:
-                        col_idx_inst = self._columns.index(BOM_INSTANCE_NAME_COLUMN) if BOM_INSTANCE_NAME_COLUMN in self._columns else -1
-                        if col_idx_inst >= 0:
-                            self._is_updating = True
-                            try:
-                                for other_item in self._inst_to_items.get(inst_key, []):
-                                    if other_item is not item and other_item.text(col_idx_inst) != new_value:
-                                        other_item.setText(col_idx_inst, new_value)
-                            finally:
-                                self._is_updating = False
+                    col_idx_inst = self._columns.index(BOM_INSTANCE_NAME_COLUMN) if BOM_INSTANCE_NAME_COLUMN in self._columns else -1
+                    if col_idx_inst >= 0:
+                        self._is_updating = True
+                        try:
+                            for other_item in self._inst_to_items.get(inst_key, []):
+                                if other_item is not item and other_item.text(col_idx_inst) != new_value:
+                                    other_item.setText(col_idx_inst, new_value)
+                        finally:
+                            self._is_updating = False
 
                     # 推入撤销栈（仅写入成功时）
-                    if inst_key is not None:
-                        self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
+                    self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
 
             except Exception as e:
                 self._last_write_status = f"⚠ 写入异常：实例名 {old_val!r}: {e}"
