@@ -1258,12 +1258,31 @@ class BomEditDialogV3(QDialog):
             old_display = SOURCE_TO_DISPLAY.get(old_store, old_store) if col_name == "Source" else old_store
             old_vals[bom_key] = old_display
             set_part_master_attr(self._part_masters, bom_key, col_name, store_value)
+            write_ok = False
             for ik in self._bom_key_to_inst_keys.get(bom_key, []):
                 if self._get_product(ik) is not None:
-                    self._write_cell_to_catia(ik, col_name, display_value)
+                    write_ok = self._write_cell_to_catia(ik, col_name, display_value)
                     insts_to_update.add(ik)
                     break
-            affected_bom_keys.add(bom_key)
+            if write_ok:
+                affected_bom_keys.add(bom_key)
+            else:
+                # 写入失败：回滚内存，不加入 affected_bom_keys（不更新界面为新值）
+                set_part_master_attr(self._part_masters, bom_key, col_name, old_store)
+                # 回滚触发行的 combo 显示值
+                self._is_updating = True
+                try:
+                    for r in direct_rows:
+                        if str(self._rows[r].get("_bom_key", "")).strip() == bom_key:
+                            src_item = self._item_by_row[r] if r < len(self._item_by_row) else None
+                            if src_item is not None:
+                                combo = self._table.itemWidget(src_item, col_idx)
+                                if isinstance(combo, QComboBox):
+                                    combo.blockSignals(True)
+                                    combo.setCurrentText(old_display)
+                                    combo.blockSignals(False)
+                finally:
+                    self._is_updating = False
 
         for bom_key in affected_bom_keys:
             self._sync_pn_siblings_in_ui(bom_key, col_name, display_value, col_idx=col_idx)
@@ -1538,9 +1557,10 @@ class BomEditDialogV3(QDialog):
         parent_bom_key   = parent_inst_info["bom_key"] if parent_inst_info is not None else self._root_bom_key
 
         # old_val 提前计算，确保 _rollback 总能取到正确的旧值
-        # inst_info 为 None（理论上不应发生，但防御）时回退到行数据里的值
         old_val = (inst_info["instance_name"] if inst_info is not None
                    else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, "")))
+        logger.debug("_handle_instance_name_changed: inst_key=%r inst_info=%s old_val=%r new_value=%r",
+                     inst_key, "found" if inst_info is not None else "NONE", old_val, new_value)
 
         def _rollback() -> None:
             self._is_updating = True
