@@ -1370,56 +1370,18 @@ class BomEditDialogV3(QDialog):
         if col_name == "Part Number":
             for r in direct_rows:
                 row_pm_key = str(self._rows[r].get("_pm_key", "")).strip()
-                row_pn_cur  = str(self._rows[r].get("Part Number", "")).strip()
-
-                if ":" not in row_pm_key:
-                    # 独立文件节点：检查新 pn 是否已被其他独立节点占用
-                    # pm_key 永不变，不能用 new_value in _part_masters，要扫 part_number 字段
-                    for bk2, pm2 in self._part_masters.items():
-                        if bk2 == row_pm_key:
-                            continue
-                        if ":" in bk2:
-                            continue   # 跳过嵌入部件
-                        if pm2.get("part_number") == new_value:
-                            QMessageBox.warning(
-                                self, "零件编号冲突",
-                                f"零件编号 \"{new_value}\" 与现有零件编号冲突，不允许修改。",
-                            )
-                            self._is_updating = True
-                            item.setText(col_idx, pn)
-                            self._is_updating = False
-                            return
-                else:
-                    # 嵌入部件：pm_key = "pn:host_file_pn"
-                    # CATIA 约束：同一宿主文件内所有节点（根节点 + 所有 Component，
-                    # 无论嵌套多深）的 PN 不能重复。
-                    # host_file_pn 字段存宿主文件当前 pn，rename_part_master 改宿主时同步更新。
-                    cur_pm       = self._part_masters.get(row_pm_key, {})
-                    host_file_pn = cur_pm.get("host_file_pn", "")
-
-                    # 构建宿主文件内所有已占用的 PN 集合：
-                    #   1. 宿主文件根节点自身的 PN（host_file_pn == pn 的独立节点）
-                    #   2. 所有 host_file_pn 相同的 Component（无论嵌套多深）
-                    occupied: set[str] = set()
-                    host_pm = self._part_masters.get(host_file_pn)
-                    if host_pm:
-                        occupied.add(host_pm.get("part_number", ""))
-                    for bk, pm in self._part_masters.items():
-                        if bk == row_pm_key:
-                            continue   # 排除自身
-                        if pm.get("host_file_pn") == host_file_pn and host_file_pn:
-                            occupied.add(pm.get("part_number", ""))
-
-                    if new_value in occupied:
-                        QMessageBox.warning(
-                            self, "零件编号冲突",
-                            f"零件编号 \"{new_value}\" 与同一产品文件内已有的零件编号冲突，"
-                            "CATIA 不允许。",
-                        )
-                        self._is_updating = True
-                        item.setText(col_idx, pn)
-                        self._is_updating = False
-                        return
+                if self._is_pn_conflicting(row_pm_key, new_value):
+                    msg = (
+                        f"零件编号 \"{new_value}\" 与同一产品文件内已有的零件编号冲突，"
+                        "CATIA 不允许。"
+                        if ":" in row_pm_key else
+                        f"零件编号 \"{new_value}\" 与现有零件编号冲突，不允许修改。"
+                    )
+                    QMessageBox.warning(self, "零件编号冲突", msg)
+                    self._is_updating = True
+                    item.setText(col_idx, pn)
+                    self._is_updating = False
+                    return
 
         # V3：以 pm_key 为单位操作 part_masters；收集所有涉及的 pm_key 和对应的写入实例
         # 每个 pm_key 只写一个实例（CATIA 自动同步），界面更新通过 _pm_key_to_inst_keys 覆盖所有实例
@@ -1632,23 +1594,59 @@ class BomEditDialogV3(QDialog):
 
     # ── 批量单元格写入（内部辅助） ────────────────────────────────────────────
 
+    def _is_pn_conflicting(self, pm_key: str, new_pn: str) -> bool:
+        """检查将 pm_key 对应的零件重命名为 new_pn 是否与现有零件编号冲突。
+
+        基于当前内存状态（_part_masters），在批量操作中可逐步调用以感知中间写入状态。
+        返回 True 表示冲突（不允许修改），False 表示无冲突。
+        """
+        if ":" not in pm_key:
+            # 独立文件节点：new_pn 不能与其他任何独立节点的 part_number 相同
+            for bk2, pm2 in self._part_masters.items():
+                if bk2 == pm_key:
+                    continue
+                if ":" in bk2:
+                    continue   # 跳过嵌入部件
+                if pm2.get("part_number") == new_pn:
+                    return True
+        else:
+            # 嵌入部件（pm_key = "pn:host_file_pn"）：
+            # 同一宿主文件内所有节点（根节点 + 所有 Component）的 PN 不能重复
+            cur_pm       = self._part_masters.get(pm_key, {})
+            host_file_pn = cur_pm.get("host_file_pn", "")
+            occupied: set[str] = set()
+            host_pm = self._part_masters.get(host_file_pn)
+            if host_pm:
+                occupied.add(host_pm.get("part_number", ""))
+            for bk, pm in self._part_masters.items():
+                if bk == pm_key:
+                    continue
+                if pm.get("host_file_pn") == host_file_pn and host_file_pn:
+                    occupied.add(pm.get("part_number", ""))
+            if new_pn in occupied:
+                return True
+        return False
+
     def _apply_cell_values(
         self,
         assignments: list[tuple[int, str, str]],
-    ) -> None:
+    ) -> int:
         """批量将 (row_idx, col_name, new_value) 写入数据层和界面，并推入撤销栈。
 
         - 每个 row_idx 对应 ``self._rows`` 的索引。
         - 只写入可编辑列（不在 BOM_READONLY_COLUMNS 中）且行未锁定的单元格。
         - 同一零件编号的多行通过 ``_key_to_items`` 一并刷新（包括 combo widget）。
         - 整批 assignments 作为一个原子步骤推入 ``_undo_stack``。
+
+        返回写入失败的次数（CATIA 拒绝或 COM 异常）；0 表示全部成功。
         """
         if not assignments:
-            return
+            return 0
 
         old_vals: dict = {}   # (pm_key, col_name) → old_value
         insts_to_update: set = set()
         affected_pm_keys: set[str] = set()
+        fail_count: int = 0
 
         for row_idx, col_name, new_value in assignments:
             if row_idx < 0 or row_idx >= len(self._rows):
@@ -1667,7 +1665,24 @@ class BomEditDialogV3(QDialog):
             key = (pm_key, col_name)
             if key not in old_vals:   # 只记录每个 pm_key+列的第一次旧值
                 old_vals[key] = old_val
-            set_part_master_attr(self._part_masters, pm_key, col_name, new_value)
+
+            # PN 修改：pm_key 永不变，通过 rename_part_master 同步 inst_info["pn"]
+            if col_name == "Part Number":
+                # 冲突前置检查（基于当前内存状态，感知批量中间写入状态）
+                if self._is_pn_conflicting(pm_key, new_value):
+                    fail_count += 1
+                    old_vals.pop(key, None)
+                    continue
+                if not rename_part_master(
+                    self._part_masters, self._pm_key_to_inst_keys, pm_key, new_value,
+                ):
+                    old_vals.pop(key, None)
+                    continue
+                for row in self._rows:
+                    if row.get("_pm_key") == pm_key:
+                        row["Part Number"] = new_value
+            else:
+                set_part_master_attr(self._part_masters, pm_key, col_name, new_value)
             affected_pm_keys.add(pm_key)
 
             # 写回 CATIA：用任意一个有效实例写一次
@@ -1679,12 +1694,21 @@ class BomEditDialogV3(QDialog):
                     break
             if not write_ok:
                 # 写入失败：回滚内存，不更新界面
-                set_part_master_attr(self._part_masters, pm_key, col_name, old_val)
+                fail_count += 1
+                if col_name == "Part Number":
+                    rename_part_master(
+                        self._part_masters, self._pm_key_to_inst_keys, pm_key, old_val,
+                    )
+                    for row in self._rows:
+                        if row.get("_pm_key") == pm_key:
+                            row["Part Number"] = old_val
+                else:
+                    set_part_master_attr(self._part_masters, pm_key, col_name, old_val)
                 affected_pm_keys.discard(pm_key)
                 old_vals.pop(key, None)
 
         if not affected_pm_keys:
-            return
+            return fail_count
 
         # 刷新界面（V3：通过 _pm_key_to_inst_keys 覆盖所有同 pm_key 实例）
         self._is_updating = True
@@ -1693,7 +1717,7 @@ class BomEditDialogV3(QDialog):
                 if row_idx < 0 or row_idx >= len(self._rows):
                     continue
                 pm_key = str(self._rows[row_idx].get("_pm_key", "")).strip()
-                if not pm_key:
+                if not pm_key or pm_key not in affected_pm_keys:
                     continue
                 col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                 if col_idx < 0:
@@ -1732,6 +1756,7 @@ class BomEditDialogV3(QDialog):
 
         self._refresh_keys_appearance(insts_to_update)
         self._update_status()
+        return fail_count
 
     # ── 撤销/重做 ─────────────────────────────────────────────────────────────
 
@@ -1932,7 +1957,12 @@ class BomEditDialogV3(QDialog):
                 return
 
         assignments = [(r, col_name, src_value) for r in target_row_indices]
-        self._apply_cell_values(assignments)
+        fail_count = self._apply_cell_values(assignments)
+        if fail_count:
+            QMessageBox.warning(
+                self, "写入失败",
+                f"有 {fail_count} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。",
+            )
 
     # ── 序列填充 ──────────────────────────────────────────────────────────────
 
@@ -1946,42 +1976,23 @@ class BomEditDialogV3(QDialog):
         - row_indices 无需排序，方法内部按 row_idx 升序排列后再依次赋值。
         - 序列格式：``{前缀}{数字:0位数}``，例如前缀 "A-"、起始 1、步长 1、位数 3
           生成 A-001, A-002, A-003...
-        - 对于 Part Number 列，每个生成值须通过合法性校验和冲突检查；
-          任意一个值不合法则中止全部操作。
+        - 写入失败（CATIA 拒绝）时不中止，全部尝试完成后以弹窗汇总失败数。
         """
         if col_name in BOM_READONLY_COLUMNS:
             return
         if len(row_indices) < 2:
             return
 
-        # 按视觉顺序排序，并按 inst_key 去重，同时过滤锁定行（未找到文件 / 轻量化）。
+        # 按视觉顺序排序，过滤锁定行（未找到文件 / 轻量化）。
         # 锁定行不可编辑，若不过滤会占用序列槽位导致序列与行错位。
-        seen_insts: set = set()
         ordered_row_indices: list[int] = []
-        duplicated_pns: set[str] = set()
         for r in sorted(row_indices):
             if r >= len(self._rows):
                 continue
             row = self._rows[r]
-            # 跳过锁定行
             if row.get("_not_found") or row.get("_unreadable"):
                 continue
-            _p = row.get("_product")
-            inst_key = id(_p) if _p is not None else None
-            pn = str(row.get("Part Number", ""))
-            if inst_key in seen_insts:
-                duplicated_pns.add(pn)
-                continue
-            seen_insts.add(inst_key)
             ordered_row_indices.append(r)
-
-        if duplicated_pns:
-            pn_list = "、".join(sorted(duplicated_pns))
-            QMessageBox.information(
-                self, "已合并重复零件",
-                f"选中行中以下零件编号在 BOM 中多次出现，\n序列填充将对每个零件只赋值一次：\n\n{pn_list}\n\n"
-                f"实际填充行数：{len(ordered_row_indices)} 行。",
-            )
 
         if len(ordered_row_indices) < 2:
             return
@@ -2249,82 +2260,13 @@ class BomEditDialogV3(QDialog):
 
         generated = [_make_value(i) for i in range(len(ordered_row_indices))]
 
-        # Part Number 列需要额外校验
-        if col_name == "Part Number":
-            for val in generated:
-                if not val.strip():
-                    QMessageBox.warning(self, "序列填充失败", "生成的零件编号含空值，请调整参数。")
-                    return
-                if not PART_NUMBER_VALID_PATTERN.fullmatch(val):
-                    QMessageBox.warning(
-                        self, "序列填充失败",
-                        f"生成的零件编号 \"{val}\" 含有非法字符。\n"
-                        "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
-                        "（\\ / : * ? \" < > |）。",
-                    )
-                    return
-            # 冲突检查：
-            # 独立文件节点：新 pn 不能与其他独立节点的 part_number 冲突
-            # 嵌入部件：新 pn 不能与同宿主文件内其他节点的 part_number 冲突
-            # pm_key 永不变，只从 pm["part_number"] 读取当前 pn
-
-            # 独立文件节点的已占用集合（排除本次填充对象自身）
-            existing_independent_pns: set[str] = {
-                pm["part_number"] for bk, pm in self._part_masters.items() if ":" not in bk
-            }
-            for r_idx in ordered_row_indices:
-                own_bk = str(self._rows[r_idx].get("_pm_key", "")).strip()
-                if ":" not in own_bk:
-                    existing_independent_pns.discard(
-                        str(self._rows[r_idx].get("Part Number", "")).strip()
-                    )
-
-            # 按宿主分组的嵌入部件已占用集合（排除本次填充对象自身）
-            # host_file_pn → set[part_number]
-            host_occupied: dict[str, set[str]] = {}
-            for bk, pm in self._part_masters.items():
-                hfp = pm.get("host_file_pn", "")
-                if not hfp:
-                    continue
-                host_occupied.setdefault(hfp, set()).add(pm["part_number"])
-            # 加入宿主根节点自身的 pn
-            for bk, pm in self._part_masters.items():
-                if ":" not in bk:
-                    hfp = pm["part_number"]
-                    if hfp in host_occupied:
-                        host_occupied[hfp].add(hfp)
-            # 排除本次填充对象自身
-            for r_idx in ordered_row_indices:
-                own_bk = str(self._rows[r_idx].get("_pm_key", "")).strip()
-                own_pm = self._part_masters.get(own_bk, {})
-                hfp = own_pm.get("host_file_pn", "")
-                if hfp and hfp in host_occupied:
-                    host_occupied[hfp].discard(
-                        str(self._rows[r_idx].get("Part Number", "")).strip()
-                    )
-
-            for i, val in enumerate(generated):
-                r_idx   = ordered_row_indices[i]
-                own_bk  = str(self._rows[r_idx].get("_pm_key", "")).strip()
-                if ":" not in own_bk:
-                    if val in existing_independent_pns:
-                        QMessageBox.warning(
-                            self, "序列填充失败",
-                            f"生成的零件编号 \"{val}\" 与 BOM 中现有零件编号冲突，操作已中止。",
-                        )
-                        return
-                else:
-                    own_pm = self._part_masters.get(own_bk, {})
-                    hfp    = own_pm.get("host_file_pn", "")
-                    if hfp and val in host_occupied.get(hfp, set()):
-                        QMessageBox.warning(
-                            self, "序列填充失败",
-                            f"生成的零件编号 \"{val}\" 与同一产品文件内已有零件编号冲突，操作已中止。",
-                        )
-                        return
-
         assignments = list(zip(ordered_row_indices, [col_name] * len(ordered_row_indices), generated))
-        self._apply_cell_values(assignments)
+        fail_count = self._apply_cell_values(assignments)
+        if fail_count:
+            QMessageBox.warning(
+                self, "写入失败",
+                f"有 {fail_count} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。",
+            )
 
     def _refresh_keys_appearance(self, inst_keys: set) -> None:
         """刷新指定 inst_key 对应所有行的视觉外观。
@@ -3061,6 +3003,7 @@ class BomEditDialogV3(QDialog):
             len(selected_row_indices) >= 2
             and bool(fill_col_name)
             and fill_col_name not in BOM_READONLY_COLUMNS
+            and fill_col_name != BOM_INSTANCE_NAME_COLUMN
             # 序列填充仅对文本列启用（Source / Preset 选项列是 combo，不支持序列）
         )
         fill_seq_enabled = fill_enabled and fill_col_name not in PRESET_USER_REF_PROPERTY_OPTIONS and fill_col_name != "Source"
@@ -3131,98 +3074,181 @@ class BomEditDialogV3(QDialog):
         elif action == act_auto_rename_instances:
             self._auto_rename_instance_names(row_idx)
         elif action == act_refresh:
-            # 收集选中节点的子树行号（包含自身）；汇总模式或零件节点退化为仅自身
-            target_level = int(self._rows[row_idx].get("Level", 0))
-            is_self_only = self._summarize or (
-                row_idx + 1 >= len(self._rows)
-                or int(self._rows[row_idx + 1].get("Level", 0)) <= target_level
-            )
-            if is_self_only:
-                refresh_indices = [row_idx]
-            else:
-                refresh_indices = []
-                for i in range(row_idx, len(self._rows)):
-                    if i > row_idx and int(self._rows[i].get("Level", 0)) < target_level:
-                        break
-                    refresh_indices.append(i)
-            self._refresh_rows_from_catia(refresh_indices)
+            # 子树递归由 _refresh_rows_from_catia 内部沿 part_masters["instances"] 完成，
+            # 此处只需传入右键所在行的行号作为起始节点。
+            self._refresh_rows_from_catia([row_idx])
 
     def _refresh_rows_from_catia(self, row_indices: list[int]) -> None:
-        """从 CATIA COM 引用重新读取指定行的属性值并刷新表格。
+        """从 CATIA COM 重新读取 part_master 属性并增量刷新表格。
 
-        通常由右键菜单"刷新属性值（子树范围）"触发，传入选中节点及其子树的行号列表。
-        汇总 BOM 模式或叶节点时退化为仅传入单行。
+        以 part_masters 为唯一数据源，参照 ``collect_bom_part_masters._traverse``
+        的读取逻辑：
 
-        以 ``_full_rows`` 为唯一数据源进行更新；完成后重新派生
-        ``_hierarchical_rows = build_hierarchical_rows(_full_rows)``，按当前模式重新
-        设置 ``_rows``，并调用 ``_populate_table()`` 重绘整张表格。
-
-        对每一行以其 COM product 对象的 ``id()`` 独立刷新；各实例完全独立，
-        不做 filepath 合并。
+        1. 从各起始行的 ``pm_key`` 出发，沿
+           ``part_masters[pm_key]["instances"]`` 递归遍历子树，收集所有唯一
+           ``pm_key``（同一 pm_key 只处理一次）。
+        2. 对每个 ``pm_key``，用 ``part_masters[pm_key]["_product"]`` 的 COM 引用
+           重新读取属性，结果写回对应的 part_master dict。
+        3. ``instance_name`` **不刷新**——它是实例级属性，存于父 part_master 的
+           ``instances[*]["instance_name"]`` 中，不属于 part_master 本身。
+        4. Part Number 若有变动，通过 ``rename_part_master`` 同步更新所有父节点
+           的 ``inst_info["pn"]`` 及 ``_rows`` 中的对应记录；其余属性通过
+           ``set_part_master_attr`` 写入。
+        5. 刷新完成后通过 ``_pm_key_to_inst_keys`` / ``_inst_to_items`` 增量更新
+           受影响行的显示值，**不重建整棵树**（无 ``_populate_table`` 调用）。
+           只更新 PM 级属性列；结构列（Level / Type / Filename / Quantity /
+           Instance Name）不随属性刷新变化，跳过。
         """
         if not row_indices:
             return
 
+        # ── 1. 从起始行收集唯一 pm_key ────────────────────────────────────────
+        seen_starts: set[str] = set()
+        start_pm_keys: list[str] = []
+        for row_idx in row_indices:
+            if row_idx >= len(self._rows):
+                continue
+            pm_key = str(self._rows[row_idx].get("_pm_key", "")).strip()
+            if pm_key and pm_key in self._part_masters and pm_key not in seen_starts:
+                seen_starts.add(pm_key)
+                start_pm_keys.append(pm_key)
+
+        if not start_pm_keys:
+            return
+
+        # ── 2. 沿 instances 递归收集子树内全部唯一 pm_key（前序，同 _traverse）──
+        ordered_pm_keys: list[str] = []
+        visited: set[str] = set()
+
+        def _collect(pk: str) -> None:
+            if pk in visited or pk not in self._part_masters:
+                return
+            visited.add(pk)
+            ordered_pm_keys.append(pk)
+            for inst in self._part_masters[pk].get("instances", []):
+                _collect(inst["pm_key"])
+
+        for pk in start_pm_keys:
+            _collect(pk)
+
+        # ── 3. 逐 pm_key 从 COM 重新读取属性 ──────────────────────────────────
         all_read_cols = list(dict.fromkeys(
             BOM_EDIT_COLUMN_ORDER
             + [c for c in self._all_custom_columns if c not in BOM_EDIT_COLUMN_ORDER]
         ))
 
         progress = QProgressDialog(
-            f"正在刷新 {len(row_indices)} 行…", None, 0, len(row_indices), self
+            f"正在刷新 {len(ordered_pm_keys)} 个零件…",
+            None, 0, len(ordered_pm_keys), self,
         )
         progress.setWindowTitle("刷新属性值")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
 
-        refreshed_pns: set[str] = set()
-
+        refreshed_pm_keys: set[str] = set()
         try:
-            for i, row_idx in enumerate(row_indices):
+            for i, pm_key in enumerate(ordered_pm_keys):
                 progress.setValue(i)
                 QApplication.processEvents()
 
-                if row_idx >= len(self._rows):
+                pm = self._part_masters.get(pm_key)
+                if pm is None:
                     continue
-                row_data = self._rows[row_idx]
-                product  = row_data.get("_product")
+                if pm.get("_not_found") or pm.get("_unreadable"):
+                    continue
+                product = pm.get("_product")
                 if product is None:
                     continue
-                if row_data.get("_not_found") or row_data.get("_unreadable"):
-                    continue
 
-                pn          = str(row_data.get("Part Number", ""))
-                is_embedded = str(row_data.get("Type", "")) == BomNodeType.COMPONENT
-
+                # 嵌入部件（host_file_pn 非空）不走 ReferenceProduct，同 _traverse
+                is_embedded = bool(pm.get("host_file_pn"))
                 try:
                     new_props = refresh_row_from_com(
                         product, all_read_cols, self._all_custom_columns,
                         is_component=is_embedded,
                     )
                 except Exception as e:
-                    logger.warning("刷新行 %d 失败：%s", row_idx, e)
+                    logger.warning("刷新 pm_key=%r 失败：%s", pm_key, e)
                     continue
 
-                # V3：直接更新 part_masters（唯一真相），不需要更新 _full_rows
-                pm_key_ref = str(row_data.get("_pm_key", "")).strip()
-                if pm_key_ref and pm_key_ref in self._part_masters:
-                    for col, val in new_props.items():
-                        set_part_master_attr(self._part_masters, pm_key_ref, col, val)
+                # 写回 part_master；不触碰 instances / _product 等结构字段
+                # Part Number 改名需同步 inst_info["pn"] 及 _rows，单独走 rename_part_master
+                for col, val in new_props.items():
+                    if col == "Part Number":
+                        if val != pm.get("part_number", ""):
+                            rename_part_master(
+                                self._part_masters,
+                                self._pm_key_to_inst_keys,
+                                pm_key,
+                                val,
+                            )
+                            # _rows 同步，保证增量刷新路径与 _apply_cell_values 一致
+                            for row in self._rows:
+                                if row.get("_pm_key") == pm_key:
+                                    row["Part Number"] = val
+                    else:
+                        set_part_master_attr(self._part_masters, pm_key, col, val)
 
-                if pn:
-                    refreshed_pns.add(pn)
+                refreshed_pm_keys.add(pm_key)
 
-            progress.setValue(len(row_indices))
+            progress.setValue(len(ordered_pm_keys))
         finally:
             progress.close()
 
-        if refreshed_pns:
-            # 从 part_masters 重新生成行列表并刷新表格
-            self._rebuild_rows()
-            self._populate_table()
-            n = len(refreshed_pns)
-            self._last_write_status = f"已刷新：{n} 个零件（{n} PNs）"
-            self._update_status()
+        if not refreshed_pm_keys:
+            return
+
+        # ── 4. 增量刷新受影响行的显示值（不重建整棵树）──────────────────────────
+        # 结构列（Level / Type / Filename / Filepath / Quantity / Instance Name /
+        # Row Number）不随属性刷新变化，跳过；只更新 PM 级属性列。
+        _skip_cols: frozenset[str] = frozenset((
+            BOM_ROW_NUMBER_COLUMN,
+            BOM_INSTANCE_NAME_COLUMN,
+            "Quantity", "Filename", "Filepath",
+        )) | frozenset(BOM_READONLY_COLUMNS)
+
+        self._is_updating = True
+        try:
+            for pm_key in refreshed_pm_keys:
+                for ik in self._pm_key_to_inst_keys.get(pm_key, []):
+                    for tree_item in self._inst_to_items.get(ik, []):
+                        row_idx = tree_item.data(0, Qt.ItemDataRole.UserRole)
+                        if row_idx is None or row_idx >= len(self._rows):
+                            continue
+                        row_data = self._rows[row_idx]
+                        for col_idx, col_name in enumerate(self._columns):
+                            if col_name in _skip_cols:
+                                continue
+                            if col_name == "Source":
+                                raw = get_part_master_attr(
+                                    self._part_masters, pm_key, "Source", "")
+                                display_val = SOURCE_TO_DISPLAY.get(
+                                    raw, SOURCE_OPTIONS[0])
+                                widget = self._table.itemWidget(tree_item, col_idx)
+                                if isinstance(widget, QComboBox):
+                                    widget.blockSignals(True)
+                                    widget.setCurrentText(display_val)
+                                    widget.blockSignals(False)
+                            elif PRESET_USER_REF_PROPERTY_OPTIONS.get(col_name) is not None:
+                                val = get_part_master_attr(
+                                    self._part_masters, pm_key, col_name,
+                                    str(row_data.get(col_name, "")))
+                                widget = self._table.itemWidget(tree_item, col_idx)
+                                if isinstance(widget, QComboBox):
+                                    widget.blockSignals(True)
+                                    widget.setCurrentText(val)
+                                    widget.blockSignals(False)
+                            else:
+                                val = get_part_master_attr(
+                                    self._part_masters, pm_key, col_name,
+                                    str(row_data.get(col_name, "")))
+                                if tree_item.text(col_idx) != val:
+                                    tree_item.setText(col_idx, val)
+        finally:
+            self._is_updating = False
+
+        self._last_write_status = f"已刷新：{len(refreshed_pm_keys)} 个零件"
+        self._update_status()
 
     def _open_path(self, fp: str) -> None:
         """在 Windows 资源管理器中打开包含 *fp* 的文件夹，并高亮选中该文件。
