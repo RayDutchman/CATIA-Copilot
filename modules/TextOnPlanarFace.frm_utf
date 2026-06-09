@@ -25,7 +25,7 @@ Private Sub cmdRun_Click()
 If CATIA.ActiveDocument Is Nothing Then Exit Sub
 Set oActDoc = CATIA.ActiveDocument
 If TypeName(oActDoc) <> "PartDocument" Then
-    MsgBox "此命令只能在零件设计模块下运行", , "臭豆腐工具箱CATIA版|平面刻字"
+    MsgBox "此命令只能在零件设计模块下运行", , "CATIA工具箱|平面刻字"
     Exit Sub
 End If
 
@@ -519,10 +519,6 @@ End Sub
 '####################打开网站##########################
 Private Sub lblWebSite_Click()
 Shell "explorer.exe https://" & lblWebSite.Caption, vbNormalFocus
-End Sub
-
-Private Sub txtInput_Change()
-
 End Sub
 
 '####################窗体启动##########################

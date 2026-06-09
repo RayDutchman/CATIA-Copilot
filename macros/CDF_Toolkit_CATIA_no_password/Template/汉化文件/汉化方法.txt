@@ -1,0 +1,3 @@
+将ManufacturingNLS.CATNls和CATPrdReorderWindow.CATNIs复制到CATIA安装目录下的..\win_b64\resources\msgcatalog\Simplified_Chinese\, 选择替换原文件。
+选择覆盖
+2024-06-17

@@ -36,7 +36,3 @@ Set oUserPara = oPrd.UserRefProperties
         End If
     Next
 End Sub
-
-Private Sub Frame1_Click()
-
-End Sub

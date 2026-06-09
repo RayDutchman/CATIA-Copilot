@@ -57,11 +57,7 @@ Dimension_Tag_2D.CATMain
 End Sub
 
 Private Sub cmdDrwAuto_Click()
-On Error Resume Next
-Shell oCATVBA_Folder.Path & "\AutoDrw_Reg.exe", vbNormalFocus
-If Err.Number <> 0 Then
-MsgBox "无法调用 AutoDrw_Reg.exe" & vbCrLf & "请确认 AutoDrw_Reg.exe 存在于" & oCATVBA_Folder.Path, vbQuestion, "臭豆腐工具箱CATIA版"
-End If
+MsgBox "此功能需要 AutoDrw_Reg.exe，当前版本不包含此组件。", vbInformation, "CATIA工具箱"
 End Sub
 
 Private Sub cmdDrwLink_Click()
@@ -128,11 +124,7 @@ End Sub
 
 
 Private Sub cmdPrgList_Click()
-On Error Resume Next
-Shell oCATVBA_Folder.Path & "\CNCTools_Reg.exe", vbNormalFocus
-If Err.Number <> 0 Then
-MsgBox "无法调用 CNCTools_Reg.exe" & vbCrLf & "请确认 CNCTools_Reg.exe存在于" & oCATVBA_Folder.Path, vbQuestion, "臭豆腐工具箱CATIA版"
-End If
+MsgBox "此功能需要 CNCTools_Reg.exe，当前版本不包含此组件。", vbInformation, "CATIA工具箱"
 End Sub
 
 Private Sub cmdPrgListExcel_Click()
@@ -146,11 +138,7 @@ End Sub
 
 
 Private Sub cmdReg_Click()
-On Error Resume Next
-Shell oCATVBA_Folder.Path & "\" & "Reg.exe", vbNormalFocus
-If Err.Number <> 0 Then
-MsgBox "无法调用Reg.exe！" & vbCrLf & "请确认Reg.exe存在于" & oCATVBA_Folder.Path & vbCrLf & "你也可以找到此Reg.exe双击运行注册。", vbQuestion, "臭豆腐工具箱CATIA版"
-End If
+MsgBox "此功能需要 Reg.exe，当前版本不包含此组件。", vbInformation, "CATIA工具箱"
 End Sub
 
 Private Sub cmdSelDims_Click()
@@ -672,11 +660,4 @@ Send_2_SubFolder_3D.CATMain
 End Sub
 
 Private Sub UserForm_Initialize()
-'On Error Resume Next
-
-Dim Picfile
-Picfile = "Chtang80.jpg"
-Picfile = oCATVBA_Folder("Config").Path & "\" & Picfile
-Image1.Picture = LoadPicture(Picfile)
-
 End Sub

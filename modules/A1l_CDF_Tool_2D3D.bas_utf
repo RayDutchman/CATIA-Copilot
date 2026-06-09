@@ -1,6 +1,6 @@
 Option Explicit
 #If VBA7 Then
-    ' VBA7 (Office 2010及以上，支持64位)(测试写入)
+    ' VBA7 (Office 2010及以上，支持64位)
     Public Declare PtrSafe Function GetCursorPos Lib "user32" (lpPoint As POINTAPI) As Long
     #If Win64 Then
         Public Declare PtrSafe Function MonitorFromPoint Lib "user32" (ByVal xPoint As LongLong, ByVal yPoint As LongLong, ByVal dwFlags As Long) As LongPtr
@@ -58,7 +58,7 @@ Public Const MONITOR_DEFAULTTONEAREST = 2
 
 Public oActDoc As Object, objExcel As Object
 Public oSel As Object
-'Const CATVBAPATH = "D:\UGmeetsCATIA\CDF_Toolkit_CATIA"
+'Const CATVBAPATH = "D:\CATIA_Related\CATIA-Copilot\macros\CDF_Toolkit_CATIA"
 
 Sub CATMain()
 
@@ -94,22 +94,43 @@ End If
 End Sub
 
 Public Function oCATVBA_Folder(Optional ByVal sFolder As String)
- '取得于当前CATVBA文件路径同目录的子文件夹,无参数sFolder则取得当前catvba所在目录，
- '有参数sFolder则取得或创建与.catvba同一父目录的子目录sFolder
+    ' 动态获取当前 .catvba 文件所在目录，无硬编码路径
+    ' 有参数 sFolder 则取得（或创建）与 .catvba 同目录的子目录 sFolder
 
-Dim oFSO, CATVBA_Dir
-   Set oFSO = CreateObject("Scripting.FileSystemObject")
-'     CATVBA_Dir = oFSO.GetParentFolderName(CATVBA_Path)
-CATVBA_Dir = "D:\UGmeetsCATIA\CDF_Toolkit_CATIA"
-If sFolder <> "" Then
+    Dim oFSO As Object
+    Dim CATVBA_Dir As String
+    Set oFSO = CreateObject("Scripting.FileSystemObject")
+
+    ' 通过 MSAPC 获取当前正在执行的 .catvba 项目完整路径
+    On Error Resume Next
+    Dim oApc As Object
+    #If VBA7 Then
+        Set oApc = CreateObject("MSAPC.Apc.7.1")
+    #Else
+        Set oApc = CreateObject("MSAPC.Apc.6.2")
+    #End If
+    Dim sProjectPath As String
+    sProjectPath = oApc.ExecutingProject.DisplayName
+    On Error GoTo 0
+
+    If oFSO.FileExists(sProjectPath) Then
+        ' 正常情况：取 .catvba 文件的父目录
+        CATVBA_Dir = oFSO.GetParentFolderName(sProjectPath)
+    Else
+        ' 兜底：取当前活动文档的保存目录
+        On Error Resume Next
+        CATVBA_Dir = oFSO.GetParentFolderName(CATIA.ActiveDocument.FullName)
+        On Error GoTo 0
+    End If
+
+    If sFolder <> "" Then
         CATVBA_Dir = CATVBA_Dir & "\" & sFolder
-        'MsgBox CATVBA_Dir
-            If Not oFSO.FolderExists(CATVBA_Dir) Then
-                oFSO.CreateFolder (CATVBA_Dir)
-            End If
-End If
-    
-Set oCATVBA_Folder = oFSO.GetFolder(CATVBA_Dir)
+        If Not oFSO.FolderExists(CATVBA_Dir) Then
+            oFSO.CreateFolder CATVBA_Dir
+        End If
+    End If
+
+    Set oCATVBA_Folder = oFSO.GetFolder(CATVBA_Dir)
 
 End Function
 

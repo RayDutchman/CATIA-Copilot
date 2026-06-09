@@ -44,11 +44,11 @@ ElseIf n1 > 1 Then
     shortDrwName = Right(arr(i), Len(arr(i)) - InStrRev(arr(i), "\"))
     drwlist = drwlist & vbCrLf & shortDrwName
     Next
-    If (MsgBox("当前文件夹下找到疑似工程图" & UBound(arr) + 1 & "个，需要手动打开工程图吗？" & vbCrLf & drwlist, vbQuestion + vbYesNo, "臭豆腐工具箱CATIA版") = vbYes) Then
+    If (MsgBox("当前文件夹下找到疑似工程图" & UBound(arr) + 1 & "个，需要手动打开工程图吗？" & vbCrLf & drwlist, vbQuestion + vbYesNo, "CATIA工具箱") = vbYes) Then
     Open_Current_Folder.CATMain
     End If
 ElseIf n1 < 1 Then
-    If (MsgBox("当前文件夹下找不到对应工程图！需要手动打开文件夹吗？", vbQuestion + vbYesNo, "臭豆腐工具箱CATIA版") = vbYes) Then
+    If (MsgBox("当前文件夹下找不到对应工程图！需要手动打开文件夹吗？", vbQuestion + vbYesNo, "CATIA工具箱") = vbYes) Then
     Open_Current_Folder.CATMain
     End If
 End If

@@ -8,7 +8,7 @@ Sub CATMain()
     If TypeName(oDocument) <> "DrawingDocument" Then
         MsgBox "此命令的功能是将工程图的剖视图，断面视图，细节视图，向视图，轴测视图按中国国标命名，因此需要在工程制图环境下运行！" & vbCrLf & _
                      "运行此宏命令后，在工程制图的激活视图中单击鼠标左键以将视图名称放置在指定位置即可！" & vbCrLf & vbCrLf & _
-                     "请在工程制图环境下运行此命令，现在退出...", vbInformation, "臭豆腐工具箱CATIA版”"
+                     "请在工程制图环境下运行此命令，现在退出...", vbInformation, "CATIA工具箱”"
         Exit Sub
         
     End If

@@ -363,7 +363,7 @@ ElseIf Right(sDocTemplate, 11) = ".CATDrawing" Then
    doctype = ".CATDrawing"
 End If
 If doctype = "" Then
-MsgBox "模板类型错误！", vbInformation, "臭豆腐工具箱CATIA版"
+MsgBox "模板类型错误！", vbInformation, "CATIA工具箱"
 Exit Sub
 End If
 
@@ -389,7 +389,7 @@ Select Case TypeName(oActDoc)
             End If
             
             If saveFolder = "" Then
-            MsgBox "找不到当前所选装配的保存路径，请先保存当前再添加子件！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+            MsgBox "找不到当前所选装配的保存路径，请先保存当前再添加子件！", vbInformation + vbOKOnly, "Toolkit for CATIA"
             Exit Sub
             End If
             
@@ -400,15 +400,15 @@ Select Case TypeName(oActDoc)
             Err.Clear
             
             If doctype <> ".CATDrawing" Then
-                saveFullName = InputBox("保存文件:", "CDF Toolkit for CATIA || 唐国庆 13507468076", saveFolder & "\" & newPrdDoc.Product.PartNumber & doctype)
+                saveFullName = InputBox("保存文件:", "Toolkit for CATIA", saveFolder & "\" & newPrdDoc.Product.PartNumber & doctype)
                 If saveFullName <> "" Then
                     newPrdDoc.SaveAs (saveFullName)
                     If Err.Number <> 0 Then
-                    MsgBox "保存时出了问题，请检查文件路径是否完整或文件是否已重名？你需要手动另存或添加！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+                    MsgBox "保存时出了问题，请检查文件路径是否完整或文件是否已重名？你需要手动另存或添加！", vbInformation + vbOKOnly, "Toolkit for CATIA"
                     Exit Sub
                     End If
                 Else
-                    MsgBox "文件未保存,你需要手动另存或添加！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+                    MsgBox "文件未保存,你需要手动另存或添加！", vbInformation + vbOKOnly, "Toolkit for CATIA"
                     Exit Sub
                 End If
                 Err.Clear
@@ -419,22 +419,22 @@ Select Case TypeName(oActDoc)
                 newPrdDoc.Close
                 oSel.Products.AddComponentsFromFiles ifilelist, "All"
                 If Err.Number <> 0 Then
-                   MsgBox "无法在选定零件下添加子件！" & vbCrLf & "零件/产品已经创建，但未成功添加到当前目录树！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+                   MsgBox "无法在选定零件下添加子件！" & vbCrLf & "零件/产品已经创建，但未成功添加到当前目录树！", vbInformation + vbOKOnly, "Toolkit for CATIA"
                 Else
                     If DesInst <> "" Then
                     oSel.Products.Item(oSel.Products.Count).Name = DesInst
                     End If
                 End If
             Else
-                saveFullName = InputBox("保存文件:", "CDF Toolkit for CATIA || 唐国庆 13507468076", saveFolder & "\" & oSel.PartNumber & doctype)
+                saveFullName = InputBox("保存文件:", "Toolkit for CATIA", saveFolder & "\" & oSel.PartNumber & doctype)
                 If saveFullName <> "" Then
                     newPrdDoc.SaveAs (saveFullName)
                     If Err.Number <> 0 Then
-                    MsgBox "保存时出了问题，请检查文件路径是否完整或文件是否已重名？你需要手动另存或添加！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+                    MsgBox "保存时出了问题，请检查文件路径是否完整或文件是否已重名？你需要手动另存或添加！", vbInformation + vbOKOnly, "Toolkit for CATIA"
                     Exit Sub
                     End If
                 Else
-                    MsgBox "文件未保存,你需要手动另存或添加！", vbInformation + vbOKOnly, "CDF Toolkit for CATIA"
+                    MsgBox "文件未保存,你需要手动另存或添加！", vbInformation + vbOKOnly, "Toolkit for CATIA"
                     Exit Sub
                 End If
                 Err.Clear
@@ -452,10 +452,10 @@ On Error Resume Next
 Set newDocFrom = CATIA.Documents.NewFrom(templatefullpath)
 If Err.Number <> 0 Then
 MsgBox "从模板新建失败，可能的原因是:" & vbCrLf & _
-       "1. 臭豆腐工具箱CATIA版没有按指导安装，本插件需要安装在特定的目录下 C:或D:\UGmeetsCATIA\.." & vbCrLf & _
+       "1. CATIA工具箱没有按指导安装，本插件需要安装在特定的目录下 D:\CATIA_Related\CATIA-Copilot\macros\.." & vbCrLf & _
        "2. 模板文件名包含中文或特殊字符" & vbCrLf & _
        "3. 当前使用的CATIA版本比模板文件的CATIA版本低,CATIA打不开模板文件,模板文件应当放在" & vbCrLf & _
-       oCATVBA_Folder("Template\Start_Part").Path, vbInformation, "臭豆腐工具箱CATIA版"
+       oCATVBA_Folder("Template\Start_Part").Path, vbInformation, "CATIA工具箱"
 Exit Function
 End If
 If Right(templatefullpath, 11) = ".CATDrawing" Then

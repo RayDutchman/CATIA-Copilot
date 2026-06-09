@@ -20,7 +20,7 @@ If Err.Number <> 0 Then
 Exit Sub
 End If
 If CreateObject("Scripting.FileSystemObject").FolderExists(s) = False Then
-MsgBox "文件夹不存在,当前活动文档是否并未保存？", vbInformation, "臭豆腐工具箱CATIA版"
+MsgBox "文件夹不存在,当前活动文档是否并未保存？", vbInformation, "CATIA工具箱"
 Exit Sub
 End If
 winHwnd = FindWindow(vbNullString, Right(s, Len(s) - InStrRev(s, "\")))
