@@ -1,0 +1,4 @@
+Sub CATMain()
+TextOnPlanarFace.Show vbModeless
+TextOnPlanarFace.Left = TextOnPlanarFace.Left * 2
+End Sub
