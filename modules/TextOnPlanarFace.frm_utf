@@ -516,10 +516,6 @@ End If
     read_OK = GetPrivateProfileString("平面刻字", "镜像", "0", read2, 256, sConfpath & "\Conf1.ini")
     cbxMirror.ListIndex = read2
 End Sub
-'####################打开网站##########################
-Private Sub lblWebSite_Click()
-Shell "explorer.exe https://" & lblWebSite.Caption, vbNormalFocus
-End Sub
 
 '####################窗体启动##########################
 Private Sub UserForm_Activate()
