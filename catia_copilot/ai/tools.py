@@ -69,6 +69,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 - **不要在每次操作前主动调用 check_catia_connection**；仅当某个工具返回的错误信息指向 CATIA 无法连接（如 "CATIA 未连接"、COM 连接失败等）时，才调用它来诊断原因。
 - 需要文件路径时，先调用 get_open_documents 获取当前已打开文档的准确路径，不要猜测或编造路径。
+- 不要重复打开 CATIA 中已经打开的文件，改动过的文件也无须主动保存，除非用户要求。
 - 不确定用户意图时，先询问，不要擅自执行可能修改文件的操作。
 - 工具返回 error 时，向用户说明原因，不要静默重试。
 
@@ -76,7 +77,7 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 **BOM 操作**
 - collect_bom / export_bom_to_excel：file_path 传 null 使用当前活动文档。
-- write_bom_to_catia 写回属性后，必须调用 save_catia_document 保存，否则修改在关闭 CATIA 后丢失。
+- write_bom_to_catia 写回属性后，无须主动保存，除非用户要求，此时调用 save_catia_document 保存。
 - write_bom_to_catia 的 custom_columns 需与 collect_bom 时使用的 custom_columns 保持一致。
 
 **图纸操作**
@@ -1293,7 +1294,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "check_catia_connection",
-            "description": ("检查 CATIA V5 的 COM 连接状态。""返回值：connected=连接正常；broken=CATIA 进程存在但 COM 连接失败（通常是权限问题）；""disconnected=CATIA 未运行。""建议在执行任何 CATIA 操作前先调用此工具确认连接。"),
+            "description": ("检查 CATIA V5 的 COM 连接状态。""返回值：connected=连接正常；broken=CATIA 进程存在但 COM 连接失败（通常是权限问题）；disconnected=CATIA 未运行。"),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1315,7 +1316,7 @@ tools_schema: list[dict[str, Any]] = [
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "文件的完整 Windows 路径，例如 D:\\\\project\\\\part.CATPart",
+                        "description": "文件的完整 Windows 路径，例如 D:\\project\\part.CATPart",
                     },
                     "foreground": {
                         "type": "boolean",
@@ -1420,7 +1421,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_bom_to_catia",
-            "description": ("将编辑后的属性值批量写回 CATIA 文档中各零件的用户自定义属性。""注意：写回后不会自动保存，需调用 save_catia_document 保存文件，否则修改在关闭 CATIA 后丢失。""file_path 为 null 时操作当前活动文档。"),
+            "description": ("将编辑后的属性值批量写回 CATIA 文档中各零件的用户自定义属性。""注意：写回后无须调用 save_catia_document 保存文件，文字提示用户保存即可。""file_path 为 null 时操作当前活动文档。"),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1553,7 +1554,7 @@ tools_schema: list[dict[str, Any]] = [
         "function": {
             "name": "collect_mass_props",
             "description": (
-                "采集 CATProduct 产品树中所有节点的质量特性（质量 kg、重心 m、转动惯量 kg*m^2），"
+                "采集 CATProduct 产品树中所有节点的质量特性（质量 kg、重心 mm、转动惯量 kg*mmm^2），"
                 "重心和惯量坐标已变换到根产品坐标系。"
                 "数据来源：CATIA SPA 工具写入的惯量包络体保持测量参数；"
                 "若零件未做保持测量，对应行的 Weight 等字段为 null。"

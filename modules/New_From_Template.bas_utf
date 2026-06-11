@@ -1,0 +1,8 @@
+Option Explicit
+Sub CATMain()
+
+IntCATIA
+
+NewfrmTemplate.Show vbModeless
+NewfrmTemplate.Left = NewfrmTemplate.Left * 2
+End Sub

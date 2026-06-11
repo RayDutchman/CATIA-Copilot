@@ -1,0 +1,78 @@
+# Cat5Dev 設定ファイル
+
+[project]
+# 対象の CATIA VBA プロジェクト名
+target_project = "CDF_Toolkit_CATIA"
+language = "zh"
+encoding = "gbk"
+
+[lint]
+enabled = false
+
+[lint.rules]
+# Option Explicit が宣言されていない場合に警告
+option_explicit = true
+
+# On Error Resume Next の使用時に警告
+on_error_resume_next = false
+
+# GoTo の使用時に警告 (On Error GoTo は除外)
+goto = false
+
+# 指定の文字数を超える行がある場合に警告 (0 = 無効)
+max_line_length = 100
+
+# Dim で宣言された変数が使用されていない場合に警告
+unused_variables = true
+
+# ネスト深さが閾値を超えた場合に警告 (0 = 無効)
+max_nesting_depth = 5
+
+# Sub/Function の行数が閾値を超えた場合に警告 (0 = 無効)
+max_function_lines = 300
+
+# 括弧の不一致をエラーとして報告
+unmatched_parens = true
+
+# End If / End Sub / End Function 等の欠落をエラーとして報告
+unmatched_blocks = true
+
+[formatter]
+# フォーマッターの有効/無効
+enabled = false
+
+# インデントのスペース数
+indent_size = 4
+
+# VBA キーワードを大文字化 (If, Dim, Sub 等)
+capitalize_keywords = true
+
+# インデントの修正
+fix_indentation = true
+
+# 行末の空白を削除
+trim_trailing_space = true
+
+# 継続文字 (_) の前にスペースを入れる
+ensure_continuation_space = true
+
+# 継続行を1レベルインデント
+indent_continuation_lines = true
+
+# 連続する空白行の最大数 (0 = 無効)
+max_blank_lines = 2
+
+# 演算子 (=, +, - 等) 周囲のスペースを正規化
+normalize_operator_spacing = false
+
+# カンマ後のスペースを正規化
+normalize_comma_spacing = false
+
+# コメント文字 (') の後にスペースを入れる
+normalize_comment_space = false
+
+# 型サフィックスの短縮形を展開 (% → Integer, $ → String 等)
+expand_type_suffixes = false
+
+# 保存時に自動フォーマット
+format_on_save = true

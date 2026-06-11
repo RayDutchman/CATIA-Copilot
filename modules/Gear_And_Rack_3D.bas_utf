@@ -1,0 +1,11 @@
+Option Explicit
+
+Const exeprg = "Gear_And_Rack_3D.exe"
+
+Sub CATMain()
+On Error Resume Next
+Shell oCATVBA_Folder.Path & "\" & exeprg, vbNormalFocus
+If Err.Number <> 0 Then
+MsgBox "无法调用" & exeprg & vbCrLf & "请确认" & exeprg & "存在于" & oCATVBA_Folder.Path, vbQuestion, "CATIA工具箱"
+End If
+End Sub

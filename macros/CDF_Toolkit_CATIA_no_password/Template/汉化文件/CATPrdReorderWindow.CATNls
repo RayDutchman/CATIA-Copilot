@@ -1,0 +1,24 @@
+// Message catalog for the reorder window (CATFrmWindow)
+Title = "图形树重新排序";
+Help="更改图形树中选定产品的子产品的顺序";
+// FrameWindow.FrameList.ListProduct.Title = "产品列表";
+// FrameWindow.FrameList.ListProduct.LongHelp = "选定产品的子级";
+// FrameWindow.FrameList.ListProduct.Help = "要移动的产品";
+// FrameWindow.FrameList.ListProduct.ShortHelp = "要移动的产品";
+// FrameWindow.FrameList.Title = "产品列表";
+// FrameWindow.FrameList.LongHelp = "选定产品的子级";
+// FrameWindow.FrameList.Help = "要移动的产品";
+// FrameWindow.FrameList.ShortHelp = "要移动的产品";
+FrameWindow.FrameAction.btnUp.Title = "上移";
+FrameWindow.FrameAction.btnUp.LongHelp = "上移选定产品。";
+FrameWindow.FrameAction.btnUp.Help = "上移选定产品。";
+FrameWindow.FrameAction.btnUp.ShortHelp = "上移选定产品。";
+FrameWindow.FrameAction.btnDown.Title = "下移";
+FrameWindow.FrameAction.btnDown.LongHelp = "下移选定产品。";
+FrameWindow.FrameAction.btnDown.Help = "下移选定产品。";
+FrameWindow.FrameAction.btnDown.ShortHelp = "下移选定产品。";
+FrameWindow.FrameAction.btnFree.Title = "自由移动";
+FrameWindow.FrameAction.btnFree.LongHelp = "移动选定的产品。";
+FrameWindow.FrameAction.btnFree.Help = "移动选定的产品。";
+FrameWindow.FrameAction.btnFree.ShortHelp = "移动选定的产品。";
+
