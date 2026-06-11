@@ -270,9 +270,47 @@ ppy.update()
 | 编号 | 问题 | 优先级 |
 |------|------|--------|
 | P1 | ~~零件真正 Z 轴的 COM 获取方式~~ | **已解决**：`HybridShapeFactory.AddNewLinePtPt((0,0,0),(0,0,1))` → `CreateReferenceFromObject` |
-| P2 | ~~实体 B-Rep 面 → 草图支撑 Reference 的正确 COM 获取方式~~ | **已解决**：`CreateReferenceFromBRepName` 可获取面引用但 Pad update 失败（`WithTemporaryBody`）；**回退方案**：`add_new_plane_offset` + `InsertHybridShape` 创建偏移平面，在其上建草图，完全可靠。API：`add_sketch_at_height(part, height, base_plane)` |
-| P3 | 侧面（非水平面）`set_absolute_axis_data` 参数计算逻辑 | 中 |
+| P2 | ~~实体 B-Rep 面 → 草图直接支撑（关联顶面建模）~~ | **已解决（2026-06-11）**，见下方 |
+| P3 | 侧面（非水平面）建草图 | 中，可用 add_sketch_on_pad_top 处理水平面，侧面待探索 |
 | P4 | Groove 在 Shaft Update 后 `AddNewGroove` 失败的根本原因 | 中 |
+
+### P2 解决方案（B-Rep 面直接作为草图支撑）
+
+**关键发现来源**：VBA 宏录制（在顶面手工建草图后录制宏）。
+
+#### 正确方法
+
+```python
+# 顶面（idx=2）
+ref_str = f"Selection_RSur:(Face:(Brp:({en_name};2);None:());{en_name}_ResultOUT)"
+
+# 底面（idx=1）
+ref_str = f"Selection_RSur:(Face:(Brp:({en_name};1);None:());{en_name}_ResultOUT)"
+
+# 侧面（草图第 N 条边对应的面）
+# 草图英文名：草图.N → Sketch.N（固定映射）
+en_sk   = "Sketch." + cn_sketch_name.split(".")[-1]
+ref_str = (f"Selection_RSur:(Face:(Brp:({en_pad};0:(Brp:({en_sk};{edge_index})));"
+           f"None:());{en_pad}_ResultOUT)")
+
+# 通用步骤
+ref_com = part_com.CreateReferenceFromName(ref_str)   # 注意：FromName 不是 FromBRepName
+sketch  = part.main_body.sketches.add(PyRef(ref_com))
+```
+
+**侧面 edge_index 与 draw_rect(x,y,w,h) 的对应关系**（由绘制顺序决定）：
+
+| edge_index | 侧面 | 草图 origin | H 轴 | V 轴 |
+|-----------|------|------------|------|------|
+| 1 | Y=y 的面 | (x, y, 0) | X+ | Z+ |
+| 2 | X=x+w 的面 | (x+w, y, 0) | Y+ | Z+ |
+| 3 | Y=y+h 的面 | (x+w, y+h, 0) | X- | Z+ |
+| 4 | X=x 的面 | (x, y+h, 0) | Y- | Z+ |
+
+**已实现的 API（`modeling.py` + `ModelingContext`）**：
+- `add_sketch_on_pad_top(part, pad)` — 顶面
+- `add_sketch_on_pad_bottom(part, pad)` — 底面
+- `add_sketch_on_pad_side(part, pad, edge_index)` — 侧面
 
 ---
 
@@ -288,3 +326,130 @@ ppy.update()
 | `experiments/explore_brepnames_v12.py` | v12 | sketches.add + get_absolute_axis_data |
 | `experiments/explore_brepnames_v13.py` | v13 | PyRef 包装修复 + 面识别 |
 | `experiments/explore_brepnames_v14.py` | v14 | 定位草图（set_absolute_axis_data）|
+
+---
+
+## 9. Pocket 面 / 边 BRep 格式（2026-06-11，宏录制验证）
+
+### 9.1 面格式
+
+| 面类型 | BRep 格式 | 说明 |
+|--------|-----------|------|
+| 底面（挖槽最深处） | `Face:(Brp:(Pocket.1;2);None:();Cf14:())` | 固定 idx=2 |
+| 侧面 | `Face:(Brp:(Pocket.1;0:(Brp:(Sketch.2;N)));None:();Cf14:())` | N=草图边索引 |
+| **开口面** | **不属于 Pocket**，是下层 Pad 的顶面 | 用 `_brep_face_top(en_pad)` |
+
+> 注意：Pocket 无 `idx=1` 的面，开口面归属下层特征。
+
+### 9.2 边格式（由宏直接验证）
+
+```
+# 开口楞（= Pad.1 顶面 × Pocket.1 侧面(草图边2)）
+REdge:(Edge:(Face:(Brp:(Pad.1;2);None:();Cf14:());
+             Face:(Brp:(Pocket.1;0:(Brp:(Sketch.2;2)));None:();Cf14:());
+             None:(Limits1:();Limits2:());Cf14:());
+       WithTemporaryBody;WithoutBuildError;
+       WithSelectingFeatureSupport;MFBRepVersion_CXR29)
+
+# Pocket 侧楞（侧面1 × 侧面4）
+REdge:(Edge:(Face:(Brp:(Pocket.1;0:(Brp:(Sketch.2;1)));...);
+             Face:(Brp:(Pocket.1;0:(Brp:(Sketch.2;4)));...);...))
+
+# Pocket 底楞（侧面4 × 底面）
+REdge:(Edge:(Face:(Brp:(Pocket.1;0:(Brp:(Sketch.2;4)));...);
+             Face:(Brp:(Pocket.1;2);...);...))
+```
+
+`CreateReferenceFromBRepName` 第二参数传 `pocket_com`（`Shapes.Item(pocket.name)`）。
+
+### 9.3 封装 API
+
+```python
+ctx.get_pocket_faces(part, pocket)                   # 底面+侧面列表（不含开口面）
+ctx.get_pocket_face_edges(part, pocket, face_info)   # 某面的边引用列表
+ctx.get_pocket_opening_edges(part, pocket, pad)      # 开口楞（需传下层 Pad）
+```
+
+---
+
+## 10. Shaft（旋转体）面 / 边 BRep 格式（2026-06-11，宏录制验证）
+
+### 10.1 面格式
+
+Shaft **所有面**均使用侧面格式，**无** `idx=1/2` 的顶/底面：
+
+```
+Face:(Brp:(Shaft.1;0:(Brp:(Sketch.1;N)));None:();Cf14:())
+```
+
+N 对应草图轮廓边索引（1 起）。对矩形轮廓旋转体（4 条边）：外圆面/上端面/内圆面/下端面，具体哪条边对应哪个面取决于草图绘制顺序。
+
+### 10.2 边格式（由宏直接验证）
+
+```
+# 外圆面(边2) × 上端面(边3) 的交线
+REdge:(Edge:(Face:(Brp:(Shaft.1;0:(Brp:(Sketch.1;2)));...);
+             Face:(Brp:(Shaft.1;0:(Brp:(Sketch.1;3)));...);...))
+
+# 外圆面(边1) × 上端面(边2) 的交线
+REdge:(Edge:(Face:(Brp:(Shaft.1;0:(Brp:(Sketch.1;1)));...);
+             Face:(Brp:(Shaft.1;0:(Brp:(Sketch.1;2)));...);...))
+```
+
+`CreateReferenceFromBRepName` 第二参数传 `shaft_com`。
+
+### 10.3 封装 API
+
+```python
+ctx.get_shaft_faces(part, shaft)                     # 所有面列表（type=surface）
+ctx.get_shaft_face_edges(part, shaft, face_info)     # 某面与相邻面的交线
+```
+
+---
+
+## 11. 几何查询 API 总结（2026-06-11）
+
+所有几何查询均**不依赖 SPA**（SPA `GetPlane`/`GetDirection` 对所有已知 Reference 格式均失败），
+改用从特征的草图坐标系（`get_absolute_axis_data`）纯数学推导：
+
+| 数据 | 来源 |
+|------|------|
+| 面法向 | `H × V`（H/V 轴叉积，来自草图 axis_data） |
+| 顶/底面位置 | 草图原点 ± depth |
+| 侧面法向 | 基于 `draw_rect` 绘制顺序（边1=-V, 边2=+H, 边3=+V, 边4=-H） |
+| 草图边数 | `GeometricElements` 中 `type ≠ 1（坐标轴）且 ≠ 2（点）` 的数量 |
+
+```python
+# 典型使用：按法向找面，取该面所有边，倒圆角
+top   = ctx.get_pad_faces_by_normal(part, pad, (0,0,1))[0]
+edges = ctx.get_pad_face_edges(part, pad, top)
+ctx.add_fillet_edges(part, edges, 3.0)
+ctx.update_part(part)
+```
+
+---
+
+## 12. 其他 API 修复记录（2026-06-11）
+
+### create_part 命名 bug
+原代码 `part.part.PartNumber = name` 走 `CATIAPart` 接口，该接口无 `PartNumber` 属性，
+静默失败（`except: pass` 吃掉异常），零件名始终为 CATIA 自动分配的 `PartN`。
+
+修复：改为 `app_com.ActiveDocument.Product.PartNumber = name`。
+
+新增 `nomenclature` 参数写入 `Product.Nomenclature`：
+- `name`（PartNumber）：零件号、件号、编号 → 显示在特征树节点
+- `nomenclature`：命名、用途描述（如"底座"）→ 不显示在树，存在属性中
+
+### add_shaft / add_groove 轴线顺序
+原代码先 `add_new_shaft` 再 `InsertHybridShape(轴线)`，导致特征树里轴线在 Shaft 之后
+（CATIA 按插入时间排序，HybridShape 追加在已有实体特征末尾）。
+修复：对调顺序，先建轴线再建 Shaft/Groove。
+
+### add_auto_fillet
+```python
+ctx.add_auto_fillet(part, radius=3.0)              # 外/内角统一
+ctx.add_auto_fillet(part, radius=3.0, inner_radius=1.0)  # 分别指定
+ctx.update_part(part)
+```
+对应 VBA：`shapeFactory.AddNewAutoFillet(3.0, 3.0); autoFillet.RoundRadiusActivation = True`
