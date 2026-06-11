@@ -1,6 +1,6 @@
-# 统一行尾符：文本文件存储为 CRLF（Windows 原生开发环境）
-# core.autocrlf=true 保持默认，commit 时 CRLF→CRLF，checkout 时 CRLF→CRLF
-# 无论 opencode / VSCode / 其他工具写入 LF 还是 CRLF，commit 时统一转为 CRLF
+# 统一行尾符：工作区使用 CRLF（Windows 原生开发环境）
+# Git 仓库内统一存储为 LF，checkout 时转为 CRLF，commit 时转为 LF
+# 无论 opencode / VSCode / 其他工具写入 LF 还是 CRLF，commit 时统一转为 LF
 
 # 默认：所有文本文件 CRLF
 * text=auto eol=crlf
@@ -25,6 +25,14 @@
 *.catvbs    text eol=crlf
 *.catscript text eol=crlf
 
+# Windows 脚本
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Shell 脚本 — LF（在 Linux/WSL 执行）
+*.sh        text eol=lf
+
 # 二进制文件 — 不做行尾转换
 *.png   binary
 *.jpg   binary
@@ -41,3 +49,11 @@
 *.dll   binary
 *.pyd   binary
 *.pyc   binary
+
+# CATIA 原生格式 — 二进制，禁止行尾转换
+*.CATPart     binary
+*.CATProduct  binary
+*.CATDrawing  binary
+*.CATAnalysis binary
+*.cgr         binary
+*.3dxml       binary
