@@ -34,11 +34,11 @@ def _ensure_design_mode(product) -> None:
             pass
 
 
-def _set_prop(product, name: str, value: str) -> None:
-    """通过 COM 写入内置产品属性（优先写 ReferenceProduct）。"""
+def _set_prop(product, name: str, value: str) -> bool:
+    """通过 COM 写入内置产品属性（优先写 ReferenceProduct）。返回是否成功。"""
     attr = PRODUCT_ATTR_WRITE_MAP.get(name)
     if not attr:
-        return
+        return False
     targets: list = []
     try:
         targets.append(product.ReferenceProduct)
@@ -53,13 +53,15 @@ def _set_prop(product, name: str, value: str) -> None:
                 int(SOURCE_FROM_DISPLAY.get(value, value))
                 if name == "Source" else value,
             )
-            return
+            return True
         except Exception:
             continue
+    logger.warning("_set_prop: COM 写入失败 name=%r value=%r", name, value)
+    return False
 
 
-def _set_user_prop(product, name: str, value: str) -> None:
-    """通过 COM 写入用户自定义属性（优先写 ReferenceProduct）。"""
+def _set_user_prop(product, name: str, value: str) -> bool:
+    """通过 COM 写入用户自定义属性（优先写 ReferenceProduct）。返回是否成功。"""
     targets: list = []
     try:
         targets.append(product.ReferenceProduct)
@@ -70,16 +72,18 @@ def _set_user_prop(product, name: str, value: str) -> None:
     for target in targets:
         try:
             target.UserRefProperties.Item(name).Value = value
-            return
+            return True
         except Exception:
             pass
     # Property does not exist – create it on the first available target
     for target in targets:
         try:
             target.UserRefProperties.CreateString(name, value)
-            return
+            return True
         except Exception:
             continue
+    logger.warning("_set_user_prop: COM 写入失败 name=%r value=%r", name, value)
+    return False
 
 
 def write_cell(
@@ -87,13 +91,13 @@ def write_cell(
     col: str,
     value: str,
     custom_columns: list[str],
-) -> None:
-    """通过缓存的 COM 引用直接将单个单元格值写入 CATIA 。
+) -> bool:
+    """通过缓存的 COM 引用直接将单个单元格值写入 CATIA。返回是否成功。
 
     与 ``write_bom_to_catia()`` 不同，此函数不遍历产品树——
     直接写入存储在 BOM 行中的 COM 引用 ``product``。
 
-    适用于 V2 对话框的即时写回路径。对于独立文件（非嵌入部件），
+    适用于 V2/V3 对话框的即时写回路径。对于独立文件（非嵌入部件），
     通过 ``ReferenceProduct`` 写入一次即可覆盖所有实例；
     对于嵌入部件，调用方应为每个实例分别调用此函数。
 
@@ -104,28 +108,31 @@ def write_cell(
         custom_columns: 用户自定义属性的列名列表（通过 UserRefProperties 写入）
     """
     if col in BOM_READONLY_COLUMNS:
-        return
+        return False
     _ensure_design_mode(product)
     if col == BOM_INSTANCE_NAME_COLUMN:
-        # Per-instance name – written directly to the instance object, NOT
-        # ReferenceProduct (which would affect the part definition, not the
-        # instance name within the assembly).
         try:
             product.Name = value
+            return True
         except Exception as e:
-            logger.debug("write_cell: 无法设置实例名 → %s", e)
+            logger.warning("write_cell: 实例名写入失败 col=%r: %s", col, e)
+            return False
     elif col == "Part Number":
         try:
             product.PartNumber = value
+            return True
         except Exception:
             try:
                 product.ReferenceProduct.PartNumber = value
-            except Exception:
-                pass
+                return True
+            except Exception as e:
+                logger.warning("write_cell: PartNumber 写入失败 col=%r: %s", col, e)
+                return False
     elif col in PRODUCT_ATTR_WRITE_MAP:
-        _set_prop(product, col, value)
+        return _set_prop(product, col, value)
     elif col in custom_columns:
-        _set_user_prop(product, col, value)
+        return _set_user_prop(product, col, value)
+    return False
 
 
 def write_bom_to_catia(

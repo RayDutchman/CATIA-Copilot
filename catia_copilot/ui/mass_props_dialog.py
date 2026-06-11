@@ -1437,7 +1437,16 @@ class MassPropsDialog(QDialog):
     def _populate_table(self) -> None:
         self._is_updating = True
         self._table.blockSignals(True)
+        
+        # 汇总模式：所有行均为无子项的顶层项。
+        # 若保持 setRootIsDecorated(True)，每行都会预留展开箭头的空间，
+        # 使第0列内容向右偏移。汇总模式下禁用，层级模式下重新启用以显示展开箭头。
+        self._table.setRootIsDecorated(not self._summarize)
 
+        # 插入行前必须先禁用排序，否则 addTopLevelItem/addChild 会立即按当前排序列重排，
+        # 导致完整 BOM / 层级 BOM 的树形顺序被破坏。末尾再按模式决定是否重新启用。
+        self._table.setSortingEnabled(False)
+    
         self._table.clear()
         self._table.setColumnCount(len(self._columns))
         self._table.setHeaderLabels(self._display_headers())

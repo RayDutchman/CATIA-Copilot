@@ -5,7 +5,8 @@ PLM 工作台主窗口。
   Tab 1 - 连接：配置与测试 PLM 服务端连接
   Tab 2 - 同步： BOM 预览 + 增量同步（附件上传可选）
   Tab 3 - 标签：Tag 管理与自动映射规则
-  Tab 4 - 历史：最近 20 次同步记录
+  Tab 4 - 产品：查看与管理 PLM Product 配置
+  Tab 5 - 历史：最近 20 次同步记录
 
 使用方式：
     win = PlmWorkbench(parent)
@@ -355,10 +356,11 @@ class PlmWorkbench(QDialog):
         root_layout.setContentsMargins(0, 0, 0, 0)
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_conn_tab(),    "连接")
-        self._tabs.addTab(self._build_sync_tab(),    "同步")
-        self._tabs.addTab(self._build_tags_tab(),    "标签")
-        self._tabs.addTab(self._build_history_tab(), "历史")
+        self._tabs.addTab(self._build_conn_tab(),     "连接")
+        self._tabs.addTab(self._build_sync_tab(),     "同步")
+        self._tabs.addTab(self._build_tags_tab(),     "标签")
+        self._tabs.addTab(self._build_products_tab(), "产品")
+        self._tabs.addTab(self._build_history_tab(),  "历史")
         root_layout.addWidget(self._tabs)
 
         # 活跃后台线程句柄（防 GC）
@@ -1544,7 +1546,267 @@ class PlmWorkbench(QDialog):
                 break
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Tab 4 — 历史
+    # Tab 4 — 产品
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_products_tab(self) -> QWidget:
+        """构建「产品」Tab：查看与管理 PLM 中的 Product 配置。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        # ── 产品列表区 ────────────────────────────────────────────────────────
+        grp_list = QGroupBox("PLM 产品列表")
+        v_l = QVBoxLayout(grp_list)
+        v_l.setSpacing(6)
+
+        # 说明文字
+        lbl_hint = QLabel(
+            "Product 是 DocdokuPLM 中的产品配置根节点，绑定到某个零件版本的 BOM 结构视图。"
+        )
+        lbl_hint.setWordWrap(True)
+        v_l.addWidget(lbl_hint)
+
+        # 产品表格
+        self._tbl_products = QTableWidget(0, 4)
+        self._tbl_products.setHorizontalHeaderLabels(["产品 ID", "根零件号", "版本", "说明"])
+        _hdr_prod = self._tbl_products.horizontalHeader()
+        _hdr_prod.setSectionResizeMode(0, QHeaderView.Interactive)
+        _hdr_prod.setSectionResizeMode(1, QHeaderView.Interactive)
+        _hdr_prod.setSectionResizeMode(2, QHeaderView.Interactive)
+        _hdr_prod.setSectionResizeMode(3, QHeaderView.Stretch)
+        _hdr_prod.resizeSection(0, 160)
+        _hdr_prod.resizeSection(1, 160)
+        _hdr_prod.resizeSection(2, 60)
+        self._tbl_products.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_products.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_products.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._tbl_products.setMinimumHeight(160)
+        v_l.addWidget(self._tbl_products, 1)
+
+        # 操作行：刷新 + 删除
+        op_row = QHBoxLayout()
+        op_row.setSpacing(8)
+        btn_refresh_prod = QPushButton("刷新列表")
+        btn_refresh_prod.clicked.connect(self._on_refresh_products)
+        btn_del_prod = QPushButton("删除选中")
+        btn_del_prod.clicked.connect(self._on_delete_product)
+        op_row.addWidget(btn_refresh_prod)
+        op_row.addStretch()
+        op_row.addWidget(btn_del_prod)
+        v_l.addLayout(op_row)
+        layout.addWidget(grp_list)
+
+        # ── 新建产品区（内联展开） ─────────────────────────────────────────────
+        grp_create = QGroupBox("新建产品")
+        grp_create.setCheckable(True)
+        grp_create.setChecked(False)   # 默认折叠
+        v_c = QVBoxLayout(grp_create)
+        v_c.setSpacing(8)
+
+        form_create = QFormLayout()
+        form_create.setSpacing(6)
+
+        self._le_prod_id = QLineEdit()
+        self._le_prod_id.setPlaceholderText("如：MyAssembly_Prod")
+        form_create.addRow("产品 ID：", self._le_prod_id)
+
+        self._le_prod_pn = QLineEdit()
+        self._le_prod_pn.setPlaceholderText("顶层 CATProduct 的 Part Number")
+        form_create.addRow("根零件号：", self._le_prod_pn)
+
+        self._le_prod_desc = QLineEdit()
+        self._le_prod_desc.setPlaceholderText("（可选）产品说明")
+        form_create.addRow("说明：", self._le_prod_desc)
+
+        v_c.addLayout(form_create)
+
+        # 从当前 BOM 根节点自动填入按钮
+        hint_row = QHBoxLayout()
+        hint_row.setSpacing(8)
+        btn_fill_from_bom = QPushButton("从当前 BOM 自动填入")
+        btn_fill_from_bom.setToolTip("将同步页已加载 BOM 的根节点 Part Number 自动填入「根零件号」")
+        btn_fill_from_bom.clicked.connect(self._on_fill_product_from_bom)
+        self._lbl_prod_fill_hint = QLabel("")
+        self._lbl_prod_fill_hint.setStyleSheet("color: gray;")
+        hint_row.addWidget(btn_fill_from_bom)
+        hint_row.addWidget(self._lbl_prod_fill_hint, 1)
+        v_c.addLayout(hint_row)
+
+        btn_confirm_create = QPushButton("确认新建")
+        btn_confirm_create.clicked.connect(self._on_create_product)
+        v_c.addWidget(btn_confirm_create)
+
+        layout.addWidget(grp_create)
+        layout.addStretch()
+        return page
+
+    # ── 产品页事件处理 ────────────────────────────────────────────────────────
+
+    def _make_prod_client(self) -> tuple["PlmApiClient | None", str]:
+        """构建 PlmApiClient；失败时返回 (None, 错误信息)。"""
+        base_url, login, password, workspace = self._read_conn()
+        if not base_url or not login:
+            return None, "请先在「连接」Tab 配置并保存 PLM 地址和用户名"
+        try:
+            client = PlmApiClient(base_url)
+            client.login(login, password)
+            return client, workspace
+        except Exception as exc:
+            return None, f"登录失败：{exc}"
+
+    def _on_refresh_products(self) -> None:
+        """刷新产品列表。"""
+        client, workspace = self._make_prod_client()
+        if client is None:
+            QMessageBox.warning(self, "PLM 产品", workspace)  # workspace 此时为错误信息
+            return
+        self._lbl_prod_fill_hint.setText("")
+
+        class _Worker(QThread):
+            done  = Signal(list)
+            error = Signal(str)
+            def __init__(self, c, ws):
+                super().__init__()
+                self._c, self._ws = c, ws
+            def run(self):
+                try:
+                    self.done.emit(self._c.list_products(self._ws))
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        w = _Worker(client, workspace)
+        w.done.connect(self._populate_products_table)
+        w.error.connect(lambda msg: QMessageBox.warning(self, "PLM 产品", f"获取产品列表失败：{msg}"))
+        self._start_worker(w)
+
+    def _populate_products_table(self, products: list[dict]) -> None:
+        """将产品列表填充到表格。"""
+        self._tbl_products.setRowCount(0)
+        for prod in products:
+            row = self._tbl_products.rowCount()
+            self._tbl_products.insertRow(row)
+            prod_id  = prod.get("id", "")
+            din      = prod.get("designItemNumber", "")
+            div      = prod.get("designItemVersion", "A")
+            desc     = prod.get("description", "")
+            for col, val in enumerate([prod_id, din, div, desc]):
+                item = QTableWidgetItem(str(val))
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setData(Qt.UserRole, prod)
+                self._tbl_products.setItem(row, col, item)
+
+    def _on_delete_product(self) -> None:
+        """删除选中的产品（二次确认）。"""
+        row = self._tbl_products.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "PLM 产品", "请先选中要删除的产品。")
+            return
+        item = self._tbl_products.item(row, 0)
+        if item is None:
+            return
+        prod = item.data(Qt.UserRole) or {}
+        prod_id = prod.get("id", self._tbl_products.item(row, 0).text())
+
+        if QMessageBox.question(
+            self, "删除产品",
+            f"确定删除产品「{prod_id}」？此操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No,
+        ) != QMessageBox.Yes:
+            return
+
+        client, workspace = self._make_prod_client()
+        if client is None:
+            QMessageBox.warning(self, "PLM 产品", workspace)
+            return
+
+        class _DelWorker(QThread):
+            done  = Signal()
+            error = Signal(str)
+            def __init__(self, c, ws, pid):
+                super().__init__()
+                self._c, self._ws, self._pid = c, ws, pid
+            def run(self):
+                try:
+                    import urllib.parse
+                    ws = urllib.parse.quote(self._ws)
+                    pid = urllib.parse.quote(self._pid)
+                    self._c._request("DELETE", f"/workspaces/{ws}/products/{pid}")
+                    self.done.emit()
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        w = _DelWorker(client, workspace, prod_id)
+        w.done.connect(lambda: (
+            QMessageBox.information(self, "PLM 产品", f"产品「{prod_id}」已删除。"),
+            self._on_refresh_products(),
+        ))
+        w.error.connect(lambda msg: QMessageBox.warning(self, "PLM 产品", f"删除失败：{msg}"))
+        self._start_worker(w)
+
+    def _on_fill_product_from_bom(self) -> None:
+        """从同步页已加载的 BOM 根节点自动填入「根零件号」和「产品 ID」。"""
+        if not self._bom_rows:
+            self._lbl_prod_fill_hint.setText("同步页尚未加载 BOM，请先在「同步」Tab 读取 BOM。")
+            return
+        # 找层级最高的节点（level 最小）作为根节点
+        root_row = min(self._bom_rows, key=lambda r: r.get("Level", 0))
+        pn  = str(root_row.get("PartNumber", "")).strip()
+        nom = str(root_row.get("Nomenclature", "")).strip()
+        if pn:
+            self._le_prod_pn.setText(pn)
+            # 产品 ID 默认为 PartNumber + "_Prod"，用户可自行修改
+            self._le_prod_id.setText(f"{pn}_Prod")
+        if nom and not self._le_prod_desc.text():
+            self._le_prod_desc.setText(nom)
+        self._lbl_prod_fill_hint.setText(f"已填入根节点：{pn}")
+
+    def _on_create_product(self) -> None:
+        """新建 PLM 产品。"""
+        prod_id  = self._le_prod_id.text().strip()
+        pn       = self._le_prod_pn.text().strip()
+        desc     = self._le_prod_desc.text().strip()
+
+        if not prod_id:
+            QMessageBox.warning(self, "新建产品", "请填写「产品 ID」。")
+            return
+        if not pn:
+            QMessageBox.warning(self, "新建产品", "请填写「根零件号」。")
+            return
+
+        client, workspace = self._make_prod_client()
+        if client is None:
+            QMessageBox.warning(self, "新建产品", workspace)
+            return
+
+        class _CreateWorker(QThread):
+            done  = Signal(dict)
+            error = Signal(str)
+            def __init__(self, c, ws, pid, design_pn, d):
+                super().__init__()
+                self._c, self._ws = c, ws
+                self._pid, self._design_pn, self._d = pid, design_pn, d
+            def run(self):
+                try:
+                    result = self._c.create_product(self._ws, self._pid, self._design_pn, self._d)
+                    self.done.emit(result)
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        w = _CreateWorker(client, workspace, prod_id, pn, desc)
+        w.done.connect(lambda _: (
+            QMessageBox.information(self, "新建产品", f"产品「{prod_id}」已成功创建。"),
+            self._on_refresh_products(),
+            self._le_prod_id.clear(),
+            self._le_prod_pn.clear(),
+            self._le_prod_desc.clear(),
+        ))
+        w.error.connect(lambda msg: QMessageBox.warning(self, "新建产品", f"创建失败：{msg}"))
+        self._start_worker(w)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Tab 5 — 历史
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_history_tab(self) -> QWidget:

@@ -1,0 +1,2410 @@
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Pour des infos pertinentes la signification des differentes messages :
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。    a- Title = Nom de la commande affiché
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。              REGLES: - Commencer par un verbe à l'infinitif
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。                      - Min/maj : chaque mot doit commencer par une majuscule.
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。                  
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。    b- Help = Help affiché an bas à gauche du Frame
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。              REGLES: - Phrase normale au niveau des min/maj.
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。    c- ShortHelp = Bulle affiché sur ic?ne.
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。              REGLES: - Commencer par un verbe à l'infinitif
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。                      - Min/maj : chaque mot doit commencer par une majuscule.
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。    d- LongHelp = Help affiché en selectionnant le 'Help' + What's This ?
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。              REGLES: - Phrase normale au niveau des min/maj.
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。						- SOYEZ BAVARD !!!
+
+DesignFeature="设计特征 - 无法修改参数";
+MfgView="制造视图";
+MfgDesign="设计";
+MfgHole="钻孔";
+MfgPrismaticPocket="棱柱形型腔";
+MfgPrismaticSlab="棱柱形平板";
+MfgAxial="轴向特征";
+MfgPrismaticSurfacing="棱柱形曲面加工";
+Mfg3AxisFeature="3 轴特征";
+MfgProfileContouringFeature="轮廓铣削特征";
+MfgPtToPtFeature="点到点特征";
+MfgCounterbore="沉头孔";
+MfgCountersink="埋头孔";
+MfgIntThreaded="内螺纹";
+MfgPatternDefinition="阵列几何图形"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。 VSC: For pattern definition.
+MfgMachiningPattern="加工阵列";
+MfgPatternUsage="制造阵列";
+MfgSpotDrill="点钻";
+MfgCircularMill="圆弧铣刀";
+MfgBackBore="反镗孔";
+Mfg2SidesChamfer="双面倒角";
+MfgTSlot="T 型开槽";
+MfgThreadMill="螺纹铣刀";
+MfgChamferedHole="倒角孔";
+MfgMachiningAxisSystem="加工轴系";
+MfgAxisSystemType="加工轴类型";
+Offset="厚度";
+Geometry="几何图形";
+Tolerance="公差";
+SelectedFeature="特征";
+Unknown="未知";
+None="尚无选择几何特征。";
+Diameter="直径";
+CBDiameter="沉头孔直径";
+Depth="深度";
+CSAngle="角度";
+CBDepth="沉头孔深度";
+ThreadDepth="螺纹深度";
+THDepth="螺纹深度";
+ThreadDiameter="螺纹直径";
+THDiameter="螺纹直径";
+ThreadPitch="倾角";
+THPitch="倾角";
+RightThreaded="右旋螺纹";
+LeftThreaded="左旋螺纹";
+MfgPitchSens="螺纹方向";
+THMode="螺纹方向";
+THSens="螺纹方向";
+Extension="孔延伸";
+Simple="简单孔";
+Tapered="锥形孔";
+Counterbored="沉头孔";
+Countersunk="埋头孔";
+Counterdrilled="倒钻孔";
+Threaded="螺纹孔";
+MfgHoleExtension="延伸 ";
+JumpDistance="跳刀距离";
+MFG_AXIAL_RADIAL_LINKING="轴向-径向链接";
+MfgGuidance="刀轴策略";
+MfgPatternTopMode="投影模式";
+MfgPatternOrderingMode="排序模式";
+MfgContouringMode="轮廓加工模式";
+CSDiameter="埋头孔直径";
+CSDepth="埋头孔深度";
+BackDepth="背部深度";
+SlotDiameter="开槽直径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。BFA,05 Nov 06 - Fix for IR 558444. Corrected the names. 
+CDDiameter="倒钻孔直径";
+CDAngle="倒钻孔角度";
+CDDepth="倒钻孔深度";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。End of fix
+
+CHDiameter="倒角直径";
+
+OriginOffset="原点偏移";
+
+MfgMAType="制造区类型";
+
+MfgAxialFeature="轴向特征";
+MfgMachiningFeature="加工特征";
+MfgPrismaticFeature="棱柱形特征";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Smu : features base types
+MfgBase="制造基准特征";
+ManufacturingFeature="制造特征";
+MachiningFeature="加工特征";
+PrismaticFeature="棱柱形特征";
+
+MfgMachinableAreaFeature="可加工区域";
+MfgMachinableGeomFeature="可加工几何图形";
+
+MfgMachinableComputedStockFeature="可加工计算坯料";
+MfgMaxTurnEnvelopeMachinableFeature="最大车削包络";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Smu : Machinable features from GSSL Feature Recognition
+MfgMachinableBaseFeature="可加工基准特征";
+MfgMachinableAxialFeature="MAF";
+MfgMachinableLatheFeature="MTF";
+FeatureType="特征类型";
+XAxis="原点轴 X 部件";
+YAxis="原点轴 Y 部件";
+ZAxis="原点轴 Z 部件";
+pX="原点 X 坐标";
+pY="原点 Y 坐标";
+pZ="原点 Z 坐标";
+HoleType="孔类型";
+HoleBottomType="孔底类型";
+HoleBottomAngle="孔底角度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 VSC: New attributes exposed for Prismatic machining area
+MfgMinimumCornerRadius="最小圆角半径";
+MfgMinimumChannelWidth="最小通道宽度";
+MfgMaximumChannelWidth="最大通道宽度";
+MfgBottomFilletRadius="底部圆角半径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS General
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MfgIsActive="活动？";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Macros
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MfgMacroDistance="距离";
+MfgMacroPositionningAngleA="垂直角";
+MfgMacroPositionningAngleB="水平角";
+MfgMacroTgtDistance="距离";
+MfgMacroCircleAngularPositionA="角扇形";
+MfgMacroCircleAngularPositionB="角方向";
+MfgMacroRadius="半径";
+MfgMacroHorizontalSafetyDistance="水平安全距离";
+MfgMacroVerticalSafetyDistance="垂直安全距离";
+MfgMacroRampingAngle="宏斜坡角度";
+MfgMacroCornerValue="宏圆角半径";
+MfgMacroCornized="圆角化宏";
+MfgMacroMotionsActiveStatus="活动宏？";
+MfgMacroMotionsRelevant="可用宏？";
+MfgMacroType="宏类型";
+MfgMacroMotion="组";
+MfgMacroClearanceMotion="组";
+MfgMacroMotions="宏";
+MfgMacroClearanceMotions="间隙";
+MfgMacroApproachMotions="进刀";
+MfgMacroRetractMotions="退刀";
+MfgMacroBetweenFinishingPathMotions="返回精铣路径";
+MfgMacroLinkingMotions="链接";
+MfgMacroReturnBetweenLevelMotions="在层之间返回";
+MfgMacroReturnInOneLevelMotions="在某层中返回";
+MfgMacroHelixRelativeRadius="相对半径";
+IsMfgRelativeRadius="相对半径状态";
+IsMfgRelativeRadiusTRUE="绝对螺旋半径";
+IsMfgRelativeRadiusFALSE="半径差异与下一路径";
+
+ClearanceOptionFrame="间隙选项"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 options
+MfgClearanceCorner="使用半径圆角化间隙";
+MfgClearanceCorner.LongHelp="允许在间隙处转角";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Types des trajets elementaires de macro
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MfgMacroElementaryNormalMotion="常规";
+MfgMacroElementaryBackMotion="后退";
+MfgMacroElementaryCircularDirMotion="手动圆弧";
+MfgMacroElementaryBoxMotion="箱体";
+MfgMacroElementaryPSMMotion="持久截面移动";
+MfgMacroElementaryHSMMotion="高速铣削";
+MfgMacroElementaryHMRMotion="粗加工";
+MfgMacroElementaryHelixMotion="螺旋";
+MfgMacroElementaryRampingMotion="斜坡";
+MfgMacroElementaryHorizontalMotion="水平";
+MfgMacroElementaryGoToAPointMotion="转至点";
+MfgMacroElementaryCircularMotion="圆弧";
+MfgMacroElementaryToolAxisMotion="刀轴";
+MfgMacroElementaryDeltaLnDistMotion="沿直线的距离";
+MfgMacroElementaryAxialMotion="轴向";
+MfgMacroPPWord="PP 词汇";
+MfgMacroElementaryGoToAPlaneMotion="转至平面";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ===================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Copy Order
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ============================================
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 PFE: Copy Order R7
+MfgNbOfCopy="副本数 (N)";
+MfgDeltaX="沿 X 的距离";
+MfgDeltaY="沿 Y 的距离";
+MfgDeltaZ="沿 Z 的距离";
+MfgKeepAssociativity="保留链接";
+MfgTransformationType="变换类型";
+MfgRotationAngle="角度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 PFE:  ajouts Copy Order R8 
+MfgDeltaAlongAxis="沿方向的距离";
+MfgTranslationType="平移类型";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 PFE : ajouts copy order R10
+MfgPriorityType="排序";
+MfgRotationType="旋转类型";
+MfgAxisMachAxis="轴";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 PCB : ajouts copy order R12
+MfgMatrixType="矩阵类型";
+MfgAffinityFactAlongX="沿 X 的亲合系数";
+MfgAffinityFactAlongY="沿 Y 的亲合系数";
+MfgAffinityFactAlongZ="沿 Z 的亲合系数";
+MfgScaleFact="系数";
+MfgMatrixFactX1="X1";
+MfgMatrixFactY1="Y1";
+MfgMatrixFactZ1="Z1";
+MfgMatrixFactX2="X2";
+MfgMatrixFactY2="Y2";
+MfgMatrixFactZ2="Z2";
+MfgMatrixFactX3="X3";
+MfgMatrixFactY3="Y3";
+MfgMatrixFactZ3="Z3";
+MfgMatrixAlongX="沿 X 平移";
+MfgMatrixAlongY="沿 Y 平移";
+MfgMatrixAlongZ="沿 Z 平移";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Machinist
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+ToolCornerRadius="半径";
+ToolDiameter="直径";
+ToolAngle="角度";
+ToolLength="长度";
+UmaMachTol="公差";
+UmaOverlap="重叠 (% ?)";
+UmaDepth="深度";
+UmaWidth="宽度";
+UmaLength="长度";
+PartOverThickness="零件上的偏移";
+
+M3xAccostingSide="初始工具位置";
+M3xApproachAndRetractMacroMotion="链接刀路";
+M3xApproachAndRetractRadius="进刀和退刀半径";
+M3xApproachDistance="进刀距离";
+M3xApproachMacroMotion="进刀模式";
+M3xApproachVectorX="进刀 X 方向";
+M3xApproachVectorY="进刀 Y 方向";
+M3xApproachVectorZ="进刀 Z 方向";
+M3xAutomatiqueStrategy="优化策略";
+M3xContouringMode="循环类型";
+M3xCornerizationRadius="圆角半径";
+M3xCtxOverThickness="检查上的偏移";
+M3xCutStrategy="粗加工类型";
+M3xCuttingMode="切削模式";
+M3xDeltaZ="最小更改长度";
+M3xDrillingSafetyDistance="钻孔安全距离";
+M3xEngagementMode="进刀模式";
+M3xFilterHVAngle="最小角度";
+M3xFilterHVLength="最小长度";
+M3xFilterHVMode="HV 过滤器";
+M3xForceCompute="强制重放";
+M3xHSMEngagementRadius="过渡半径";
+M3xHardDrillToolAngle="钻刀角度";
+M3xHardDrillToolDiameter="钻刀直径";
+M3xHardDrillToolLength="钻刀长度";
+M3xHardEngagementMode="进刀模式";
+M3xHardHelixDiameter="螺旋直径 (% ?)";
+M3xHardInterpolationMode="插补模式";
+M3xHardMachiningMode="加工模式";
+M3xHardOverlap="刀路重叠（直径比）";
+M3xHardStopOffset="停止偏移 (% ?)";
+M3xHardSweepingMode="刀具路径形式";
+M3xHighSpeed="高速加工";
+M3xLengthMin="最小更改长度";
+M3xLinkDistance="岛屿跨越长度";
+M3xLinkMode="岛屿跨越";
+M3xMachiningMode="刀具路径形式";
+M3xMachiningZone="加工区域";
+M3xMacroMotionRetractOptimization="未使用";
+M3xMaxHorizontalSlope="最大水平斜度";
+M3xMaxWidthToMachine="要加工的最大宽度";
+M3xMinFrontalSlope="最小锋面斜度";
+M3xMinLateralSlope="最小侧面斜度";
+M3xMinStepDistance="最小步距";
+M3xMinZoneArea="要加工的最小区域 (%?)";
+M3xOffsetEndPlane="结束平面上的偏移";
+M3xOffsetLowerPlane="底部平面上的偏移";
+M3xOffsetSafetyPlane="安全平面上的偏移";
+M3xOffsetSide="偏移面";
+M3xOffsetStartPlane="起始平面上的偏移";
+M3xOffsetUpperPlane="顶部平面上的偏移";
+M3xOverShoot="限制上的偏移";
+M3xOverThickness="零件上的偏移";
+M3xPartAutoLimit="零件自动限制";
+M3xPlunge="切入";
+M3xRaiseDistance="轴向安全距离";
+M3xRampAngle="斜坡角度";
+M3xRetractDistance="退刀距离";
+M3xRetractMacroMotion="退刀模式";
+M3xRetractTpSPMode="退刀到安全平面模式";
+M3xRetractVectorX="退刀 X 方向";
+M3xRetractVectorY="退刀 Y 方向";
+M3xRetractVectorZ="退刀 Z 方向";
+M3xReverseToolPath="反转刀具路径";
+M3xSMEngagementAngle="进刀角度";
+M3xSMSBitangencyMode="重新执行笔铣";
+M3xSMSLayerModeValue="最大切削深度";
+M3xSMSLimitOverShoot="限制上的偏移";
+M3xSMSReworkStrategyAngle="返工策略角度";
+M3xSMSStopMode="参考";
+M3xSMSStopPosition="停止位置";
+M3xSMSSweepingStrategyMode="扫掠策略";
+M3xSafetyDistance="径向安全距离";
+M3xScallopHeight="残料高度";
+M3xSetSmartStepValue="步距";
+M3xStepDirection="侧面步距";
+M3xStepDistance="最大距离";
+M3xStepOverMode="未使用";
+M3xStopMode="停止模式";
+M3xStopPosition="位置";
+M3xSynchronize="同步";
+M3xToContour="方向";
+M3xToolCoreDiameter="工具内径";
+M3xUpDownMode="轴向方向";
+M3xViewDirCheck="冲突检查";
+M3xViewDirMode="视图方向";
+M3xVisuMode="选择模式";
+M3xZLevelPassOverlap="刀路重叠";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for times
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+MfgNonMachiningTime="非加工时间";
+MfgWaitingTime="等待时间";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for feeds & speeds
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MFG_FEED_APP_VALUE="进刀进给速度";
+MFG_FEED_APP_MODE="快速进刀进给速度";
+MFG_FEED_PLUNGE_VALUE="切入进给速度 ";
+MFG_FEED_PLUNGE_MODE="快速切入进给速度";
+MFG_FEED_MACH_VALUE="加工进给速度";
+MFG_CHAMFER_FEED_VALUE="倒角进给速度";
+MFG_FEED_RETRACT_VALUE="退刀进给速度";
+MFG_FEED_RETRACT_MODE="快速退刀进给速度";
+MFG_FEED_FINISH_VALUE="精加工进给速度";
+MfgGlobalFeedrateMagnitude="进给速度单位";
+MFG_LATHE_MACH_FEED_VALUE="加工进给速度";
+
+MFG_SPINDLE_MACH_VALUE="加工主轴";
+MFG_CHAMFER_SPINDLE_VALUE="倒角主轴";
+MFG_SPINDLE_FINISH_VALUE="精加工主轴";
+MfgGlobalSpindleMagnitude="主轴单位";
+
+MFG_VC="切削速度（旧）";
+MFG_VC_NEW="切削速度";
+MFG_PP="切削深度";
+MFG_SZ="每齿进给速度";
+MFG_SZ_GLOBAL="进给速度";
+MFG_VC_NEW_SP="轴速度";
+
+MFG_VC_FINISH="精加工切削速度（旧）";
+MFG_VC_FINISH_NEW="精加工切削速度";
+MFG_AA_FINISH="精铣轴向切削深度";
+MFG_AR_FINISH="精铣径向切削深度";
+MFG_SZ_FINISH="精加工每齿进给速度";
+MFG_SZ_FINISH_GLOBAL="精加工进给速度";
+
+MFG_VC_ROUGH="粗加工切削速度（旧）";
+MFG_VC_ROUGH_NEW="粗加工切削速度";
+MFG_AA_ROUGH="粗铣轴向切削深度";
+MFG_AR_ROUGH="粗铣径向切削深度";
+MFG_SZ_ROUGH="粗加工每齿进给速度";
+MFG_SZ_ROUGH_GLOBAL="粗加工进给速度";
+MFG_PP_ROUGH="粗加工切削深度（内部参数）";
+
+MFG_VC_ECROUTAGE="除锈速度（内部参数）";
+MFG_VC_ECROUTAGE_NEW="除锈速度（内部参数）";
+MFG_SZ_ECROUTAGE="除锈进给速度（内部参数）";
+MFG_PP_ECROUTAGE="除锈切削深度（内部参数）";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Feedrate Reduction in Corners
+MFG_FEED_REDUC_CORNERS="转角时进给速度减少";
+MfgReductionRate="减速率";
+MfgReductionAngle="最小角度";
+MfgMaximumRadius="最大半径";
+MfgDistBeforeCorner="转角前的距离";
+MfgDistAfterCorner="转角后的距离";
+
+MfgSlowdownRate="减速率";
+MfgSpiralStartRate="螺旋启动速率";
+
+MFG_MACHINE_COMP="机床兼容性（内部参数）";
+MfgUndefined="未定义";
+MfgHorizontalLatheMachine="卧式车床";
+MfgVerticalLatheMachine="立式车床";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Prismatic Machining & Multi Axis Machining
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MFG_AXIAL_DEPTH="最大切削深度";
+MFG_BREAKTHROUGH="穿透";
+MFG_CHAMFER_VAL="倒角直径";
+MFG_CLEAR_TIP="进刀间隙";
+MFG_CLEAR_TIP_2="进刀间隙 2";
+MFG_OUTPUT_MODE="未使用";
+MFG_CYCLE_OUTPUT="输出 CYCLE 语法";
+MFG_CYCLE_INSTRUCTION="CYCLE NC 指令";
+MFG_CYCLE_USER_SYNTAX="CYCLE 用户语法";
+MFG_ROTABL_OUTPUT="自动 ROTABL";
+MFG_RESULT_MACHINING="加工不同深度";
+MFG_RESULT_THREAD_MACHINING="加工不同螺纹深度";
+MFG_DELTADEPTH_DIAMETER="增量直径";
+MFG_DELTADEPTH_DISTANCE="增量距离";
+MFG_DELTADEPTH_INC="增量递增";
+MFG_DELTADEPTH_MODE="增量模式";
+MFG_DELTADEPTH_OFFSET="增量偏移";
+MFG_DELTADEPTH_SHOULDER="增量侧翼";
+MFG_DELTADEPTH_TIP="增量顶端";
+MFG_DEPTH_DEC="递减率";
+MFG_DEPTH_DIAMETER="直径";
+MFG_DEPTH_DISTANCE="距离深度";
+MFG_DEPTH_LIM="递减限制";
+MFG_DEPTH_MODE="深度模式";
+MFG_DEPTH_OFFSET="偏移";
+MFG_DEPTH_SHOULDER="侧翼深度";
+MFG_DEPTH_TIP="顶端深度";
+MFG_DWELL_MODE="停留模式";
+MFG_DWELL_REVOL="按转数停留";
+MFG_DWELL_REVOL_DOUBLE="按转数停留";
+MFG_DWELL_TIME="按时间单位停留";
+MFG_HELIX_ANGLE="螺旋角度 ";
+MFG_HELIX_MODE="螺旋模式 ";
+MFG_HELIX_PITCH="螺旋倾角 ";
+MFG_LIFT_ANGLE="移位角度";
+MFG_LIFT_DIST="移位距离";
+MFG_LIFT_MODE="移位模式";
+MFG_OFFSET_RET="退刀偏移";
+MFG_PPWORDS="PP 词汇语法";
+MFG_PLUNGE_DIAMETER="切入直径";
+MFG_PLUNGE_DISTANCE="切入距离";
+MFG_PLUNGE_MODE="切入模式";
+MFG_PLUNGE_OFFST="切入偏移";
+MFG_PLUNGE_SHOULDER="切入侧翼";
+MFG_PLUNGE_TIP="切入顶端";
+MFG_PLUNGE_FOR_CHAMFERING="切入进行倒角";
+MFG_RETRACT_CLEAR_TIP="退刀";
+MFG_SPOTDEPTH_DIAM="点直径";
+MFG_SPOTDEPTH_DISTANCE="点距离";
+MFG_SPOTDEPTH_MODE="点模式";
+MFG_SPOTDEPTH_OFFST="点偏移";
+MFG_SPOTDEPTH_SHOULDER="点侧翼";
+MFG_SPOTDEPTH_TIP="点顶端";
+MFG_TL_COMP="第一补偿";
+MFG_TL_COMP.LongHelp="指定要在加工操作中使用的工具\n校正器标识符。";
+MFG_TL_COMP_2="第二补偿";
+MFG_TL_COMP_2.LongHelp="指定要在加工操作中使用的工具\n校正器标识符。";
+MFG_XOFF="沿 X 移位";
+MFG_YOFF="沿 Y 移位";
+MFG_ZOFF="沿 Z 移位";
+Mfg5AxisAngleManagement="刀轴引导";
+Mfg5AxisCollisionAngle="允许的倾斜度";
+Mfg5AxisCollisionBinor="允许的倾斜度";
+Mfg5AxisEMToolAxisStrategy="刀轴模式";
+Mfg5AxisHelixAxisStrategy="刀轴模式";
+Mfg5AxisMachDirMode="步距";
+Mfg5AxisRadialStrategy="径向策略";
+Mfg5XHelixRadialStrategy="径向策略";
+MfgApproachDistance="进刀距离";
+MfgApproachMode="进刀模式";
+MfgAutoContinuing="内部参数";
+MfgAutoDraftAngle="自动拔模角度";
+MfgAvoidScallopOnBottom="避免底部残料";
+MfgAvoidScallop="避免所有层残料";
+MfgAxialStrategy="轴向策略";
+MfgBiNormangl="倾角";
+MfgBottomFinishPathThickness="底部精铣厚度";
+MfgNbSideFinishByLevel="每层的侧精铣路径数";
+MfgCheckMode1="限制 1";
+MfgCheckMode2="限制 2";
+MfgCircularMillingMode="加工模式";
+MfgClearanceDistance="间隙距离";
+MfgCollisionCheckingCheck="检查上的冲突检测";
+MfgCollisionCheckingDrive="驱动上的冲突检测";
+MfgCollisionCheckingEnd="第二限制上的冲突检测";
+MfgCollisionCheckingMode="冲突检查模式";
+MfgCollisionCheckingPart="零件上的冲突检测";
+MfgCollisionCheckingStart="第一限制上的冲突检测";
+MfgCollisionDrive="驱动上的冲突";
+MfgCollisionPart="零件上的冲突";
+MfgCollisionThkCheck="检查允许的刨削";
+MfgCollisionThkDrive="驱动允许的刨削";
+MfgCollisionThkEnd="结束允许的刨削";
+MfgCollisionThkPart="零件允许的刨削";
+MfgCollisionThkStart="开始允许的刨削";
+MfgCollisionTolCheck="检查精确度";
+MfgCollisionTolDrive="驱动精确度";
+MfgCollisionTolEnd="结束精确度";
+MfgCollisionTolPart="零件精确度";
+MfgCollisionTolStart="开始精确度";
+MfgCondDrive="驱动上的位置";
+MfgCondLim1="开始";
+MfgCondLim2="停止";
+MfgContactHeight="接触高度";
+MfgContourType="轮廓类型";
+MfgContouringClosedContour="轮廓加工模式";
+MfgContouringDrivingMode="轮廓加工驱动模式";
+MfgContouringModeForGC="轮廓类型";
+MfgCorneringApproachDist="扇形进刀距离";
+MfgCorneringFlag="转角刀具路径";
+MfgCorneringLeaveDist="扇形退刀距离";
+MfgCorneringRadius="转角半径";
+MfgCurveAxisStrategy="导向";
+MfgCurveMachiningSU="曲线加工";
+MfgCutcom="Cutcom";
+MfgDirectionOfCut="切削方向";
+MfgDistanceBetweenPaths="路径间距离";
+MfgtranslationX="X 轴";
+MfgtranslationY="Y 轴";
+MfgtranslationZ="Z 轴";
+MfgEndOfPath="路径终点";
+MfgEndPathINOUT="路径终点";
+MfgEndPathOverhangRatio="悬距率";
+MfgFacingFinish="精加工模式";
+MfgFC5XDrivingMode="要铣削的侧面";
+MfgFixtureAccuracy="装置器精确度";
+MfgForcedContour="强制轮廓";
+MfgGlobalCheckOffset="检查上的偏移";
+MfgGlobalDriveThickness="轮廓上的偏移";
+MfgGlobalOffsetOnBottom="底面上的偏移";
+MfgGlobalOffsetOnBoundary="硬边界上的偏移";
+MfgGlobalOffsetOnContour="轮廓上的偏移";
+MfgGlobalOffsetOnSoftBoundary="软边界上的偏移";
+MfgGlobalOffsetOnTop="顶面上的偏移";
+MfgGlobalPartOffset="零件上的偏移";
+MfgGlobalPartThickness="零件厚度";
+MfgGlobalSpindleOutput="主轴输出";
+MfgHSMCorner="高速铣削转角";
+MfgHSMCornerFinish="侧精铣路径上的转角";
+MfgHSMCornerRadius="圆角半径";
+MfgHSMCornerRadiusFinish="侧精铣路径上的圆角半径";
+MfgHSMExtraSegmentOverlap="额外线段重叠";
+MfgHSMExtraSegmentOverlapFinish="侧精铣路径上的额外线段重叠";
+MfgHSMLimitAngleFinish="侧精铣路径上的限制角度";
+MfgHSMMiniTransitionLength="过渡长度";
+MfgHSMRecoveryCoefficient="中心路径重叠";
+MfgHSMTransitionAngle="过渡角";
+MfgHSMTransitionRadius="过渡半径";
+MfgHardnessOnBottom="底面";
+MfgHardnessOnTop="顶面";
+MfgImposedInnerPoint="内点";
+MfgLeaveDistance="退刀距离";
+MfgMachiningDirIndic="步距";
+MfgMachiningMode="刀具路径形式";
+MfgMachiningModeforFacing="平面铣削刀具路径形式";
+MfgMachiningModeforPocket="型腔铣削刀具路径形式";
+MfgMachiningTolerance="加工公差";
+MfgManualTMDir="手动定向";
+MfgMaxBiNormangl="最大倾角";
+MfgMaxDepth="最大深度";
+MfgMaxDepthOfCut="最大切削深度";
+MfgMaxDiscretizationAngle="最大离散角";
+MfgMaxDiscretizationStep="最大离散步长";
+MfgMaxDistance="路径间的最大距离";
+MfgMaxDistSteps="步长间的最大距离";
+MfgMaxNormangl="最大导角";
+MfgMinBiNormangl="最小倾角";
+MfgMinDepth="最小深度 ";
+MfgMinNormangl="最小导角";
+MfgMinPathLenght="最小路径长度";
+MfgMixteHelical="尖锥形/倒锥形螺旋混合";
+MfgNormangl="导角";
+MfgNumberOfLevels="层数";
+MfgNumberOfPathes="路径数";
+MfgNumberOfPathesAlongZ="沿 Z 的路径数";
+MfgNumberOfPathesOnSide="侧面上的路径数";
+MfgNumberOfRadialPaths="路径数";
+MfgOffsetAlongToolAxis="底部上沿刀轴的偏移";
+MfgOffsetAxial1="轴向偏移 1";
+MfgOffsetAxial2="轴向偏移 2";
+MfgOffsetOnRelim1="限制 1 上的偏移";
+MfgOffsetOnRelim2="限制 2 上的偏移";
+MfgOffsetRelim1="限制 1 上的偏移";
+MfgOffsetRelim2="限制 2 上的偏移";
+MfgOutputStyle="补偿输出";
+MfgOverhang="重叠百分比";
+MfgPtToPtOffset="偏移";
+MfgRadialStrategyforPocket="径向策略";
+MfgRampingAngle="斜坡角度";
+MfgReturnMode="返回模式";
+MfgReUseFirstDrive="重复使用第一驱动";
+MfgScallopHeight="残料高度";
+MfgScallopPassRate="残料路径比";
+MfgSequencingMode="排序模式";
+MfgSideAppClearance="工具侧面进刀间隙";
+MfgSideApproachClearance="工具侧面进刀间隙";
+MfgSideFinish="侧精铣刀路模式";
+MfgBottomThicknessOnSideFinish="侧精铣的底部厚度";
+MfgSideFinishBottomThickness="底部精铣的侧面厚度";
+MfgSideOffsetIncrement="侧面偏移递增";
+MfgSideThickness="侧精铣厚度";
+MfgSpringPath="反弹路径";
+MfgStartHardness="开始硬度";
+MfgStartOnRelim1="开始限制 1";
+MfgStopHardness="停止硬度";
+MfgThruElem="到/从";
+MfgTipApproachClearance="顶端进刀间隙 ";
+MfgToolAxis="刀轴";
+MfgToolAxis_Mode="刀轴策略";
+MfgToolAxis_VectorX="刀轴矢量 X";
+MfgToolAxis_VectorY="刀轴矢量 Y";
+MfgToolAxis_VectorZ="刀轴矢量 Z";
+MfgToolAxisStrategy="刀轴策略";
+MfgZOffsetIncrement="Z 偏移递增 ";
+MfgStockCutAngle="转动剪切坯料平面角度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** FTS : Debut attributs R9
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。-----------------------------
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Global flank
+
+Mfg5AxisUserDefinedCuttingHeightFlag="使用工具参数控制扇形";
+Mfg5AxisUserDefinedCuttingHeight="有用的切削长度";
+Mfg5AxisDeActivateFanning="禁用扇形";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Sequential flank
+
+MfgLocalToolAxisStrategy="导向";
+Mfg5Axis4XNormalConstraintFlag="启用 4 轴";
+MfgLocalDriveThicknessToAdd="驱动上添加的偏移";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** FTS : Fin attributs R9
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。-----------------------------
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** FTS : Debut attributs R10
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。------------------------------
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 5X curve and flank
+
+MfgBottomFinishPathStyle="底部精铣路径形式";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 5X flank
+
+Mfg5AxisOutputType="输出类型";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 5X curve
+
+MfgCurveTgtAxisStrategySubModes="模式";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Fac iso
+
+MfgIsoparExtensionDistBeforeFirstPath="开始延伸";
+MfgIsoparExtensionDistAfterLastPath="结束延伸";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Sequential flank
+
+Mfg5AxisLocalStoppingCondition="停止条件";
+Mfg5AxisLocalReStartingDirection="重新启动定向";
+Mfg5AxisLocalSwapSideOnDS="驱动面上的工具侧面";
+Mfg5AxisLocalSlowdownRate="减速率";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** FTS : Fin attributs R10
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。------------------------------
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Modifs Post R8 and R9(jmn)
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MfgPocketingStyle="型腔铣削形式 ";
+MfgAllwaysStayOnBottom="始终留在底部";
+MfgAlwaysStayOnBottom="始终留在底部";
+MfgPercentageReduction="截断转换路径";
+MfgReworkMode="按再加工区域类型过滤";
+MfgReworkOverhang="再加工区域的悬距";
+MfgToolOn="引导线上的工具位置";
+MfgDriveBox="边界包络";
+
+MfgBreakthrough="穿透";
+MfgPocketingFinish="型腔铣削精铣模式";
+MfgHSMLimitAngle="限制角度";
+
+MfgCompensationMode="补偿应用程序模式"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 application
+MfgSequencing="排序";
+
+Mfg5AxisTangentAxisAngle="允许的导程";
+Mfg5AxisFanningDistance="扇形距离";
+
+MfgManualStartDir="手动定向";
+Mfg5AxisMultiLevelMode="模式";
+MfgCorneringFinishRadius="精加工转角半径";
+
+MfgMinPathLength="最小路径长度";
+Mfg5AxisMinHealDistance="最小跟距";
+Mfg5AxisSkipPath="跳转路径";
+Mfg5AxisIsoparAxisStrategy="导向";
+
+MfgLatheRoughingStrategy="粗加工模式";
+MfgLatheMdLocation="位置";
+MfgLatheContouringMode="零件轮廓加工";
+MfgLatheLeadInMode="引入";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 New V5R14-1
+MfgLatheLiftOffMode="剥离";
+MfgLatheProfileOutputMode="轮廓输出";
+MfgLatheToolHolderConstraintMode="刀片座约束";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 End New V5R14-1
+MfgLatheLiftOffMode="剥离";
+MfgLatheProfileOutputMode="轮廓输出";
+MfgLatheMinMachRadius="最小加工半径";
+MfgLatheMaxMachRadius="最大加工半径";
+MfgLatheJawPosition="卡盘爪的轴向限制";
+MfgLatheChipPlungeDistance="碎屑投入距离";
+MfgLatheChipRetractDistance="碎屑回收距离";
+MfgLatheChipClearDistance="碎屑清除距离";
+MfgLatheGougingSafetyAngle="刨削安全角度";
+MfgLatheRecessingStrategy="凹槽模式";
+MfgLatheRecessAutoOutput="自动输出";
+MfgLatheMdOrientation="方向";
+MfgLatheMachDirection="加工方向";
+MfgLatheContouringCornerMode="外角轮廓加工";
+MfgLatheCutcomStrategy="CUTCOM";
+MfgLatheLeadInType="引入";
+MfgLatheLiftOffType="剥离";
+MfgLatheFirstCornerProcessing="入口圆角";
+MfgLatheLastCornerProcessing="出口圆角";
+MfgLatheCornerProcessing="其它圆角";
+MfgLatheInvertStrategy="反转策略";
+MfgLatheInvertLiftOffType="反转剥离";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。R6I
+MfgLatheToolAxisMd="刀轴策略";
+MfgLatheToolAxisLeadAng="导角";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。end R6I
+MfgLatheFirstFlankLeadInType="第一个侧面引入";
+MfgLatheLastFlankLeadInType="最后一个侧面引入";
+MfgLatheOtherFlankLeadInType="其它侧面引入";
+MfgLatheThreadProfile="轮廓";
+MfgLatheThreadOrientation="方向";
+MfgLatheThreadUnit="螺纹单位";
+MfgLatheThreadPerInchNumber="每英寸螺纹数";
+MfgLatheThreadNumber="螺纹数";
+MfgLatheThreadMachining="攻丝类型";
+MfgLatheConstantsectionPassNumber="刀路数";
+MfgLatheMaxConstantDepthOfCut="切削深度";
+MfgLatheThreadPenetration="螺纹贯通";
+MfgLathePenetrationAngle="贯通角度";
+MfgLatheFirstPassNumber="第一刀路的数量";
+MfgLatheFirstSectionRate="第一刀路截面率";
+MfgLatheLastPassNumber="最后刀路的数量";
+MfgLatheLastPassDepthOfCut="最后刀路的切削深度";
+MfgLatheSpringPassNumber="跳刀路径数";
+MfgLatheMacroMode="宏模式";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** LAS : Debut R9
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Les Attributs des Seq. Motions Lathe
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。-------------------------------------
+MfgLatheSeqMotionGeomFeature="连续车削动作的几何特征";
+MfgLatheSeqMotionGeomFeature.LongHelp="连续车削动作的几何特征";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。Goto Point HighLight
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Start Up de motion
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgSeqMotionLatheGoStd="转至标准";
+MfgSeqMotionLatheGoGo="转至标准";
+MfgSeqMotionLatheIndirv="转至方向矢量";
+MfgSeqMotionLatheDelta="转至增量";
+MfgSeqMotionLatheFollow="跟随";
+MfgSeqMotionPPWord="PP 词汇";
+MfgSeqMotionLatheGotoPoint="Goto 点";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Types du motion
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOType="动作类型";
+MfgLatheEOType.LongHelp="定义工具动作的类型。";
+MfgLatheGoStd="转至标准";
+MfgLatheGoStd.LongHelp="针对某个元素的“转至标准”动作。";
+MfgLatheGoGo="转至标准";
+MfgLatheGoGo.LongHelp="相对于两个元素的“转至标准”动作。";
+MfgLatheIndirv="转至方向矢量";
+MfgLatheIndirv.LongHelp="按照方向矢量的“转至”动作。";
+MfgLatheGoDelta="转至增量";
+MfgLatheGoDelta.LongHelp="用于定义平移的“转至增量”动作。";
+MfgLatheFollow="跟随";
+MfgLatheFollow.LongHelp="相对于驱动元素的“跟随”动作。";
+MfgLathePP="PP 指令";
+MfgLathePP.LongHelp="PP 指令。";
+MfgLatheGotoPoint="Goto 点";
+MfgLatheGotoPoint.LongHelp="将动作添加到点。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Speed Range
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOSpeedRangeNum="速度范围数";
+MfgLatheEOSpeedRangeNum.LongHelp="定义速度范围数。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Direction sur la drive
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEODriveDir="驱动方向";
+MfgLatheEODriveDir.LongHelp="定义驱动方向。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOGuidingPoint="引导点";
+MfgLatheEOGuidingPoint.LongHelp="定义引导点。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOFirstCheckMode="第一检查模式";
+MfgLatheEOFirstCheckMode.LongHelp="定义第一检查模式。";
+
+MfgLatheEOFirstCheckMode.1="检查模式";
+MfgLatheEOFirstCheckMode.1.LongHelp="。定义检查模式。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOSecondCheckMode="第二检查模式";
+MfgLatheEOSecondCheckMode.LongHelp="定义第二检查模式。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Go Delta definition
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEODeltaCheckMode="增量检查模式";
+MfgLatheEODeltaCheckMode.LongHelp="定义“转至增量”工具动作模式。";
+MfgLatheEOValueDistance="距离";
+MfgLatheEOValueDistance.LongHelp="定义工具动作的距离。";
+MfgLatheEODeltaAxial="轴向增量 (Z)";
+MfgLatheEODeltaAxial.LongHelp="定义工具动作的轴向部件。";
+MfgLatheEODeltaRadial="径向增量 (X)";
+MfgLatheEODeltaRadial.LongHelp="定义工具动作的径向部件。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Drive Element
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEODriveElemType="驱动元素类型";
+MfgLatheEODriveElemType.LongHelp="定义驱动元素类型。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Check And Drive limit
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOLimitCheck="第一检查限制";
+MfgLatheEOLimitCheck.LongHelp="对第一检查元素的几何外插法进行控制。";
+MfgLatheExtended="已延伸";
+MfgLatheExtended.LongHelp="检查元素的端点已延伸。";
+MfgLatheActual="实际";
+MfgLatheActual.LongHelp="检查元素的端点未延伸。";
+MfgLatheEOLimitDrive="第二检查限制";
+MfgLatheEOLimitDrive.LongHelp="对第二检查元素的几何外插法进行控制。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Collision on check
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOCollCheck="检查的冲突避免";
+MfgLatheEOCollCheck.LongHelp="为检查元素设置冲突避免。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Collision on drive
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOCollDrive="驱动的冲突避免";
+MfgLatheEOCollDrive.LongHelp="为驱动元素设置冲突避免。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOFollowChangeDrive="更改驱动";
+MfgLatheEOFollowChangeDrive.LongHelp="如果下一动作为“跟随”，则定义检查元素\n是否会变为驱动元素或保留驱动元素。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOFeedrateMode="进给速度模式";
+MfgLatheEOFeedrateMode.LongHelp="在全局进给速度中选择进给速度模式。";
+MFG_LOCALFEED="局部进给速度";
+MFG_LOCALFEED.LongHelp="定义局部使用的进给速度。";
+MFG_SPINDLE_MACH="局部轴速度";
+MFG_SPINDLE_MACH.LongHelp="定义局部使用的轴速度。";
+MFG_LOCALFEED_VALUE="局部进给速度";
+MFG_LOCALFEED_VALUE.LongHelp="定义局部使用的进给速度。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Sequential Feed and Speed
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOLocalSpindleMode="局部主轴模式";
+MfgLatheEOLocalSpindleMode.LongHelp="定义局部主轴模式。";
+Mfg_LatheGlobalSpindleMagnitude="主轴单位";
+Mfg_LatheGlobalSpindleMagnitude.LongHelp="定义主轴单位。";
+Mfg_LatheGlobalFeedrateMagnitude="进给速度单位";
+Mfg_LatheGlobalFeedrateMagnitude.LongHelp="定义进给速度单位。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOLeftClearAngle="左侧安全角度";
+MfgLatheEOLeftClearAngle.LongHelp="根据加工方向，定义要添加到刀片的左侧安全角度。";
+MfgLatheEORightClearAngle="右侧安全角度";
+MfgLatheEORightClearAngle.LongHelp="根据加工方向，定义要添加到刀片的右侧安全角度。";
+MfgLatheEOValueAngle="角度";
+MfgLatheEOValueAngle.LongHelp="定义要添加到刀片的角度值。";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 xxxx
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgLatheEOGlobalCheckThickness="检查上的偏移";
+MfgLatheEOAxialCheckOffset="轴向检查偏移";
+MfgLatheEORadialCheckOffset="径向检查偏移";
+MfgLatheEOGlobalDriveThickness="第二检查上的偏移";
+MfgLatheEOAxialDriveOffset="第二检查轴向偏移";
+MfgLatheEORadialDriveOffset="第二检查径向偏移";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** LAS : FIN R9
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** JMN : DEBUT RI0335403B
+
+MfgLatheOutputPointChanged="更改输出点";
+MfgLatheThreadFirstPasses="第一刀路";
+MfgLatheThreadLastPasses="最后刀路";
+MfgLatheThreadSringPasses="跳刀路径";
+MfgLatheRecessMachining="凹槽加工";
+MfgLatheMinMachMode="最小加工半径";
+MfgLatheMaxMachMode="最大加工半径";
+MfgLatheJawsMode="卡盘爪的轴向限制";
+MfgLatheUnderSpindleAxis="主轴线下加工";
+MfgLatheFirstPlungePos="第一个切入位置";
+MfgLatheNextPlungePos="下一个切入位置";
+MfgLatheGroovingContouringMode="零件轮廓加工";
+MfgLatheGrooveByLevel="按级别切槽";
+MfgLatheChipBreak="断屑";
+MfgLatheInvertClearance="反转间隙";
+MfgLatheInvertOverlap="反转重叠";
+MfgLatheInvertThickness="反转厚度";
+MfgLatheInvertOption="先加工反转元素";
+MfgLatheToolCompensation="刀具补偿";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。IR-405467
+MfgLatheToolCorrectorID="刀具校正器 ID";
+CompNumber="补偿次数";
+MfgLatheBaxisFromMachineContext="来自机床指令的刀轴";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** JMN : FIN RI0335403B
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** JMN / LHX pour R9 start
+
+MfgProgressThrough="未使用";
+MfgToolDiameterRatioChoice="未使用";
+MfgInvertProgressionDirection="未使用";
+MfgForceLimits="未使用";
+MfgContouringContourCharacteristic="未使用";
+MfgClosedContouringMatterSide="未使用";
+MfgOpenContouringMatterSide="未使用";
+MfgContactMode="未使用";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** JMN / LHX pour R9  end
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** VCS : Debut R9
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Attributs Sequential Motions PtToPt dans code generique
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------------------------------------------
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Start Up de motion
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。--------------------
+MfgPtToPtSiteSU="动作";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 *** VCS : Fin R9
+MfgPtToPtSite="位置动作";
+MfgPtToPtDeltaSite="增量动作";
+
+M3xLimitLineSide="要加工的侧面";
+M3xOvershootTolerance="返工阀值";
+M3xPocketProgressionMode="螺旋移动";
+M3xRatioOrLengthMode="刀路重叠模式";
+M3xHardOverlapLength="刀路重叠（长度）";
+M3xPSMLength="长度";
+M3xPSMSafetyDistance="安全距离";
+M3xPSMAngle="倾斜度";
+M3xMacroApproachBackTypeCoordinateMode="定义";
+M3xMacroApproachBackTypeLength="长度";
+M3xMacroApproachBackTypeHeight="高度";
+M3xMacroApproachBackTypeAngle="斜坡角度";
+M3xMacroApproachBackTypeRadius="半径";
+M3xMacroApproachCircularVectorComputationMode="平面计算模式";
+M3xMacroApproachCircularAngle="角度";
+M3xMacroApproachCircularRadius="半径";
+M3xMacroApproachBoxLinkingMode="链接模式";
+M3xMacroApproachBoxXLength="沿切线的距离";
+M3xMacroApproachBoxYLength="沿刀轴的距离";
+M3xMacroApproachBoxZLength="沿法线轴的距离";
+M3xMacroApproachBoxSide="法线轴的边";
+M3xMacroRetractBackTypeCoordinateMode="定义";
+M3xMacroRetractBackTypeLength="长度";
+M3xMacroRetractBackTypeHeight="高度";
+M3xMacroRetractBackTypeAngle="斜坡角度";
+M3xMacroRetractBackTypeRadius="半径";
+M3xMacroRetractCircularVectorComputationMode="平面计算模式";
+M3xMacroRetractCircularAngle="角度";
+M3xMacroRetractCircularRadius="半径";
+M3xMacroRetractBoxLinkingMode="链接模式";
+M3xMacroRetractBoxXLength="沿切线的距离";
+M3xMacroRetractBoxYLength="沿刀轴的距离";
+M3xMacroRetractBoxZLength="沿法线轴的距离";
+M3xMacroRetractBoxSide="法线轴的边";
+M3xLinkFeedDistance="进给速度长度";
+M3xProgressDirectionMode="刀具路径形式";
+M3xHorizontalZonesDetectionMode="水平区域选择";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Resources
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MFG_ANGLE2="角度 2";
+MFG_APT_ANGLE="齿尖角";
+MFG_APT_DIAMETER="标称直径";
+MFG_APT_HEIGHT="高度";
+MFG_APT_HOR_DISTANCE="水平距离";
+MFG_APT_RADIUS="圆角半径";
+MFG_APT_TIP_ANGLE="顶锥角";
+MFG_APT_VER_DISTANCE="垂直距离";
+MFG_ASS_GAGE_1="标准度量 1";
+MFG_ASS_GAGE_2="标准度量 2";
+MFG_BALL_TYPE="球头刀";
+MFG_BAR_CUT_RAD="杆切削半径"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 bar
+MFG_BAR_LENGTH_1="杆长 1"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 bar
+MFG_BAR_LENGTH_2="杆长 2"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 bar
+MFG_BODY_DIAM="实体直径";
+MFG_BORE_ABILITY="镗孔能力";
+MFG_CHAMFR_DIAM1="倒角直径 1";
+MFG_CHAMFR_DIAM2="倒角直径 2";
+MFG_CLEAR_ANGLE="隙角";
+MFG_CMP_RAD_OPT="半径补偿";
+MFG_CMP_TL_DIAM="工具直径";
+MFG_COMMENT="注释";
+MFG_COMPOSITION="组合";
+MFG_COOLNT_SNTX="冷却液排列";
+MFG_CORNER_RAD="圆角半径";
+MFG_CORNER_RAD_2="上部圆角半径";
+MFG_CUT_ANGLE="切削角度";
+MFG_CUT_LENGTH="切削长度";
+MFG_EFFECTIVE_LENGTH="有效长度";
+MFG_DESC_CODE="描述代码";
+MFG_DIAMETER_1="直径 1";
+MFG_DIAMETER_2="直径 2";
+MFG_DIAMETER_3="直径 3";
+MFG_DIAMETER_4="直径 4";
+MFG_DIAMETER_5="直径 5";
+MFG_DIAMETER_6="直径 6";
+MFG_ENTRY_DIAM="入口直径";
+MFG_GAUGING_ANG="标准度量角度";
+MFG_HAND_ANGLE="手握角度";
+MFG_HAND_STYLE="手握形式";
+MFG_HOLDER_CAPAB="支架容量";
+MFG_INIT_ROT_POS="初始位置";
+MFG_INSERT_ANGLE="刀片角度";
+MFG_INSERT_LGTH="刀片长度";
+MFG_INSERT_MAT="材料";
+MFG_INSERT_THICK="厚度";
+MFG_INSERT_WIDTH="刀片宽度";
+MFG_INT_CIRC_2D="2D 圆弧插补";
+MFG_INT_CIRC_3D="3D 圆弧插补";
+MFG_INT_LIN_3D="3D 线性插补";
+MFG_INT_HELICAL="螺旋插补";
+MFG_ISO_APPR_ANG="ISO 进刀角度";
+MFG_ISO_BAR_DIA="ISO 杆直径"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 bar
+MFG_ISO_BAR_TYPE="ISO 杆类型"; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 bar
+MFG_ISO_CLAM_SYS="ISO 夹紧系统";
+MFG_ISO_CLR_ANG="ISO 隙角";
+MFG_ISO_CUTCOND="刀片切削刃条件 (ISO)";
+MFG_ISO_CUT_SIZE="ISO 切削大小";
+MFG_ISO_DIR="ISO 方向";
+MFG_ISO_HEIGHT="ISO 高度";
+MFG_ISO_LENGTH="ISO 长度";
+MFG_ISO_NOSE_RAD="刀片刀尖半径 (ISO)";
+MFG_ISO_SHAPE="ISO 形状";
+MFG_ISO_THICK="刀片厚度 (ISO)";
+MFG_ISO_TOL="内接直径 (ISO)";
+MFG_ISO_TYPE="刀片类型 (ISO)";
+MFG_ISO_WIDTH="ISO 宽度";
+MFG_KAPPA_R="Kappa R";
+MFG_LATHE_RAD_AX="径向轴";
+MFG_LATHE_AX_AX="转塔轴向轴";
+MFG_LATHE_SPN_AX="主轴线";
+MFG_LEADING_ANG="导角";
+MFG_LENGTH="长度";
+MFG_LENGTH_1="长度 1";
+MFG_LENGTH_2="长度 2";
+MFG_LENGTH_NOM_DIAM="标称直径位置";
+MFG_LIFE_TIME="使用时间";
+MFG_LNG_NUM="校正器编号";
+MFG_MACH_QUALITY="加工质量";
+MFG_MACHINE_COMP="机床兼容性";
+MFG_MAX_BOR_DPTH="最大镗孔深度";
+MFG_MAX_CUT_DIAM="最大切削直径";
+MFG_MAX_CUT_DPTH="最大切削深度";
+MFG_MAX_CUT_WDTH="最大切削宽度";
+MFG_MAX_DIAMETER="最大直径";
+MFG_MAX_MIL_LENGTH="最大加工长度";
+MFG_MAX_MIL_TIME="最长使用时间";
+MFG_MAX_PLNG_ANG="最大进刀角度";
+MFG_MAX_REC_DPTH="最大凹槽深度";
+MFG_MIN_ANGLE="最小离散角";
+MFG_MIN_CUT_DIAM="最小切削直径";
+MFG_MIN_DIAM="最小直径";
+MFG_MIN_DIAMETER="最小直径";
+MFG_MIN_DISC="最小离散步长";
+MFG_NAME="名称";
+MFG_NB_OF_COMP="部件数";
+MFG_NB_OF_FLUTES="凹槽数";
+MFG_NB_OF_STAGES="级数";
+MFG_NB_OF_THREAD="螺纹数";
+MFG_NOMINAL_DIAM="标称直径";
+MFG_NON_CUT_DIAM="非切削直径";
+MFG_NOSE_RADIUS="刀尖半径";
+MFG_ORIENT_ANGLE="方向";
+MFG_ORIGINAL_ID="源标识符";
+MFG_OUTPUT_FRMT="NC 输出格式";
+MFG_OUTP_PREF_1="首选输出点 1";
+MFG_OUTP_PREF_2="首选输出点 2";
+MFG_OUTP_PREF_3="首选输出点 3";
+MFG_OUTPUT_TYPE="NC 输出类型";
+MFG_OUTSIDE_DIAM="外部直径";
+MFG_OVERALL_LGTH="总长度";
+MFG_PITCH_OF_THD="倾角";
+MFG_PITCH_OF_THREAD="倾角";
+MFG_PP_WORD_TBL="后置处理器词汇表";
+MFG_R_MAX_CIRC="最大插补半径";
+MFG_R_MIN_CIRC="最小插补半径";
+MFG_RAD_NUM="半径数量";
+MFG_RADIAL_TL_RAKE_ANG="径向刀倾角 ";
+MFG_REPOSITORY_SOURCE="档案库源";
+MFG_ROT_DIR="旋转方向";
+MFG_ROT_TYP="旋转类型";
+MFG_ROTARY_ANGLE="旋转角度";
+MfgTableRotationAngleMode="定义";
+MFG_ROTARY_AXIS="旋转轴";
+MFG_ROTARY_CATEGORY="类别";
+MFG_ROTARY_CATEGORY.LongHelp="旋转类别：工作台或头部";
+MFG_SHANK_HEIGHT="柄高";
+MFG_SHANK_WIDTH="柄宽";
+MFG_SHK_CUT_WDTH="柄切削宽度";
+MFG_SHK_LENGTH_1="柄长 1";
+MFG_SHK_LENGTH_2="柄长 2";
+MFG_SITE_NUM="校正器编号";
+MFG_SITE_TYP="类型";
+MFG_SIZE_DESIGN="指定大小";
+MFG_STRT_PT_SYNT="起点策略";
+MFG_TAPER_ANGLE="拔模角度";
+MFG_THD_CLS_DESC="螺纹类描述";
+MFG_THD_FRM_DESC="螺纹形状描述";
+MFG_THREAD_CLASS="螺纹类";
+MFG_THREAD_FORM="螺纹形状";
+MFG_TIP_ANGLE="顶锥角";
+MFG_TIP_LENGTH="顶端长度";
+MFG_TIP_RADIUS="齿顶圆半径";
+MFG_TL_RAKE_ANG="刀倾角 ";
+MFG_TL_SET_LGTH="总设置长度";
+MFG_TL_REF_COMP="参考补偿";
+MFG_TL_SET_X="移位 X";
+MFG_TL_SET_Y="移位 Y";
+MFG_TL_SET_Z="移位 Z";
+MFG_TL_SETUP_ANG="安装角度";
+MFG_TL_TIP_LGTH="刀尖长度";
+MFG_TOOL_ANGLE="齿尖角";
+MFG_TOOL_ASS_POWER="进阶";
+MFG_TOOL_CATALOG="工具目录";
+MFG_TOOL_CORE_DIAMETER="非切削直径";
+MFG_TOOL_INVERT="已反转工具";
+MFG_TOOL_NUMBER="工具编号";
+MFG_TOOTH_DES="齿描述";
+MFG_TOOTH_DESC="齿描述";
+MFG_TOOTH_MAT="齿材料";
+MFG_TOOTH_MATDES="齿材料描述";
+MFG_TOOTH_MATDESC="齿材料描述";
+MFG_TRAILING_ANG="后缘角";
+MFG_TRAV_PITCH="横切倾角";
+MFG_TRAVERSE_NB="横切次数";
+MFG_TURRET_NUMBER="转塔编号";
+MFG_WAY_OF_ROT="旋转方式";
+MFG_WEIGHT_SNTX="重量排列";
+MFG_X_HOME_POS="原点 X";
+MFG_X_INIT_SPNDL="方向 I";
+MFG_X_ROT_CENTER="中心点 X";
+MFG_X_TL_ORIENT="工具方向 I";
+MFG_X_TOOL_POS="换刀点 X";
+MFG_Y_HOME_POS="原点 Y";
+MFG_Y_INIT_SPNDL="方向 J";
+MFG_Y_ROT_CENTER="中心点 Y";
+MFG_Y_TL_ORIENT="工具方向 J";
+MFG_Y_TOOL_POS="换刀点 Y";
+MFG_Z_HOME_POS="原点 Z";
+MFG_Z_INIT_SPNDL="方向 K";
+MFG_Z_ROT_CENTER="中心点 Z";
+MFG_Z_TL_ORIENT="工具方向 K";
+MFG_Z_TOOL_POS="换刀点 Z";
+
+MFG_USABLE_LENGTH_MAXIMUM="可用的最大长度";
+MFG_HEAD_DIAMETER="实体刀头直径";
+MFG_CUTTING_ITEM_COUNT="切割项目数";
+MFG_FACE_MOUNTED_INSERT_COUNT="面安装刀片计数";
+MFG_PERIPHERAL_MOUNTED_INSERT_COUNT="外设安装刀片计数";
+MFG_ROW_COUNT="行数";
+MFG_MASTER_INSERT_IDENTIFICATION="主刀片标识";
+MFG_INSERT_INTERFACE_CODE="刀片接口代码";
+MFG_CUTTING_EDGE_ANGLE="切削刃角度";
+
+
+MfgSetUpDeltaX="设置增量 X";
+MfgSetUpDeltaY="设置增量 Y";
+MfgSetUpDeltaZ="设置增量 Z";
+MfgToolChangePointOnMachine="换刀点";
+MfgToolChgX="换刀点 X";
+MfgToolChgY="换刀点 Y";
+MfgToolChgZ="换刀点 Z";
+MfgToolDiameterRatio="工具直径百分比";
+
+MFG_AXIAL_RADIAL_MOVE="轴向/径向移动";
+MFG_MAX_FEEDRATE="最大加工进给速度";
+MFG_RAPID_FEED="快速进给速度";
+MFG_CONE_DIAMETER_1="圆锥直径 1";
+MFG_CONE_DIAMETER_2="圆锥直径 2";
+MFG_CONE_DIAMETER_3="圆锥直径 3";
+MFG_CONE_DIAMETER_4="圆锥直径 4";
+MFG_CONE_DIAMETER_5="圆锥直径 5";
+MFG_CONE_LENGTH="圆锥长度";
+MFG_CONE_LENGTH_1="圆锥长度 1";
+MFG_CONE_LENGTH_2="圆锥长度 2";
+MFG_CONE_LENGTH_3="圆锥长度 3";
+MFG_HOLDER_STAGES="支架级数";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。****************************************************************
+MFG_UPPER_DIAM="顶部直径";
+MFG_LOWER_DIAM="底部直径";
+MFG_UPPER_ANGLE="顶部倒角";
+MFG_LOWER_ANGLE="底部倒角";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。***************************************************************
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。for Barrel Tool
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================
+MFG_BARREL_RADIUS="桶半径 ";
+MFG_RADIAL_DISTANCE="径向距离 ";
+MFG_VERTICAL_DISTANCE="垂直距离 ";
+
+
+
+
+
+MFG_X_ORIGIN_ROTARY_DIR="参考方向 X";
+MFG_Y_ORIGIN_ROTARY_DIR="参考方向 Y";
+MFG_Z_ORIGIN_ROTARY_DIR="参考方向 Z";
+
+MFG_SPLIT_CIRCLE_STRAT="圆形分割策略";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NLS for Lathe
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Roughing operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheLongRough="粗车";
+
+MfgLatheStockClearance="坯料偏移";
+MfgLatheGlobalPartThickness="零件偏移";
+MfgLatheAxialPartOffset="轴向零件偏移";
+MfgLatheRadialPartOffset="径向零件偏移";
+MfgLatheDepthOfCut="最大切削深度";
+MfgLatheAxialDepthOfCut="轴向切削深度";
+MfgLatheRadialDepthOfCut="径向切削深度";
+MfgLathePlungeDistance="切入前的距离";
+MfgLathePlungeAngle="切入前的角度";
+MfgLatheLeadInDistance="引入距离";
+MfgLatheLeadInAngle="导角";
+MfgLatheAttackDistance="进攻距离";
+MfgLatheLiftOffDistance="剥离距离";
+MfgLatheLiftOffAngle="剥离角度";
+MfgLatheStartLimitClearance="起始限制偏移";
+MfgLatheModeStart="起始限制模式";
+MfgLatheEndLimitClearance="终止限制偏移";
+MfgLatheModeEnd="终止限制模式";
+MfgLatheMinDepthOfCut="最小切削深度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Grooving operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheGrooving="旋转槽车削";
+
+MfgLatheGroovingOrientation="方向";
+MfgLatheMaxLevelDepth="最大层深度";
+MfgLatheMaxApproachDistance="最大进刀距离";
+MfgLatheInclineAngle="倾斜角";
+MfgLatheGroovingStrategy="切槽模式";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Profile Finishing operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheProfileFinish="轮廓精车";
+
+MfgLatheLeadInRadius="引入半径";
+MfgLatheLiftOffRadius="剥离半径";
+MfgLatheInvertLeadInDistance="反转引入距离";
+MfgLatheInvertLiftOffDistance="反转剥离距离";
+MfgLatheInvertLiftOffRadius="反转剥离半径";
+MfgLatheInvertLiftOffAngle="反转剥离角度";
+MfgLatheFirstChamferLength="倒角长度";
+MfgLatheFirstCornerAngle="圆角角度";
+MfgLatheFirstCornerRadius="圆角半径";
+MfgLatheLastChamferLength="倒角长度";
+MfgLatheLastCornerAngle="圆角角度";
+MfgLatheLastCornerRadius="圆角半径";
+MfgLatheChamferLength="倒角长度";
+MfgLatheCornerRadius="圆角半径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Recessing operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheRecessing="凹槽车削";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Threading operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheThreading="螺纹车削";
+
+MfgLathePitch="倾角";
+MfgLatheThreadDepth="深度";
+MfgLatheThreadLength="长度";
+MfgLatheNominalDiameter="标称直径";
+MfgLatheCrestDiameterClearance="螺纹顶径的间隙";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Groove Finishing operation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MfgLatheGrooveFinish="旋转槽精车";
+
+MfgLatheFirstFlankLeadInDistance="第一个引入距离";
+MfgLatheFirstFlankLeadInAngle="第一个导角";
+MfgLatheFirstFlankLeadInRadius="第一个引入半径";
+MfgLatheLastFlankLeadInDistance="最后一个引入距离";
+MfgLatheLastFlankLeadInAngle="最后一个导角";
+MfgLatheLastFlankLeadInRadius="最后一个引入半径";
+MfgLatheOtherFlankLeadInDistance="其它引入距离";
+MfgLatheOtherFlankLeadInRadius="其它引入半径";
+MfgLatheOtherFlankLeadInAngle="其它导角";
+MfgLatheBottomOverlap="重叠";
+MfgLatheBottomClearance="间隙";
+MfgLatheLeadingSafetyAngle="安全导角";
+MfgLatheTrailingSafetyAngle="安全后缘角";
+MfgLatheFixtureClearance="装置器间隙";
+
+MfgStartPosition="开始";
+MfgStartInside="内侧";
+MfgStartOutside="外侧";
+MfgPercentageReductionBoolean="截断转换路径";
+MfgScallopPass="轮廓加工刀路";
+MfgScallopPassRatio="轮廓加工比";
+MfgGuidingPoint="引导点";
+MfgOutputPoint="输出点";
+
+DepthValue="深度值";
+MfgNoCornerChanel="无";
+MfgCorner="圆角";
+MfgChannel="通道";
+MfgCornerChanel="圆角和通道";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Update R8 SP2 - 5X MOs
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+MfgCorneringFinishFlag="精加工转角刀具路径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Operations SMG
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。=================
+M3xSweepingSU="扫掠";
+M3xSoftMaterialSU="扫掠粗加工";
+M3xBetweenContourSU="轮廓驱动";
+M3xZLevelSU="等高加工";
+M3xBitangencySU="笔铣";
+M3xHardMaterialSU="粗加工";
+M3xSpiralMillingSU="螺旋铣削";
+M3xPrismaticRoughingSU="棱柱形粗加工";
+M3xMultiPocketsSU="多型腔加工";
+M3xMultiPocketsSU="多型腔加工";
+Mfg5AxisMultiPocketsFlankSU="多型腔侧刃轮廓铣削";
+M3xStiffenerSU="加强肋";
+Mfg5AxisImpellerHubMachiningSU="叶轮轮毂加工";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Surface Machining features.
+M3xFeature="曲面特征";
+M3xRAFeature="再加工区域特征";
+M3xSAFeature="斜坡区特征";
+M3xOffsetGroup="偏移组";
+M3xPoint="点";
+M3xPlane="平面";
+M3xLine="直线";
+M3xArea="区域";
+
+M3xOffsetImposedPlane="偏移";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 OLC
+MFG_FEEDRATE_AUTO_UPD="从加工的进给速度和切削速度中自动计算";
+MFG_FEEDRATE_AUTO_UPD.LongHelp="激活从加工的进给速度和切削速度中自动计算进给速度值。
+制造属性为 MFG_FEEDRATE_AUTO_UPD。";
+MFG_SPINDLE_SPEED_AUTO_UPD="从加工的进给速度和切削速度中自动计算";
+MFG_SPINDLE_SPEED_AUTO_UPD.LongHelp="激活从加工的进给速度和切削速度中自动计算主轴值。
+制造属性为 MFG_SPINDLE_AUTO_UPD。";
+
+MFG_NURBS_OUTPUT="Nurbs 输出";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 RA / MA Feature
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+Mfg2DRAFeature="棱柱形再加工区域";
+Mfg2DMAFeature="棱柱形加工区域";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Update R9 - 3X MOs
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+M3xApproachDistanceLinking="进刀距离";
+M3xApproachMacroMotionLinking="进刀模式";
+M3xApproachVectorXLinking="进刀 X 方向";
+M3xApproachVectorYLinking="进刀 Y 方向";
+M3xApproachVectorZLinking="进刀 Z 方向";
+M3xRetractDistanceLinking="退刀距离";
+M3xRetractMacroMotionLinking="退刀模式";
+M3xRetractVectorXLinking="退刀 X 方向";
+M3xRetractVectorYLinking="退刀 Y 方向";
+M3xRetractVectorZLinking="退刀 Z 方向";
+M3xMacroApproachBackTypeCoordinateLinkingMode="链接的定义（进刀）";
+M3xMacroApproachBackTypeLengthLinking="链接的长度（进刀）";
+M3xMacroApproachBackTypeHeightLinking="链接的高度（进刀）";
+M3xMacroApproachBackTypeAngleLinking="链接的斜坡角度（进刀）";
+M3xMacroApproachBackTypeRadiusLinking="链接的半径（进刀）";
+M3xMacroApproachCircularVectorComputationLinkingMode="链接的平面计算模式（进刀）";
+M3xMacroApproachCircularAngleLinking="链接的角度（进刀）";
+M3xMacroApproachCircularRadiusLinking="链接的半径（进刀）";
+M3xMacroApproachBoxLinkingLinkingMode="链接的链接模式（进刀）";
+M3xMacroApproachBoxXLengthLinking="沿链接的切线的距离（进刀）";
+M3xMacroApproachBoxYLengthLinking="沿链接的刀轴的距离（进刀）";
+M3xMacroApproachBoxZLengthLinking="沿链接的法线轴的距离（进刀）";
+M3xMacroApproachBoxSideLinking="链接的法线轴的边（进刀）";
+M3xMacroRetractBackTypeCoordinateLinkingMode="链接的定义（退刀）";
+M3xMacroRetractBackTypeLengthLinking="链接的长度（退刀）";
+M3xMacroRetractBackTypeHeightLinking="链接的高度（退刀）";
+M3xMacroRetractBackTypeAngleLinking="链接的斜坡角度（退刀）";
+M3xMacroRetractBackTypeRadiusLinking="链接的半径（退刀）";
+M3xMacroRetractCircularVectorComputationLinkingMode="链接的平面计算模式（退刀）";
+M3xMacroRetractCircularAngleLinking="链接的角度（退刀）";
+M3xMacroRetractCircularRadiusLinking="链接的半径（退刀）";
+M3xMacroRetractBoxLinkingLinkingMode="链接的链接模式（退刀）";
+M3xMacroRetractBoxXLengthLinking="沿链接的切线的距离（退刀）";
+M3xMacroRetractBoxYLengthLinking="沿链接的刀轴的距离（退刀）";
+M3xMacroRetractBoxZLengthLinking="沿链接的法线轴的距离（退刀）";
+M3xMacroRetractBoxSideLinking="链接的法线轴的边（退刀）";
+M3xBetweenPassMacroMotion="进刀模式";
+M3xClearanceMacroMode="退刀模式";
+M3xMultiPassIsActive="多刀路";
+M3xMultiPassMode="多刀路的输入模式";
+M3xMultiPassNumberOfLevels="多刀路的层数";
+M3xMultiPassDepthByLevels="多刀路的每层切削深度";
+M3xMultiPassDepthTotalHeight="多刀路的总高度";
+M3xRapidFeedDistance="未使用";
+M3xStockOvershoot="过冲";
+M3xStockContouring="零件轮廓加工";
+
+M3xHardStopOffsetLength="未使用";
+M3xHardHelixDiameterLength="未使用";
+M3xHSMCornerRadius="未使用";
+M3xHSMLimitAngle="未使用";
+M3xHSMExtraSegmentOverlap="未使用";
+M3xHSMCorneringOnSideFinishPath="未使用";
+M3xHSMCornerRadiusOnSideFinishPath="未使用";
+M3xHSMLimitAngleOnSideFinishPath="未使用";
+M3xHSMTransitionRadius="未使用";
+M3xHSMTransitionAngle="未使用";
+M3xHSMTransitionLength="未使用";
+M3xImposedPlaneSensitivity="未使用";
+M3xConstantOrVariableDepth="未使用";
+M3xMachineOnlyOrderedArea="仅加工有序区域";
+M3xMacroRetractBoxWeight="未使用";
+M3xMacroRetractBoxWeightLinking="未使用";
+M3xInfiniteSafetyDistance="充分安全";
+
+M3xMacroApproachPSMLength="进刀的持久移动长度";
+M3xMacroApproachPSMSafetyDistance="进刀的持久移动安全距离";
+M3xMacroApproachPSMAngle="进刀的持久移动角度";
+M3xMacroApproachHSMEngagementRadius="进刀的高速铣削半径";
+M3xMacroApproachHSMEngagementAngle="进刀的高速铣削角度";
+M3xMacroApproachHSMSafetyDistance="进刀的高速铣削安全距离";
+M3xMacroApproachInfiniteSafetyDistance="进刀的充分安全";
+M3xMacroRetractPSMLength="退刀的持久移动长度";
+M3xMacroRetractPSMSafetyDistance="退刀的持久移动安全距离";
+M3xMacroRetractPSMAngle="退刀的持久移动角度";
+M3xMacroRetractHSMEngagementRadius="退刀的高速铣削半径";
+M3xMacroRetractHSMEngagementAngle="退刀的高速铣削角度";
+M3xMacroRetractHSMSafetyDistance="退刀的高速铣削安全距离";
+M3xMacroRetractInfiniteSafetyDistance="退刀的充分安全";
+
+M3xMacroApproachLinkingPSMLength="链接进刀的持久移动长度";
+M3xMacroApproachLinkingPSMSafetyDistance="链接进刀的持久移动安全距离";
+M3xMacroApproachLinkingPSMAngle="链接进刀的持久移动角度";
+M3xMacroApproachLinkingHSMEngagementRadius="链接进刀的 高速铣削半径";
+M3xMacroApproachLinkingHSMEngagementAngle="链接进刀的 高速铣削角度";
+M3xMacroApproachLinkingHSMSafetyDistance="链接进刀的 高速铣削安全距离";
+M3xMacroApproachLinkingInfiniteSafetyDistance="链接进刀的充分安全";
+M3xMacroRetractLinkingPSMLength="链接退刀的持久移动长度";
+M3xMacroRetractLinkingPSMSafetyDistance="链接退刀的持久移动安全距离";
+M3xMacroRetractLinkingPSMAngle="链接退刀的持久移动角度";
+M3xMacroRetractLinkingHSMEngagementRadius="链接退刀的 高速铣削半径";
+M3xMacroRetractLinkingHSMEngagementAngle="链接退刀的 高速铣削角度";
+M3xMacroRetractLinkingHSMSafetyDistance="链接退刀的 高速铣削安全距离";
+M3xMacroRetractLinkingInfiniteSafetyDistance="链接退刀的充分安全";
+
+M3xInvMachDir="加工方向侧面";
+M3xInvStartDir="起始方向侧面";
+M3xStayOnSurface="未使用";
+M3xProgressDirectionOnSurface="未使用";
+
+M3xMacroMotionSameForAll="未使用";
+M3xReverseMA="未使用";
+M3xOffsetSafetyPlaneLinking="链接的安全平面偏移";
+M3xPocketProgression="未使用";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Update R10 - 3X MOs
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+M3xStayOnBottom="依循于底部";
+M3xWithCompensation="未使用";
+M3xBottomDetection="水平区域检测";
+M3xBottomThickness="底部厚度";
+M3xBottomFinishThickness="底部的半精加工厚度";
+M3xBottomAngle="水平区域的最大角度 ";
+M3xBottomHardOverlapLength="底部刀路重叠（长度）";
+M3xBottomHardOverlap="底部刀路重叠（比例）";
+M3xBottomRatioOrLengthMode="底部重叠定义";
+M3xDifferentThicknessOnBottom="未使用";
+M3xIsMaxDiscretization="定义离散步长";
+M3xMaxDiscretization="最大离散步长";
+M3xMultiPassSequencingMode="多刀路排序模式";
+M3xBetweenPassDistance="通道之间的最大距离";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。----------------------------------
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NCReview
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。----------------------------------
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 For V4NCLatheStandardOperation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===============================
+MfgV4IsCollisionCheck="轮廓线冲突检查";
+MfgV4CollisionCheck="直线、曲线或轮廓线的冲突检查";
+MfgV4GeoRelimit="几何重新限定";
+MfgV4MachTol="加工公差";
+MfgV4ThicknessDrive="自驱动曲线的法向厚度";
+MfgV4AxialOffsetDrive="自驱动曲线的轴向偏移";
+MfgV4RadialOffsetDrive="自驱动曲线的径向偏移";
+MfgV4ThicknessCheck="自检查曲线的法向厚度";
+MfgV4AxialOffsetCheck="自检查曲线的轴向偏移";
+MfgV4RadialOffsetCheck="自检查曲线的径向偏移";
+MfgV4LeftSafetyAngle="左侧安全角度";
+MfgV4RightSafetyAngle="右侧安全角度";
+MfgV4IsFeedRAPID="快速进给模式下的进给速度";
+MfgV4FeedMachLinear="加工（单位/分钟）";
+MfgV4FeedMachAngular="加工（单位/转动）";
+MfgV4SpindleMachLinear="加工（单位/分钟）";
+MfgV4SpindleMachAngular="加工（每分钟转数)";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 For V4NCLatheCycleOperation 
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===============================
+MfgV4LatheCycleType="循环类型";
+MfgV4LatheMdOrientation="方向";
+MfgV4LatheMdLocation="位置";
+MfgV4LatheMachiningRecess="加工凹槽";
+MfgV4LatheMachDirection="加工方向";
+MfgV4LatheContouringMode="零件轮廓加工";
+MfgV4SemiFinition="零件轮廓加工";
+MfgV4CorrectorChange="更改输出点";
+MfgV4MultiCutConditions="进给速度变化";
+MfgV4ToolCompensation="CUTCOM";
+MfgV4EdgeMode="圆角处理";
+MfgV4ClearanceOnStock="坯料间隙";
+MfgV4ThicknessOnFinish="零件厚度";
+MfgV4AxialOffsetOnFinish="零件上的轴向偏移";
+MfgV4RadialOffsetOnFinish="零件上的径向偏移";
+MfgV4PlungeLimitAngle="后缘角";
+MfgV4PrincipalEdgeAngle="导角";
+MfgV4LatheMinMachRadius="最小加工半径";
+MfgV4LatheMaxMachRadius="最大加工半径";
+MfgV4LatheJawPosition="卡盘爪的轴向限制";
+MfgV4MaxDepth="最大镗孔深度 ";
+MfgV4MaxGrooveDepth="最大切槽深度";
+MfgV4MaxGrooveSlope="刨削角度";
+MfgV4LatheRadialDepthOfCut="径向切削深度";
+MfgV4LatheAxialDepthOfCut="轴向切削深度";
+MfgV4MaxDepthPass="最大切削深度";
+MfgV4LatheFirstPlungePos="第一个切入位置";
+MfgV4FirstPlungeDir="第一个切入方向";
+MfgV4FirstPlungeRad="第一个切入半径";
+MfgV4LatheMachiningDir="加工方向";
+MfgV4DiscretizationTol="加工公差";
+MfgV4LatheChamferLength="倒角长度";
+MfgV4LatheCornerRadius="圆角半径";
+MfgV4FirstLatheChamferLength="第一个倒角长度";
+MfgV4FirstLatheCornerRadius="第一个圆角半径";
+MfgV4LastLatheChamferLength="最后一个倒角长度";
+MfgV4LastLatheCornerRadius="最后一个倒角半径";
+MfgV4RetractType="退刀类型";
+MfgV4ApproachType="进刀类型";
+MfgV4LatheAttackDistance="进攻距离";
+MfgV4RetractAngle="剥离角度";
+MfgV4LatheLeadInDistance="引入距离";
+MfgV4LatheLeadInAngle="导角";
+MfgV4LeadInDistForRecess="切入前的距离";
+MfgV4LeadInAngleForRecess="切入前的角度";
+MfgV4LatheLiftOffDistance="剥离距离";
+MfgV4AppTypeInSlowMode="引入类型";
+MfgV4RetTypeInSlowMode="剥离类型";
+MfgV4PosModeOnStartElem="起始限制模式";
+MfgV4PosModeOnCheckElem="终止限制模式";
+MfgV4ClearanceOnStartElem="起始限制间隙";
+MfgV4ClearanceOnCheckElem="终止限制间隙";
+MfgV4LatheLeadInRadius="引入半径";
+MfgV4LatheLiftOffRadius="剥离半径";
+MfgV4LatheFirstFlankLeadInType="第一个侧面引入类型";
+MfgV4LatheLastFlankLeadInType="最后一个侧面引入类型";
+MfgV4LatheOtherFlankLeadInType="其它侧面引入类型";
+MfgV4LatheFirstFlankLeadInDistance="第一个侧面引入距离";
+MfgV4LatheLastFlankLeadInDistance="最后一个侧面引入距离";
+MfgV4LatheOtherFlankLeadInDistance="其它侧面引入距离";
+MfgV4LatheFirstFlankLeadInRadius="第一个侧面引入半径";
+MfgV4LatheLastFlankLeadInRadius="最后一个侧面引入半径";
+MfgV4OtherLastFlankLeadInRadius="其它侧面引入半径";
+MfgV4LatheFirstFlankLeadInAngle="第一个侧面导角";
+MfgV4LatheLastFlankLeadInAngle="最后一个侧面导角";
+MfgV4OtherLastFlankLeadInAngle="其它侧面导角";
+MfgV4FeedLeadIn="引入";
+MfgV4FeedPlunge="切入";
+MfgV4FeedFirstPlunge="第一个切入";
+MfgV4FeedOtherPlunge="其它切入";
+MfgV4FeedAttack="进攻";
+MfgV4FeedContour="轮廓加工";
+MfgV4FeedLiftOff="剥离";
+MfgV4FeedChamfer="倒角";
+MfgV4FeedOnFillet="转角";
+MfgV4FeedPlungeContour="轮廓加工";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 For V4MachiningOperation
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。=========================
+MfgV4PartSurfThickType="零件曲面厚度类型";
+MfgV4ContourType="链接轮廓类型";
+MfgV4SurfMachMode="曲面加工";
+MfgV4DistBetweenPathType="路径间距离";
+MfgV4NumberOfLevels="路径数";
+MfgV4FinishingPass="精加工刀路";
+MfgV4MachiningDirection="加工方向";
+MfgV4FinishingPassDir="精加工刀路方向";
+MfgV4OptCycleMode="以循环模式优化";
+MfgV4SkipPaths="跳转路径";
+MfgV4PocketBoundaryType="型腔边界类型";
+MfgV4CollCheck="冲突检查";
+MfgV4ContMillingType="接触铣削类型";
+MfgV4Rework="返工类型";
+MfgV4PlungeType="切入类型";
+MfgV4ComputedDistance="计算的距离";
+MfgV4SideThickness="侧面厚度";
+MfgV4PartSurfThickness="零件曲面厚度";
+MfgV4FinalPartThickness="最终零件厚度";
+MfgV4MachiningTolerance="加工公差";
+MfgV4TiltAngle="倾角";
+MfgV4ScallopHeight="残料高度";
+MfgV4OffsetAlongTLAxis="沿刀轴偏移";
+MfgV4ThickCheckSurf="检查曲面厚度";
+MfgV4FixtureThickness="装置器厚度";
+MfgV4DistBetweenPaths="路径间距离";
+MfgV4RetractHeight="退刀高度";
+MfgV4RawThickCoeff="原厚度系数";
+MfgV4FinishingRate="精加工刀路速率";
+MfgV4SlowDownRate="减速率";
+MfgV4MinDistLinkMacro="用于链接宏的最小距离";
+MfgV4OverrunDist="超限距离";
+MfgV4ThichCheckCurve="检查曲线线宽";
+MfgV4MaxDiscretStep="最大离散步长";
+MfgV4MaxDiscretAngle="最大离散角";
+MfgV4PlungeAngle="俯角";
+MfgV4MinDiscretStep="最小离散步长";
+MfgV4MinDiscretAngle="最小离散角";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Literaux
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。==========
+MfgV4_No_Valued="未赋值";
+MfgV4_NO="否";
+MfgV4_YES="是";
+MfgV4_OFFOFF="关闭";
+MfgV4_ONOFF="CRV1 为“打开”/CRV2 为“关闭”";
+MfgV4_OFFON="CRV1 为“关闭”/CRV12 为“打开”";
+MfgV4_ONON="CRV1 为“打开”/CRV2 为“打开”";
+MfgV4_AlongNorm="沿法线";
+MfgV4_AlongAxis="沿轴";
+MfgV4_Circle="圆";
+MfgV4_Angle="角度";
+MfgV4_Zig_Zag="锯齿形运动";
+MfgV4_One_Way="单向运动";
+MfgV4_Scallop="残料高度";
+MfgV4_MaxDist="路径间的最大距离";
+MfgV4_NBPaths="路径数";
+MfgV4_CLW="顺时针";
+MfgV4_CCLW="逆时针";
+MfgV4_None="无";
+MfgV4_First="第一个";
+MfgV4_Last="最后一个";
+MfgV4_Both="两者";
+MfgV4_Standard="标准";
+MfgV4_RawMaterial="原材料";
+MfgV4_Extended="已延伸";
+MfgV4_Same_Z="相同 Z";
+MfgV4_Low_Z="下部 Z";
+MfgV4_Low_ZReverse="下部 Z + 反转";
+MfgV4_Up="向上";
+MfgV4_Down="向下";
+MfgV4_OnPart="在零件上";
+MfgV4_OnPlane="在平面上";
+MfgV4_EbauchePassesParal="";
+MfgV4_EbaucheChariotage="";
+MfgV4_EbaucheDressage="";
+MfgV4_RecessZig_Zag="";
+MfgV4_Grooving="";
+MfgV4_Finition="";
+MfgV4_FinitionOutilGorge="";
+MfgV4_Interieure="内部";
+MfgV4_Exterieure="外部";
+MfgV4_Frontale="正面";
+MfgV4_Front="正面";
+MfgV4_Back="后退";
+MfgV4_Each="每条路径";
+MfgV4_End="仅最后一次通过";
+MfgV4_Chamfer="倒角";
+MfgV4_Fillet="圆角";
+MfgV4_LeftUp="左上";
+MfgV4_Center="中心";
+MfgV4_RightDown="右下";
+MfgV4_Other="其它";
+MfgV4_Left="左侧";
+MfgV4_Right="右侧";
+MfgV4_To_spindle="目标主轴";
+MfgV4_From_spindle="源主轴";
+MfgV4_Direct="直接";
+MfgV4_Axial_Radial="轴向-径向";
+MfgV4_Radial_Axial="径向-轴向";
+MfgV4_Vector="矢量";
+MfgV4_Circular="圆弧";
+MfgV4_Radius="半径";
+MfgV4_To="到达";
+MfgV4_On="之上";
+MfgV4_Past="超过";
+MfgV4_ToHeadStock_Spindle="目标车床头/主轴头";
+MfgV4_FromHeadStock_Spindle="源车床头/主轴头";
+
+MfgMacroAirCuttingFeedrate="气割进给速度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 FAP : Debut R11
+
+MFG_LATHE_MODIF_RAPID="将快速进给替换为气割进给速度";
+MFG_LATHE_RAPID_FEED="气割进给速度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Ramping Operations
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+MfgLatheDirection="加工方向";
+
+MfgLatheRampingReworkMode="返工模式";
+MfgLatheMOLeadingAngle="导角";
+MfgLatheMOTrailingAngle="后缘角";
+MfgLatheMOGougingAngle="刨削角度";
+MfgLatheRamping1stFlankPlungeDistance="第一个侧面的切入距离";
+MfgLatheRamping2ndFlankPlungeDistance="第二个侧面的切入距离";
+MfgLatheRampingRecessingStrategy="凹槽策略";
+MfgLatheRampingRoughingStrategy="粗加工策略";
+MfgLatheStartRampingPassMode="开始刀路模式";
+
+MfgLatheRampingClearance1="第一切削的间隙";
+MfgLatheRampingClearance2="第二切削的间隙";
+
+MfgLatheRampingAttackChamferLength="进攻倒角长度";
+MfgLatheRampingAttackCornerRadius="进攻圆角半径";
+MfgLatheRampingAttackCornerAngle="进攻圆角角度";
+
+MfgLatheRampingPlungeDistance="重新执行切入前的距离";
+MfgLatheRampingPlungeAngle="重新执行切入前的角度";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Sequential motion geometric features
+MfgLatheSequentialFeature="连续车削的几何特征";
+MfgLatheSequentialDeltaFeature="转至增量的几何特征";
+MfgLatheSequentialFollowFeature="跟随的几何特征";
+MfgLatheSequentialGoStdFeature="转至标准的几何特征";
+MfgLatheSequentialIndirvFeature="转至方向矢量的几何特征";
+MfgLatheSequentialGotoPointFeature="Goto 点几何特征";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Feature géométriques
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+LatheFeature="车削可加工区域";
+MfgLatheLongRoughFeature="粗车区域";
+MfgLatheGroovingFeature="旋转槽车削区域";
+MfgLatheRecessingFeature="凹槽车削区域";
+MfgLatheThreadingFeature="螺纹车削区域";
+MfgLatheProfileFinishFeature="轮廓精车区域";
+MfgLatheGrooveFinishFeature="旋转槽精车区域";
+MfgLatheSequentialGlobalGeomFeature="连续车削区域";
+MfgLatheRampingRoughingFeature="斜面粗车区域";
+MfgLatheRampingRecessingFeature="斜面凹槽车削区域";
+
+MfgName="名称";
+MfgComment="注释";
+
+MfgLatheInterruptMode="中断模式";
+MfgLatheInterruptTime="中断时间";
+MfgLatheInterruptNbOfPass="两次中断之间的刀路数";
+MfgLatheInterruptNbOfLevel="两次中断之间的层数";
+
+MFG_LATHE_FEED_STEP_NB="进给级数";
+MFG_LATHE_LIGHT_FEED_VALUE="轻负载进给速度";
+MfgLatheRampingContouringMode="斜坡轮廓加工模式";
+MfgLatheThreadSpringPasses="跳刀路径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 FAP : Fin R11
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 AJout LHX R12
+GrooveMachiningDirection="加工方向";
+GrooveAxialStrategy="轴向策略";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 SMG - Macros - CXR12
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+MfgMacroBetweenPassesMotions="刀路之间";
+MfgMacroAutomaticRoughingMotions="自动粗加工";
+MfgMacroHeight="高度";
+MfgMacroXLength="沿切线的距离";
+MfgMacroYLength="沿刀轴的距离";
+MfgMacroZLength="沿法线轴的距离";
+MfgMacroSide="法线轴的边";
+MfgMacroLinkingMode="链接模式";
+MfgMacroZLAngle="倾斜角度";
+MfgMacroZLLength="倾斜长度";
+MfgMacroSafetyDistance="安全距离";
+MfgMacroPredefinedMode="模式";
+MfgMacroDefinedByApproachRetract="未使用";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 SMG END
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Update R12 - 3X MOs
+M3xStockContouringPosition="零件轮廓加工位置";
+M3xStockContouringRatio="零件轮廓加工比";
+M3xStockContouringNumberOfLevel="层数";
+M3xMachiningDirectionIsManual="手动";
+M3xSideThickness="侧面上的偏移";
+M3xHSMCorneringOnContouringPath="零件轮廓加工刀路上的转角";
+M3xHSMCornerRadiusOnContouringPath="零件轮廓加工刀路上的圆角半径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Transition Element Feature
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+MfgTransitionElementsFeature="过渡元素";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 SMG R13
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+MfgMacroPreRoughingMotions="预先动作";
+MfgMacroPostRoughingMotions="后期动作";
+
+M3xIgnoreFacesKO="忽略无效面";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Gestion du brut en cours
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。------------------------------
+
+ActualStock="更新坯料";
+
+ActualStock.Title="更新输入坯料";
+ActualStock.ShortHelp="更新输入坯料";
+ActualStock.Help="更新当前操作的输入坯料";
+ActualStock.LongHelp="更新当前操作的输入坯料。
+通过考虑所有先前的车削环境操作来计算输入坯料。
+可以选择所有或部分结果草图作为当前操作的输入坯料";
+
+InputStock="更新输入坯料";
+InputStock.Title="更新输入坯料";
+InputStock.ShortHelp="更新输入坯料";
+InputStock.Help="更新当前操作的输入坯料";
+InputStock.LongHelp="更新当前操作的输入坯料。
+通过考虑所有先前的操作来计算输入坯料。";
+
+OutputStock="更新输出坯料";
+OutputStock.Title="更新输出坯料";
+OutputStock.ShortHelp="更新输出坯料";
+OutputStock.Help="更新当前操作的输出坯料";
+OutputStock.LongHelp="更新当前操作的输出坯料。";
+
+IgnoreStock="忽略输入坯料";
+IgnoreStock.Title="忽略输入坯料";
+IgnoreStock.ShortHelp="忽略输入坯料";
+IgnoreStock.Help="计算刀具路径时忽略输入坯料。";
+IgnoreStock.LongHelp="计算刀具路径时忽略输入坯料。";
+
+DeactivateStock="停用输出坯料计算";
+DeactivateStock.Title="停用输出坯料计算";
+DeactivateStock.ShortHelp="停用输出坯料计算";
+DeactivateStock.Help="停用输出坯料计算。";
+DeactivateStock.LongHelp="停用输出坯料计算。";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。---------------------------------------------
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。For Machined Area Display
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。------------------------------------------
+MachinedArea="加工区显示";
+MachinedArea.Title="加工面积";
+MachinedArea.ShortHelp="加工面积";
+MachinedArea.Help="显示加工面积";
+MachinedArea.LongHelp="显示当前操作的加工面积";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Prefix for Computed Stock
+DefaultPrefixActualStock="输入坯料实体 -";
+DefaultPrefixActualStockSketch="输入坯料草图 -";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Prefix for Final Stock
+DefaultPrefixFinalStock="最终坯料实体 -";
+DefaultPrefixFinalStockSketch="最终坯料草图 -";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Default préfix for Ref axis of the Part Operation
+DefaultRefAxisNamePO="默认参考加工轴 - ";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ISO / Video accuracy R14
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Delete unused Features (Ajout VCS R14 le 02/12/03)//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+MfgProgramMCDBasedSimulation="基于 NC 代码的仿真";
+MfgProgramCompensationModeSimulation="刀具补偿模式";
+
+MfgSetupDesignsAccuracy="设计精确度";
+MfgSetupStocksAccuracy="坯料精确度";
+
+Mfg5AxisStartEnd="内部参数";
+MfgStart="开始";
+MfgToolSideOnGuideCurve="引导曲线上的位置";
+MfgToolSideOnGuideCurve.LongHelp="根据前进方向，指定辅助引导元素上工具\n的位置。";
+MfgOffsetOnGuideCurve="引导曲线上的偏移";
+MfgOffsetOnGuideCurve.LongHelp="指定为在辅助引导元素上进行侧面定位\n而要考虑的偏移。";
+MfgUseGuideCurve="使用引导曲线";
+MfgUseGuideCurve.LongHelp="使用辅助引导元素指定工具接触模式：\n- 始终。\n- 需要时（即，仅当与驱动曲面存在冲突危险时）";
+Mfg5XOutputType="补偿输出";
+Mfg5XOutputType.LongHelp="指定要如何在 NC 输出中生成刀具补偿指令：
+
+无
+不计算补偿。
+
+3D 接触式
+接触工具末端，与零件曲面垂直，沿 3D 矢量（XN，YN，ZN）计算补偿。 
+补偿的半径为圆角半径。
+输出为接触点（XC，YC，ZC）和零件曲面法线（XN，YN，ZN）。
+如果在机床上设置此选择，则还可能会提供工具顶点（XT，YT，ZT）。 
+刀轴矢量 (IJK) 为多轴中的输出。";
+MfgMacroFeedrateType="进给速度类型";
+MfgMacroFeedrateValue="进给速度值";
+MfgMacroSpindleSpeedType="轴速度类型";
+MfgMacroSpindleSpeedValue="轴速度值";
+
+DeleteUnusedFeatPanelTitle="删除未使用的特征";
+DeleteUnusedFeatNbFound=" 个未使用的特征已找到";
+DeleteUnusedFeatAction="选择特征的子列表并/或验证/取消";
+
+And=" 和 ";
+Between=" 之间 ";
+MfgApproachMacro="进刀宏";
+MfgRetractMacro="退刀宏";
+MfgReturnTwoLevelMacroApp="“在层之间返回”宏中的进刀";
+MfgReturnTwoLevelMacroRet="“在层之间返回”宏中的退刀";
+MfgReturnOneLevelMacroApp="“在某层中返回”宏中的进刀";
+MfgReturnOneLevelMacroRet="“在某层中返回”宏中的退刀";
+MfgReturnFinishPathMacroApp="“返回到精铣路径”宏中的进刀";
+MfgReturnFinishPathMacroRet="“返回到精铣路径”宏中的退刀";
+MfgLinkingMacroApp="链接宏中的进刀";
+MfgLinkingMacroRet="链接宏中的退刀";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Editor for Machining Axis System
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。=================================
+Origin="原点";
+Origin.LongHelp="指定要指定的原点，而非加工轴系";
+
+Number=" 编号： ";
+Number.LongHelp="对于某些机床类型，请指定原点的编号\n仅适用于原点";
+
+Group=" 组： ";
+Group.LongHelp="对于某些机床类型，请指定原点的组\n仅适用于原点";
+
+Name="轴名： ";
+Name.LongHelp="指定加工轴系或原点的名称";
+
+NCOutputParameters="NC 输出参数";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Ajout Prismatic Roughing (Rcn le 08/01/04)
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+M3xLimitContinuityTol="公差";
+M3xPRSweepingMode="刀具路径形式";
+M3xLimitPosition="停止位置";
+M3xTruncatedTransitionPath="截断转换路径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Ajout (PGD le 08/01/04)
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+MfgOpposite="相反的程序模式";
+MfgGrooveMachiningDirection="加工方向";
+MfgGrooveAxialStrategy="轴向策略";
+MfgTopFinishPathThickness="顶部/底部精铣厚度";
+MFG_RELIMIT_HOLE_ORIGIN="重新限定孔原点";
+MFG_INVERSE_PATTERN_ORDERING="反转阵列排序";
+MFG_MACHINE_BLIND_THROUGH="加工盲孔/通孔";
+
+MfgLmtSpindleNumber="主轴编号";
+MFG_LATHE_MAX_SPNDL_SPEED="最大轴速度";
+MfgLmtSpiCenterX="主轴中心 X";
+MfgLmtSpiCenterY="主轴中心 Y";
+MfgLmtSpiCenterZ="主轴中心 Z";
+MfgLmtSpiInitAngle="初始主轴角位置（内部参数）";
+MfgLmtSpiRotaryAngle="旋转角度（内部参数）";
+
+MfgLmtTurretNumber="转塔编号";
+MfgLmtTurNbToolPos="工具位置数（内部参数）";
+MfgLmtTurMaxToolStored="最大工具数（内部参数）";
+MfgLmtTurFirstToolNum="第一个工具编号（内部参数）";
+MfgLmtTurLastToolNum="最后一个工具编号（内部参数）";
+MfgLmtTurRefPtX="转塔参考点 X";
+MfgLmtTurRefPtY="转塔参考点 Y";
+MfgLmtTurRefPtZ="转塔参考点 Z";
+MfgLmtTurToolChgPtX="换刀点 X";
+MfgLmtTurToolChgPtY="换刀点 Y";
+MfgLmtTurToolChgPtZ="换刀点 Z";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 LongHelp PPR Tree
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。========================
+
+MissingTurretOnProgram="/p1不完整，\n因为没有转塔与其程序关联";
+ProgramWithNoTurret="/p1没有关联的转塔。\n如果要在其中创建车削操作，\n您可能需要分派转塔。";
+
+MfgProgramOptimization="程序优化";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Update R15 - 3X MOs
+M3xRepartitionMode="分布模式";
+M3xGuideContinuityTol="引导线公差";
+M3xConstantByFace="按区域分布";
+M3xStepOverModeBetweenContour="步距模式";
+M3xSMSStopPosition1="引导线 2 上的停止位置";
+M3xSMSLimitOverShoot1="引导线 2 上的偏移";
+M3xSMSGuideOffsetUpdated="未使用";
+M3xStepOverModeZLevel="步距模式";
+M3xStepOverModeSweeping="步距模式";
+M3xHardDistinctMode="型腔中的不同形式";
+M3xHardComplementaryMode="型腔中的刀具路径形式";
+M3xToolCoreDiameter1="未使用";
+M3xPocketFilter="型腔过滤器";
+M3xSmallPassFilter="小刀路过滤器";
+M3xMultiPocketsStrategy="加工策略";
+M3xMultiPocketsSweepingMode="刀具路径形式";
+M3xOffsetImposedPlane2="强加的平面 2 上的偏移";
+M3xSideBottomFinishThickness="侧面的底部精铣厚度";
+M3xSideMaxDepthOfCut="侧面上的最大切削深度";
+
+ManufacturingSynchronisation="同步";
+MfgDefaultPositionOfSynchronisation="同步位置";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 GVS R14
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+Mfg5AxisFanningDistanceIso="扇形距离";
+MfgCollisionCoveringCheck="覆盖模式";
+MfgCheckCollisionWithGuide="引导线上的冲突检测";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 GVS R17
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+Mfg5AxisGuideDirection="引导线侧面";
+Mfg5XTubeGuidingMode="引导策略";
+Mfg5XTubeMachiningMode="刀具路径形式";
+Mfg5XWayOfCutAlongGuide="沿引导线的切削方式";
+Mfg5XTubeMatSide="切削方向";
+Mfg5XTubeRadialStrategy="步距";
+Mfg5AxisTubeAxisStrategy="刀轴模式";
+Mfg5AxisAllowVariableTilt="允许可变倾斜度";
+Mfg5XTubeAxisSelection="引导线选择模式";
+Mfg5AxisGuidingAxis="引导方向";
+Mfg5AxisCurveSweepingSideToMachine="要加工的材料侧";
+MfgDistanceOnGuide="引导线上的距离";
+MfgWithMaxPlungingDistance="活动的最大切入距离";
+MfgMaxPlungingDistance="最大切入距离";
+Mfg5AxisOppositeToMachiningDir="与加工方向相反";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 BIL R17 Thread Milling
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+MfgThreadMillingStrategy="螺纹铣削策略";
+MfgThreadMillingMode="螺纹铣削模式";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Rcn R17 (Plunge)
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+M3xBeforeCutDistance="第一切削后的距离";
+M3xBeforeBottomDistance="底部前的距离";
+M3xLateralRetractDistance="侧面退刀距离";
+M3xMinPlungingDistance="最小切入长度";
+M3xCtrDiscretizationStep="离散步长";
+M3xLongitudinalStep="纵向步长";
+M3xTransversalStep="横向步长";
+M3xGrooveWidth="旋转槽宽度";
+M3xGrooveStep="旋转槽步长";
+M3xGridDefinitionMode="网格类型";
+M3xGridMachiningMode="加工形式";
+M3xGridOWDirection="加工面";
+M3xCenterNumber="中心位置的材料检查";
+
+M3xAuthorizedFM="未使用";
+M3xMaxFMDepthOfCut="最大的全材料切削深度";
+M3xFMManagementMode="完全进刀的工具管理";
+M3xFMTrochoidMinDiam="未使用";
+M3xFMTrochoidMaxDiam="未使用";
+M3xFMTrochoidStart="未使用";
+M3xFMTrochoidStep="未使用";
+M3xFMTrochoidStartAngle="未使用";
+M3xTrochoidParamMode="未使用";
+M3xFMTrochoidMinRadDist="最小次摆线半径";
+M3xFMTrochoidMaxRadDist="未使用";
+M3xPassCorner="高速铣削";
+M3xPassCornerRadius="圆角半径";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。=====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。Sequential Axial Motions
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+
+MfgSpindleSpeedMachining="加工";
+MfgSpindleSpeedLocal="局部主轴";
+MfgAngularSpindleMagnitude="角度";
+MfgLinearSpindleMagnitude="线性";
+MfgSpindleCW="顺时针";
+MfgSpindleCCLW="逆时针";
+
+MfgSpindleStop="主轴停转";
+MfgSpindleLock="主轴锁定";
+
+MfgAxialLevelDiameter="直径";
+MfgAxialPlaneDistance="距离";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 spindle speed
+MfgSpindleSpeedMachining="加工";
+MfgSpindleSpeedLocal="局部主轴";
+MfgAngularSpindleMagnitude="角度";
+MfgLinearSpindleMagnitude="线性";
+MfgSpindleCLW="顺时针";
+MfgSpindleCCLW="逆时针";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 spindle stop/lock
+MfgSpindleStop="主轴停转";
+MfgSpindleLock="主轴锁定";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。delay
+MfgSpindleDwellByTimeUnit="按时间";
+MfgSpindleDwellByRevolution="按旋转";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 go delta go to plane to to clearance
+MfgMachiningFeedrate="加工";
+MfgApproachFeedrate="进刀";
+MfgRetractFeedrate="退刀";
+MfgRapidFeedrate="快速";
+MfgLocalFeedrate="局部进给速度";
+MfgAngularFeedrateMagnitude="角度";
+MfgLinearFeedrateMagnitude="线性";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 MfgAxialLevelPlane
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 ==================================================//_汉化文件兼容V5-6R2012至V5-6R2020版本。
+MfgAxialLevelTopPlane="1";
+MfgAxialLevelBottomPlane="2";
+
+MfgAxialSeqStrategy="加工策略";
+MfgAxialSeqStrategy.LongHelp="定义加工策略";
+MfgAxialSeqBottomTop="底部/顶部";
+MfgAxialSeqTopBottom="顶部/底部";
+MfgAxialLevelOffsetOnDiameter="直径上的偏移";
+MfgAxialLevelOffsetOnDiameter.LongHelp="定义直径上的偏移";
+MfgAxialLevelDiameter="直径";
+
+MfgSeqMotionApplicationEachLevel="每层";
+MfgSeqMotionApplicationFirstLevel="第一层";
+MfgSeqMotionApplicationLastLevel="最后一层";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 spindle stop/lock
+MfgSpindleAngularLock="主轴角锁定";
+MfgSpindleStop="主轴停转";
+MfgSpindleLock="主轴锁定";
+MfgSeqMotionAxialSpindleStop="主轴停转";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。delay
+MfgSpindleDwellTime="主轴停留时间";
+MfgSpindleDwellRevolution="主轴停留转数";
+MfgSpindleDwellByTimeUnit="按时间";
+MfgSpindleDwellByRevolution="按旋转";
+MfgSeqMotionAxialDelay="延迟";
+
+MfgAxialPlane="轴向平面";
+MfgAxialPlaneGeom="轴向平面几何图形";
+MfgAxialPlaneDistance="轴向平面距离";
+MfgAxialLevel="轴向水平";
+MfgAxialLevelBottomPlane="轴向水平底部平面";
+MfgAxialLevelTopPlane="水平顶部平面";
+MfgAxialLevelDiameter="轴向水平直径";
+MfgAxialLevelOffsetOnDiameter="直径上的轴向水平偏移";
+MfgSeqMotionApplicationMode="应用程序模式 "; //_汉化文件兼容V5-6R2012至V5-6R2020版本。  @validatedUsage NES 14:10:15 application
+MfgSeqMotionAxialSpindleSpeed="轴速度";
+
+MfgSeqMotionAxialGoToPlane="转至平面";
+MfgPlaneNumber="平面数";
+MfgOffsetOnPlane="平面上的偏移";
+MfgNumberOfPlanes="平面数";
+MfgSeqMotionAxialGoDelta="转至增量";
+MfgSeqMotionAxialGoToClearance="转至间隙";
+MfgSeqMotionAxialCircular="圆弧";
+MfgSeqMotionAxialHelical="螺旋";
+MfgSeqMotionAxialPPWord="PP 词汇";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 BQA R17 UDF Creation using Technological Results
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。Since Name was already Used in  " Editor for Machining Axis System" We are forced to Use it as UDF Name.
+
+UDFName="名称";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 DCN 20/11/2006 Resource queries
+MfgResourceRequirementPX2="加工查询";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 OPU 24/11/2006 
+MfgToolMagazine="工具库";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 GVS R17SP3 Tube Machining Evolutions
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+Mfg5XToolPosition="驱动刀锋";
+Mfg5XHardMachiningMode="区域";
+Mfg5XPropagationMode="未使用";
+Mfg5AxisEndAngle="高度角";
+Mfg5AxisStartAngle="未使用";
+Mfg5AxisCavityOnStart="未使用";
+Mfg5AxisCavityOnEnd="未使用";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 GVS R18
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+MfgThruGuideSubMode="通过引导线模式";
+MfgOffsetOnTiltGuide="倾斜引导线上的偏移";
+MfgSideOnTiltGuide="倾斜引导线一侧的偏移";
+MfgExtrapolateTiltGuide="延长倾斜引导线";
+MfgMacroCircleMode="在平面内";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NES R18
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+M3xTo5xMode="刀轴模式";
+M3xTo5xAngle="角度";
+M3xTo5xAngleStepMax="最大离散角";
+M3xTo5xLengthMin="最小长度";
+M3xTo5xOffsetTool="工具上的偏移";
+M3xTo5xOffsetAssembly="工具装配体上的偏移";
+M3xTo5xAngleMin="最小角度";
+M3xTo5xAngleMax="最大角度";
+M3xTo5xAngleStep="步进角";
+
+Mfg5XSpiralMillingStyle="刀具路径形式";
+Mfg5XHelicalMovement="螺旋移动";
+MfgCollisionOffsetTool="工具上的偏移";
+MfgCollisionOffsetToolAss="工具装配体上的偏移";
+MfgCollisionWithAssembly="工具装配体上的冲突检查";
+Mfg5XSpiralAxisStrategy="刀轴模式";
+
+M3xOffsetShank="刀柄上的偏移";
+M3xMinLengthUndercut="要移除的最小长度";
+M3xCriterUndercut="底切条件";
+M3xSetCriterUndercut="设置底切条件";
+M3xRemoveUndercut="在底切中移除部分刀路";
+
+M5xCrvLength1="已使用";
+M5xCrvLength2="未使用";
+
+M5xSmLength1="未使用";
+M5xSmLength2="未使用";
+M5xSmBool1="未使用";
+M5xSmBool2="未使用";
+M5xCsLength1="未使用";
+M5xCsLength2="未使用";
+M5xCsBool1="未使用";
+M5xCsBool2="未使用";
+M5xIsoLength1="未使用";
+M5xIsoLength2="未使用";
+M5xIsoBool1="未使用";
+M5xIsoBool2="未使用";
+M5xBcLength1="未使用";
+M5xBcLength2="未使用";
+M5xBcBool1="未使用";
+M5xBcBool2="未使用";
+M5xSwLength1="未使用";
+M5xSwLength2="未使用";
+M5xSwBool1="未使用";
+M5xSwBool2="未使用";
+M5xTbLength1="未使用";
+M5xTbLength2="未使用";
+M5xTbBool1="未使用";
+M5xTbBool2="未使用";
+M5xHxLength1="未使用";
+M5xHxLength2="未使用";
+M5xHxBool1="未使用";
+M5xHxBool2="未使用";
+M3xBtLength1="未使用";
+M3xBtLength2="未使用";
+M3xBtBool1="未使用";
+M3xBtBool2="未使用";
+M3xSwLength1="未使用";
+M3xSwLength2="未使用";
+M3xSwBool1="未使用";
+M3xSwBool2="未使用";
+M3xSrLength1="未使用";
+M3xSrLength2="未使用";
+M3xSrBool1="未使用";
+M3xSrBool2="未使用";
+M3xBcLength1="未使用";
+M3xBcLength2="未使用";
+M3xBcBool1="未使用";
+M3xBcBool2="未使用";
+M3xSmLength1="未使用";
+M3xSmLength2="未使用";
+M3xSmBool2="未使用";
+M3xRgLength1="未使用";
+M3xRgLength2="未使用";
+M3xRgBool1="未使用";
+M3xRgBool2="未使用";
+
+M5xCrvBool1="引导先后顺序（按最近项）";
+M5xCrvBool2="引导先后顺序（按条纹）";
+
+MfgCmdSequenceNum="序号";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 FBF R205 New column in Process Table for LMG
+
+MFG_LATHE_INPUT_STOCK_STATUS="输入坯料状态";
+M3xSmBool1="升级 R19 参数";
+
+M3xZlLength2="最大离散步长";
+
+M3xZlLength1="刀具路径上的偏移";
+M3xZlBool1="圆弧插补";
+M3xZlBool2="升级版本";
+M3xCircInterpo="圆弧插补";
+M3xCircInterpoOptim="用于优化圆弧插补的近似刀路";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 GVS R19
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 =====================================================================
+MfgThruLeadAngle="导角";
+MfgAllowOffsetOnStops="停止处的偏移";
+MfgMacroClearanceDiscretization="光顺刀轴移动";
+MfgMacroClearanceDiscretization.LongHelp="在链接路径的间隙处应用最大离散角度。";
+
+MfgCheckCollision="激活冲突检查";
+MfgCheckCollisionOnPart="设计零件冲突检查";
+MfgCheckCollisionOnFixture="装置器冲突检查";
+MfgCheckCollisionOnMachineHead="机床头冲突检查";
+MfgCheckCollisionOnStock="输入坯料冲突检查";
+MfgCheckCollisionOffsetTool="刀柄上的偏移";
+MfgCheckCollisionOffsetAssembly="工具装配体和床头上的偏移";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 NES R19 : for Styli Tool
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+
+MFG_CYLINDER_LENGTH="圆柱长度";
+MFG_BALL_LENGTH_DOWN="球下降长度";
+
+MFG_STYLUS_TYPE="类型";
+MFG_STYLUS_MATERIAL="材料";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Smu - R19 : NLS for Principal axis in MfgDirection feature in F(x) panel
+PrincipalAxis="主轴";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 MPG Flank R19
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+MfgGlobalBottomThickness="零件底面上的偏移";
+M5xMultiPocketNoPush="避免推入工具";
+M5xFixedAxisForSemiFinishing="半精加工刀路中的固定刀轴";
+Mfg5AxisMaxLeadAngle="最大导角";
+Mfg5AxisMaxTiltAngle="最大倾角";
+Mfg5AxisMPFAxisStrategy="刀轴模式";
+MfgMaxDepthOfCutFinish="刀路间的轴向精铣距离";
+MfgMPFSideFinish="侧精铣刀路模式";
+MfgScallopHeightFinish="轴向精铣残料高度";
+Mfg5AxisMPGMultiLevelMode="轴向模式";
+Mfg5AxisFinishMultiLevelMode="精加工步距模式";
+Mfg5AxisRoughMultiLevelMode="半精加工步距模式";
+
+M5xMPFLength1="未使用";
+M5xMPFLength2="未使用";
+M5xMPFBool1="未使用";
+M5xMPFBool2="未使用";
+Mfg5AxisFinishAxialHelicalAngle="未使用";
+Mfg5AxisFinishAxialHelicalDist="未使用";
+Mfg5AxisFinishAxialHelicalMode="未使用";
+Mfg5AxisRoughAxialHelicalAngle="未使用";
+Mfg5AxisRoughAxialHelicalDist="未使用";
+Mfg5AxisRoughAxialHelicalMode="未使用";
+MfgCorneringSharpFlag="未使用";
+MfgNumberOfLevelsFinish="未使用";
+
+MfgProbingSlotElementsOffset="偏移";
+
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 FAO R19SP3 Relimit Area With Checks
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。===================================================================
+MfgRelimitAreaWithCheck="通过检查重新限定区域";
+
+MfgTrochoidDiameter="次摆线直径";
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 QIH Message for NOT found NC Sets
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************
+NCSet.Text = "读取制造数据期间未找到的 NC 集列表 \n";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************
+
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。 Added for DPM_MPP_IPM_GENERATION_MODE=TRUE
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************
+IPMToolGenMode = "从工具";
+IPMGeometryGenMode = "从几何";
+IPMUserSettingsGenMode = "没有";
+//_汉化文件兼容V5-6R2012至V5-6R2020版本。************************************************************

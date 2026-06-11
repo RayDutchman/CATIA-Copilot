@@ -2124,7 +2124,7 @@
             <std:enumval name="DimLineMode">Regular</std:enumval>
           </std:node>
           <std:node name="Color">
-            <std:colorval>0 0 0</std:colorval>
+            <std:colorval>0 0 225</std:colorval>
           </std:node>
           <std:node name="Thickness">
             <std:intval>1</std:intval>
@@ -2148,7 +2148,7 @@
               <std:enumval name="ArrowEndType">FilledArrow</std:enumval>
             </std:node>
             <std:node name="Color">
-              <std:colorval>0 0 0</std:colorval>
+              <std:colorval>0 0 225</std:colorval>
             </std:node>
             <std:node name="Thickness">
               <std:intval>1</std:intval>
@@ -2159,7 +2159,7 @@
               <std:enumval name="ArrowEndType">FilledArrow</std:enumval>
             </std:node>
             <std:node name="Color">
-              <std:colorval>0 0 0</std:colorval>
+              <std:colorval>0 0 225</std:colorval>
             </std:node>
             <std:node name="Thickness">
               <std:intval>1</std:intval>
@@ -2171,7 +2171,7 @@
         </std:node>
         <std:node name="ExtensionLine">
           <std:node name="Color">
-            <std:colorval>0 0 0</std:colorval>
+            <std:colorval>0 0 225</std:colorval>
           </std:node>
           <std:node name="Thickness">
             <std:intval>1</std:intval>
@@ -2269,7 +2269,7 @@
             <std:floatval>4.</std:floatval>
           </std:node>
           <std:node name="Color">
-            <std:colorval>0 0 0</std:colorval>
+            <std:colorval>0 0 225</std:colorval>
           </std:node>
           <std:node name="Underline">
             <std:enumval name="YesNo">No</std:enumval>
@@ -2521,7 +2521,7 @@
       <std:node name="ViewText">
         <std:node name="Font">
           <std:node name="Name">
-            <std:strval></std:strval>
+          <std:strval>ChangFangSong (TrueType)</std:strval>
           </std:node>
           <std:node name="Bold">
             <std:enumval name="YesNo">No</std:enumval>
@@ -3369,7 +3369,7 @@
         </std:node>
         <std:node name="Arrows">
           <std:node name="Length">
-            <std:floatval>20.</std:floatval>
+            <std:floatval>5.</std:floatval>
           </std:node>
           <std:node name="Head">
             <std:node name="Angle">
@@ -3469,7 +3469,7 @@
         </std:node>
         <std:node name="Arrows">
           <std:node name="Length">
-            <std:floatval>20.</std:floatval>
+            <std:floatval>5.</std:floatval>
           </std:node>
           <std:node name="Head">
             <std:node name="Angle">
@@ -3495,7 +3495,7 @@
         <std:node name="Text">
           <std:node name="Font">
             <std:node name="Name">
-              <std:strval></std:strval>
+              <std:strval>ChangFangSong (TrueType)</std:strval>
             </std:node>
             <std:node name="Bold">
               <std:enumval name="YesNo">No</std:enumval>
@@ -8177,7 +8177,7 @@ $ 00C8  000 030  016 000  128 000  048 000  128 000  032 000  000 000  ;
       <std:strval name="Notes" >No</std:strval>
     </std:typeval>
   </std:node>
-  <std:node name="Revision">
+  <std:node name="Version">
     <std:intval>190</std:intval>
   </std:node>
 </std:node>

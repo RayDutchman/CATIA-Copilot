@@ -1,0 +1,34 @@
+Option Explicit
+
+Private Sub lstTemplate_DblClick(ByVal Cancel As MSForms.ReturnBoolean)
+Dim sTempfile As String
+Dim i As Integer
+sTempfile = ""
+For i = 0 To lstTemplate.ListCount - 1
+    If lstTemplate.Selected(i) = True Then
+        sTempfile = lstTemplate.List(i)
+        Exit For
+    End If
+Next
+
+If sTempfile <> "" Then
+GB_Frame.AddDoc2Tree oCATVBA_Folder("Template\Start_Part").Path & "\" & sTempfile
+End If
+End Sub
+
+Private Sub UserForm_Initialize()
+'1.扫描所有..\Template\Start_Part文件夹下的CATPart,CATDrawing和CATProduct文件，并将文件名放入数组
+'2.数组内容添加执行按钮
+Dim f, fso, fname
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    For Each f In oCATVBA_Folder("Template\Start_Part").Files
+        fname = f.Name
+        If Right(f.Name, 8) = ".CATPart" Then
+           lstTemplate.AddItem f.Name
+        ElseIf Right(f.Name, 11) = ".CATProduct" Then
+           lstTemplate.AddItem f.Name
+        ElseIf Right(f.Name, 11) = ".CATDrawing" Then
+           lstTemplate.AddItem f.Name
+        End If
+    Next
+End Sub

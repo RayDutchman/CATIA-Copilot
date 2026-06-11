@@ -53,6 +53,7 @@ from catia_copilot.ui.export_bom_dialog import ExportBomDialog
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.bom_edit_dialog import BomEditDialog
 from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
+from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
@@ -522,8 +523,12 @@ class MainWindow(QMainWindow):
         btn_bom_edit.clicked.connect(self._open_bom_edit_dialog)
 
         btn_bom_edit_v2 = QPushButton("BOM 工作台 V2（即时写回）")
-        btn_bom_edit_v2.setToolTip("编辑即时写回 CATIA 的新版 BOM 工作台（对比测试用）")
+        btn_bom_edit_v2.setToolTip("编辑即时写回 CATIA 的新版 BOM 工作台（V2）")
         btn_bom_edit_v2.clicked.connect(self._open_bom_edit_dialog_v2)
+
+        btn_bom_edit_v3 = QPushButton("BOM 工作台 V3（part_master 架构）")
+        btn_bom_edit_v3.setToolTip("V3 架构：part_master/instance 分离，同文件多实例天然共享属性")
+        btn_bom_edit_v3.clicked.connect(self._open_bom_edit_dialog_v3)
 
         btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
@@ -537,7 +542,7 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        for btn in (btn_bom_edit, btn_bom_edit_v2, btn_mass_props, btn_plm_workbench):
+        for btn in (btn_bom_edit, btn_bom_edit_v2, btn_bom_edit_v3, btn_mass_props, btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -1372,6 +1377,10 @@ class MainWindow(QMainWindow):
     @Slot()
     def _open_bom_edit_dialog_v2(self) -> None:
         self._show_dialog("_dlg_bom_edit_v2", lambda: BomEditDialogV2(self))
+
+    @Slot()
+    def _open_bom_edit_dialog_v3(self) -> None:
+        self._show_dialog("_dlg_bom_edit_v3", lambda: BomEditDialogV3(self))
 
     def _open_mass_props_dialog(self) -> None:
         self._show_dialog("_dlg_mass_props", lambda: MassPropsDialog(self))

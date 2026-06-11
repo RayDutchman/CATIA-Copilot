@@ -275,24 +275,18 @@ QTextEdit  详细日志（右侧，只读，objectName="logView"）
 
 ### TODO-01：PLM 同步上传时自动查找对应 CATDrawing 文件
 
+**状态**：✅ 已实现（`catia_copilot/catia/dependencies.py`）
+
 **背景**：同步选项中已有"转换图纸为 PDF 并上传"和"上传图纸原文件（CATDrawing）"两个开关，
-但从 CATPart/CATProduct 定位到其对应 CATDrawing 文件的逻辑尚未实现。
+需要从 CATPart/CATProduct 路径定位到对应 CATDrawing 文件。
 
-**当前行为**：`_find_drawing_for_part(filepath)` 函数直接返回 `None`，
-两个图纸相关上传开关在找不到图纸时静默跳过，不报错。
+**实现**：`catia_copilot/catia/dependencies.py:525` 中的 `find_drawing_for_part()` 函数，
+已支持五种查找策略（由 `constants.PART_TO_DRAWING_STRATEGIES` 控制顺序）：
 
-**需要实现的逻辑**（候选方案，选一或组合）：
+1. `pn_param_open_drws`：遍历已打开 CATDrawing，找 `Parameters["PartNumber"]` == 零件 PartNumber 的图纸
+2. `pn_param_scan_drws`：在向上 N 级目录中找文件名 stem == 零件 `Product.PartNumber` 的 `.CATDrawing`
+3. `same_name_scan_dirs`：在向上 N 级目录中找文件名 stem == 零件文件 stem 的 `.CATDrawing`
+4. `strip_prefix_scan_dirs`：扫描上级目录内的 `.CATDrawing`，strip 前缀后与零件 stem 比较
+5. `doc_file_links`：遍历已打开 CATDrawing，反查生成式视图链接是否指向该零件
 
-1. **同目录同名查找**：在 CATPart 所在目录查找同名 `.CATDrawing` 文件，
-   如 `PartA.CATPart` → `PartA.CATDrawing`。
-2. **依赖关系反查**：利用 `catia_copilot/catia/dependencies.py` 中已有的
-   依赖分析逻辑，在已打开的 CATIA 文档中找到引用了该 CATPart 的 CATDrawing。
-3. **CATIA 文档集合扫描**：遍历 `application.Documents`，过滤出
-   `DrawingDocument` 类型，检查其视图中引用的零件路径是否匹配。
-
-**涉及文件**：
-- `catia_copilot/plm/sync.py`：`_find_drawing_for_part()` 函数（当前返回 `None` 占位）
-- `catia_copilot/catia/dependencies.py`：可能提供反查入口
-
-**优先级**：中  
-**前置条件**：需明确项目的 CATDrawing 命名规范与存放规则
+`sync.py:733` 中 `_find_drawing_for_part()` 封装调用，取优先级最高的第一个候选结果。
