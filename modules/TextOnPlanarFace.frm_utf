@@ -397,23 +397,10 @@ If IsStrokeFont(cbxFontName.Text) And Val(cbxThickness.Text) > 0 Then '单线字
     Tempad.Name = "TextPocket"
     End If
 Tempad.IsThin = True
-Dim Parameters2 'As Parameters
+Tempad.NeutralFiber = True  '对称薄壁，Item(2) 为总厚度，CATIA 自动两侧均分
+Dim Parameters2
 Set Parameters2 = tarPart.Parameters.SubList(Tempad, False)
-Dim par 'As Parameter
-For Each par In Parameters2
-    Dim mainStr, subStrCN, subStrEN, position
-    'Debug.Print par.Name
-    mainStr = par.Name
-    subStrCN = "厚薄": subStrEN = "ThickThin"
-    position = InStr(1, mainStr, subStrCN, vbTextCompare)
-    If position > 0 Then
-        par.Value = Val(cbxThickness.Text) / 2
-    End If
-    position = InStr(1, mainStr, subStrEN, vbTextCompare)
-    If position > 0 Then
-        par.Value = Val(cbxThickness.Text) / 2
-    End If
-Next
+Parameters2.Item(2).Value = Val(cbxThickness.Text)
 End If
 tarPart.Update
 If Err.Number <> 0 Then
@@ -455,13 +442,23 @@ Private Sub SetPreviewFont(tb As MSForms.TextBox, fontItemText As String)
     tb.Font.Name = fontName
 End Sub
 
-'###########判断是否为单线字体（不含空格的字体名视为单线字体）##########
-'约定：TrueType 等轮廓字体名格式为 "FontName (TrueType)"，包含空格；
-'      单线字体（如 SICH、SSS4）名称中不含空格。
-'后续新增字体只需在 UserForm_Activate 的 cbxFontName.AddItem 处添加即可，
-'无需修改本函数及其他任何判断逻辑。
+'###########判断是否为单线字体（穷举已知单线字体名）##########
+'单线字体文件列表（去掉 .font 后缀，大小写不敏感）：
+'GOTH, KANJ, KOHG, LINE, ROM1, ROM2, ROM3, SICH, SSS1, SSS2, SSS3, SSS4,
+'SYM1, SYM2, SYM3, SYM4, TRCH
+'新增单线字体时在 Select Case 中追加即可。
 Private Function IsStrokeFont(fontItemText As String) As Boolean
-    IsStrokeFont = (InStr(Trim(fontItemText), " ") = 0)
+    Select Case UCase(Trim(fontItemText))
+        Case "GOTH", "KANJ", "KOHG", "LINE", _
+             "ROM1", "ROM2", "ROM3", _
+             "SICH", "SICH.BEFORESPK", _
+             "SSS1", "SSS2", "SSS3", "SSS4", _
+             "SYM1", "SYM2", "SYM3", "SYM4", _
+             "TRCH"
+            IsStrokeFont = True
+        Case Else
+            IsStrokeFont = False
+    End Select
 End Function
 
 
@@ -550,9 +547,9 @@ Private Sub UserForm_Activate()
     cbxInputType.Style = fmStyleDropDownList
     
     '--- 可选字体列表 ---
-    '轮廓字体（TrueType）：名称格式须含空格，如 "FontName (TrueType)"
-    '单线字体：名称中不含空格，如 SICH、SSS4
-    '后续新增字体只需在此处追加 AddItem，无需修改其他代码
+    '轮廓字体（TrueType）：名称格式如 "FontName (TrueType)"
+    '单线字体：直接填字体名（如 SICH、SSS4），需同步在 IsStrokeFont 中穷举
+    '后续新增字体：在此处追加 AddItem，并在 IsStrokeFont 的 Select Case 中添加对应名称
     cbxFontName.AddItem "DengXian (TrueType)"
     cbxFontName.AddItem "KaiTi (TrueType)"
     cbxFontName.AddItem "SimSun (TrueType)"
