@@ -1,4 +1,4 @@
-﻿"""
+"""
 CATIA Copilot AI Agent 工具定义模块。
 
 将现有 catia/ 层的函数包装为 OpenAI function calling 格式：

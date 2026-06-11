@@ -1,4 +1,4 @@
-﻿# build_nuitka.ps1 — CATIA Copilot Nuitka 打包脚本
+# build_nuitka.ps1 — CATIA Copilot Nuitka 打包脚本
 #
 # 用法（在项目根目录执行）：
 #   .\build_nuitka.ps1

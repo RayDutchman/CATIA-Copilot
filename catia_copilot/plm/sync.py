@@ -1,4 +1,4 @@
-﻿"""
+"""
 CATIA BOM → DocdokuPLM 同步逻辑。
 
 入口函数：sync_bom_to_plm()

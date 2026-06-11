@@ -1,4 +1,4 @@
-﻿# build.ps1 — CATIA Copilot 打包脚本
+# build.ps1 — CATIA Copilot 打包脚本
 #
 # 用法（在项目根目录执行）：
 #   .\build.ps1

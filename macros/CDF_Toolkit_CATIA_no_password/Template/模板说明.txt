@@ -1,16 +1,16 @@
-2021/03/07 �޸�
-1.�޸�������CATDrawing����ͼ��׼���������Ϊ���ߣ�DengXian��TrueType))���Ա�������ʾ����
-2.�޸���ͼģ��ı���ɫ����Ĭ�ϵİ�ɫ��Ϊ����ɫ�����̣�������˵���Ի��ⳤʱ�乤�����۲�ƣ��
-3.�޸�Ĭ�ϳߴ��ͷ��С����״����Ĭ�Ͽ��ڼ�ͷ��Ϊʵ�ļ�ͷ���Լ�������ʽ�ϵĵ���
-4.�޸� ���롷���ɡ������嵥���߼������嵥 ����������ʽ���Ӷ༶BOM�ĳɵ���BOM�������� |���|������|�������|����|����| 5�С�����BOM��ʽ������ϵ���ߣ�
+2021/03/07 修改
+1.修改了所有CATDrawing的制图标准，将字体改为等线（DengXian（TrueType))，以便正常显示中文
+2.修改制图模板的背景色，从默认的白色改为护眼色（草绿？），据说可以缓解长时间工作的眼部疲劳
+3.修改默认尺寸剪头大小和形状，从默认开口箭头改为实心箭头；以及其他格式上的调整
+4.修改 插入》生成》物料清单》高级物料清单 的输出表格格式，从多级BOM改成单级BOM，仅保留 |序号|零件编号|零件名称|材料|数量| 5列。（改BOM格式可以联系作者）
 
 
 ---------------------------------------------
-1. A0.CATDrawing, A1.CATDrawing, A2.CATDrawing, A3.CATDrawing, A4.CATDrawing �ǡ��½�ͼֽ...�� �Ӳ˵���A0��A1��A2��A3��A4��ģ��
-2. MProg.xls�Ǻ�����CNC_Prog_List��ģ��, ��������EXCEL�ӹ���
-3. CNCFrame_All�ǡ����ɼӹ���Drw����ģ�壬��������A4��CATDrawing�ӹ���
-4. DrwFrame_All.CATDrawing�ǡ��Զ�Ͷͼ����ͼ��ģ��
+1. A0.CATDrawing, A1.CATDrawing, A2.CATDrawing, A3.CATDrawing, A4.CATDrawing 是【新建图纸...】 子菜单下A0、A1、A2、A3、A4的模板
+2. MProg.xls是宏命令CNC_Prog_List的模板, 用于生成EXCEL加工单
+3. CNCFrame_All是【生成加工单Drw】的模板，用于生成A4的CATDrawing加工单
+4. DrwFrame_All.CATDrawing是【自动投图】的图框模板
 
-5.��������汾��V5R17��V5R18������\R17ͼ��ģ�塱�µ��ļ����Ƶ���һ��Ŀ¼C��D:\UGmeetsCATIA\CDF_Toolkit_CATIA\Template�����Ǽ��ɣ�ͬ�������Ҫʹ�ù���ͼ�򣬽���\GBͼ��R19���ϡ��µ��ļ����Ƶ���һ��Ŀ¼C��D:\UGmeetsCATIA\CDF_Toolkit_CATIA\Template�����Ǽ���
+5.如果软件版本是V5R17、V5R18，将“\R17图框模板”下的文件复制到上一级目录C或D:\UGmeetsCATIA\CDF_Toolkit_CATIA\Template并覆盖即可；同理，如果要使用国标图框，将“\GB图框R19以上”下的文件复制到上一级目录C或D:\UGmeetsCATIA\CDF_Toolkit_CATIA\Template并覆盖即可
 
-���е�ģ�嶼�����޸������ֺż���ɫ��
+所有的模板都可以修改字体字号及颜色。

@@ -1,4 +1,4 @@
-﻿"""
+"""
 AI 聊天面板 - CATIA Copilot 主窗口新 Tab 页。
 
 布局：

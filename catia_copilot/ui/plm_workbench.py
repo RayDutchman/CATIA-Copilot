@@ -1,4 +1,4 @@
-﻿"""
+"""
 PLM 工作台主窗口。
 
 独立非模态 QDialog，通过 QTabWidget 整合所有 PLM 对接功能：

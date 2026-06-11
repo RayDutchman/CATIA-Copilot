@@ -1,4 +1,4 @@
-﻿"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
+"""BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 from PySide6.QtCore import Qt, QSize, QModelIndex, QRect, QPersistentModelIndex

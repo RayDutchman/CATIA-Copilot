@@ -1,4 +1,4 @@
-﻿"""
+"""
 DocdokuPLM REST API 客户端。
 
 仅使用标准库（urllib），不引入任何第三方依赖。
