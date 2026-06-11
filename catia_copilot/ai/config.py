@@ -17,9 +17,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# 配置文件路径（项目根目录）
-_BASE_DIR = Path(__file__).parent.parent.parent
-_CONFIG_PATH = _BASE_DIR / "ai_config.json"
+# 配置文件统一存放在 %APPDATA%\CATIA Copilot\，开发与打包环境行为一致。
+import sys as _sys
+import os as _os
+
+_USER_DATA_DIR = Path.home() / "AppData" / "Roaming" / "CATIA Copilot"
+_USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+_CONFIG_PATH = _USER_DATA_DIR / "ai_config.json"
 
 # 无配置时的兜底
 _FALLBACK_CONFIG: dict[str, Any] = {
@@ -86,7 +90,7 @@ def save(cfg: dict[str, Any]) -> None:
 
 
 def get_config_path() -> Path:
-    """返回配置文件路径（供 UI 显示用）。"""
+    """返回配置文件路径（供 UI 显示用）。打包后指向 %APPDATA%\CATIA Copilot\ai_config.json。"""
     return _CONFIG_PATH
 
 

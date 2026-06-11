@@ -804,8 +804,9 @@ def tool_update_memory(
       "replace" — 完全替换文件内容
     """
 
-    # memory.md 位于项目根目录（此文件在 catia_copilot/ai/tools.py）
-    memory_path = Path(__file__).parent.parent.parent / "memory.md"
+    # memory.md 统一存放在 %APPDATA%\CATIA Copilot\，开发与打包环境行为一致。
+    memory_path = Path.home() / "AppData" / "Roaming" / "CATIA Copilot" / "memory.md"
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         if mode == "replace":

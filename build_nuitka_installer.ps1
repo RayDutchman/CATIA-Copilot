@@ -1,13 +1,16 @@
-# build_nuitka.ps1 — CATIA Copilot Nuitka 打包脚本
+# build_nuitka_installer.ps1 — CATIA Copilot 完整发布脚本
 #
 # 用法（在项目根目录执行）：
-#   .\build_nuitka.ps1
+#   .\build_nuitka_installer.ps1
 #
-# 产物输出到：..\CATIA-Copilot-dist-nuitka\CATIA Copilot <version>\
+# 步骤：
+#   1. Nuitka 编译，产出 ..\CATIA-Copilot-dist-nuitka\CATIA Copilot <version>\
+#   2. 清理 git 残留文件
+#   3. 调用 Inno Setup 打包成 CATIA-Copilot-Setup-<version>.exe
 #
 # 依赖：
-#   pip install nuitka  （或 pip install -U nuitka）
-#   pip install ordered-set zstandard  （可选，加速编译）
+#   pip install nuitka
+#   Inno Setup 6 已安装（默认路径 C:\Program Files (x86)\Inno Setup 6\iscc.exe）
 #
 # 与 PyInstaller (build.spec + build.ps1) 的等价关系：
 #   build.spec  datas[]         → --include-data-dir
@@ -191,3 +194,21 @@ foreach ($name in $gitFiles) {
 Write-Host "[slim] 已清理 git 残留文件"
 
 Write-Host "[build] 完成！产物位于: $OutputDir"
+
+# ── Inno Setup 打包 ────────────────────────────────────────────────────────
+$IsccPath = "C:\Program Files (x86)\Inno Setup 6\iscc.exe"
+if (-not (Test-Path $IsccPath)) {
+    Write-Error "[installer] 找不到 Inno Setup：$IsccPath`n请先安装 Inno Setup 6：https://jrsoftware.org/isinfo.php"
+    exit 1
+}
+
+Write-Host "[installer] 开始打包安装程序..."
+& $IsccPath "$ProjectRoot\setup.iss"
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[installer] Inno Setup 打包失败，退出码 $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
+
+$InstallerPath = Join-Path $DistRoot "CATIA-Copilot-Setup-$AppVersion.exe"
+Write-Host "[installer] 完成！安装包位于: $InstallerPath"

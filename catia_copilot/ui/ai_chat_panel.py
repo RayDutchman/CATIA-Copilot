@@ -49,9 +49,8 @@ from catia_copilot.ui.session_config_dialog import SessionConfigDialog
 
 logger = logging.getLogger(__name__)
 
-# 项目根目录（用于读取 memory.md）
-_BASE_DIR = Path(__file__).parent.parent.parent
-_MEMORY_PATH = _BASE_DIR / "memory.md"
+# memory.md 统一存放在 %APPDATA%\CATIA Copilot\，开发与打包环境行为一致。
+_MEMORY_PATH = Path.home() / "AppData" / "Roaming" / "CATIA Copilot" / "memory.md"
 # 记忆注入上限（字符数）
 _MEMORY_MAX_CHARS = 8000
 
