@@ -893,18 +893,22 @@ def _find_drawing_for_part(filepath: str) -> str | None:
 def _instances_to_cad_instances(instances: list) -> list[dict]:
     """将 BomNode.instances 中的 4×4 变换矩阵列表转换为 PLM cadInstances JSON 格式。
 
-    PLM 支持两种 MATRIX 模式写法：
-      1. m00~m22 九个独立字段：服务端 RotationMatrix 构造时**列优先**存储（自动转置），
-         若直接用行主序填入会导致旋转矩阵被转置，产生错误。
-      2. matrix 数组（9 个 double，行优先）：服务端直接按行主序读取，无转置，正确。
+    PLM 服务端 RotationMatrix(double[]) 构造函数按**列主序**读入传入数组：
+        values[0..2] = 第一列 (col 0)，values[3..5] = 第二列 (col 1)，values[6..8] = 第三列 (col 2)
+    即 m00=v[0], m10=v[1], m20=v[2], m01=v[3], m11=v[4], m21=v[5], m02=v[6], m12=v[7], m22=v[8]
 
-    本函数使用方式 2（matrix 数组），行优先传入旋转矩阵，平移由 tx/ty/tz 单独给出。
+    因此必须发**列主序**数组，才能让 PLM 存入与 CATIA 一致的旋转矩阵：
+        发 [mat[0][0], mat[1][0], mat[2][0],   ← 第一列
+             mat[0][1], mat[1][1], mat[2][1],   ← 第二列
+             mat[0][2], mat[1][2], mat[2][2]]    ← 第三列
 
-    输入矩阵格式（行主序 4×4）：
-        mat[0] = [R00, R01, R02, Tx]
-        mat[1] = [R10, R11, R12, Ty]
-        mat[2] = [R20, R21, R22, Tz]
-        mat[3] = [  0,   0,   0,  1]
+    如果发行主序数组，RotationMatrix 构造时会把矩阵转置，导致旋转方向错误。
+    平移 tx/ty/tz 直接取 mat[i][3]，不受此影响。
+
+    参考：
+        RotationMatrix.java:45-57  — 构造函数列主序赋值
+        RotationMatrix.java:132-134 — getValues() 行主序输出（两者合计等于一次转置）
+        PartResource.java:892-904  — createComponents() 直接把 matrix[] 传给 RotationMatrix()
     """
     result = []
     for mat in instances:
@@ -913,11 +917,12 @@ def _instances_to_cad_instances(instances: list) -> list[dict]:
         try:
             entry = {
                 "rotationType": "MATRIX",
-                # 行优先 9 元素旋转矩阵，服务端直接按此顺序读取，无转置
+                # 列主序 9 元素数组：PLM RotationMatrix 构造函数按此顺序读入
+                # values[0..2]=第一列, values[3..5]=第二列, values[6..8]=第三列
                 "matrix": [
-                    mat[0][0], mat[0][1], mat[0][2],
-                    mat[1][0], mat[1][1], mat[1][2],
-                    mat[2][0], mat[2][1], mat[2][2],
+                    mat[0][0], mat[1][0], mat[2][0],   # col 0
+                    mat[0][1], mat[1][1], mat[2][1],   # col 1
+                    mat[0][2], mat[1][2], mat[2][2],   # col 2
                 ],
                 "tx": mat[0][3],
                 "ty": mat[1][3],
