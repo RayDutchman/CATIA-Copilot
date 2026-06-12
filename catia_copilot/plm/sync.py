@@ -893,34 +893,35 @@ def _find_drawing_for_part(filepath: str) -> str | None:
 def _instances_to_cad_instances(instances: list) -> list[dict]:
     """将 BomNode.instances 中的 4×4 变换矩阵列表转换为 PLM cadInstances JSON 格式。
 
-    PLM CADInstance 使用 MATRIX 模式存储：
-      - rotationType: "MATRIX"
-      - m00~m22：3×3 旋转矩阵（9 个无量纲分量）
-      - tx/ty/tz：平移分量（mm，与 CATIA Position.GetComponents 原始单位一致）
+    PLM 支持两种 MATRIX 模式写法：
+      1. m00~m22 九个独立字段：服务端 RotationMatrix 构造时**列优先**存储（自动转置），
+         若直接用行主序填入会导致旋转矩阵被转置，产生错误。
+      2. matrix 数组（9 个 double，行优先）：服务端直接按行主序读取，无转置，正确。
 
-    PLM 服务端 CADInstance 构造函数（Java）使用**列优先**存储，但客户端 JSON 字段
-    命名规范为行列下标（mRC，R=行，C=列）。
-    输入矩阵为行主序 4×4，layout：mat[row][col]。
+    本函数使用方式 2（matrix 数组），行优先传入旋转矩阵，平移由 tx/ty/tz 单独给出。
 
-    参数：
-        instances: 每项为 4×4 列表（行主序）或 None（位置未知时跳过）
-
-    返回：cadInstances 列表，空列表表示无有效位置信息。
+    输入矩阵格式（行主序 4×4）：
+        mat[0] = [R00, R01, R02, Tx]
+        mat[1] = [R10, R11, R12, Ty]
+        mat[2] = [R20, R21, R22, Tz]
+        mat[3] = [  0,   0,   0,  1]
     """
     result = []
     for mat in instances:
         if mat is None:
             continue
         try:
-            # mat[row][col]，旋转部分为左上 3×3
             entry = {
                 "rotationType": "MATRIX",
-                "m00": mat[0][0], "m01": mat[0][1], "m02": mat[0][2],
-                "m10": mat[1][0], "m11": mat[1][1], "m12": mat[1][2],
-                "m20": mat[2][0], "m21": mat[2][1], "m22": mat[2][2],
-                "tx":  mat[0][3],
-                "ty":  mat[1][3],
-                "tz":  mat[2][3],
+                # 行优先 9 元素旋转矩阵，服务端直接按此顺序读取，无转置
+                "matrix": [
+                    mat[0][0], mat[0][1], mat[0][2],
+                    mat[1][0], mat[1][1], mat[1][2],
+                    mat[2][0], mat[2][1], mat[2][2],
+                ],
+                "tx": mat[0][3],
+                "ty": mat[1][3],
+                "tz": mat[2][3],
             }
             result.append(entry)
         except Exception as e:
