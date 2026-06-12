@@ -408,70 +408,62 @@ def collect_bom_part_masters(
         if progress_callback is not None:
             progress_callback(_total_count)
 
-        # ── 遍历子节点（属性走文件视角 / 位置走实例视角）────────────────────────
+        # ── 遍历子节点 ────────────────────────────────────────────────────────────
         #
-        # 属性去重（pm_key 计算、_traverse）必须走文件视角（ReferenceProduct.Products），
-        # 这样同一零件的多个实例共享一个 part_master，不重复读属性。
+        # 设计原则：
+        #   属性去重（pm_key 计算、_traverse 递归）走文件视角（ReferenceProduct.Products）：
+        #     同一零件无论有多少个实例，属性只读一次，所有实例共享一个 part_master。
         #
-        # 但 position（局部变换矩阵）必须走实例视角（product.Products），因为：
-        #   - 文件视角的 child.Position 反映的是文件内"默认位置"，通常全为零/单位矩阵。
-        #   - 实例视角的 child.Position 才是该实例在父装配坐标系下的真实局部变换。
+        #   实例名（instance_name）和局部变换矩阵（placement）是实例级数据，
+        #   必须从实例视角（product.Products）读取：
+        #     - instance_name = child_inst.Name（每个实例在父装配中有独立的实例名）
+        #     - placement = Position.GetComponents()（每个实例有独立的放置位置）
+        #   两者来自同一个 child_inst 对象，在同一步骤中一并读取，无需额外循环。
         #
-        # CATIA 保证两个 Products 集合的 Count 相同、顺序一一对应，
-        # 因此可以用相同下标 i 分别取两个视角的 child 对象。
+        # CATIA 保证 product.Products 与 product.ReferenceProduct.Products
+        # 的 Count 相同、下标 i 一一对应同一个子节点，因此可以并行使用两个视角。
         is_assembly = (node_type in BomNodeType.ASSEMBLY_TYPES or level == 0)
         if is_assembly:
             try:
-                # 文件视角：属性读取 / pm_key / 去重
+                # 文件视角：驱动属性读取 / pm_key / _traverse 递归（主循环）
                 try:
                     ref_products = product.ReferenceProduct.Products
                 except Exception:
                     ref_products = product.Products
 
-                # 实例视角：局部变换矩阵读取
-                # 若无法获取实例视角（极少数情况），回退到文件视角（位置将退化为单位矩阵）
-                inst_products = None
-                if config.placement.enabled:
-                    try:
-                        inst_products = product.Products
-                        # 验证 Count 一致，不一致时放弃实例视角
-                        if inst_products.Count != ref_products.Count:
-                            logger.warning(
-                                "_traverse: inst_products.Count(%d) != ref_products.Count(%d)"
-                                "，放弃实例视角，placement 将退化为单位矩阵",
-                                inst_products.Count, ref_products.Count,
-                            )
-                            inst_products = None
-                    except Exception as exc:
-                        logger.debug(
-                            "_traverse: 无法获取 inst_products（%s），placement 退化为单位矩阵", exc
+                # 实例视角：读取 instance_name 和 placement
+                # 仅在需要时获取；获取失败则回退到文件视角（Name 仍可用，placement 退化为单位矩阵）
+                try:
+                    inst_products = product.Products
+                    if inst_products.Count != ref_products.Count:
+                        logger.warning(
+                            "_traverse: inst_products.Count(%d) != ref_products.Count(%d)"
+                            "，回退到文件视角，instance_name 和 placement 可能不准确",
+                            inst_products.Count, ref_products.Count,
                         )
                         inst_products = None
+                except Exception as exc:
+                    logger.debug("_traverse: 无法获取 inst_products（%s），回退文件视角", exc)
+                    inst_products = None
 
-                # child_host：子节点的 host_file_pn 参数（嵌入部件透传，独立文件传自身 pn）
                 child_host = host_file_pn if is_embedded else pn
 
                 for i in range(1, ref_products.Count + 1):
                     try:
-                        # 文件视角 child：用于属性读取 / pm_key 计算 / instance_name
+                        # 文件视角：用于 PartNumber / ReferenceProduct.Parent.FullName / _traverse
                         child = ref_products.Item(i)
 
-                        # 实例视角 child_inst：仅用于读取局部变换矩阵
-                        # 与 child 在 CATIA 树中对应同一个子节点，但持有实例级 Position
+                        # 实例视角：用于 instance_name 和 placement（两者同源，一步读取）
                         child_inst = None
                         if inst_products is not None:
                             try:
                                 child_inst = inst_products.Item(i)
                             except Exception as exc:
                                 logger.debug(
-                                    "_traverse: inst_products.Item(%d) 失败（%s）"
-                                    "，该实例 placement 退化为单位矩阵", i, exc
+                                    "_traverse: inst_products.Item(%d) 失败（%s）", i, exc
                                 )
 
-                        # ── 性能优化：提前读 child 的 pn + filepath（各1次COM），
-                        # 精确计算 child_pm_key。已知节点直接跳过 _traverse（节省
-                        # _traverse 内部重复读 pn + filepath 的 2次COM + 函数调用开销）；
-                        # 首次遇到的节点将已读取的 pn + filepath 作为 hint 传入，各省1次COM。
+                        # ── PartNumber / filepath（文件视角，用于 pm_key 和属性去重）─────
                         try:
                             child_pn_raw = str(child.PartNumber)
                         except Exception:
@@ -489,13 +481,11 @@ def collect_bom_part_masters(
                                                    if child_is_embedded else child_pn_raw)
 
                         if child_pm_key_candidate in part_masters:
-                            # 已建立：直接用候选 key，跳过 _traverse 的属性读取
                             child_pm_key = child_pm_key_candidate
                             _total_count += 1
                             if progress_callback is not None:
                                 progress_callback(_total_count)
                         else:
-                            # 首次遇到：完整递归；pn + filepath 已读取，传入各省一次 COM
                             child_pm_key = _traverse(
                                 child, level + 1, filepath, child_host,
                                 _hint_pn=child_pn_raw,
@@ -504,27 +494,24 @@ def collect_bom_part_masters(
 
                         child_pn = part_masters[child_pm_key]["part_number"]
 
-                        # ── placement：用实例视角 child_inst 读局部变换矩阵 ────────
-                        # child_inst 为 None 时（实例视角不可用）_local_position_to_mat4
-                        # 会在内部捕获异常并返回单位矩阵，行为与之前一致。
-                        if config.placement.enabled:
-                            placement = _local_position_to_mat4(
-                                child_inst if child_inst is not None else child
-                            )
-                        else:
-                            placement = None
+                        # ── instance_name 和 placement：同源自实例视角 child_inst ──────
+                        # child_inst 不可用时回退到文件视角 child（Name 相同，placement 退化）
+                        inst_obj      = child_inst if child_inst is not None else child
+                        instance_name = inst_obj.Name
+                        placement     = (
+                            _local_position_to_mat4(inst_obj)
+                            if config.placement.enabled
+                            else None
+                        )
 
-                        # 将子节点注册为当前 part_master 的子实例
-                        inst_key  = id(child_inst if child_inst is not None else child)
+                        inst_key  = id(inst_obj)
                         inst_info = {
                             "inst_key":      inst_key,
-                            "pn":            child_pn,       # 显示用
-                            "pm_key":       child_pm_key,  # 查 part_masters 用
-                            "instance_name": child.Name,
-                            "product":       child,          # COM 引用（文件视角），防 GC、写回用
-                            # placement：子实例相对直接父节点的 4×4 局部变换矩阵（行主序，mm）。
-                            # None 表示未启用收集（config.placement.enabled=False）。
-                            "placement": placement,
+                            "pn":            child_pn,
+                            "pm_key":        child_pm_key,
+                            "instance_name": instance_name,
+                            "product":       child,      # 文件视角 COM 引用，防 GC、写回属性用
+                            "placement":     placement,  # 局部变换矩阵（行主序 4×4，mm），或 None
                         }
                         part_masters[pm_key]["instances"].append(inst_info)
                         inst_key_to_info[inst_key] = inst_info
