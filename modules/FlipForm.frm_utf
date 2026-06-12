@@ -1,51 +1,55 @@
+Private Sub UserForm_Activate()
+    ' 窗体显示后立即进入连续选孔循环
+    ' 在 FlipForm 自身的事件调用栈中运行，消息泵不被阻断，三个按钮全程可响应
+    Call DoSelectAndPlace
+    ' DoSelectAndPlace 返回时循环已退出，在此安全执行收尾
+    Unload Me
+    MsgBox "装配完成！" & Chr(10) & _
+           "共装配 " & g_count & " 个 " & g_fastenerPN & " 到 " & g_targetPN & "。", _
+           vbInformation, "快速装配紧固件"
+End Sub
+
 Private Sub btnFlip_Click()
     If Not g_loopActive Then Exit Sub
-
-    ' 禁用按钮，防止在操作期间重复点击
     btnFlip.Enabled = False
-    
-    ' === 执行翻转操作 ===
     g_flipDir = Not g_flipDir
-    ' btnFlip.Caption = IIf(g_flipDir, "翻转方向: 是", "翻转方向: 否")
-    ' 如果当前可翻转重装（装配后尚未选下一孔），
-    ' 则直接将已有紧固件移动到翻转后的位置（不删除重建）。
     If g_hasLastComp Then
         Call MoveLastFastener
-        CATIA.StatusBar = "已重新定向（翻转方向）" & g_count & " 个 " & g_fastenerPN & _
-                          "  [翻转:" & IIf(g_flipDir, "是", "否") & "]" & _
-                          "  选下一孔继续，点""停止装配""按钮结束"
+        CATIA.StatusBar = "已重新定向  [翻转:" & IIf(g_flipDir, "是", "否") & "]  继续选孔，按 ESC 或点""退出""结束"
     End If
-
-    ' 重新启用按钮
     btnFlip.Enabled = True
 End Sub
 
 Private Sub btnUndo_Click()
     If Not g_loopActive Then Exit Sub
-    
-    ' 禁用按钮，防止在操作期间重复点击
     btnUndo.Enabled = False
-    
-    ' === 执行撤销操作 ===
-    If g_historyCount > 0 Then
-        Call UndoLastFastener
-    End If
+    If g_historyCount > 0 Then Call UndoLastFastener
 End Sub
 
 Private Sub btnStop_Click()
-    ' 停止装配循环
+    ' 设退出标志，发 ESC 让 SelectElement2 返回
+    ' DoSelectAndPlace 检测到 g_loopActive=False 后跳出循环并返回
+    ' UserForm_Activate 随后执行 Unload Me 和 MsgBox
     g_loopActive = False
     g_hasLastComp = False
-    
-    ' 立即关闭 UserForm
-    Unload Me
-    
-    ' 通过模拟按下 ESC 键来取消正在进行的 SelectElement2 操作
-    ' 这是取消 CATIA 阻塞式选择操作的最可靠方法
     On Error Resume Next
-    SendKeys "{ESC}", True  ' True = 等待按键被处理
-    DoEvents  ' 允许 VBA 处理消息队列
+    SendKeys "{ESC}", True
+    DoEvents
     On Error GoTo 0
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    ' 右上角关闭：与 btnStop 等效
+    ' 阻止系统直接销毁窗体（让 UserForm_Activate 的 Unload Me 来做）
+    If g_loopActive Then
+        Cancel = True
+        g_loopActive = False
+        g_hasLastComp = False
+        On Error Resume Next
+        SendKeys "{ESC}", True
+        DoEvents
+        On Error GoTo 0
+    End If
 End Sub
 
 Private Sub UserForm_Click()
