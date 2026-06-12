@@ -1,6 +1,0 @@
-Private Sub btnContinue_Click()
-    ' 调用主模块中的 ContinueSelectProduct。
-    ' 若 ActiveDocument 不是 ProductDocument，该 Sub 会提示用户并直接返回，
-    ' SwitchDocForm 保持打开，用户可再次切换后重试。
-    Call ContinueSelectProduct
-End Sub

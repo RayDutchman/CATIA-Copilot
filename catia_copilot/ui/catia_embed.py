@@ -47,6 +47,7 @@ import win32gui
 import win32process
 
 from catia_copilot.utils import resource_path
+from catia_copilot.catia.macro import CATIA_COPILOT_MODULES
 
 logger = logging.getLogger(__name__)
 
@@ -948,15 +949,31 @@ class CATIAEmbedManager:
         append(hmenu, MF_STRING,    MENU_FIND_DEPS,      label("find_deps",       "查找指向的文档"))
 
         # 运行宏子菜单
+        # ID 分配：
+        #   3000-3999  普通宏文件（直接运行，无模块名）
+        #   4000-4999  catia_copilot.catvba 的各模块（value 存 module_name）
         macro_submenu = ctypes.windll.user32.CreatePopupMenu()
         macro_files = self._get_macro_files()
-        self._macro_id_map = {}  # 临时映射：菜单ID → 宏文件路径
+        self._macro_id_map = {}  # id → (str(path), module_name_or_None)
 
         if macro_files:
-            for idx, macro_path in enumerate(macro_files):
-                macro_id = 3000 + idx  # 动态ID范围 3000-3999
-                self._macro_id_map[macro_id] = str(macro_path)
-                append(macro_submenu, MF_STRING, macro_id, macro_path.name)
+            plain_idx = 0
+            module_idx = 0
+            for macro_path in macro_files:
+                if macro_path.name.lower() == "catia_copilot.catvba":
+                    # 展开为二级子菜单，每项对应一个已注册模块
+                    copilot_submenu = ctypes.windll.user32.CreatePopupMenu()
+                    for mod_name in CATIA_COPILOT_MODULES.values():
+                        mod_id = 4000 + module_idx
+                        self._macro_id_map[mod_id] = (str(macro_path), mod_name)
+                        append(copilot_submenu, MF_STRING, mod_id, mod_name)
+                        module_idx += 1
+                    append(macro_submenu, MF_POPUP, copilot_submenu, macro_path.name)
+                else:
+                    macro_id = 3000 + plain_idx
+                    self._macro_id_map[macro_id] = (str(macro_path), None)
+                    append(macro_submenu, MF_STRING, macro_id, macro_path.name)
+                    plain_idx += 1
         else:
             append(macro_submenu, MF_STRING, 0, "（未找到宏文件）")
             ctypes.windll.user32.EnableMenuItem(macro_submenu, 0, 0x0001)  # MF_GRAYED
@@ -1008,11 +1025,13 @@ class CATIAEmbedManager:
         """根据菜单项 ID 调用对应的回调函数。"""
         logger.debug("_dispatch_menu_item cmd=%d view_hwnd=%s", cmd, view_hwnd)
         
-        # 处理宏文件 ID（3000-3999）：把路径存到实例变量，通过 run_macro_file 回调派发到主线程
-        if 3000 <= cmd < 4000:
-            macro_path = getattr(self, "_macro_id_map", {}).get(cmd)
-            if macro_path:
-                self._current_macro_path = macro_path   # 主线程回调读取
+        # 处理宏文件 ID（3000-3999 普通宏；4000-4999 catia_copilot.catvba 模块）
+        if 3000 <= cmd < 5000:
+            entry = getattr(self, "_macro_id_map", {}).get(cmd)
+            if entry:
+                macro_path, module_name = entry
+                self._current_macro_path   = macro_path    # 主线程读取路径
+                self._current_macro_module = module_name   # 主线程读取模块名（可为 None）
                 cb = self._callbacks.get("run_macro_file")
                 if cb is not None:
                     try:

@@ -36,8 +36,6 @@ from catia_copilot.constants import (
     ISO_XML_FILE_PATH,
     CRACK_DIR_PATH,
     AI_TAB_LABEL,
-    CATIA_MACRO_LIBRARY_DIR,
-    CATIA_MACRO_LIBRARY_VBA,
 )
 import win32gui
 import win32con
@@ -46,6 +44,7 @@ from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
 from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
 from catia_copilot.catia.template import apply_part_template
 from catia_copilot.catia.connection import get_catia_v5_application, open_document
+from catia_copilot.catia.macro import run_macro as _catia_run_macro, CATIA_COPILOT_MODULES
 from catia_copilot.catia.dependencies import find_drawing_for_part, find_part_for_drawing
 from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
 from catia_copilot.ui.convert_dialog import FileConvertDialog
@@ -768,7 +767,10 @@ class MainWindow(QMainWindow):
 
     def _show_macro_menu(self, pos: QPoint | None = None) -> None:
         """在指定位置或「运行宏…」按钮下方弹出宏文件菜单。
-        
+
+        对 catia_copilot.catvba 展开为子菜单，列出 CATIA_COPILOT_MODULES 中的模块；
+        其他宏文件直接作为一级菜单项，点击后走兼容轮询运行。
+
         :param pos: 菜单弹出位置（全局坐标），None 时使用主窗口按钮位置
         """
         macros_dir = self._macros_dir()
@@ -782,9 +784,21 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         if macro_files:
             for mp in macro_files:
-                action = menu.addAction(mp.name)
-                action.setToolTip(str(mp))
-                action.triggered.connect(lambda checked=False, p=mp: self._run_macro(p))
+                if mp.name.lower() == "catia_copilot.catvba":
+                    # 展开为子菜单，每项对应一个已注册模块
+                    submenu = QMenu(mp.name, menu)
+                    for key, mod_name in CATIA_COPILOT_MODULES.items():
+                        action = submenu.addAction(mod_name)
+                        action.setToolTip(f"{mp.name} → {mod_name}")
+                        action.triggered.connect(
+                            lambda checked=False, p=mp, m=mod_name:
+                                self._run_macro(p, module_name=m)
+                        )
+                    menu.addMenu(submenu)
+                else:
+                    action = menu.addAction(mp.name)
+                    action.setToolTip(str(mp))
+                    action.triggered.connect(lambda checked=False, p=mp: self._run_macro(p))
         else:
             empty = menu.addAction("（未找到宏文件）")
             empty.setEnabled(False)
@@ -1234,7 +1248,8 @@ class MainWindow(QMainWindow):
         if not macro_path_str:
             logger.warning("_do_run_macro_file: 未找到宏文件路径")
             return
-        self._run_macro(Path(macro_path_str))
+        module_name = getattr(self._embed_manager, "_current_macro_module", None)
+        self._run_macro(Path(macro_path_str), module_name=module_name)
 
     def _on_embed_position_changed(self, anchor: str, dx: int, dy: int) -> None:
         """
@@ -1313,19 +1328,22 @@ class MainWindow(QMainWindow):
                 self, "无法打开文件夹", f"无法打开宏文件夹：\n{macros_dir}\n\n{e}"
             )
 
-    def _run_macro(self, macro_path: Path) -> None:
+    def _run_macro(
+        self,
+        macro_path: Path,
+        module_name: str | None = None,
+        params: list | None = None,
+    ) -> None:
+        """运行宏文件（UI 包装层）。
+
+        文件不存在时弹警告；执行失败时弹错误对话框。
+        具体执行逻辑见 catia_copilot.catia.macro.run_macro。
+        """
         if not macro_path.exists():
             QMessageBox.warning(self, "文件不存在", f"宏文件不存在：\n{macro_path}")
             return
         try:
-            caa = get_catia_v5_application()
-            app = caa
-            if macro_path.suffix.lower() == ".catvba":
-                self._execute_catvba(app, macro_path, "CATMain", [])
-            else:
-                # .catvbs / .catscript — CATScript 目录模式
-                self._execute_catscript(app, macro_path, "CATMain", [])
-            logger.info(f"宏执行成功：{macro_path.name}")
+            _catia_run_macro(macro_path, module_name=module_name, params=params)
         except Exception as e:
             logger.error(f"宏执行失败 {macro_path.name}: {e}")
             QMessageBox.critical(
@@ -1532,32 +1550,28 @@ class MainWindow(QMainWindow):
         return selected.text() if selected else None
 
     def _open_fastener_assembly_dialog(self) -> None:
-        """直接运行 macros 文件夹中的 fastener_assembly.catvba VBA 宏。"""
-        catvba_path = self._macros_dir() / "fastener_assembly.catvba"
+        """运行 catia_copilot.catvba 中的 fastener_assembly 模块。"""
+        catvba_path = self._macros_dir() / "catia_copilot.catvba"
         if not catvba_path.exists():
             QMessageBox.warning(
                 self, "宏文件未找到",
                 f"未找到 VBA 宏文件：\n{catvba_path}\n\n"
-                "请在 CATIA VBA 编辑器中按照 macros/fastener_assembly.txt 创建宏，\n"
-                "将 VBA 项目导出为 fastener_assembly.catvba，\n"
-                "并放入 macros 文件夹后重试。",
+                "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
             )
             return
-        self._run_macro(catvba_path)
+        self._run_macro(catvba_path, module_name=CATIA_COPILOT_MODULES["fastener_assembly"])
 
     def _open_nut_plate_assembly_dialog(self) -> None:
-        """直接运行 macros 文件夹中的 nut_plate_assembly.catvba VBA 宏。"""
-        catvba_path = self._macros_dir() / "nut_plate_assembly.catvba"
+        """运行 catia_copilot.catvba 中的 nut_plate_assembly 模块。"""
+        catvba_path = self._macros_dir() / "catia_copilot.catvba"
         if not catvba_path.exists():
             QMessageBox.warning(
                 self, "宏文件未找到",
                 f"未找到 VBA 宏文件：\n{catvba_path}\n\n"
-                "请在 CATIA VBA 编辑器中按照 macros/nut_plate_assembly.txt 创建宏，\n"
-                "将 VBA 项目导出为 nut_plate_assembly.catvba，\n"
-                "并放入 macros 文件夹后重试。",
+                "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
             )
             return
-        self._run_macro(catvba_path)
+        self._run_macro(catvba_path, module_name=CATIA_COPILOT_MODULES["nut_plate_assembly"])
 
     # ── Drawing generation ─────────────────────────────────────────────────
 
@@ -1599,7 +1613,7 @@ class MainWindow(QMainWindow):
                 "请将 generate_drawing.catvbs 放入 macros 文件夹后重试。",
             )
             return
-        self._run_template_macro(catvbs_path, str(template_path))
+        self._run_macro(catvbs_path, params=[str(template_path)])
 
     def _open_refresh_drawing_dialog(self) -> None:
         """刷新当前活动图纸的参数信息（通过 refresh_drawing_info.catvbs 宏）。"""
@@ -1703,81 +1717,6 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self, "刷新图纸失败",
                 f"发生错误：\n{e}"
-            )
-
-    def _execute_catscript(
-        self,
-        app,
-        macro_path: Path,
-        func_name: str,
-        params: list,
-    ) -> None:
-        """调用 CATIA SystemService.ExecuteScript 执行 CATScript 宏（.catvbs / .catscript）。
-
-        CATIA ExecuteScript 签名::
-
-            SystemService.ExecuteScript(iLibraryName, iLibraryType,
-                                        iProgramName, iFunctionName, iParameters)
-
-        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_DIR（目录模式）：
-          - iLibraryName：宏文件所在目录
-          - iProgramName：宏文件名（含扩展名）
-          - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
-          - iParameters：传递给宏的参数列表
-        """
-        lib_dir = str(macro_path.parent)
-        app.SystemService.ExecuteScript(
-            lib_dir, CATIA_MACRO_LIBRARY_DIR, macro_path.name, func_name, params
-        )
-
-    def _execute_catvba(
-        self,
-        app,
-        macro_path: Path,
-        func_name: str,
-        params: list,
-    ) -> None:
-        """调用 CATIA SystemService.ExecuteScript 执行 VBA 宏（.catvba）。
-
-        此处使用 iLibraryType=CATIA_MACRO_LIBRARY_VBA（VBA 项目文件模式）：
-          - iLibraryName：.catvba 文件完整路径
-          - iProgramName：VBA 模块名（中文 CATIA 默认为 "模块1"，英文/法语等环境为 "Module1"）
-          - iFunctionName：要调用的函数/子程序名（通常为 "CATMain"）
-          - iParameters：传递给宏的参数列表
-
-        为兼容不同语言的 CATIA 安装，依次尝试 "模块1"（中文）和 "Module1"（英文/法语），
-        任一成功即返回；两者均失败时抛出最后一次的异常。
-        """
-        last_exc: Exception | None = None
-        for module_name in ("模块1", "Module1"):
-            try:
-                app.SystemService.ExecuteScript(
-                    str(macro_path), CATIA_MACRO_LIBRARY_VBA, module_name, func_name, params
-                )
-                return
-            except Exception as e:
-                last_exc = e
-        raise last_exc  # type: ignore[misc]
-
-    def _run_template_macro(
-        self,
-        macro_path: Path,
-        template_path: str,
-    ) -> None:
-        """通过 CATIA SystemService.ExecuteScript 运行指定的 CATScript 宏，
-        并将模板文件路径作为参数传入，宏内可通过 iParameters 直接获取。
-        """
-        try:
-            caa = get_catia_v5_application()
-            app = caa
-            # 将模板路径作为单一字符串参数传递给宏的 CATMain 函数
-            self._execute_catscript(app, macro_path, "CATMain", [template_path])
-            logger.info(f"宏执行成功：{macro_path.name} | 模板路径={template_path}")
-        except Exception as e:
-            logger.error(f"宏执行失败 {macro_path.name}: {e}")
-            QMessageBox.critical(
-                self, "宏执行失败",
-                f"运行宏时出错：\n{macro_path.name}\n\n{e}",
             )
 
     # ── CATIA resource file helpers ────────────────────────────────────────

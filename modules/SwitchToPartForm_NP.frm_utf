@@ -1,0 +1,11 @@
+Private Sub btnContinue_Click()
+    Call ContinueSelectNutPlate
+End Sub
+
+Private Sub btnCancel_Click()
+    Unload SwitchToPartForm_NP
+End Sub
+
+Private Sub UserForm_Click()
+
+End Sub

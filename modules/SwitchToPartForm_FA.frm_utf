@@ -1,0 +1,11 @@
+Private Sub btnContinue_Click()
+    Call ContinueSelectFastener
+End Sub
+
+Private Sub btnCancel_Click()
+    Unload SwitchToPartForm_FA
+End Sub
+
+Private Sub UserForm_Click()
+
+End Sub
