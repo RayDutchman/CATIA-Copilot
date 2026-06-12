@@ -73,7 +73,7 @@ from catia_copilot.constants import (
 )
 from catia_copilot.plm.api_client import PlmApiClient
 from catia_copilot.plm.sync import (
-    _rows_to_bom_tree as rows_to_bom_tree,
+    extract_bom_v3,
     sync_bom_to_plm,
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -238,29 +238,40 @@ class _BomPreviewWorker(QThread):
 
 
 class _SyncWorker(QThread):
-    """执行 BOM 同步 + 可选附件上传。"""
+    """执行 BOM 同步（含 v3 路径 COM 遍历 + PLM 网络操作）。
+
+    与旧版的区别：不接收预览 rows，而是在后台线程中独立调用 extract_bom_v3()
+    重新遍历 CATIA 产品树（含位置信息），再执行 PLM 同步。
+    线程入口自动处理 COM 初始化/反初始化。
+    """
     progress   = Signal(str)
     upload_log = Signal(str, str, str, str)  # (pn, source, update, checkin)
-    sync_done  = Signal(object)         # SyncResult（避免与 QThread.finished 内置信号同名冲突）
+    sync_done  = Signal(object)              # SyncResult
     error      = Signal(str)
 
-    def __init__(self, base_url, login, password, workspace, options, rows):
+    def __init__(self, base_url, login, password, workspace, options):
         super().__init__()
         self._base_url  = base_url
         self._login     = login
         self._password  = password
         self._workspace = workspace
         self._options   = options
-        self._rows      = rows          # 已预览的 BOM 行，直接复用，不再二次提取
 
     def run(self):
+        # 后台线程需手动初始化 COM（STA 模式），win32com + pycatia 均依赖此调用
+        pythoncom.CoInitialize()
         try:
-            self.progress.emit("正在构建 BOM 树……")
-            bom_root = rows_to_bom_tree(self._rows)
+            self.progress.emit("正在从 CATIA 提取 BOM（含位置信息）……")
+            bom_root = extract_bom_v3(
+                progress_callback=lambda m: self.progress.emit(m),
+            )
             if bom_root is None:
-                self.error.emit("BOM 树构建失败，请先刷新预览")
+                self.error.emit(
+                    "BOM 提取失败：请确认 CATIA 已启动、有活动文档，且文档包含产品结构。"
+                )
                 return
 
+            self.progress.emit("BOM 提取完成，正在连接 PLM……")
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
 
@@ -269,22 +280,12 @@ class _SyncWorker(QThread):
                 options=self._options,
                 progress_callback=lambda m: self.progress.emit(m),
             )
-
-            # 注：附件上传（CATPart / STP）已移入 sync.py 的 _do_update_and_checkin，
-            # 在 checkin 前执行，确保零件处于 checked-out 状态。
-
             self.sync_done.emit(result)
         except Exception as exc:
             logger.exception("PLM 同步后台线程异常")
             self.error.emit(str(exc))
-
-    def _upload_attachments(self, client, rows, result):
-        """已废弃：附件上传逻辑已迁移至 sync.py _do_update_and_checkin，
-        在 checkin 前执行以确保零件处于 checked-out 状态。此方法保留以兼容旧引用。"""
-
-    def _export_stp(self, catpart_path: str, pn: str) -> str | None:
-        """已废弃： STP 导出已迁移至 sync.py _do_update_and_checkin。此方法保留以兼容旧引用。"""
-        return None
+        finally:
+            pythoncom.CoUninitialize()
 
 
 class _TagsWorker(QThread):
@@ -1178,7 +1179,7 @@ class PlmWorkbench(QDialog):
         self._last_sync_login = login
         self._last_sync_mode  = self._detect_sync_mode()
 
-        w = _SyncWorker(base_url, login, password, workspace, options, list(self._bom_rows))
+        w = _SyncWorker(base_url, login, password, workspace, options)
         w.progress.connect(self._on_sync_progress)
         w.upload_log.connect(self._on_upload_log)
         w.sync_done.connect(self._on_sync_done)

@@ -62,6 +62,7 @@ pm_key 规则：
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from catia_copilot.constants import (
@@ -73,7 +74,7 @@ from catia_copilot.constants import (
     CATIA_DESIGN_MODE,
 )
 from catia_copilot.catia.bom_collect import flatten_bom_to_summary  # noqa: F401
-from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 from catia_copilot.catia.document import get_bom_node_type
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,121 @@ _READONLY_PM_COLS: frozenset[str] = frozenset({"Type", "Filename", "Filepath"})
 
 
 # ---------------------------------------------------------------------------
+# 收集配置（嵌套 dataclass，每项独立可控，扩展时只加字段不改调用签名）
+# ---------------------------------------------------------------------------
+
+@dataclass
+class MatrixCollectConfig:
+    """局部变换矩阵（placement）收集配置。
+
+    placement 含义：子实例相对直接父节点的 4×4 行主序变换矩阵，平移单位 mm。
+    格式与 _local_position_to_mat4() 返回值一致：
+        [[ R[0][0]  R[0][1]  R[0][2]  Tx ],
+         [ R[1][0]  R[1][1]  R[1][2]  Ty ],
+         [ R[2][0]  R[2][1]  R[2][2]  Tz ],
+         [    0        0        0      1  ]]
+    这是**局部**坐标（不累乘父矩阵），与 mass_props_collect 的 _placement（绝对坐标）不同。
+
+    开销：每个子实例一次 pycatia position.get_components() COM 调用（约 1–5 ms/实例）。
+    使用场景：PLM 同步 cadInstances 写入。
+    """
+    enabled: bool = False
+
+
+@dataclass
+class MassPropsCollectConfig:
+    """质量特性收集配置（预留框架，当前不收集）。
+
+    未来扩展字段示例（勿提前添加，等实际需求驱动）：
+        source: str = "analyze"        # "analyze" | "keep_inertia"
+        read_mode: str = "all"         # "first" | "last" | "all"
+        skip_hidden: bool = False      # 是否跳过隐藏实例
+
+    当 enabled=True 但内部实现尚未完成时，collect_bom_part_masters 将记录警告并跳过。
+    """
+    enabled: bool = False
+
+
+@dataclass
+class CollectConfig:
+    """collect_bom_part_masters 的可选收集项配置。
+
+    设计原则：
+    - 每类收集项封装为独立子 dataclass，子 dataclass 含 enabled 和自身参数。
+    - 默认全部 disabled，确保现有调用方（bom_edit_dialog_v3 等）零改动。
+    - 扩展时只在对应子 dataclass 或此处新增字段，调用方签名不变。
+
+    典型用法：
+        # BOM 编辑（只需属性，不需位置）
+        cfg = CollectConfig()   # 全部默认 False
+
+        # PLM 同步（需要位置信息）
+        cfg = CollectConfig(placement=MatrixCollectConfig(enabled=True))
+
+        # 未来：同步 + 质量特性
+        cfg = CollectConfig(
+            placement=MatrixCollectConfig(enabled=True),
+            mass_props=MassPropsCollectConfig(enabled=True, source="analyze"),
+        )
+    """
+    placement:  MatrixCollectConfig   = field(default_factory=MatrixCollectConfig)
+    mass_props: MassPropsCollectConfig = field(default_factory=MassPropsCollectConfig)
+
+
+# ---------------------------------------------------------------------------
+# 位置矩阵读取辅助（模块私有）
+# ---------------------------------------------------------------------------
+
+def _local_position_to_mat4(product) -> list[list[float]]:
+    """从 win32com Product 对象读取局部变换矩阵，返回 4×4 行主序列表。
+
+    "局部"含义：该实例相对**直接父节点**的变换，不累乘父矩阵。
+    与 mass_props_collect._position_to_mat4 的矩阵格式完全一致，
+    但语义不同（后者在遍历时会与父矩阵累乘得到绝对坐标）。
+
+    CATIA Position.GetComponents 输出布局（列主序，12 元素）：
+        arr[0..2]  = X 轴方向向量（旋转矩阵第 1 列）
+        arr[3..5]  = Y 轴方向向量（旋转矩阵第 2 列）
+        arr[6..8]  = Z 轴方向向量（旋转矩阵第 3 列）
+        arr[9..11] = 原点平移向量 (Tx, Ty, Tz)，单位 mm
+
+    重排为行主序 4×4：
+        mat[i][j] = arr[j*3 + i]   (旋转部分，i,j ∈ 0..2)
+        mat[i][3] = arr[9 + i]     (平移部分)
+        mat[3]    = [0, 0, 0, 1]   (齐次行)
+
+    失败时返回 4×4 单位矩阵（不抛异常）。
+    """
+    try:
+        arr = wrap_product(product).position.get_components()
+    except Exception as exc:
+        logger.debug("_local_position_to_mat4: get_components 失败（%s），返回单位矩阵", exc)
+        return _identity_4x4()
+
+    if arr is None or len(arr) < 12:
+        logger.debug("_local_position_to_mat4: arr 无效（len=%s），返回单位矩阵",
+                     len(arr) if arr is not None else None)
+        return _identity_4x4()
+
+    return [
+        [arr[0], arr[3], arr[6], arr[9] ],
+        [arr[1], arr[4], arr[7], arr[10]],
+        [arr[2], arr[5], arr[8], arr[11]],
+        [0.0,    0.0,    0.0,    1.0    ],
+    ]
+
+
+def _identity_4x4() -> list[list[float]]:
+    """返回 4×4 单位矩阵（无旋转、无平移的恒等变换）。"""
+    return [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+# ---------------------------------------------------------------------------
 # 核心收集函数
 # ---------------------------------------------------------------------------
 
@@ -106,6 +222,7 @@ def collect_bom_part_masters(
     columns: list[str],
     custom_columns: list[str],
     progress_callback: Callable[[int], None] | None = None,
+    config: CollectConfig | None = None,
 ) -> tuple[str, dict[str, dict], dict[int, dict]]:
     """遍历 CATIA 产品树，构建 part_masters 树和 inst_key_to_info 反向索引。
 
@@ -125,7 +242,20 @@ def collect_bom_part_masters(
         dict[id(product) → inst_info dict]，O(1) 反向索引。
         inst_info 是 part_master["instances"] 中的同一对象引用。
         修改 inst_info["instance_name"] 即同步修改 part_masters 树。
+
+    config:
+        CollectConfig 实例，控制可选字段的收集行为。
+        默认 None 等价于 CollectConfig()（全部 disabled），确保现有调用方零改动。
+        各字段说明见 CollectConfig 及子 dataclass 的文档。
     """
+    if config is None:
+        config = CollectConfig()
+
+    if config.mass_props.enabled:
+        logger.warning(
+            "collect_bom_part_masters: config.mass_props.enabled=True 但质量特性收集"
+            "尚未在 v3 中实现，已跳过。请继续使用 mass_props_collect.collect_mass_props_rows()。"
+        )
     extra_cols = [c for c in custom_columns
                   if c not in _WRITABLE_COLS and c not in _READONLY_PM_COLS]
 
@@ -339,7 +469,13 @@ def collect_bom_part_masters(
                             "pm_key":       child_pm_key,  # 查 part_masters 用
                             "instance_name": child.Name,
                             "product":       child,          # COM 引用，防 GC、写回用
-                            "placement":     None,
+                            # placement：子实例相对直接父节点的 4×4 局部变换矩阵（行主序，mm）。
+                            # None 表示未启用收集（config.placement.enabled=False）。
+                            "placement": (
+                                _local_position_to_mat4(child)
+                                if config.placement.enabled
+                                else None
+                            ),
                         }
                         part_masters[pm_key]["instances"].append(inst_info)
                         inst_key_to_info[inst_key] = inst_info

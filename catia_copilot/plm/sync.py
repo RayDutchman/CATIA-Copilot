@@ -33,6 +33,11 @@ from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.conversion import convert_drawing_to_pdf
 from catia_copilot.catia.dependencies import find_drawing_for_part
 from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.catia.bom_collect_v3 import (
+    collect_bom_part_masters,
+    CollectConfig,
+    MatrixCollectConfig,
+)
 from catia_copilot.constants import (
     PRESET_USER_REF_PROPERTIES,
     PLM_BUILTIN_ATTR_COLS,
@@ -387,6 +392,144 @@ def extract_bom(progress_callback=None) -> BomNode | None:
 
     _cb(f"BOM 读取完成，共 {len(rows)} 个实例行，正在构建树……")
     return _rows_to_bom_tree(rows)
+
+
+def extract_bom_v3(progress_callback=None) -> "BomNode | None":
+    """从当前活动 CATIA 文档提取 BOM 树（v3 路径，含位置信息）。
+
+    使用 collect_bom_part_masters（bom_collect_v3）遍历产品树，
+    CollectConfig(placement=MatrixCollectConfig(enabled=True)) 确保每个子实例
+    的局部变换矩阵（4×4 行主序，mm）被读取并存入 inst_info["placement"]。
+
+    随后通过 _part_masters_to_bom_tree 将 part_masters 字典树转为 BomNode 树，
+    同一父节点下相同 pm_key 的多个实例的 placement 矩阵聚合到同一 BomNode.instances。
+
+    须在主线程或已 CoInitialize 的后台线程中调用（win32com + pycatia 均需要）。
+    返回 None 表示 CATIA 连接失败、无活动文档或产品结构为空。
+    """
+    def _cb(msg: str) -> None:
+        if progress_callback:
+            progress_callback(msg)
+        logger.debug(msg)
+
+    _cb("正在读取 BOM（v3，含位置信息）……")
+
+    cols        = list(dict.fromkeys(_ALL_ATTR_COLS))   # 去重保序
+    custom_cols = _CUSTOM_COLS
+
+    v3_config = CollectConfig(
+        placement=MatrixCollectConfig(enabled=True),
+    )
+
+    try:
+        root_pm_key, part_masters, _ = collect_bom_part_masters(
+            None,           # file_path=None：使用当前活动文档
+            cols,
+            custom_cols,
+            progress_callback=lambda n: _cb(f"  已读取 {n} 个节点……"),
+            config=v3_config,
+        )
+    except Exception as exc:
+        _cb(f"BOM 提取失败：{exc}")
+        logger.error("extract_bom_v3 失败：%s", exc)
+        return None
+
+    n_pm = len(part_masters)
+    if n_pm == 0:
+        logger.warning("extract_bom_v3: part_masters 为空，无活动文档或文档无产品结构")
+        return None
+
+    _cb(f"BOM 读取完成，共 {n_pm} 个 PartMaster，正在构建同步树……")
+    result = _part_masters_to_bom_tree(root_pm_key, part_masters)
+    if result is None:
+        _cb("BOM 树构建失败（根节点未找到）")
+    return result
+
+
+def _part_masters_to_bom_tree(
+    root_pm_key: str,
+    part_masters: dict[str, dict],
+) -> "BomNode | None":
+    """将 bom_collect_v3 的 part_masters 字典树转换为 BomNode 树。
+
+    遍历规则：
+    - 递归从 root_pm_key 出发，深度优先构建子树。
+    - part_master["instances"] 是文件视角的直接子实例列表（唯一一份，所有引用共享）。
+      同一 parent_pm 下，相同 child_pm_key 的多个 inst_info 聚合为一个 BomNode：
+        - 按 instances 中首次出现的顺序保持 CATIA 树顺序
+        - 每个 inst_info["placement"] 依次追加到 BomNode.instances（None 跳过）
+    - ancestors 集合防止 Component 循环引用导致无限递归。
+
+    attrs 映射：
+    - 遍历 _ALL_ATTR_COLS（PLM_BUILTIN_ATTR_COLS + PRESET_USER_REF_PROPERTIES）
+    - Source 字段：part_master["source"] 存原始值 "0"/"1"/"2"，经 SOURCE_TO_DISPLAY 转换后写入
+    - 空字符串不写入 attrs（与 _rows_to_bom_tree 行为一致）
+    """
+    if root_pm_key not in part_masters:
+        logger.error("_part_masters_to_bom_tree: root_pm_key=%r 不在 part_masters 中", root_pm_key)
+        return None
+
+    def _walk(pm_key: str, ancestors: frozenset) -> "BomNode":
+        pm   = part_masters[pm_key]
+        node = BomNode(part_number=pm.get("part_number", pm_key))
+        node.filepath = pm.get("filepath", "")
+        node.filetype = pm.get("type", "")
+
+        # attrs：遍历 PLM 需要的所有属性列
+        for col in _ALL_ATTR_COLS:
+            # part_master 内键名通过 _COL_TO_PM_KEY 映射（标准列），自定义列直接用列名
+            pm_key_for_col = _COL_TO_PM_KEY_SYNC.get(col, col)
+            val = str(pm.get(pm_key_for_col, "") or "").strip()
+            if col == "Source":
+                val = SOURCE_TO_DISPLAY.get(val, val)
+            if val:
+                node.attrs[col] = val
+
+        # 子节点：按 child_pm_key 分组，聚合 placement，保持首次出现顺序
+        seen_child_keys: dict[str, BomNode] = {}   # child_pm_key → 已建 BomNode
+        new_ancestors = ancestors | {pm_key}
+
+        for inst_info in pm.get("instances", []):
+            child_pm_key = inst_info["pm_key"]
+
+            if child_pm_key in seen_child_keys:
+                # 同一 child_pm_key 的第 2..N 个实例：只追加 placement
+                child_node = seen_child_keys[child_pm_key]
+            else:
+                # 首次遇到：递归构建子节点（防循环）
+                if child_pm_key in new_ancestors:
+                    logger.warning(
+                        "_part_masters_to_bom_tree: 检测到循环引用 %r，跳过", child_pm_key
+                    )
+                    continue
+                if child_pm_key not in part_masters:
+                    logger.warning(
+                        "_part_masters_to_bom_tree: child_pm_key=%r 不在 part_masters 中，跳过",
+                        child_pm_key,
+                    )
+                    continue
+                child_node = _walk(child_pm_key, new_ancestors)
+                seen_child_keys[child_pm_key] = child_node
+                node.children.append(child_node)
+
+            # 追加该实例的局部变换矩阵（None 跳过，表示未启用 placement 收集）
+            placement = inst_info.get("placement")
+            if placement is not None:
+                child_node.instances.append(placement)
+
+        return node
+
+    return _walk(root_pm_key, frozenset())
+
+
+# part_master dict key → BOM 列名的反向映射（仅 _part_masters_to_bom_tree 内部使用）
+_COL_TO_PM_KEY_SYNC: dict[str, str] = {
+    "Nomenclature": "nomenclature",
+    "Revision":     "revision",
+    "Definition":   "definition",
+    "Source":       "source",
+    "Description":  "description",
+}
 
 
 def _rows_to_bom_tree(rows: list[dict]) -> BomNode | None:
