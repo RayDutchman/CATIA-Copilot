@@ -2,9 +2,13 @@ Private Sub btnContinue_Click()
     ' 调用主模块中的 ContinueSelectFastener。
     ' 若 ActiveDocument 不是 PartDocument，该 Sub 会提示用户并直接返回，
     ' SwitchToPartForm 保持打开，用户可再次切换后重试。
-    Call ContinueSelectFastener
+    Call ContinueSelectNutPlate
 End Sub
 
 Private Sub btnCancel_Click()
     Unload SwitchToPartForm
+End Sub
+
+Private Sub UserForm_Click()
+
 End Sub

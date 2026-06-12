@@ -4,7 +4,3 @@ Private Sub btnContinue_Click()
     ' SwitchDocForm 保持打开，用户可再次切换后重试。
     Call ContinueSelectProduct
 End Sub
-
-Private Sub btnCancel_Click()
-    Unload SwitchDocForm
-End Sub

@@ -2,7 +2,7 @@
 
 [project]
 # 対象の CATIA VBA プロジェクト名
-target_project = "fastener_assembly"
+target_project = "nut_plate_assembly"
 language = "zh"
 encoding = "gbk"
 
