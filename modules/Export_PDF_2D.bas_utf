@@ -1,5 +1,0 @@
-Option Explicit
-Sub CATMain()
-IntCATIA
-CDF_Tool.ExportPDF oActDoc
-End Sub
