@@ -1371,14 +1371,9 @@ class BomEditDialogV3(QDialog):
             self._handle_instance_name_changed(item, col_idx, row_idx, new_value)
             return
 
-        # ── 实例描述（只读，禁止就地编辑）────────────────────────────────────
+        # ── 实例描述（完整 BOM 模式专用）────────────────────────────────
         if col_name == "description_inst":
-            inst_key  = self._rows[row_idx].get("_inst_key")
-            inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
-            old_val   = inst_info.get("description_inst", "") if inst_info is not None else ""
-            self._is_updating = True
-            item.setText(col_idx, old_val)
-            self._is_updating = False
+            self._handle_description_inst_changed(item, col_idx, row_idx, new_value)
             return
 
         if col_name == "Part Number":
@@ -1651,6 +1646,72 @@ class BomEditDialogV3(QDialog):
 
     # ── 批量单元格写入（内部辅助） ────────────────────────────────────────────
 
+    def _handle_description_inst_changed(
+        self,
+        item: QTreeWidgetItem,
+        col_idx: int,
+        row_idx: int,
+        new_value: str,
+    ) -> None:
+        """处理“实例描述”列的就地编辑（完整 BOM 模式专用）。
+
+        - 允许空字符串（与实例名不同，实例描述无要求非空）。
+        - 无唯一性限制（允许多个实例有相同描述）。
+        - 通过 ``product.DescriptionInst = value`` 写入 CATIA。
+        - 推入撤销栈，支持 Ctrl+Z 撤销。
+        - 实例描述唯一真相：_inst_key_to_info[inst_key]["description_inst"]。
+        """
+        row_data    = self._rows[row_idx]
+        cur_product = row_data.get("_product")
+        inst_key    = row_data.get("_inst_key") or (id(cur_product) if cur_product else None)
+        inst_info   = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
+
+        if inst_info is None:
+            logger.error("_handle_description_inst_changed: inst_info 为 None，inst_key=%r，拒绝编辑",
+                         inst_key)
+            self._is_updating = True
+            item.setText(col_idx, "")
+            self._is_updating = False
+            return
+
+        old_val = inst_info.get("description_inst", "")
+
+        def _rollback() -> None:
+            self._is_updating = True
+            item.setText(col_idx, old_val)
+            self._is_updating = False
+            self._update_status()
+
+        # ── 即时写回 CATIA ──────────────────────────────────────────
+        if cur_product is not None:
+            try:
+                cur_product.DescriptionInst = new_value
+                self._last_write_status = f"已写回：实例描述 {old_val!r} → {new_value!r}"
+
+                # 更新 inst_info（唯一真相）
+                inst_info["description_inst"] = new_value
+
+                # 刷新所有共享同一 inst_key 的树形项
+                if col_idx >= 0:
+                    self._is_updating = True
+                    try:
+                        for other_item in self._inst_to_items.get(inst_key, []):
+                            if other_item is not item and other_item.text(col_idx) != new_value:
+                                other_item.setText(col_idx, new_value)
+                    finally:
+                        self._is_updating = False
+
+                # 推入撤销栈
+                self._push_undo([(inst_key, "description_inst", old_val, new_value)])
+
+            except Exception as e:
+                self._last_write_status = f"⚠ 写入异常：实例描述 {old_val!r}: {e}"
+                logger.error("_handle_description_inst_changed: 异常 inst_key=%r: %s", inst_key, e)
+                _rollback()
+        else:
+            self._last_write_status = f"⚠ 未找到实例 COM 引用（行 {row_idx + 1}）"
+        self._update_status()
+
     def _is_pn_conflicting(self, pm_key: str, new_pn: str) -> bool:
         """检查将 pm_key 对应的零件重命名为 new_pn 是否与现有零件编号冲突。
 
@@ -1870,20 +1931,27 @@ class BomEditDialogV3(QDialog):
                 value = new_val if forward else old_val
 
                 if isinstance(key, int):
-                    # ── 实例属性（Instance Name）：key = inst_key ──────────────
+                    # ── 实例属性（Instance Name / description_inst）：key = inst_key ──
                     inst_key  = key
                     inst_info = self._inst_key_to_info.get(inst_key)
                     product   = inst_info["product"] if inst_info is not None else None
                     if product is not None:
                         try:
-                            product.Name = value
-                            self._last_write_status = f"{_label}：实例名 → {value!r}"
+                            if col_name == BOM_INSTANCE_NAME_COLUMN:
+                                product.Name = value
+                                self._last_write_status = f"{_label}：实例名 → {value!r}"
+                            elif col_name == "description_inst":
+                                product.DescriptionInst = value
+                                self._last_write_status = f"{_label}：实例描述 → {value!r}"
                         except Exception as e:
-                            logger.error("undo/redo instance name write error: %s", e)
-                    # 唯一真相：只更新 _inst_key_to_info（即 part_masters 树）
+                            logger.error("undo/redo instance attr write error col=%r: %s", col_name, e)
+                    # 唯一真相：更新 _inst_key_to_info
                     inst_info = self._inst_key_to_info.get(inst_key)
                     if inst_info is not None:
-                        inst_info["instance_name"] = value
+                        if col_name == BOM_INSTANCE_NAME_COLUMN:
+                            inst_info["instance_name"] = value
+                        elif col_name == "description_inst":
+                            inst_info["description_inst"] = value
                     # 更新界面单元格
                     col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                     if col_idx >= 0:
