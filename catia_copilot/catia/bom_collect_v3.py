@@ -656,6 +656,7 @@ def _pm_to_root_row(root_pm_key: str, pm: dict) -> dict:
         "Part Number":            pm.get("part_number", root_pm_key),
         "_pm_key":               root_pm_key,
         "Instance Name":          "",
+        "description_inst":       "",
         "Quantity":               1,
         "Type":                   pm.get("type", ""),
         "Filename":               pm.get("filename", ""),

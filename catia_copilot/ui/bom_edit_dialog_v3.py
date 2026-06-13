@@ -1371,6 +1371,16 @@ class BomEditDialogV3(QDialog):
             self._handle_instance_name_changed(item, col_idx, row_idx, new_value)
             return
 
+        # ── 实例描述（只读，禁止就地编辑）────────────────────────────────────
+        if col_name == "description_inst":
+            inst_key  = self._rows[row_idx].get("_inst_key")
+            inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
+            old_val   = inst_info.get("description_inst", "") if inst_info is not None else ""
+            self._is_updating = True
+            item.setText(col_idx, old_val)
+            self._is_updating = False
+            return
+
         if col_name == "Part Number":
             # ── 零件编号为空或仅含空格 ────────────────────────────────────────
             if not new_value.strip():
@@ -1704,8 +1714,8 @@ class BomEditDialogV3(QDialog):
             pm_key = str(row.get("_pm_key", "")).strip()
             if not pm_key or pm_key not in self._part_masters:
                 continue
-            if col_name in BOM_READONLY_COLUMNS or col_name == BOM_INSTANCE_NAME_COLUMN:
-                # 只读列和实例名列不走 part_master 路径（实例名有专用方法处理）
+            if col_name in BOM_READONLY_COLUMNS or col_name in (BOM_INSTANCE_NAME_COLUMN, "description_inst"):
+                # 只读列、实例名列和实例描述列不走 part_master 路径
                 continue
 
             old_val = get_part_master_attr(self._part_masters, pm_key, col_name, "")
@@ -3251,6 +3261,7 @@ class BomEditDialogV3(QDialog):
         _skip_cols: frozenset[str] = frozenset((
             BOM_ROW_NUMBER_COLUMN,
             BOM_INSTANCE_NAME_COLUMN,
+            "description_inst",
             "Quantity", "Filename", "Filepath",
         )) | frozenset(BOM_READONLY_COLUMNS)
 
