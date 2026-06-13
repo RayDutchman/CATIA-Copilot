@@ -237,6 +237,7 @@ BOM_COLUMN_DISPLAY_NAMES: dict[str, str] = {
     "Description":  "描述",
     "Quantity":     "数量",
     "Instance Name": "实例名",
+    "description_inst": "实例描述",
 }
 
 # Minimum column widths (Excel character units) for standard BOM columns
