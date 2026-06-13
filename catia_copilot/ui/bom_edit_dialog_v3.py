@@ -43,6 +43,7 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     BOM_ROW_NUMBER_COLUMN,
     BOM_INSTANCE_NAME_COLUMN,
+    BOM_DESCRIPTION_INST_COLUMN,
     SOURCE_TO_DISPLAY,
     SOURCE_OPTIONS,
     PART_NUMBER_VALID_PATTERN,
@@ -162,6 +163,13 @@ class BomEditDialogV3(QDialog):
         self._show_filename_col: bool = self._edit_settings.value(
             "show_filename_column", True, type=bool,
         )
+        # 完整 BOM 专有：实例名 / 实例描述列的可见性（其他 BOM 模式始终不显示）
+        self._show_instance_name_col: bool = self._edit_settings.value(
+            "show_instance_name_col", True, type=bool,
+        )
+        self._show_description_inst_col: bool = self._edit_settings.value(
+            "show_description_inst_col", False, type=bool,
+        )
 
         self._columns: list[str] = self._build_visible_columns()
 
@@ -271,6 +279,28 @@ class BomEditDialogV3(QDialog):
         summary_opts_layout.addWidget(self._include_assemblies_chk)
         self._summary_opts_widget.setVisible(self._summarize)
         bom_type_row.addWidget(self._summary_opts_widget)
+
+        # 完整 BOM 专有选项：实例名 / 实例描述列可见性（其他模式隐藏）
+        self._full_bom_opts_widget = QWidget()
+        full_bom_opts_layout = QHBoxLayout(self._full_bom_opts_widget)
+        full_bom_opts_layout.setContentsMargins(0, 0, 0, 0)
+        full_bom_opts_layout.setSpacing(8)
+
+        self._show_instance_name_chk = QCheckBox("实例名")
+        self._show_instance_name_chk.setToolTip("完整 BOM 模式下显示实例名列（product.Name）")
+        self._show_instance_name_chk.setChecked(self._show_instance_name_col)
+        self._show_instance_name_chk.toggled.connect(self._on_full_bom_cols_toggled)
+        full_bom_opts_layout.addWidget(self._show_instance_name_chk)
+
+        self._show_description_inst_chk = QCheckBox("实例描述")
+        self._show_description_inst_chk.setToolTip("完整 BOM 模式下显示实例描述列（product.DescriptionInst）")
+        self._show_description_inst_chk.setChecked(self._show_description_inst_col)
+        self._show_description_inst_chk.toggled.connect(self._on_full_bom_cols_toggled)
+        full_bom_opts_layout.addWidget(self._show_description_inst_chk)
+
+        self._full_bom_opts_widget.setVisible(self._full_bom)
+        bom_type_row.addWidget(self._full_bom_opts_widget)
+
         bom_type_row.addStretch()
         display_layout.addLayout(bom_type_row)
 
@@ -466,6 +496,7 @@ class BomEditDialogV3(QDialog):
         self._edit_settings.setValue("full_bom", False)
         self._edit_settings.setValue("summarize", True)
         self._summary_opts_widget.setVisible(True)
+        self._full_bom_opts_widget.setVisible(False)
         if self._bom_loaded:
             self._rebuild_rows()
             self._rebuild_columns_and_repopulate()
@@ -473,13 +504,13 @@ class BomEditDialogV3(QDialog):
     def _on_full_bom_toggled(self, checked: bool) -> None:
         """处理"完整 BOM"单选按钮切换。"""
         if not checked:
-            # 切换到其他模式由对应按钮的 toggled 信号处理
             return
         self._full_bom  = True
         self._summarize = False
         self._edit_settings.setValue("full_bom", True)
         self._edit_settings.setValue("summarize", False)
         self._summary_opts_widget.setVisible(False)
+        self._full_bom_opts_widget.setVisible(True)
         if self._bom_loaded:
             self._rebuild_rows()
             self._rebuild_columns_and_repopulate()
@@ -493,6 +524,7 @@ class BomEditDialogV3(QDialog):
         self._edit_settings.setValue("full_bom", False)
         self._edit_settings.setValue("summarize", False)
         self._summary_opts_widget.setVisible(False)
+        self._full_bom_opts_widget.setVisible(False)
         if self._bom_loaded:
             self._rebuild_rows()
             self._rebuild_columns_and_repopulate()
@@ -690,7 +722,11 @@ class BomEditDialogV3(QDialog):
         # 完整 BOM 模式：在"零件编号"列后紧插"实例名"列
         if self._full_bom and "Part Number" in result:
             pn_idx = result.index("Part Number")
-            result.insert(pn_idx + 1, BOM_INSTANCE_NAME_COLUMN)
+            # 倒序插入，保证顺序：Part Number → 实例名 → 实例描述
+            if self._show_description_inst_col:
+                result.insert(pn_idx + 1, BOM_DESCRIPTION_INST_COLUMN)
+            if self._show_instance_name_col:
+                result.insert(pn_idx + 1, BOM_INSTANCE_NAME_COLUMN)
         return result
 
     def _on_preset_col_toggled(self) -> None:
@@ -719,6 +755,14 @@ class BomEditDialogV3(QDialog):
     def _on_show_filepath_toggled(self, checked: bool) -> None:
         self._show_filepath_col = checked
         self._edit_settings.setValue("show_filepath_column", checked)
+        self._rebuild_columns_and_repopulate()
+
+    def _on_full_bom_cols_toggled(self) -> None:
+        """处理完整 BOM 专有列（实例名 / 实例描述）的可见性切换。"""
+        self._show_instance_name_col    = self._show_instance_name_chk.isChecked()
+        self._show_description_inst_col = self._show_description_inst_chk.isChecked()
+        self._edit_settings.setValue("show_instance_name_col",    self._show_instance_name_col)
+        self._edit_settings.setValue("show_description_inst_col", self._show_description_inst_col)
         self._rebuild_columns_and_repopulate()
 
     # ── 文件选择 ──────────────────────────────────────────────────────────────
@@ -969,9 +1013,13 @@ class BomEditDialogV3(QDialog):
                     # Type 列存储英文 key，显示时转为中文
                     value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
                 elif col_name == BOM_INSTANCE_NAME_COLUMN:
-                    # 实例名是实例级属性，唯一真相在 _inst_key_to_info[inst_key]["instance_name"]
+                    # 实例名：实例级属性，从 _inst_key_to_info 取
                     inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
                     value = inst_info["instance_name"] if inst_info is not None else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
+                elif col_name == BOM_DESCRIPTION_INST_COLUMN:
+                    # 实例描述：实例级属性，从 _inst_key_to_info 取
+                    inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
+                    value = inst_info.get("description_inst", "") if inst_info is not None else str(row_data.get(BOM_DESCRIPTION_INST_COLUMN, ""))
                 else:
                     # PartMaster 级可写属性（Nomenclature/Revision/Definition/Description/自定义列等）
                     pm_key_cell = str(row_data.get("_pm_key", ""))

@@ -209,6 +209,9 @@ BOM_ROW_NUMBER_COLUMN: str = "#"
 # Column name for per-instance name in "完整 BOM" mode (maps to product.Name)
 BOM_INSTANCE_NAME_COLUMN: str = "Instance Name"
 
+# Column name for per-instance description in "完整 BOM" mode (maps to product.DescriptionInst)
+BOM_DESCRIPTION_INST_COLUMN: str = "description_inst"
+
 # Columns that are structural / derived – shown read-only in the edit table
 BOM_READONLY_COLUMNS: frozenset[str] = frozenset({"#", "Level", "Type", "Filename", "Filepath", "Quantity"})
 

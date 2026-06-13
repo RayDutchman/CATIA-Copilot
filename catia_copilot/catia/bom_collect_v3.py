@@ -41,7 +41,8 @@ pm_key 规则：
                 "inst_key":      int,    # id(product)，任取一个 Python wrapper 的 id
                 "pn":            str,    # 子节点的 CATIA PartNumber（显示用）
                 "pm_key":       str,    # 子节点的 pm_key（查 part_masters 用）
-                "instance_name": str,    # product.Name，实例名唯一真相
+                "instance_name": str,    # product.Name，实例名（每个实例在父装配中唯一）
+                "description_inst": str, # product.DescriptionInst，实例级描述（每个实例独立，可为空）
                 "product":       object, # COM 引用，防 GC、写回实例名用
                 "placement":     None,   # 4×4 变换矩阵（mass props 用）
             },
@@ -494,10 +495,15 @@ def collect_bom_part_masters(
 
                         child_pn = part_masters[child_pm_key]["part_number"]
 
-                        # ── instance_name 和 placement：同源自实例视角 child_inst ──────
+                        # ── instance_name 和 description_inst 和 placement：同源自实例视角 child_inst ──────
                         # child_inst 不可用时回退到文件视角 child（Name 相同，placement 退化）
                         inst_obj      = child_inst if child_inst is not None else child
                         instance_name = inst_obj.Name
+                        # DescriptionInst 是实例级描述，仅在实例视角有效；读取失败静默置空
+                        try:
+                            description_inst = str(inst_obj.DescriptionInst or "")
+                        except Exception:
+                            description_inst = ""
                         placement     = (
                             _local_position_to_mat4(inst_obj)
                             if config.placement.enabled
@@ -506,12 +512,13 @@ def collect_bom_part_masters(
 
                         inst_key  = id(inst_obj)
                         inst_info = {
-                            "inst_key":      inst_key,
-                            "pn":            child_pn,
-                            "pm_key":        child_pm_key,
-                            "instance_name": instance_name,
-                            "product":       child,      # 文件视角 COM 引用，防 GC、写回属性用
-                            "placement":     placement,  # 局部变换矩阵（行主序 4×4，mm），或 None
+                            "inst_key":         inst_key,
+                            "pn":               child_pn,
+                            "pm_key":           child_pm_key,
+                            "instance_name":    instance_name,
+                            "description_inst": description_inst,
+                            "product":          child,      # 文件视角 COM 引用，防 GC、写回属性用
+                            "placement":        placement,  # 局部变换矩阵（行主序 4×4，mm），或 None
                         }
                         part_masters[pm_key]["instances"].append(inst_info)
                         inst_key_to_info[inst_key] = inst_info
@@ -685,6 +692,7 @@ def _inst_to_row(
         "Part Number":            inst_info["pn"],
         "_pm_key":               inst_info["pm_key"],
         BOM_INSTANCE_NAME_COLUMN: inst_info["instance_name"],
+        "description_inst":       inst_info.get("description_inst", ""),
         "Quantity":               1,
         "Type":                   pm.get("type", ""),
         "Filename":               pm.get("filename", ""),
