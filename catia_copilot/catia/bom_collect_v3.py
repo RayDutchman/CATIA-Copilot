@@ -67,7 +67,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from catia_copilot.constants import (
-    BOM_INSTANCE_NAME_COLUMN,
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,
     BomNodeType,
@@ -691,7 +690,7 @@ def _inst_to_row(
         "Level":                  level,
         "Part Number":            inst_info["pn"],
         "_pm_key":               inst_info["pm_key"],
-        BOM_INSTANCE_NAME_COLUMN: inst_info["instance_name"],
+        "Instance Name":          inst_info["instance_name"],
         "description_inst":       inst_info.get("description_inst", ""),
         "Quantity":               1,
         "Type":                   pm.get("type", ""),

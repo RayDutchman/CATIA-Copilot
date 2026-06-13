@@ -43,7 +43,6 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     BOM_ROW_NUMBER_COLUMN,
     BOM_INSTANCE_NAME_COLUMN,
-    BOM_DESCRIPTION_INST_COLUMN,
     SOURCE_TO_DISPLAY,
     SOURCE_OPTIONS,
     PART_NUMBER_VALID_PATTERN,
@@ -724,7 +723,7 @@ class BomEditDialogV3(QDialog):
             pn_idx = result.index("Part Number")
             # 倒序插入，保证顺序：Part Number → 实例名 → 实例描述
             if self._show_description_inst_col:
-                result.insert(pn_idx + 1, BOM_DESCRIPTION_INST_COLUMN)
+                result.insert(pn_idx + 1, "description_inst")
             if self._show_instance_name_col:
                 result.insert(pn_idx + 1, BOM_INSTANCE_NAME_COLUMN)
         return result
@@ -1016,10 +1015,10 @@ class BomEditDialogV3(QDialog):
                     # 实例名：实例级属性，从 _inst_key_to_info 取
                     inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
                     value = inst_info["instance_name"] if inst_info is not None else str(row_data.get(BOM_INSTANCE_NAME_COLUMN, ""))
-                elif col_name == BOM_DESCRIPTION_INST_COLUMN:
+                elif col_name == "description_inst":
                     # 实例描述：实例级属性，从 _inst_key_to_info 取
                     inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
-                    value = inst_info.get("description_inst", "") if inst_info is not None else str(row_data.get(BOM_DESCRIPTION_INST_COLUMN, ""))
+                    value = inst_info.get("description_inst", "") if inst_info is not None else str(row_data.get("description_inst", ""))
                 else:
                     # PartMaster 级可写属性（Nomenclature/Revision/Definition/Description/自定义列等）
                     pm_key_cell = str(row_data.get("_pm_key", ""))
