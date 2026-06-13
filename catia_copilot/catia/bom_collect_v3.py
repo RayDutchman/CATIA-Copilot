@@ -655,7 +655,7 @@ def _pm_to_root_row(root_pm_key: str, pm: dict) -> dict:
         "Level":                  0,
         "Part Number":            pm.get("part_number", root_pm_key),
         "_pm_key":               root_pm_key,
-        BOM_INSTANCE_NAME_COLUMN: "",
+        "Instance Name":          "",
         "Quantity":               1,
         "Type":                   pm.get("type", ""),
         "Filename":               pm.get("filename", ""),
