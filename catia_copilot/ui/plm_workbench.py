@@ -387,6 +387,13 @@ class PlmWorkbench(QDialog):
         """关闭时保存窗口几何（位置和尺寸）。"""
         s = QSettings(_S_ORG, _S_WB)
         s.setValue("geometry", self.saveGeometry())
+        s.setValue("chk_incremental",    self._chk_incremental.isChecked())
+        s.setValue("chk_reg_product",    self._chk_reg_product.isChecked())
+        s.setValue("chk_upload_catpart", self._chk_upload_catpart.isChecked())
+        s.setValue("chk_upload_stp",     self._chk_upload_stp.isChecked())
+        s.setValue("chk_upload_drw_file", self._chk_upload_drw_file.isChecked())
+        s.setValue("chk_upload_drw_pdf",  self._chk_upload_drw_pdf.isChecked())
+
         super().closeEvent(event)
 
     def _read_conn(self) -> tuple[str, str, str, str]:
@@ -639,51 +646,41 @@ class PlmWorkbench(QDialog):
         chk_row2.setSpacing(16)
         self._chk_upload_catpart  = QCheckBox("上传 CATIA 文件")
         self._chk_upload_stp      = QCheckBox("上传 STP 几何文件")
-        self._chk_upload_drw_pdf  = QCheckBox("上传图纸 PDF")
         self._chk_upload_drw_file = QCheckBox("上传图纸原文件")
+        self._chk_upload_drw_pdf  = QCheckBox("上传图纸 PDF")
+        self._chk_upload_catpart.setChecked(True)
+        self._chk_upload_stp.setChecked(True)
+        self._chk_upload_drw_file.setChecked(True)
+        self._chk_upload_drw_pdf.setChecked(True)
         self._chk_upload_catpart.setToolTip("将 CATPart / CATProduct 原始文件作为附件上传到 PLM")
         self._chk_upload_stp.setToolTip(
-            "将 CATPart 导出为 STP 几何文件并上传； PLM 将异步转换为 OBJ 以供三维预览。\n"
-            "勾选后可设置转换等待超时时间。"
-        )
-        self._chk_upload_drw_pdf.setToolTip(
-            "将对应的 CATDrawing 图纸转换为 PDF 后上传。\n"
-            "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
+            "将 CATPart 导出为 STP 几何文件并上传；PLM 将异步转换为 OBJ 以供三维预览。"
         )
         self._chk_upload_drw_file.setToolTip(
             "将对应的 CATDrawing 原文件作为附件上传到 PLM 。\n"
             "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
         )
+        self._chk_upload_drw_pdf.setToolTip(
+            "将对应的 CATDrawing 图纸转换为 PDF 后上传。\n"
+            "⚠ 图纸文件定位功能待实现（TODO-01），当前找不到图纸时静默跳过。"
+        )
         chk_row2.addWidget(self._chk_upload_catpart)
         chk_row2.addWidget(self._chk_upload_stp)
-        chk_row2.addWidget(self._chk_upload_drw_pdf)
         chk_row2.addWidget(self._chk_upload_drw_file)
+        chk_row2.addWidget(self._chk_upload_drw_pdf)
         chk_row2.addStretch()
+        # 从 QSettings 恢复同步选项状态
+        _sw = QSettings(_S_ORG, _S_WB)
+        def _chk_val(key, default=True):
+            v = _sw.value(key)
+            return default if v is None else str(v).lower() not in ("false", "0")
+        self._chk_incremental.setChecked(_chk_val("chk_incremental", True))
+        self._chk_reg_product.setChecked(_chk_val("chk_reg_product", False))
+        self._chk_upload_catpart.setChecked(_chk_val("chk_upload_catpart", True))
+        self._chk_upload_stp.setChecked(_chk_val("chk_upload_stp", True))
+        self._chk_upload_drw_file.setChecked(_chk_val("chk_upload_drw_file", True))
+        self._chk_upload_drw_pdf.setChecked(_chk_val("chk_upload_drw_pdf", True))
         opt_layout.addLayout(chk_row2)
-
-        # STP 转换等待超时（仅上传附件时有意义）
-        conv_row = QHBoxLayout()
-        conv_row.setSpacing(8)
-        lbl_conv = QLabel("STP 转换等待超时（秒，0=不等待）：")
-        self._spn_conversion_timeout = QSpinBox()
-        self._spn_conversion_timeout.setRange(0, 600)
-        self._spn_conversion_timeout.setValue(120)
-        self._spn_conversion_timeout.setSingleStep(30)
-        self._spn_conversion_timeout.setFixedWidth(80)
-        self._spn_conversion_timeout.setToolTip(
-            "上传 STP 文件后， PLM 会异步转换为 OBJ 以供三维预览。\n"
-            "此处设置等待转换完成的最长时间（秒）。\n"
-            "若转换未完成就 Check-in，geometry 将被服务端丢弃，前端显示'无转换'。\n"
-            "建议保持默认值 120 秒；若转换服务较慢可适当增大。\n"
-            "设为 0 则上传后立即 Check-in（不等待，恢复旧行为）。"
-        )
-        # 仅在"上传 STP"勾选时启用
-        self._spn_conversion_timeout.setEnabled(self._chk_upload_stp.isChecked())
-        self._chk_upload_stp.toggled.connect(self._spn_conversion_timeout.setEnabled)
-        conv_row.addWidget(lbl_conv)
-        conv_row.addWidget(self._spn_conversion_timeout)
-        conv_row.addStretch()
-        opt_layout.addLayout(conv_row)
 
         # 分隔线
         sep2 = QWidget(); sep2.setFixedHeight(1)
@@ -764,7 +761,7 @@ class PlmWorkbench(QDialog):
         self._pgb_sync = QProgressBar()
         self._pgb_sync.setRange(0, 0)
         self._pgb_sync.setVisible(False)
-        self._pgb_sync.setMaximumHeight(6)
+        self._pgb_sync.setMaximumHeight(16)
         v_prev.addWidget(self._pgb_sync)
 
         # 状态行：左侧进度文字，右侧同步摘要
@@ -1079,7 +1076,6 @@ class PlmWorkbench(QDialog):
             upload_drawing_file=self._chk_upload_drw_file.isChecked(),
             register_product=self._chk_reg_product.isChecked(),
             tag_rules=self._load_tag_rules(),
-            conversion_timeout_s=self._spn_conversion_timeout.value(),
         )
 
     # ── 同步执行 ─────────────────────────────────────────────────────────────
