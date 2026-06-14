@@ -1203,10 +1203,8 @@ class PlmWorkbench(QDialog):
           失败行：  [X] {reason} | {lbl}
           表头行（_log_header）：col1="签出来源" — 跳过，不写结果
 
-        node_done 规则：
-          - 终态行（col3 非空）→ node_done=True，推进进度条
-          - 过程行（col3 为空） → 仅实时刷新树单元格，不推进进度条
-          - 跳过/失败行        → node_done=True，推进进度条
+        进度条规则：每遇到一个首次出现的 lbl（零件号）推进一次，
+        去重计数，不依赖终态/过程行区分。
         """
         stripped = msg.strip()
 
@@ -1214,7 +1212,9 @@ class PlmWorkbench(QDialog):
         if stripped.replace("-", "").replace(" ", "") == "":
             return
 
-        node_done = False
+        # 从行中提取 lbl（零件标识）
+        extracted_lbl: str | None = None
+        is_terminal = False
 
         if stripped.startswith(">>"):
             inner = stripped[2:].strip()
@@ -1223,7 +1223,8 @@ class PlmWorkbench(QDialog):
                 reason = inner[:idx].strip()
                 lbl    = inner[idx + 3:].strip()
                 self._update_sync_result(lbl, reason, "", "")
-                node_done = True
+                extracted_lbl = lbl
+                is_terminal = True
         elif stripped.startswith("[X]"):
             inner = stripped[3:].strip()
             idx = inner.rfind(" | ")
@@ -1231,7 +1232,8 @@ class PlmWorkbench(QDialog):
                 reason = inner[:idx].strip()
                 lbl    = inner[idx + 3:].strip()
                 self._update_sync_result(lbl, reason, "", "")
-                node_done = True
+                extracted_lbl = lbl
+                is_terminal = True
         elif " | " in stripped:
             parts = [p.strip() for p in stripped.split(" | ")]
             if len(parts) >= 4:
@@ -1239,33 +1241,35 @@ class PlmWorkbench(QDialog):
                 col2 = parts[1]
                 col3 = parts[2]
                 lbl  = parts[-1]
-                # 过滤表头行
                 if col1 not in ("签出来源",):
+                    extracted_lbl = lbl
                     if col3:
-                        # col3 非空 → 终态行，写入结果并推进进度
                         self._update_sync_result(lbl, col1, col2, col3)
-                        node_done = True
+                        is_terminal = True
                     else:
-                        # col3 为空 → 过程行（附件/STP 上传进度、转换中…、转换完成等）
-                        # 仅实时刷新树中该零件的 _sync_update 列，不计 node_done
                         pn = lbl.split("<")[0].strip()
-                        # 保留已有的 source/checkin，只更新 update 列
                         existing = self._sync_result_map.get(pn, ("", "", ""))
                         self._sync_result_map[pn] = (existing[0] or col1, col2, existing[2])
                         self._refresh_sync_cols_in_tree(
-                            pn,
-                            existing[0] or col1,
-                            col2,
-                            existing[2],
+                            pn, existing[0] or col1, col2, existing[2],
                         )
 
-        # 推进进度条
-        if node_done:
-            self._sync_done_nodes = getattr(self, "_sync_done_nodes", 0) + 1
-            total = getattr(self, "_sync_total_nodes", 0)
-            self._pgb_sync.setValue(min(self._sync_done_nodes, total))
+        # 推进进度条：每遇到一个首次出现的 lbl 就推进一次
+        total = getattr(self, "_sync_total_nodes", 0)
+        if extracted_lbl:
+            pn = extracted_lbl.split("<")[0].strip()
+            seen = getattr(self, "_sync_seen_pns", set())
+            if pn not in seen:
+                seen.add(pn)
+                self._sync_seen_pns = seen
+                self._sync_done_nodes = getattr(self, "_sync_done_nodes", 0) + 1
+                self._pgb_sync.setValue(min(self._sync_done_nodes, total))
+
+        # 状态行显示
+        done = getattr(self, "_sync_done_nodes", 0)
+        if done or is_terminal:
             self._lbl_sync_status.setText(
-                f"正在同步…… ({self._sync_done_nodes} / {total})  {stripped[:60]}"
+                f"正在同步…… ({done} / {total})  {stripped[:60]}"
             )
         else:
             self._lbl_sync_status.setText(stripped)
