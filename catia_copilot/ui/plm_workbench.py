@@ -1,12 +1,9 @@
 """
-PLM 工作台主窗口。
+PLM 工作台主窗口（重构版）。
 
 独立非模态 QDialog，通过 QTabWidget 整合所有 PLM 对接功能：
-  Tab 1 - 连接：配置与测试 PLM 服务端连接
-  Tab 2 - 同步： BOM 预览 + 增量同步（附件上传可选）
-  Tab 3 - 标签：Tag 管理与自动映射规则
-  Tab 4 - 产品：查看与管理 PLM Product 配置
-  Tab 5 - 历史：最近 20 次同步记录
+  Tab 0 - 同步：CATIA 本地 ↔ PLM 三面板对比 + 增量同步
+  Tab 1 - 设置：连接配置 / 标签规则 / 同步历史（内嵌三子 Tab）
 
 使用方式：
     win = PlmWorkbench(parent)
@@ -45,7 +42,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizePolicy,
-    QSpinBox,
     QSplitter,
     QTabWidget,
     QTableWidget,
@@ -68,7 +64,6 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
     PLM_SYNC_MAX_NODES,
-    PLM_MEMBER_TABLE_COLUMNS,
     BomNodeType,
 )
 from catia_copilot.plm.api_client import PlmApiClient
@@ -104,11 +99,11 @@ _PREVIEW_FIXED_COLS: list[str] = ["Level", "Type", "Part Number", "Quantity"]
 # BOM 预览树：默认勾选的可选列（Filename + 可隐藏列的子集）
 _PREVIEW_DEFAULT_COLS = ["Filename", "Nomenclature"]
 
-# 同步结果内部列名（不在 BOM_EDIT_COLUMN_ORDER 里，同步后追加显示）
-_SYNC_COL_SOURCE  = "_sync_source"   # 签出来源：新建 / 签出 / 已签出-本人 / 撤销后签出
-_SYNC_COL_UPDATE  = "_sync_update"   # 更新结果：属性已写入 / 附件已上传 / STP 已上传 / ✗ …
-_SYNC_COL_CHECKIN = "_sync_checkin"  # 签入状态：已签入 / 保留签出 / ✗ 签入失败
-# 兼容旧代码中偶有引用的别名（指向对应新列，勿删）
+# 同步结果内部列名
+_SYNC_COL_SOURCE  = "_sync_source"
+_SYNC_COL_UPDATE  = "_sync_update"
+_SYNC_COL_CHECKIN = "_sync_checkin"
+# 兼容旧代码中偶有引用的别名
 _SYNC_COL_OP     = _SYNC_COL_SOURCE
 _SYNC_COL_STATUS = _SYNC_COL_CHECKIN
 _SYNC_COL_DISPLAY = {
@@ -116,7 +111,6 @@ _SYNC_COL_DISPLAY = {
     _SYNC_COL_UPDATE:  "更新结果",
     _SYNC_COL_CHECKIN: "签入状态",
 }
-# 三列按此顺序插入 Level 之后
 _SYNC_COLS_ORDERED = [_SYNC_COL_SOURCE, _SYNC_COL_UPDATE, _SYNC_COL_CHECKIN]
 
 
@@ -128,26 +122,14 @@ def _sync_row_color(source: str, update: str = "", checkin: str = ""):
       蓝色  #2980b9 — 已有零件更新成功（签出、属性写入、签入均属此类）
       灰色  #7f8c8d — 跳过 / 无变化
       红色  #e74c3c — 任何失败
-
-    source  = _SYNC_COL_SOURCE：新建 / 已签出-本人 / 签出 / 撤销后签出 / 跳过 / 失败
-    update  = _SYNC_COL_UPDATE ：属性已写入 / 附件已上传 / STP 已上传 / ✗ …
-    checkin = _SYNC_COL_CHECKIN：已签入 / 保留签出 / ✗ 签入失败
     """
     combined = source + update + checkin
-
-    # ── 失败（最优先）────────────────────────────────────────────────────────
     if "失败" in combined or "✗" in combined:
         return QColor("#e74c3c")
-
-    # ── 跳过 / 无变化 ────────────────────────────────────────────────────────
     if "跳过" in combined or "无变化" in combined:
         return QColor("#7f8c8d")
-
-    # ── 新建 ─────────────────────────────────────────────────────────────────
     if "新建" in source:
         return QColor("#27ae60")
-
-    # ── 更新成功：签出类操作 / 属性写入 / 签入 ──────────────────────────────
     if (
         "签出" in source
         or "更新" in source
@@ -158,7 +140,6 @@ def _sync_row_color(source: str, update: str = "", checkin: str = ""):
         or "✓" in combined
     ):
         return QColor("#2980b9")
-
     return None
 
 
@@ -168,7 +149,6 @@ def _sync_row_color(source: str, update: str = "", checkin: str = ""):
 
 class _ConnectWorker(QThread):
     """测试连接，拉取工作区信息与用户列表。"""
-    # users: list[dict]，每项含 login/name；ws_info: dict（id/description/admin）
     success = Signal(str, list, dict)
     failure = Signal(str)
 
@@ -184,16 +164,10 @@ class _ConnectWorker(QThread):
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
             users = c.list_users(self._workspace) or []
-
             ws_info: dict = {}
-
-            # GET /workspaces → 包含 description/enabled/folderLocked；
-            # administratedWorkspaces 中存在目标工作区 → 当前用户是管理员
-            # 注意：该端点不返回 admin 账号字段，无法获取工作区创建者
             try:
                 all_ws = c._request("GET", "/workspaces") or {}
                 admin_ids = {w.get("id") for w in (all_ws.get("administratedWorkspaces") or [])}
-                # allWorkspaces 包含所有有权访问的工作区（含管理员的）
                 for w in (all_ws.get("allWorkspaces") or []) + (all_ws.get("administratedWorkspaces") or []):
                     if w.get("id") == self._workspace:
                         ws_info.update(w)
@@ -201,7 +175,6 @@ class _ConnectWorker(QThread):
                 ws_info["_current_user_role"] = "管理员" if self._workspace in admin_ids else "普通成员"
             except Exception as e:
                 ws_info["_current_user_role"] = f"未知（{e}）"
-
             self.success.emit(self._login, users, ws_info)
         except Exception as exc:
             self.failure.emit(str(exc))
@@ -209,23 +182,20 @@ class _ConnectWorker(QThread):
 
 class _BomPreviewWorker(QThread):
     """从 CATIA 提取 BOM 行数据（不含 PLM 操作）。"""
-    success  = Signal(list)   # list[dict] rows
+    success  = Signal(list)
     failure  = Signal(str)
-    progress = Signal(int)    # 已收集节点数，用于进度条
+    progress = Signal(int)
 
     def run(self):
-        # QThread 工作线程需手动初始化 COM（STA 模式），否则 win32com 调用会抛
-        # "CoInitialize has not been called"
         pythoncom.CoInitialize()
         try:
-            # 构造需要读取的列：标准列 + 预设自定义属性列
             all_cols = list(dict.fromkeys(
                 BOM_EDIT_COLUMN_ORDER
                 + [c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER]
             ))
             custom_cols = [c for c in all_cols if c in PRESET_USER_REF_PROPERTIES]
             rows = collect_bom_rows_archive(
-                None,           # file_path=None：使用当前活动 CATIA 文档
+                None,
                 all_cols,
                 custom_cols,
                 progress_callback=lambda n: self.progress.emit(n),
@@ -238,15 +208,10 @@ class _BomPreviewWorker(QThread):
 
 
 class _SyncWorker(QThread):
-    """执行 BOM 同步（含 v3 路径 COM 遍历 + PLM 网络操作）。
-
-    与旧版的区别：不接收预览 rows，而是在后台线程中独立调用 extract_bom_v3()
-    重新遍历 CATIA 产品树（含位置信息），再执行 PLM 同步。
-    线程入口自动处理 COM 初始化/反初始化。
-    """
+    """执行 BOM 同步（含 v3 路径 COM 遍历 + PLM 网络操作）。"""
     progress   = Signal(str)
-    upload_log = Signal(str, str, str, str)  # (pn, source, update, checkin)
-    sync_done  = Signal(object)              # SyncResult
+    upload_log = Signal(str, str, str, str)
+    sync_done  = Signal(object)
     error      = Signal(str)
 
     def __init__(self, base_url, login, password, workspace, options):
@@ -258,7 +223,6 @@ class _SyncWorker(QThread):
         self._options   = options
 
     def run(self):
-        # 后台线程需手动初始化 COM（STA 模式），win32com + pycatia 均依赖此调用
         pythoncom.CoInitialize()
         try:
             self.progress.emit("正在从 CATIA 提取 BOM（含位置信息）……")
@@ -270,11 +234,9 @@ class _SyncWorker(QThread):
                     "BOM 提取失败：请确认 CATIA 已启动、有活动文档，且文档包含产品结构。"
                 )
                 return
-
             self.progress.emit("BOM 提取完成，正在连接 PLM……")
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
-
             result = sync_bom_to_plm(
                 bom_root, c, self._workspace,
                 options=self._options,
@@ -309,7 +271,7 @@ class _TagsWorker(QThread):
 
 class _CreateTagWorker(QThread):
     """在工作区创建新 Tag。"""
-    success = Signal(str)   # tag label
+    success = Signal(str)
     failure = Signal(str)
 
     def __init__(self, base_url, login, password, workspace, label):
@@ -322,9 +284,28 @@ class _CreateTagWorker(QThread):
         try:
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
-            # DocdokuPLM: POST /workspaces/{ws}/tags  body: {"label": "..."}
             c.post(f"/workspaces/{self._workspace}/tags", {"label": self._label})
             self.success.emit(self._label)
+        except Exception as exc:
+            self.failure.emit(str(exc))
+
+
+class _PlmStatusWorker(QThread):
+    """查询 PLM 中所有零件的状态（version/iteration/checkOutUser），不下载文件。"""
+    success = Signal(list)   # list[dict]: [{number, version, iteration, checkOutUser}, ...]
+    failure = Signal(str)
+
+    def __init__(self, base_url, login, password, workspace):
+        super().__init__()
+        self._base_url = base_url; self._login = login
+        self._password = password; self._workspace = workspace
+
+    def run(self):
+        try:
+            c = PlmApiClient(self._base_url)
+            c.login(self._login, self._password)
+            parts = c.list_parts(self._workspace) or []
+            self.success.emit(parts)
         except Exception as exc:
             self.failure.emit(str(exc))
 
@@ -342,7 +323,7 @@ class PlmWorkbench(QDialog):
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
-        # 恢复窗口几何（位置和尺寸）
+        # 恢复窗口几何
         s = QSettings(_S_ORG, _S_WB)
         saved_geom = s.value("geometry")
         if saved_geom:
@@ -357,11 +338,11 @@ class PlmWorkbench(QDialog):
         root_layout.setContentsMargins(0, 0, 0, 0)
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._build_conn_tab(),     "连接")
-        self._tabs.addTab(self._build_sync_tab(),     "同步")
-        self._tabs.addTab(self._build_tags_tab(),     "标签")
-        self._tabs.addTab(self._build_products_tab(), "产品")
-        self._tabs.addTab(self._build_history_tab(),  "历史")
+        _emoji_font = QFont("Segoe UI Emoji"); _emoji_font.setPointSize(9)
+        self._tabs.addTab(self._build_sync_tab(),     "")
+        self._tabs.addTab(self._build_settings_tab(), "")
+        self._tabs.setTabText(0, "🔄 同步")
+        self._tabs.setTabText(1, "⚙ 设置")
         root_layout.addWidget(self._tabs)
 
         # 活跃后台线程句柄（防 GC）
@@ -370,8 +351,14 @@ class PlmWorkbench(QDialog):
         # 已加载的 BOM 行（预览后缓存，同步时复用）
         self._bom_rows: list[dict] = []
 
-        # 同步结果映射：Part Number → (操作, 状态)，同步进行中实时更新
-        self._sync_result_map: dict[str, tuple[str, str, str]] = {}  # pn → (source, update, checkin)
+        # 可见 BOM 行缓存（Level > 0）
+        self._visible_bom_rows: list[dict] = []
+
+        # PLM 零件缓存：PartNumber → dict
+        self._plm_parts_cache: dict[str, dict] = {}
+
+        # 同步结果映射
+        self._sync_result_map: dict[str, tuple[str, str, str]] = {}
 
     # ─────────────────────────────────────────────────────────────────────────
     # 通用工具
@@ -379,12 +366,9 @@ class PlmWorkbench(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        # 窗口首次显示后，把右侧"连接日志"高度对齐到左侧"PLM 连接配置"
-        if hasattr(self, "_grp_cfg") and hasattr(self, "_grp_conn_log"):
-            self._grp_conn_log.setFixedHeight(self._grp_cfg.sizeHint().height())
 
-    def closeEvent(self, event):  # noqa: N802
-        """关闭时保存窗口几何（位置和尺寸）。"""
+    def closeEvent(self, event):
+        """关闭时保存窗口几何与选项。"""
         s = QSettings(_S_ORG, _S_WB)
         s.setValue("geometry", self.saveGeometry())
         s.setValue("chk_incremental",    self._chk_incremental.isChecked())
@@ -393,7 +377,6 @@ class PlmWorkbench(QDialog):
         s.setValue("chk_upload_stp",     self._chk_upload_stp.isChecked())
         s.setValue("chk_upload_drw_file", self._chk_upload_drw_file.isChecked())
         s.setValue("chk_upload_drw_pdf",  self._chk_upload_drw_pdf.isChecked())
-
         super().closeEvent(event)
 
     def _read_conn(self) -> tuple[str, str, str, str]:
@@ -419,184 +402,79 @@ class PlmWorkbench(QDialog):
         worker.start()
 
     def _log_to_conn(self, msg: str, level: str = "info") -> None:
-        """向连接 Tab 的状态日志区追加一行带时间戳的消息。"""
+        """向连接日志区追加一行带时间戳的消息。"""
         ts = datetime.now().strftime("%H:%M:%S")
         prefix = {"info": "INFO", "ok": "OK  ", "warn": "WARN", "error": "ERR "}.get(level, "INFO")
         self._txt_conn_log.appendPlainText(f"[{ts}] [{prefix}] {msg}")
-        # 滚动到底部
         sb = self._txt_conn_log.verticalScrollBar()
         sb.setValue(sb.maximum())
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Tab 1 — 连接
+    # Tab 0 — 同步
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_conn_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+    def _build_conn_status_bar(self) -> QWidget:
+        """构建顶部连接状态栏：状态指示点 + 连接信息 + 设置按钮。"""
+        bar = QWidget()
+        bar.setFixedHeight(32)
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(8, 0, 8, 0)
+        h.setSpacing(6)
 
-        base_url, login, password, workspace = self._read_conn()
+        _dot_font = QFont("Segoe UI Emoji")
+        _dot_font.setPointSize(12)
+        self._lbl_conn_dot = QLabel("●")
+        self._lbl_conn_dot.setFont(_dot_font)
 
-        # ── 上半：左右水平布局（配置表单 | 连接日志） ─────────────────────────
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)
-        top_row.setContentsMargins(0, 0, 0, 0)
+        self._lbl_conn_info = QLabel("未连接")
 
-        # 左：配置表单
-        grp_cfg = QGroupBox("PLM 连接配置")
-        grp_cfg.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        form = QFormLayout(grp_cfg)
-        form.setSpacing(6)
+        h.addWidget(self._lbl_conn_dot)
+        h.addWidget(self._lbl_conn_info)
+        h.addStretch()
 
-        self._le_base_url  = QLineEdit(base_url)
-        self._le_login     = QLineEdit(login)
-        self._le_password  = QLineEdit(password)
-        self._le_password.setEchoMode(QLineEdit.Password)
-        self._le_workspace = QLineEdit(workspace)
-        self._le_base_url.setPlaceholderText("http://127.0.0.1:8001/docdoku-plm-server-rest/api")
+        _ef = QFont("Segoe UI Emoji")
+        _ef.setPointSize(9)
+        btn_settings = QPushButton("⚙ 设置")
+        btn_settings.setFont(_ef)
+        btn_settings.clicked.connect(lambda: self._tabs.setCurrentIndex(1))
+        h.addWidget(btn_settings)
 
-        form.addRow("服务端地址：", self._le_base_url)
-        form.addRow("用户名：",     self._le_login)
-        form.addRow("密码：",       self._le_password)
-        form.addRow("工作区：",     self._le_workspace)
+        self._update_conn_status_bar()
+        return bar
 
-        btn_row = QHBoxLayout()
-        btn_save = QPushButton("保存配置")
-        btn_test = QPushButton("测试连接")
-        self._btn_goto_sync = QPushButton("→ 前往同步")
-        self._btn_goto_sync.setToolTip("保存配置并切换到同步 Tab")
-        _arrow_font = QFont("Segoe UI Emoji")
-        _arrow_font.setPointSize(9)
-        self._btn_goto_sync.setFont(_arrow_font)
-        btn_save.clicked.connect(self._on_save_conn)
-        btn_test.clicked.connect(self._on_test_conn)
-        self._btn_goto_sync.clicked.connect(self._on_goto_sync)
-        btn_row.addWidget(btn_save)
-        btn_row.addWidget(btn_test)
-        btn_row.addStretch()
-        btn_row.addWidget(self._btn_goto_sync)
-        form.addRow("", btn_row)
-        top_row.addWidget(grp_cfg, stretch=1)
-        # 保存引用，showEvent 时同步右侧高度
-        self._grp_cfg    = grp_cfg
+    def _update_conn_status_bar(self) -> None:
+        """更新顶部状态栏显示（从 QSettings 读取配置）。"""
+        base_url, login, _pw, workspace = self._read_conn()
+        if base_url and login:
+            self._lbl_conn_dot.setText("🟢")
+            self._lbl_conn_dot.setStyleSheet("color: green;")
+            self._lbl_conn_info.setText(f"{login} @ {workspace}")
+        else:
+            self._lbl_conn_dot.setText("🔴")
+            self._lbl_conn_dot.setStyleSheet("color: red;")
+            self._lbl_conn_info.setText("未配置")
 
-        # 右：连接日志
-        grp_status = QGroupBox("连接日志")
-        grp_status.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        v_st = QVBoxLayout(grp_status)
-        v_st.setSpacing(4)
-        self._txt_conn_log = QPlainTextEdit()
-        self._txt_conn_log.setReadOnly(True)
-        self._txt_conn_log.setObjectName("logView")
-        self._txt_conn_log.setPlaceholderText('— 尚未连接，点击"测试连接"验证配置 —')
-        v_st.addWidget(self._txt_conn_log)
-        top_row.addWidget(grp_status, stretch=1)
-        self._grp_conn_log = grp_status
+    def _build_advanced_options(self) -> QWidget:
+        """构建折叠式高级同步选项区域。"""
+        container = QWidget()
+        v = QVBoxLayout(container)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
 
-        # 用一个固定高度的容器包住左右，防止窗口缩小时被压缩
-        top_widget = QWidget()
-        top_widget.setLayout(top_row)
-        top_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        layout.addWidget(top_widget)
+        self._adv_toggle_btn = QPushButton("▶ 高级选项")
+        self._adv_toggle_btn.setFlat(True)
+        self._adv_toggle_btn.clicked.connect(self._toggle_advanced)
+        v.addWidget(self._adv_toggle_btn)
 
-        # ── 下半：工作区详情（填满剩余高度） ─────────────────────────────────
-        grp_ws = QGroupBox("工作区详情")
-        v_ws = QVBoxLayout(grp_ws)
-        v_ws.setSpacing(4)
-
-        self._lbl_ws_detail = QLabel("— 未获取 —")
-        self._lbl_ws_detail.setWordWrap(True)
-        v_ws.addWidget(self._lbl_ws_detail)
-
-        # 成员列表：列定义来自 PLM_MEMBER_TABLE_COLUMNS
-        n_cols = len(PLM_MEMBER_TABLE_COLUMNS)
-        self._tbl_users = QTableWidget(0, n_cols)
-        self._tbl_users.setHorizontalHeaderLabels(
-            [col[1] for col in PLM_MEMBER_TABLE_COLUMNS]
-        )
-        hdr = self._tbl_users.horizontalHeader()
-        hdr.setStretchLastSection(True)
-        for i, (_key, _label, mode) in enumerate(PLM_MEMBER_TABLE_COLUMNS):
-            hdr.setSectionResizeMode(i, QHeaderView.Interactive)
-            if mode == "contents":
-                hdr.resizeSection(i, 80)
-            elif mode.startswith("fixed:"):
-                hdr.resizeSection(i, int(mode.split(":")[1]))
-            else:
-                hdr.resizeSection(i, 120)
-        self._tbl_users.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_users.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_users.setMinimumHeight(100)
-        v_ws.addWidget(self._tbl_users)
-        layout.addWidget(grp_ws, stretch=1)
-
-        return page
-
-    def _on_save_conn(self):
-        self._save_conn()
-        self._log_to_conn("配置已保存", "info")
-
-    def _on_goto_sync(self):
-        self._save_conn()
-        self._tabs.setCurrentIndex(1)
-
-    def _on_test_conn(self):
-        self._save_conn()
-        base_url, login, password, workspace = self._read_conn()
-        self._log_to_conn(f"正在连接 {base_url} …", "info")
-        self._tbl_users.setRowCount(0)
-        self._lbl_ws_detail.setText("— 获取中 —")
-        w = _ConnectWorker(base_url, login, password, workspace)
-        w.success.connect(self._on_conn_ok)
-        w.failure.connect(self._on_conn_fail)
-        self._start_worker(w)
-
-    def _on_conn_ok(self, login_name: str, users: list, ws_info: dict):
-        _, _, _, ws = self._read_conn()
-        self._log_to_conn(
-            f"连接成功  用户：{login_name}  工作区：{ws}  成员数：{len(users)}", "ok"
-        )
-        # 工作区详情：API 字段 id/admin/description（无 creationDate/lastModification）
-        desc  = ws_info.get("description") or "—"
-        role  = ws_info.get("_current_user_role") or "—"
-        enabled = "是" if ws_info.get("enabled", True) else "否"
-        self._lbl_ws_detail.setText(
-            f"工作区：{ws}    描述：{desc}    我的身份：{role}    已启用：{enabled}"
-        )
-        # 填充成员表格，列定义来自 PLM_MEMBER_TABLE_COLUMNS
-        self._tbl_users.setRowCount(0)
-        for u in users:
-            row = self._tbl_users.rowCount()
-            self._tbl_users.insertRow(row)
-            for col_i, (key, _label, _mode) in enumerate(PLM_MEMBER_TABLE_COLUMNS):
-                self._tbl_users.setItem(row, col_i, QTableWidgetItem(str(u.get(key) or "")))
-
-    def _on_conn_fail(self, err: str):
-        self._log_to_conn(f"连接失败：{err}", "error")
-        self._lbl_ws_detail.setText("— 连接失败 —")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Tab 2 — 同步
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _build_sync_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
-
-        # ── 同步选项 GroupBox ──────────────────────────────────────────────
-        grp_opt = QGroupBox("同步选项")
-        opt_layout = QVBoxLayout(grp_opt)
-        opt_layout.setSpacing(4)
+        self._adv_widget = QWidget()
+        adv_layout = QVBoxLayout(self._adv_widget)
+        adv_layout.setContentsMargins(8, 4, 8, 4)
+        adv_layout.setSpacing(4)
 
         form = QFormLayout()
         form.setSpacing(5)
         form.setContentsMargins(0, 0, 0, 0)
 
-        # 每行单选用独立 QButtonGroup，防止跨行互相影响
         def _radio_row(*labels) -> tuple[list[QRadioButton], QButtonGroup, QHBoxLayout]:
             btns = [QRadioButton(lbl) for lbl in labels]
             grp  = QButtonGroup()
@@ -623,14 +501,13 @@ class PlmWorkbench(QDialog):
         form.addRow("已签入的零件：",  row_exist)
         form.addRow("他人已签出：",    row_other)
         form.addRow("更新后操作：",    row_after)
-        opt_layout.addLayout(form)
+        adv_layout.addLayout(form)
 
-        # 分隔线
         sep = QWidget(); sep.setFixedHeight(1)
         sep.setStyleSheet("background: palette(mid);")
-        opt_layout.addWidget(sep)
+        adv_layout.addWidget(sep)
 
-        # 复选框选项 — 行一：基础选项
+        # 复选框行一
         chk_row1 = QHBoxLayout()
         chk_row1.setSpacing(20)
         self._chk_incremental  = QCheckBox("增量同步（跳过属性无变化的零件）")
@@ -639,9 +516,9 @@ class PlmWorkbench(QDialog):
         chk_row1.addWidget(self._chk_incremental)
         chk_row1.addWidget(self._chk_reg_product)
         chk_row1.addStretch()
-        opt_layout.addLayout(chk_row1)
+        adv_layout.addLayout(chk_row1)
 
-        # 复选框选项 — 行二：上传选项（4 个独立开关）
+        # 复选框行二
         chk_row2 = QHBoxLayout()
         chk_row2.setSpacing(16)
         self._chk_upload_catpart  = QCheckBox("上传 CATIA 文件")
@@ -669,7 +546,8 @@ class PlmWorkbench(QDialog):
         chk_row2.addWidget(self._chk_upload_drw_file)
         chk_row2.addWidget(self._chk_upload_drw_pdf)
         chk_row2.addStretch()
-        # 从 QSettings 恢复同步选项状态
+
+        # 恢复 QSettings
         _sw = QSettings(_S_ORG, _S_WB)
         def _chk_val(key, default=True):
             v = _sw.value(key)
@@ -680,14 +558,13 @@ class PlmWorkbench(QDialog):
         self._chk_upload_stp.setChecked(_chk_val("chk_upload_stp", True))
         self._chk_upload_drw_file.setChecked(_chk_val("chk_upload_drw_file", True))
         self._chk_upload_drw_pdf.setChecked(_chk_val("chk_upload_drw_pdf", True))
-        opt_layout.addLayout(chk_row2)
+        adv_layout.addLayout(chk_row2)
 
-        # 分隔线
         sep2 = QWidget(); sep2.setFixedHeight(1)
         sep2.setStyleSheet("background: palette(mid);")
-        opt_layout.addWidget(sep2)
+        adv_layout.addWidget(sep2)
 
-        # 预设按钮（在 GroupBox 内底部）
+        # 预设按钮
         preset_row = QHBoxLayout()
         preset_row.setSpacing(8)
         lbl_preset = QLabel("预设：")
@@ -701,212 +578,502 @@ class PlmWorkbench(QDialog):
         preset_row.addWidget(btn_preset_new)
         preset_row.addWidget(btn_preset_update)
         preset_row.addStretch()
-        opt_layout.addLayout(preset_row)
+        adv_layout.addLayout(preset_row)
 
-        layout.addWidget(grp_opt)
+        self._adv_widget.setVisible(False)
+        v.addWidget(self._adv_widget)
+        return container
 
-        # ── BOM 预览 / 同步结果 ────────────────────────────────────────────
-        grp_preview = QGroupBox("BOM 预览 / 同步结果")
-        v_prev = QVBoxLayout(grp_preview)
-        v_prev.setSpacing(4)
+    def _toggle_advanced(self) -> None:
+        """切换高级选项展开/折叠状态。"""
+        visible = self._adv_widget.isVisible()
+        self._adv_widget.setVisible(not visible)
+        self._adv_toggle_btn.setText("▼ 高级选项" if not visible else "▶ 高级选项")
 
-        # 工具栏行：加载按钮 + 列可见性 + 节点计数 + 开始同步
-        prev_toolbar = QHBoxLayout()
-        self._btn_load_preview = QPushButton("从 CATIA 加载 BOM")
-        self._btn_load_preview.clicked.connect(self._on_load_preview)
-        self._lbl_node_count   = QLabel("")
-        self._btn_sync_start   = QPushButton("开始同步")
-        self._btn_sync_start.setEnabled(False)
-        self._btn_sync_start.clicked.connect(self._on_sync_start)
-        prev_toolbar.addWidget(self._btn_load_preview)
-        prev_toolbar.addWidget(self._lbl_node_count)
-        prev_toolbar.addStretch()
-        prev_toolbar.addWidget(self._btn_sync_start)
-        v_prev.addLayout(prev_toolbar)
+    def _build_sync_tab(self) -> QWidget:
+        """构建同步 Tab：状态栏 + 三面板视图 + 操作按钮 + 高级选项 + 进度区。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        # 列可见性区域（两行，与 bom_edit_dialog 保持一致）
-        self._col_vis_widget = QWidget()
-        self._col_vis_vbox = QVBoxLayout(self._col_vis_widget)
-        self._col_vis_vbox.setContentsMargins(8, 4, 8, 4)
-        self._col_vis_vbox.setSpacing(6)
-        # row0/row1 在 _build_col_visibility_row 中动态填充，先占位
-        self._col_vis_row0 = QHBoxLayout()
-        self._col_vis_row1 = QHBoxLayout()
-        self._col_vis_row0.setSpacing(12)
-        self._col_vis_row1.setSpacing(12)
-        self._col_vis_vbox.addLayout(self._col_vis_row0)
-        self._col_vis_vbox.addLayout(self._col_vis_row1)
-        self._col_checkboxes: dict[str, QCheckBox] = {}
-        self._build_col_visibility_row()
-        v_prev.addWidget(self._col_vis_widget)
+        # A. 顶部连接状态栏
+        layout.addWidget(self._build_conn_status_bar())
 
-        # 只读 BOM 预览树（使用共享的 _BomTreeWidget，带树状连接线）
-        self._preview_tree = _BomTreeWidget()
-        self._preview_tree.setUniformRowHeights(True)
-        self._preview_tree.setRootIsDecorated(True)
-        # 不使用交替行色：Qt QSS 的 branch 伪元素不支持 :alternate，
-        # 开启后 branch 列背景无法同步，会出现竖条色块。
-        self._preview_tree.setAlternatingRowColors(True)
-        self._preview_tree.setIndentation(16)
-        # 行高由 _BomTreeWidget 内置的 _RowHeightDelegate.sizeHint() 保证，无需 setStyleSheet
-        self._preview_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._preview_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
-        hdr = self._preview_tree.header()
-        hdr.setSectionResizeMode(QHeaderView.Interactive)
-        hdr.setStretchLastSection(True)
-        hdr.setFixedHeight(L.TABLE_ROW_HEIGHT)
-        v_prev.addWidget(self._preview_tree, 1)
+        # B. 主体三面板（QSplitter）
+        splitter = QSplitter(Qt.Horizontal)
+        _ef = QFont("Segoe UI Emoji"); _ef.setPointSize(9)
 
-        # 进度 & 状态（嵌入 GroupBox 底部）
+        # 左面板：CATIA 本地
+        left_w = QWidget()
+        v_left = QVBoxLayout(left_w)
+        v_left.setContentsMargins(0, 0, 0, 0)
+        v_left.setSpacing(4)
+
+        title_row_l = QHBoxLayout()
+        title_row_l.setSpacing(6)
+        title_row_l.addWidget(QLabel("📁 本地 (CATIA)"))
+        self._btn_load_bom = QPushButton("↺ 加载 BOM")
+        self._btn_load_bom.setFont(_ef)
+        self._btn_load_bom.clicked.connect(self._on_load_preview)
+        self._lbl_node_count = QLabel("")
+        title_row_l.addWidget(self._btn_load_bom)
+        title_row_l.addWidget(self._lbl_node_count)
+        title_row_l.addStretch()
+        v_left.addLayout(title_row_l)
+
+        self._tbl_local = QTableWidget(0, 3)
+        self._tbl_local.setHorizontalHeaderLabels(["零件号", "术语", "本地状态"])
+        self._tbl_local.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_local.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_local.horizontalHeader().setStretchLastSection(True)
+        v_left.addWidget(self._tbl_local, 1)
+        splitter.addWidget(left_w)
+
+        # 中间箭头列（固定 44px）
+        mid_w = QWidget()
+        mid_w.setFixedWidth(44)
+        v_mid = QVBoxLayout(mid_w)
+        v_mid.setContentsMargins(0, 0, 0, 0)
+        v_mid.setSpacing(4)
+        # 占位对齐标题行高度
+        _mid_placeholder = QWidget()
+        _mid_placeholder.setFixedHeight(28)
+        v_mid.addWidget(_mid_placeholder)
+        self._tbl_arrow = QTableWidget(0, 1)
+        self._tbl_arrow.horizontalHeader().hide()
+        self._tbl_arrow.verticalHeader().hide()
+        self._tbl_arrow.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_arrow.setSelectionMode(QAbstractItemView.NoSelection)
+        self._tbl_arrow.setShowGrid(False)
+        self._tbl_arrow.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        _arrow_font = QFont("Segoe UI Emoji"); _arrow_font.setPointSize(10)
+        v_mid.addWidget(self._tbl_arrow, 1)
+        splitter.addWidget(mid_w)
+
+        # 右面板：PLM 系统
+        right_w = QWidget()
+        v_right = QVBoxLayout(right_w)
+        v_right.setContentsMargins(0, 0, 0, 0)
+        v_right.setSpacing(4)
+
+        title_row_r = QHBoxLayout()
+        title_row_r.setSpacing(6)
+        title_row_r.addWidget(QLabel("☁ PLM 系统"))
+        self._btn_refresh_plm = QPushButton("↺ 查询 PLM 状态")
+        self._btn_refresh_plm.setFont(_ef)
+        self._btn_refresh_plm.clicked.connect(self._on_refresh_plm_status)
+        self._lbl_plm_query_status = QLabel("—")
+        title_row_r.addWidget(self._btn_refresh_plm)
+        title_row_r.addWidget(self._lbl_plm_query_status)
+        title_row_r.addStretch()
+        v_right.addLayout(title_row_r)
+
+        self._tbl_plm = QTableWidget(0, 3)
+        self._tbl_plm.setHorizontalHeaderLabels(["零件号", "PLM状态", "版本/迭代"])
+        self._tbl_plm.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_plm.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_plm.horizontalHeader().setStretchLastSection(True)
+        v_right.addWidget(self._tbl_plm, 1)
+        splitter.addWidget(right_w)
+
+        # 左右 1:1，中间固定
+        splitter.setSizes([500, 44, 500])
+        layout.addWidget(splitter, 1)
+
+        # C. 操作按钮行
+        op_row = QHBoxLayout()
+        op_row.addStretch()
+        self._btn_push = QPushButton("⬆  Push 至 PLM")
+        self._btn_push.setFont(_ef)
+        self._btn_push.setObjectName("primaryBtn")
+        self._btn_push.setEnabled(False)
+        self._btn_push.clicked.connect(self._on_sync_start)
+        self._btn_pull = QPushButton("⬇  Pull 至本地")
+        self._btn_pull.setFont(_ef)
+        self._btn_pull.setEnabled(False)
+        self._btn_pull.setToolTip("计划中：从 PLM 拉取文件到本地（尚未实现）")
+        op_row.addWidget(self._btn_push)
+        op_row.addWidget(self._btn_pull)
+        op_row.addStretch()
+        layout.addLayout(op_row)
+
+        # D. 折叠高级选项
+        layout.addWidget(self._build_advanced_options())
+
+        # E. 进度条 + 状态行
         self._pgb_sync = QProgressBar()
         self._pgb_sync.setRange(0, 0)
         self._pgb_sync.setVisible(False)
         self._pgb_sync.setMaximumHeight(16)
-        v_prev.addWidget(self._pgb_sync)
+        layout.addWidget(self._pgb_sync)
 
-        # 状态行：左侧进度文字，右侧同步摘要
         status_row = QHBoxLayout()
         self._lbl_sync_status  = QLabel("就绪")
         self._lbl_sync_summary = QLabel("")
         self._lbl_sync_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         status_row.addWidget(self._lbl_sync_status, 1)
         status_row.addWidget(self._lbl_sync_summary, 1)
-        v_prev.addLayout(status_row)
+        layout.addLayout(status_row)
 
-        layout.addWidget(grp_preview, 1)
+        # 别名：保持旧代码中对这两个控件的引用有效
+        self._btn_load_preview = self._btn_load_bom
+        self._btn_sync_start   = self._btn_push
+
+        # 隐藏的 BOM 预览树（供内部同步结果追踪使用，不加入任何布局）
+        self._preview_tree = _BomTreeWidget()
+
+        # 列可见性控件（隐藏，保留逻辑供 _populate_preview_tree 使用）
+        self._col_vis_widget = QWidget()
+        self._col_vis_vbox   = QVBoxLayout(self._col_vis_widget)
+        self._col_vis_row0   = QHBoxLayout()
+        self._col_vis_row1   = QHBoxLayout()
+        self._col_vis_vbox.addLayout(self._col_vis_row0)
+        self._col_vis_vbox.addLayout(self._col_vis_row1)
+        self._col_checkboxes: dict[str, QCheckBox] = {}
+        self._build_col_visibility_row()
 
         return page
 
-    # ── 列可见性 ────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # Tab 1 — 设置
+    # ─────────────────────────────────────────────────────────────────────────
 
-    def _preview_visible_cols(self) -> list[str]:
-        """返回预览树当前应显示的列（固定列 + 用户勾选的可选列 + 同步结果列），按 BOM_EDIT_COLUMN_ORDER 排序。"""
-        s = QSettings(_S_ORG, _S_WB)
-        saved = s.value("preview_optional_cols", _PREVIEW_DEFAULT_COLS)
-        if isinstance(saved, str):
-            saved = [saved]
-        # 过滤非法值（不含固定列，固定列另行处理）
-        all_optional = (
-            set(BOM_EDIT_COLUMN_ORDER) | set(PRESET_USER_REF_PROPERTIES)
-        ) - set(_PREVIEW_FIXED_COLS)
-        optional = [c for c in saved if c in all_optional]
+    def _build_settings_tab(self) -> QWidget:
+        """构建设置 Tab，内含三个子 Tab：连接 / 规则 / 历史。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        # 按 BOM_EDIT_COLUMN_ORDER 顺序排列：固定列先，然后可选列（保持原顺序）
-        order = BOM_EDIT_COLUMN_ORDER + [
-            c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER
-        ]
-        result: list[str] = []
-        for c in order:
-            if c in _PREVIEW_FIXED_COLS or c in optional:
-                result.append(c)
-        # 补充 PRESET_USER_REF_PROPERTIES 中不在 order 里的（理论上不会有）
-        for c in optional:
-            if c not in result:
-                result.append(c)
-        # 同步结果列固定紧跟在 Level 之后（始终显示，未同步时显示 "—"）
-        for i, col in enumerate(_SYNC_COLS_ORDERED):
-            result.insert(1 + i, col)
-        return result
+        self._settings_tabs = QTabWidget()
+        self._settings_tabs.addTab(self._build_conn_subtab(),    "🔗 连接")
+        self._settings_tabs.addTab(self._build_rules_subtab(),   "🏷 规则")
+        self._settings_tabs.addTab(self._build_history_subtab(), "🕐 历史")
+        layout.addWidget(self._settings_tabs)
+        return page
 
-    def _save_preview_cols(self, optional_cols: list[str]) -> None:
-        """只保存可选列（固定列不需要存储）。"""
-        QSettings(_S_ORG, _S_WB).setValue("preview_optional_cols", optional_cols)
+    def _build_conn_subtab(self) -> QWidget:
+        """子 Tab：PLM 连接配置。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
 
-    def _build_col_visibility_row(self) -> None:
-        """构建列可见性区域（严格参考 bom_edit_dialog）。
+        base_url, login, password, workspace = self._read_conn()
 
-        第一行：
-          - "显示列：" 标签
-          - 固定列（Level/Type/Part Number/Quantity）— 灰色只读标签，始终显示
-          - 分隔符 "|"
-          - Filename checkbox
-          - "显示完整路径" checkbox（与 bom_edit_dialog 一致，暂不实装，置灰）
-          - BOM_HIDEABLE_COLUMNS 的各 checkbox
-        第二行：
-          - "自定义属性：" 标签
-          - PRESET_USER_REF_PROPERTIES 的各 checkbox
-        """
-        # 清空两行
-        for layout in (self._col_vis_row0, self._col_vis_row1):
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-        self._col_checkboxes.clear()
+        # 配置表单
+        grp_cfg = QGroupBox("PLM 连接配置")
+        form = QFormLayout(grp_cfg)
+        form.setSpacing(6)
 
-        s = QSettings(_S_ORG, _S_WB)
-        saved = s.value("preview_optional_cols", _PREVIEW_DEFAULT_COLS)
-        if isinstance(saved, str):
-            saved = [saved]
-        visible_optional = set(saved)
+        self._le_base_url  = QLineEdit(base_url)
+        self._le_login     = QLineEdit(login)
+        self._le_password  = QLineEdit(password)
+        self._le_password.setEchoMode(QLineEdit.Password)
+        self._le_workspace = QLineEdit(workspace)
+        self._le_base_url.setPlaceholderText("http://127.0.0.1:8001/docdoku-plm-server-rest/api")
 
-        # ── 第一行 ────────────────────────────────────────────────────────────
-        self._col_vis_row0.addWidget(QLabel("显示列："))
+        form.addRow("服务端地址：", self._le_base_url)
+        form.addRow("用户名：",     self._le_login)
+        form.addRow("密码：",       self._le_password)
+        form.addRow("工作区：",     self._le_workspace)
 
-        # 固定列：灰色只读标签
-        for col in _PREVIEW_FIXED_COLS:
-            display = BOM_COLUMN_DISPLAY_NAMES.get(col, col)
-            lbl = QLabel(display)
-            lbl.setStyleSheet("color: gray;")
-            lbl.setToolTip("此列始终显示，不可隐藏")
-            self._col_vis_row0.addWidget(lbl)
+        btn_row = QHBoxLayout()
+        btn_save = QPushButton("保存配置")
+        btn_test = QPushButton("测试连接")
+        btn_save.clicked.connect(self._on_save_conn)
+        btn_test.clicked.connect(self._on_test_conn)
+        btn_row.addWidget(btn_save)
+        btn_row.addWidget(btn_test)
+        btn_row.addStretch()
+        form.addRow("", btn_row)
+        layout.addWidget(grp_cfg)
 
-        # 分隔
-        sep = QLabel("|")
-        sep.setStyleSheet("color: #aaa;")
-        self._col_vis_row0.addWidget(sep)
+        # 工作区详情
+        grp_ws = QGroupBox("工作区详情")
+        v_ws = QVBoxLayout(grp_ws)
+        v_ws.setSpacing(4)
+        self._lbl_ws_detail = QLabel("— 未获取 —")
+        self._lbl_ws_detail.setWordWrap(True)
+        v_ws.addWidget(self._lbl_ws_detail)
+        layout.addWidget(grp_ws)
 
-        # Filename checkbox（与 bom_edit_dialog 一致）
-        fn_cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get("Filename", "Filename"))
-        fn_cb.setChecked("Filename" in visible_optional)
-        fn_cb.toggled.connect(self._on_col_vis_changed)
-        fn_cb.setProperty("col_name", "Filename")
-        self._col_checkboxes["Filename"] = fn_cb
-        self._col_vis_row0.addWidget(fn_cb)
+        # 连接日志（占剩余高度）
+        grp_log = QGroupBox("连接日志")
+        v_log = QVBoxLayout(grp_log)
+        v_log.setSpacing(4)
+        self._txt_conn_log = QPlainTextEdit()
+        self._txt_conn_log.setReadOnly(True)
+        self._txt_conn_log.setObjectName("logView")
+        self._txt_conn_log.setPlaceholderText('— 尚未连接，点击"测试连接"验证配置 —')
+        v_log.addWidget(self._txt_conn_log)
+        layout.addWidget(grp_log, 1)
 
-        # 可隐藏标准列（BOM_HIDEABLE_COLUMNS）
-        for col in BOM_HIDEABLE_COLUMNS:
-            display = BOM_COLUMN_DISPLAY_NAMES.get(col, col)
-            cb = QCheckBox(display)
-            cb.setChecked(col in visible_optional)
-            cb.toggled.connect(self._on_col_vis_changed)
-            cb.setProperty("col_name", col)
-            self._col_checkboxes[col] = cb
-            self._col_vis_row0.addWidget(cb)
+        return page
 
-        self._col_vis_row0.addStretch()
+    def _build_rules_subtab(self) -> QWidget:
+        """子 Tab：Tag 管理与自动映射规则（迁移自原 Tab3）。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
 
-        # ── 第二行：预设用户自定义属性 ────────────────────────────────────────
-        self._col_vis_row1.addWidget(QLabel("自定义属性："))
-        for col in PRESET_USER_REF_PROPERTIES:
-            if col in self._col_checkboxes:
-                continue
-            display = BOM_COLUMN_DISPLAY_NAMES.get(col, col)
-            cb = QCheckBox(display)
-            cb.setChecked(col in visible_optional)
-            cb.toggled.connect(self._on_col_vis_changed)
-            cb.setProperty("col_name", col)
-            self._col_checkboxes[col] = cb
-            self._col_vis_row1.addWidget(cb)
-        self._col_vis_row1.addStretch()
+        # 工作区现有标签
+        grp_tags = QGroupBox("工作区标签")
+        v_t = QVBoxLayout(grp_tags)
+        v_t.setSpacing(6)
 
-    def _on_col_vis_changed(self) -> None:
-        optional = [col for col, cb in self._col_checkboxes.items() if cb.isChecked()]
-        self._save_preview_cols(optional)
-        if self._bom_rows:
-            self._populate_preview_tree(self._bom_rows)
+        self._tbl_plm_tags = QTableWidget(0, 2)
+        self._tbl_plm_tags.setHorizontalHeaderLabels(["标签名称", "ID"])
+        _hdr_tags = self._tbl_plm_tags.horizontalHeader()
+        _hdr_tags.setSectionResizeMode(0, QHeaderView.Interactive)
+        _hdr_tags.setSectionResizeMode(1, QHeaderView.Interactive)
+        _hdr_tags.resizeSection(0, 180)
+        _hdr_tags.setStretchLastSection(True)
+        self._tbl_plm_tags.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_plm_tags.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_plm_tags.setMinimumHeight(120)
+        v_t.addWidget(self._tbl_plm_tags)
 
-    # ── BOM 预览加载 ────────────────────────────────────────────────────────
+        tag_op_row = QHBoxLayout()
+        tag_op_row.setSpacing(8)
+        btn_refresh = QPushButton("刷新标签列表")
+        btn_refresh.clicked.connect(self._on_refresh_tags)
+        self._le_new_tag = QLineEdit()
+        self._le_new_tag.setPlaceholderText("输入新标签名称…")
+        btn_create_tag = QPushButton("新建标签")
+        btn_create_tag.clicked.connect(self._on_create_tag)
+        tag_op_row.addWidget(btn_refresh)
+        tag_op_row.addStretch()
+        tag_op_row.addWidget(self._le_new_tag)
+        tag_op_row.addWidget(btn_create_tag)
+        v_t.addLayout(tag_op_row)
+        layout.addWidget(grp_tags)
+
+        # 自动映射规则
+        grp_rules = QGroupBox('自动打标签规则（BOM 同步 Checkin 后按"设计状态"属性值自动打 Tag）')
+        v_r = QVBoxLayout(grp_rules)
+        v_r.setSpacing(6)
+
+        self._tbl_rules = QTableWidget(0, 3)
+        self._tbl_rules.setHorizontalHeaderLabels(["CATIA 属性值", "PLM 标签", "操作"])
+        _hdr_rules = self._tbl_rules.horizontalHeader()
+        _hdr_rules.setSectionResizeMode(0, QHeaderView.Interactive)
+        _hdr_rules.setSectionResizeMode(1, QHeaderView.Interactive)
+        _hdr_rules.setSectionResizeMode(2, QHeaderView.Fixed)
+        _hdr_rules.resizeSection(0, 160)
+        _hdr_rules.resizeSection(2, 60)
+        _hdr_rules.setStretchLastSection(False)
+        _hdr_rules.setSectionResizeMode(1, QHeaderView.Stretch)
+        self._tbl_rules.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_rules.setMinimumHeight(120)
+        v_r.addWidget(self._tbl_rules)
+
+        add_row = QHBoxLayout()
+        add_row.setSpacing(8)
+        lbl_add = QLabel("新增规则：")
+        self._le_rule_catia = QLineEdit()
+        self._le_rule_catia.setPlaceholderText('CATIA"设计状态"属性值，如：发布')
+        self._cmb_rule_tag  = QComboBox()
+        self._cmb_rule_tag.setEditable(True)
+        self._cmb_rule_tag.setPlaceholderText("PLM Tag（可手填或从列表选）")
+        btn_add_rule = QPushButton("添加")
+        btn_add_rule.clicked.connect(self._on_add_rule)
+        add_row.addWidget(lbl_add)
+        add_row.addWidget(self._le_rule_catia, 2)
+        add_row.addWidget(self._cmb_rule_tag, 2)
+        add_row.addWidget(btn_add_rule)
+        v_r.addLayout(add_row)
+
+        lbl_hint = QLabel(
+            "提示：规则在每次 BOM 同步完成后自动执行。"
+            '若零件的"设计状态"属性值与规则匹配，则自动为该零件在 PLM 中添加对应标签。'
+        )
+        lbl_hint.setWordWrap(True)
+        lbl_hint.setStyleSheet("color: palette(mid);")
+        v_r.addWidget(lbl_hint)
+        layout.addWidget(grp_rules)
+
+        layout.addStretch()
+        self._reload_rules_table()
+        return page
+
+    def _build_history_subtab(self) -> QWidget:
+        """子 Tab：同步历史记录（迁移自原 Tab5）。"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        lbl_top = QLabel("最近同步记录（最多 20 条），点击条目查看详细日志：")
+        layout.addWidget(lbl_top)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # 左侧：历史列表
+        left = QWidget()
+        v_l = QVBoxLayout(left)
+        v_l.setContentsMargins(0, 0, 0, 0)
+        v_l.setSpacing(4)
+
+        self._tbl_history = QTableWidget(0, 7)
+        self._tbl_history.setHorizontalHeaderLabels(["时间", "新建", "更新", "跳过", "失败", "用户名", "同步模式"])
+        _hdr_hist = self._tbl_history.horizontalHeader()
+        _hdr_hist.setStretchLastSection(True)
+        _col_widths = [140, 50, 50, 50, 50, 100]
+        for i, w in enumerate(_col_widths):
+            _hdr_hist.setSectionResizeMode(i, QHeaderView.Interactive)
+            _hdr_hist.resizeSection(i, w)
+        _hdr_hist.setSectionResizeMode(6, QHeaderView.Stretch)
+        self._tbl_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_history.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_history.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._tbl_history.currentItemChanged.connect(self._on_history_selected)
+        v_l.addWidget(self._tbl_history, 1)
+
+        btn_clear = QPushButton("清空历史")
+        btn_clear.clicked.connect(self._on_clear_history)
+        v_l.addWidget(btn_clear)
+        splitter.addWidget(left)
+
+        # 右侧：详细日志
+        right = QWidget()
+        v_r = QVBoxLayout(right)
+        v_r.setContentsMargins(0, 0, 0, 0)
+        v_r.setSpacing(4)
+        v_r.addWidget(QLabel("详细日志："))
+        self._txt_hist = QPlainTextEdit()
+        self._txt_hist.setReadOnly(True)
+        self._txt_hist.setObjectName("logView")
+        self._txt_hist.setPlaceholderText("— 点击左侧记录查看详情 —")
+        v_r.addWidget(self._txt_hist, 1)
+        splitter.addWidget(right)
+
+        splitter.setSizes([420, 540])
+        layout.addWidget(splitter, 1)
+        self._refresh_history_list()
+        return page
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 连接 Tab 事件处理
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _on_save_conn(self):
+        self._save_conn()
+        self._log_to_conn("配置已保存", "info")
+        self._update_conn_status_bar()
+
+    def _on_test_conn(self):
+        self._save_conn()
+        base_url, login, password, workspace = self._read_conn()
+        self._log_to_conn(f"正在连接 {base_url} …", "info")
+        self._lbl_ws_detail.setText("— 获取中 —")
+        w = _ConnectWorker(base_url, login, password, workspace)
+        w.success.connect(self._on_conn_ok)
+        w.failure.connect(self._on_conn_fail)
+        self._start_worker(w)
+
+    def _on_conn_ok(self, login_name: str, users: list, ws_info: dict):
+        _, _, _, ws = self._read_conn()
+        self._log_to_conn(
+            f"连接成功  用户：{login_name}  工作区：{ws}  成员数：{len(users)}", "ok"
+        )
+        desc    = ws_info.get("description") or "—"
+        role    = ws_info.get("_current_user_role") or "—"
+        enabled = "是" if ws_info.get("enabled", True) else "否"
+        self._lbl_ws_detail.setText(
+            f"工作区：{ws}    描述：{desc}    我的身份：{role}    已启用：{enabled}"
+        )
+        self._update_conn_status_bar()
+
+    def _on_conn_fail(self, err: str):
+        self._log_to_conn(f"连接失败：{err}", "error")
+        self._lbl_ws_detail.setText("— 连接失败 —")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PLM 状态查询
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _on_refresh_plm_status(self) -> None:
+        """触发 PLM 状态查询 Worker。"""
+        base_url, login, password, workspace = self._read_conn()
+        self._btn_refresh_plm.setEnabled(False)
+        self._lbl_plm_query_status.setText("查询中……")
+        w = _PlmStatusWorker(base_url, login, password, workspace)
+        w.success.connect(self._on_plm_status_loaded)
+        w.failure.connect(self._on_plm_status_error)
+        self._start_worker(w)
+
+    def _on_plm_status_loaded(self, parts: list) -> None:
+        """PLM 状态查询完成：缓存结果，填充右侧表格，刷新箭头列。"""
+        self._btn_refresh_plm.setEnabled(True)
+        self._plm_parts_cache = {p.get("number", ""): p for p in parts}
+        self._lbl_plm_query_status.setText(f"已查询 {len(parts)} 个零件")
+
+        # 填充 _tbl_plm（与 _tbl_local 行对齐）
+        visible = self._visible_bom_rows
+        self._tbl_plm.setRowCount(len(visible))
+        for i, row in enumerate(visible):
+            pn = str(row.get("Part Number", ""))
+            plm = self._plm_parts_cache.get(pn, {})
+            status = "存在" if plm else "不存在"
+            ver_iter = f"{plm.get('version','—')} / {plm.get('iteration','—')}" if plm else "—"
+            self._tbl_plm.setItem(i, 0, QTableWidgetItem(pn))
+            self._tbl_plm.setItem(i, 1, QTableWidgetItem(status))
+            self._tbl_plm.setItem(i, 2, QTableWidgetItem(ver_iter))
+
+        self._update_arrow_column()
+        self._sync_table_row_heights()
+
+        # 有 BOM 数据时启用 Push 按钮
+        if visible:
+            self._btn_push.setEnabled(True)
+
+    def _on_plm_status_error(self, err: str) -> None:
+        """PLM 查询失败时恢复按钮并显示错误。"""
+        self._btn_refresh_plm.setEnabled(True)
+        self._lbl_plm_query_status.setText(f"查询失败：{err}")
+
+    def _update_arrow_column(self) -> None:
+        """根据本地 BOM 行和 PLM 缓存，更新中间箭头列的图标与颜色。"""
+        _emoji_font = QFont("Segoe UI Emoji"); _emoji_font.setPointSize(10)
+        for i, row in enumerate(self._visible_bom_rows):
+            pn = str(row.get("Part Number", ""))
+            plm = self._plm_parts_cache.get(pn)
+            if i >= self._tbl_arrow.rowCount():
+                break
+
+            if plm is None:
+                icon = "🆕"
+                color = QColor("#27ae60")
+            else:
+                local_ver = str(row.get("PLM_Version", "") or "")
+                plm_ver   = str(plm.get("version", "") or "")
+                if local_ver and plm_ver and local_ver != plm_ver:
+                    icon  = "⬆"
+                    color = QColor("#e67e22")
+                else:
+                    icon  = "✅"
+                    color = QColor("#27ae60")
+
+            itm = QTableWidgetItem(icon)
+            itm.setTextAlignment(Qt.AlignCenter)
+            itm.setFont(_emoji_font)
+            itm.setForeground(color)
+            self._tbl_arrow.setItem(i, 0, itm)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # BOM 加载（本地）
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _on_load_preview(self) -> None:
-        self._btn_load_preview.setEnabled(False)
-        self._btn_sync_start.setEnabled(False)
+        self._btn_load_bom.setEnabled(False)
+        self._btn_push.setEnabled(False)
         self._lbl_node_count.setText("正在加载……")
         self._preview_tree.clear()
         self._bom_rows = []
-        self._sync_result_map.clear()   # 重新加载 BOM 时清空同步状态列
+        self._sync_result_map.clear()
 
-        # 进度对话框（不定模式，实时显示已读节点数）
         self._load_progress_dlg = QProgressDialog("正在从 CATIA 读取 BOM……", None, 0, 0, self)
         self._load_progress_dlg.setWindowTitle("加载 BOM")
         self._load_progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
@@ -920,7 +1087,6 @@ class PlmWorkbench(QDialog):
         self._start_worker(w)
 
     def _on_load_bom_progress(self, count: int) -> None:
-        """BOM 加载进度：实时更新已读节点数。"""
         dlg = getattr(self, "_load_progress_dlg", None)
         if dlg:
             dlg.setLabelText(f"正在从 CATIA 读取 BOM……  已读取 {count} 个节点")
@@ -931,14 +1097,13 @@ class PlmWorkbench(QDialog):
         if dlg:
             dlg.close()
             self._load_progress_dlg = None
-        self._btn_load_preview.setEnabled(True)
+        self._btn_load_bom.setEnabled(True)
         self._bom_rows = rows
         n = len(rows)
 
-        # 检查异常行：未保存(_no_file)、断链接(_not_found)、轻量化(_unreadable)
-        bad_unsaved   = [r for r in rows if r.get("_no_file")]
-        bad_not_found = [r for r in rows if r.get("_not_found")]
-        bad_unreadable= [r for r in rows if r.get("_unreadable")]
+        bad_unsaved    = [r for r in rows if r.get("_no_file")]
+        bad_not_found  = [r for r in rows if r.get("_not_found")]
+        bad_unreadable = [r for r in rows if r.get("_unreadable")]
 
         if bad_unsaved or bad_not_found or bad_unreadable:
             problems = []
@@ -952,33 +1117,135 @@ class PlmWorkbench(QDialog):
                 f"共 {n} 个节点 — 存在异常，禁止同步：" + "；".join(problems)
             )
             self._lbl_node_count.setStyleSheet("color: red;")
-            self._btn_sync_start.setEnabled(False)
+            self._btn_push.setEnabled(False)
         elif n > PLM_SYNC_MAX_NODES:
             self._lbl_node_count.setText(
                 f"共 {n} 个节点（超出上限 {PLM_SYNC_MAX_NODES}，禁止同步）"
             )
             self._lbl_node_count.setStyleSheet("color: red;")
-            self._btn_sync_start.setEnabled(False)
+            self._btn_push.setEnabled(False)
         else:
             self._lbl_node_count.setText(f"共 {n} 个节点（上限 {PLM_SYNC_MAX_NODES}）")
             self._lbl_node_count.setStyleSheet("")
-            self._btn_sync_start.setEnabled(True)
+            self._btn_push.setEnabled(True)
 
         self._populate_preview_tree(rows)
+        self._populate_local_table(rows)
+        self._update_arrow_column()
 
     def _on_preview_fail(self, err: str) -> None:
         dlg = getattr(self, "_load_progress_dlg", None)
         if dlg:
             dlg.close()
             self._load_progress_dlg = None
-        self._btn_load_preview.setEnabled(True)
+        self._btn_load_bom.setEnabled(True)
         self._lbl_node_count.setText(f"加载失败：{err}")
         self._lbl_node_count.setStyleSheet("color: red;")
 
-    def _populate_preview_tree(self, rows: list) -> None:
-        """将 BOM 行数据填充到只读预览树控件。"""
-        vis_cols = self._preview_visible_cols()  # Level 始终是第一列
+    def _populate_local_table(self, rows: list) -> None:
+        """将 Level>0 的 BOM 行填充到左侧本地表格，并初始化箭头/PLM 表格行数。"""
+        visible = [r for r in rows if int(r.get("Level", 0)) > 0]
+        self._visible_bom_rows = visible
+        self._tbl_local.setRowCount(len(visible))
+        for i, row in enumerate(visible):
+            pn  = str(row.get("Part Number", ""))
+            nom = str(row.get("Nomenclature", ""))
+            self._tbl_local.setItem(i, 0, QTableWidgetItem(pn))
+            self._tbl_local.setItem(i, 1, QTableWidgetItem(nom))
+            self._tbl_local.setItem(i, 2, QTableWidgetItem(""))
+        self._tbl_arrow.setRowCount(len(visible))
+        for i in range(len(visible)):
+            itm = QTableWidgetItem("—")
+            itm.setTextAlignment(Qt.AlignCenter)
+            self._tbl_arrow.setItem(i, 0, itm)
+        self._tbl_plm.setRowCount(len(visible))
+        self._sync_table_row_heights()
 
+    def _sync_table_row_heights(self) -> None:
+        """以 _tbl_local 为准，同步三个表格的行高。"""
+        for i in range(self._tbl_local.rowCount()):
+            h = self._tbl_local.rowHeight(i)
+            if i < self._tbl_arrow.rowCount():
+                self._tbl_arrow.setRowHeight(i, h)
+            if i < self._tbl_plm.rowCount():
+                self._tbl_plm.setRowHeight(i, h)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 列可见性（内部 BOM 树使用，UI 不显示）
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _preview_visible_cols(self) -> list[str]:
+        s = QSettings(_S_ORG, _S_WB)
+        saved = s.value("preview_optional_cols", _PREVIEW_DEFAULT_COLS)
+        if isinstance(saved, str):
+            saved = [saved]
+        all_optional = (
+            set(BOM_EDIT_COLUMN_ORDER) | set(PRESET_USER_REF_PROPERTIES)
+        ) - set(_PREVIEW_FIXED_COLS)
+        optional = [c for c in saved if c in all_optional]
+        order = BOM_EDIT_COLUMN_ORDER + [
+            c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER
+        ]
+        result: list[str] = []
+        for c in order:
+            if c in _PREVIEW_FIXED_COLS or c in optional:
+                result.append(c)
+        for c in optional:
+            if c not in result:
+                result.append(c)
+        for i, col in enumerate(_SYNC_COLS_ORDERED):
+            result.insert(1 + i, col)
+        return result
+
+    def _save_preview_cols(self, optional_cols: list[str]) -> None:
+        QSettings(_S_ORG, _S_WB).setValue("preview_optional_cols", optional_cols)
+
+    def _build_col_visibility_row(self) -> None:
+        """构建列可见性控件（不显示在 UI，仅供内部树使用）。"""
+        for layout in (self._col_vis_row0, self._col_vis_row1):
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+        self._col_checkboxes.clear()
+
+        s = QSettings(_S_ORG, _S_WB)
+        saved = s.value("preview_optional_cols", _PREVIEW_DEFAULT_COLS)
+        if isinstance(saved, str):
+            saved = [saved]
+        visible_optional = set(saved)
+
+        fn_cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get("Filename", "Filename"))
+        fn_cb.setChecked("Filename" in visible_optional)
+        fn_cb.toggled.connect(self._on_col_vis_changed)
+        fn_cb.setProperty("col_name", "Filename")
+        self._col_checkboxes["Filename"] = fn_cb
+
+        for col in BOM_HIDEABLE_COLUMNS:
+            cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get(col, col))
+            cb.setChecked(col in visible_optional)
+            cb.toggled.connect(self._on_col_vis_changed)
+            cb.setProperty("col_name", col)
+            self._col_checkboxes[col] = cb
+
+        for col in PRESET_USER_REF_PROPERTIES:
+            if col in self._col_checkboxes:
+                continue
+            cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get(col, col))
+            cb.setChecked(col in visible_optional)
+            cb.toggled.connect(self._on_col_vis_changed)
+            cb.setProperty("col_name", col)
+            self._col_checkboxes[col] = cb
+
+    def _on_col_vis_changed(self) -> None:
+        optional = [col for col, cb in self._col_checkboxes.items() if cb.isChecked()]
+        self._save_preview_cols(optional)
+        if self._bom_rows:
+            self._populate_preview_tree(self._bom_rows)
+
+    def _populate_preview_tree(self, rows: list) -> None:
+        """将 BOM 行数据填充到内部隐藏预览树控件（供同步结果追踪使用）。"""
+        vis_cols = self._preview_visible_cols()
         self._preview_tree.clear()
         self._preview_tree.setColumnCount(len(vis_cols))
         headers = [_SYNC_COL_DISPLAY.get(c, BOM_COLUMN_DISPLAY_NAMES.get(c, c)) for c in vis_cols]
@@ -1007,12 +1274,11 @@ class PlmWorkbench(QDialog):
 
             for col_idx, col_name in enumerate(vis_cols):
                 if col_name in (_SYNC_COL_SOURCE, _SYNC_COL_UPDATE, _SYNC_COL_CHECKIN):
-                    continue  # 同步结果列单独处理
+                    continue
                 val = str(row.get(col_name, ""))
                 item.setText(col_idx, val)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
-            # 写入同步结果列（按纯 Part Number 匹配）
             pn = str(row.get("Part Number", ""))
             if has_sync and pn:
                 src, upd, chk = self._sync_result_map.get(pn, ("", "", ""))
@@ -1032,11 +1298,12 @@ class PlmWorkbench(QDialog):
                     item.setForeground(col_idx, color)
 
         self._preview_tree.expandAll()
-        # 自适应列宽
         for i in range(len(vis_cols)):
             self._preview_tree.resizeColumnToContents(i)
 
-    # ── 同步选项预设 ─────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
+    # 同步选项预设
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _apply_preset_new(self) -> None:
         self._rb_create_yes.setChecked(True)
@@ -1051,8 +1318,6 @@ class PlmWorkbench(QDialog):
         self._rb_other_skip.setChecked(True)
         self._rb_after_checkin.setChecked(True)
         self._chk_incremental.setChecked(True)
-
-    # ── 构建 SyncOptions ─────────────────────────────────────────────────────
 
     def _build_sync_options(self):
         return SyncOptions(
@@ -1078,11 +1343,23 @@ class PlmWorkbench(QDialog):
             tag_rules=self._load_tag_rules(),
         )
 
-    # ── 同步执行 ─────────────────────────────────────────────────────────────
+    def _detect_sync_mode(self) -> str:
+        create = self._rb_create_yes.isChecked()
+        update = self._rb_exist_checkout.isChecked()
+        incremental = self._chk_incremental.isChecked()
+        if create and not update and not incremental:
+            return "新建模式"
+        if not create and update and incremental:
+            return "更新模式"
+        return "自定义模式"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 同步执行
+    # ─────────────────────────────────────────────────────────────────────────
 
     def _on_sync_start(self) -> None:
         if not self._bom_rows:
-            QMessageBox.warning(self, "无 BOM 数据", '请先点击"从 CATIA 加载 BOM"。')
+            QMessageBox.warning(self, "无 BOM 数据", '请先点击"↺ 加载 BOM"。')
             return
         if len(self._bom_rows) > PLM_SYNC_MAX_NODES:
             QMessageBox.critical(
@@ -1094,10 +1371,9 @@ class PlmWorkbench(QDialog):
 
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", '请先在"连接"页配置并保存 PLM 连接信息。')
+            QMessageBox.warning(self, "配置不完整", '请先在"设置"页配置并保存 PLM 连接信息。')
             return
 
-        # ── 前置校验：BOM 中不允许存在"部件"节点 ─────────────────────────────
         component_rows = [
             r for r in self._bom_rows
             if r.get("Type") == BomNodeType.COMPONENT
@@ -1116,7 +1392,6 @@ class PlmWorkbench(QDialog):
                 "请在 CATIA 中将其转换为独立产品（CATProduct）后重新读取 BOM 。",
             )
             return
-
 
         try:
             unsaved = check_unsaved_docs(self._bom_rows)
@@ -1146,32 +1421,30 @@ class PlmWorkbench(QDialog):
             btns = QDialogButtonBox(dlg)
             btn_cancel   = btns.addButton("取消（返回保存）", QDialogButtonBox.RejectRole)
             btn_continue = btns.addButton("忽略并继续同步", QDialogButtonBox.AcceptRole)
-            btn_cancel.setDefault(True)   # 默认聚焦"取消"，防止误触
+            btn_cancel.setDefault(True)
             btn_continue.setDefault(False)
             btns.accepted.connect(dlg.accept)
             btns.rejected.connect(dlg.reject)
             vbox.addWidget(btns)
             if dlg.exec() != QDialog.Accepted:
-                return  # 用户选择取消
+                return
 
         options = self._build_sync_options()
         self._btn_sync_start.setEnabled(False)
         self._btn_load_preview.setEnabled(False)
 
-        # 进度条：只计 level>0 的节点（根节点 Product 不产生终态日志行）
         syncable_rows = [r for r in self._bom_rows if int(r.get("Level", 0)) > 0]
         total_nodes = len(syncable_rows)
         self._pgb_sync.setMaximum(max(total_nodes, 1))
         self._pgb_sync.setValue(0)
         self._pgb_sync.setVisible(True)
-        self._sync_total_nodes  = total_nodes
-        self._sync_done_nodes   = 0
+        self._sync_total_nodes = total_nodes
+        self._sync_done_nodes  = 0
 
         self._lbl_sync_status.setText(f"正在同步…… (0 / {total_nodes})")
         self._sync_result_map.clear()
         self._lbl_sync_summary.setText("")
 
-        # 保存本次同步的登录名和模式（供历史记录使用）
         self._last_sync_login = login
         self._last_sync_mode  = self._detect_sync_mode()
 
@@ -1182,37 +1455,13 @@ class PlmWorkbench(QDialog):
         w.error.connect(self._on_sync_error)
         self._start_worker(w)
 
-    def _detect_sync_mode(self) -> str:
-        """根据当前选项推断同步模式名称。"""
-        create = self._rb_create_yes.isChecked()
-        update = self._rb_exist_checkout.isChecked()
-        incremental = self._chk_incremental.isChecked()
-        if create and not update and not incremental:
-            return "新建模式"
-        if not create and update and incremental:
-            return "更新模式"
-        return "自定义模式"
-
     def _on_sync_progress(self, msg: str) -> None:
-        """解析 sync.py 的结构化日志行，更新状态标签和 _sync_result_map。
-
-        格式（来自 sync._log_row / _log_skip / _log_fail）：
-          终态行：  {col1} | {col2} | {col3} | {lbl}      col3 非空
-          过程行：  {col1} | {col2} |         | {lbl}      col3 为空（附件上传、转换进度等）
-          跳过行：  >>  {reason} | {lbl}
-          失败行：  [X] {reason} | {lbl}
-          表头行（_log_header）：col1="签出来源" — 跳过，不写结果
-
-        进度条规则：每遇到一个首次出现的 lbl（零件号）推进一次，
-        去重计数，不依赖终态/过程行区分。
-        """
+        """解析 sync.py 的结构化日志行，更新状态标签和 _sync_result_map。"""
         stripped = msg.strip()
 
-        # 跳过分隔线（全是 '-'）
         if stripped.replace("-", "").replace(" ", "") == "":
             return
 
-        # 从行中提取 lbl（零件标识）
         extracted_lbl: str | None = None
         is_terminal = False
 
@@ -1254,7 +1503,6 @@ class PlmWorkbench(QDialog):
                             pn, existing[0] or col1, col2, existing[2],
                         )
 
-        # 推进进度条：每遇到一个首次出现的 lbl 就推进一次
         total = getattr(self, "_sync_total_nodes", 0)
         if extracted_lbl:
             pn = extracted_lbl.split("<")[0].strip()
@@ -1265,7 +1513,6 @@ class PlmWorkbench(QDialog):
                 self._sync_done_nodes = getattr(self, "_sync_done_nodes", 0) + 1
                 self._pgb_sync.setValue(min(self._sync_done_nodes, total))
 
-        # 状态行显示
         done = getattr(self, "_sync_done_nodes", 0)
         if done or is_terminal:
             self._lbl_sync_status.setText(
@@ -1275,18 +1522,13 @@ class PlmWorkbench(QDialog):
             self._lbl_sync_status.setText(stripped)
 
     def _update_sync_result(self, lbl: str, source: str, update: str, checkin: str) -> None:
-        """写入/更新 _sync_result_map，并刷新预览树中该零件的行。
-
-        lbl 格式为 "pn<nom>" 或纯 "pn"（来自 sync._lbl），key 统一用纯 pn。
-        """
         pn = lbl.split("<")[0].strip()
         self._sync_result_map[pn] = (source, update, checkin)
         self._refresh_sync_cols_in_tree(pn, source, update, checkin)
 
     def _refresh_sync_cols_in_tree(self, pn: str, source: str, update: str, checkin: str) -> None:
-        """在已渲染的树中找到 Part Number == pn 的节点，更新同步结果三列。"""
+        """在隐藏的预览树中更新同步结果列（供内部追踪使用）。"""
         vis_cols = self._preview_visible_cols()
-        # 如果列数与树不符，整体重建
         if self._preview_tree.columnCount() != len(vis_cols):
             self._populate_preview_tree(self._bom_rows)
             return
@@ -1319,22 +1561,19 @@ class PlmWorkbench(QDialog):
         for i in range(self._preview_tree.topLevelItemCount()):
             _walk(self._preview_tree.topLevelItem(i))
 
-        # 自适应同步结果列宽
         for idx in (sync_src_idx, sync_upd_idx, sync_chk_idx):
             if idx >= 0:
                 self._preview_tree.resizeColumnToContents(idx)
 
     def _on_upload_log(self, pn: str, source: str, update: str, checkin: str = "") -> None:
-        """接收附件上传进度，更新同步结果列（附件上传完成后用新值覆盖旧值）。"""
         self._update_sync_result(pn, source, update, checkin)
 
     def _on_sync_done(self, result) -> None:
         self._btn_sync_start.setEnabled(True)
         self._btn_load_preview.setEnabled(True)
-        # 进度条推满再隐藏
         self._pgb_sync.setValue(self._pgb_sync.maximum())
         self._pgb_sync.setVisible(False)
-        self._pgb_sync.setMaximum(0)   # 重置为不定模式，供下次使用前再设定
+        self._pgb_sync.setMaximum(0)
         self._lbl_sync_status.setText("同步完成")
         parts = [
             f"新建 {result.created}",
@@ -1359,103 +1598,13 @@ class PlmWorkbench(QDialog):
         self._btn_sync_start.setEnabled(True)
         self._btn_load_preview.setEnabled(True)
         self._pgb_sync.setVisible(False)
-        self._pgb_sync.setMaximum(0)   # 重置为不定模式
+        self._pgb_sync.setMaximum(0)
         self._lbl_sync_status.setText(f"同步失败：{err}")
         QMessageBox.critical(self, "同步失败", err)
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Tab 3 — 标签
+    # 标签（Tag）方法
     # ─────────────────────────────────────────────────────────────────────────
-
-    def _build_tags_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-
-        # ── 工作区现有标签 ──────────────────────────────────────────────────
-        grp_tags = QGroupBox("工作区标签")
-        v_t = QVBoxLayout(grp_tags)
-        v_t.setSpacing(6)
-
-        # 标签表格（比列表展示更多信息）
-        self._tbl_plm_tags = QTableWidget(0, 2)
-        self._tbl_plm_tags.setHorizontalHeaderLabels(["标签名称", "ID"])
-        _hdr_tags = self._tbl_plm_tags.horizontalHeader()
-        _hdr_tags.setSectionResizeMode(0, QHeaderView.Interactive)
-        _hdr_tags.setSectionResizeMode(1, QHeaderView.Interactive)
-        _hdr_tags.resizeSection(0, 180)
-        _hdr_tags.setStretchLastSection(True)
-        self._tbl_plm_tags.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_plm_tags.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_plm_tags.setMinimumHeight(120)
-        v_t.addWidget(self._tbl_plm_tags)
-
-        # 操作行：刷新 + 新建标签
-        tag_op_row = QHBoxLayout()
-        tag_op_row.setSpacing(8)
-        btn_refresh = QPushButton("刷新标签列表")
-        btn_refresh.clicked.connect(self._on_refresh_tags)
-        self._le_new_tag = QLineEdit()
-        self._le_new_tag.setPlaceholderText("输入新标签名称…")
-        btn_create_tag = QPushButton("新建标签")
-        btn_create_tag.clicked.connect(self._on_create_tag)
-        tag_op_row.addWidget(btn_refresh)
-        tag_op_row.addStretch()
-        tag_op_row.addWidget(self._le_new_tag)
-        tag_op_row.addWidget(btn_create_tag)
-        v_t.addLayout(tag_op_row)
-        layout.addWidget(grp_tags)
-
-        # ── 自动映射规则 ────────────────────────────────────────────────────
-        grp_rules = QGroupBox('自动打标签规则（BOM 同步 Checkin 后按"设计状态"属性值自动打 Tag）')
-        v_r = QVBoxLayout(grp_rules)
-        v_r.setSpacing(6)
-
-        self._tbl_rules = QTableWidget(0, 3)
-        self._tbl_rules.setHorizontalHeaderLabels(["CATIA 属性值", "PLM 标签", "操作"])
-        _hdr_rules = self._tbl_rules.horizontalHeader()
-        _hdr_rules.setSectionResizeMode(0, QHeaderView.Interactive)
-        _hdr_rules.setSectionResizeMode(1, QHeaderView.Interactive)
-        _hdr_rules.setSectionResizeMode(2, QHeaderView.Fixed)
-        _hdr_rules.resizeSection(0, 160)
-        _hdr_rules.resizeSection(2, 60)
-        _hdr_rules.setStretchLastSection(False)
-        # 让第 1 列（PLM 标签）自动撑满剩余空间
-        _hdr_rules.setSectionResizeMode(1, QHeaderView.Stretch)
-        self._tbl_rules.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_rules.setMinimumHeight(120)
-        v_r.addWidget(self._tbl_rules)
-
-        add_row = QHBoxLayout()
-        add_row.setSpacing(8)
-        lbl_add = QLabel("新增规则：")
-        self._le_rule_catia = QLineEdit()
-        self._le_rule_catia.setPlaceholderText('CATIA"设计状态"属性值，如：发布')
-        self._cmb_rule_tag  = QComboBox()
-        self._cmb_rule_tag.setEditable(True)
-        self._cmb_rule_tag.setPlaceholderText("PLM Tag（可手填或从列表选）")
-        btn_add_rule = QPushButton("添加")
-        btn_add_rule.clicked.connect(self._on_add_rule)
-        add_row.addWidget(lbl_add)
-        add_row.addWidget(self._le_rule_catia, 2)
-        add_row.addWidget(self._cmb_rule_tag, 2)
-        add_row.addWidget(btn_add_rule)
-        v_r.addLayout(add_row)
-
-        # 规则说明
-        lbl_hint = QLabel(
-            "提示：规则在每次 BOM 同步完成后自动执行。"
-            '若零件的"设计状态"属性值与规则匹配，则自动为该零件在 PLM 中添加对应标签。'
-        )
-        lbl_hint.setWordWrap(True)
-        lbl_hint.setStyleSheet("color: palette(mid);")
-        v_r.addWidget(lbl_hint)
-        layout.addWidget(grp_rules)
-
-        layout.addStretch()
-        self._reload_rules_table()
-        return page
 
     def _on_refresh_tags(self) -> None:
         base_url, login, password, workspace = self._read_conn()
@@ -1475,7 +1624,6 @@ class PlmWorkbench(QDialog):
             self._tbl_plm_tags.setItem(row, 0, QTableWidgetItem(name))
             self._tbl_plm_tags.setItem(row, 1, QTableWidgetItem(tid))
             names.append(name)
-        # 同步更新规则下拉框
         self._cmb_rule_tag.clear()
         self._cmb_rule_tag.addItems(names)
 
@@ -1547,326 +1695,8 @@ class PlmWorkbench(QDialog):
                 break
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Tab 4 — 产品
+    # 历史记录方法
     # ─────────────────────────────────────────────────────────────────────────
-
-    def _build_products_tab(self) -> QWidget:
-        """构建「产品」Tab：查看与管理 PLM 中的 Product 配置。"""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-
-        # ── 产品列表区 ────────────────────────────────────────────────────────
-        grp_list = QGroupBox("PLM 产品列表")
-        v_l = QVBoxLayout(grp_list)
-        v_l.setSpacing(6)
-
-        # 说明文字
-        lbl_hint = QLabel(
-            "Product 是 DocdokuPLM 中的产品配置根节点，绑定到某个零件版本的 BOM 结构视图。"
-        )
-        lbl_hint.setWordWrap(True)
-        v_l.addWidget(lbl_hint)
-
-        # 产品表格
-        self._tbl_products = QTableWidget(0, 4)
-        self._tbl_products.setHorizontalHeaderLabels(["产品 ID", "根零件号", "版本", "说明"])
-        _hdr_prod = self._tbl_products.horizontalHeader()
-        _hdr_prod.setSectionResizeMode(0, QHeaderView.Interactive)
-        _hdr_prod.setSectionResizeMode(1, QHeaderView.Interactive)
-        _hdr_prod.setSectionResizeMode(2, QHeaderView.Interactive)
-        _hdr_prod.setSectionResizeMode(3, QHeaderView.Stretch)
-        _hdr_prod.resizeSection(0, 160)
-        _hdr_prod.resizeSection(1, 160)
-        _hdr_prod.resizeSection(2, 60)
-        self._tbl_products.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_products.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_products.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._tbl_products.setMinimumHeight(160)
-        v_l.addWidget(self._tbl_products, 1)
-
-        # 操作行：刷新 + 删除
-        op_row = QHBoxLayout()
-        op_row.setSpacing(8)
-        btn_refresh_prod = QPushButton("刷新列表")
-        btn_refresh_prod.clicked.connect(self._on_refresh_products)
-        btn_del_prod = QPushButton("删除选中")
-        btn_del_prod.clicked.connect(self._on_delete_product)
-        op_row.addWidget(btn_refresh_prod)
-        op_row.addStretch()
-        op_row.addWidget(btn_del_prod)
-        v_l.addLayout(op_row)
-        layout.addWidget(grp_list)
-
-        # ── 新建产品区（内联展开） ─────────────────────────────────────────────
-        grp_create = QGroupBox("新建产品")
-        grp_create.setCheckable(True)
-        grp_create.setChecked(False)   # 默认折叠
-        v_c = QVBoxLayout(grp_create)
-        v_c.setSpacing(8)
-
-        form_create = QFormLayout()
-        form_create.setSpacing(6)
-
-        self._le_prod_id = QLineEdit()
-        self._le_prod_id.setPlaceholderText("如：MyAssembly_Prod")
-        form_create.addRow("产品 ID：", self._le_prod_id)
-
-        self._le_prod_pn = QLineEdit()
-        self._le_prod_pn.setPlaceholderText("顶层 CATProduct 的 Part Number")
-        form_create.addRow("根零件号：", self._le_prod_pn)
-
-        self._le_prod_desc = QLineEdit()
-        self._le_prod_desc.setPlaceholderText("（可选）产品说明")
-        form_create.addRow("说明：", self._le_prod_desc)
-
-        v_c.addLayout(form_create)
-
-        # 从当前 BOM 根节点自动填入按钮
-        hint_row = QHBoxLayout()
-        hint_row.setSpacing(8)
-        btn_fill_from_bom = QPushButton("从当前 BOM 自动填入")
-        btn_fill_from_bom.setToolTip("将同步页已加载 BOM 的根节点 Part Number 自动填入「根零件号」")
-        btn_fill_from_bom.clicked.connect(self._on_fill_product_from_bom)
-        self._lbl_prod_fill_hint = QLabel("")
-        self._lbl_prod_fill_hint.setStyleSheet("color: gray;")
-        hint_row.addWidget(btn_fill_from_bom)
-        hint_row.addWidget(self._lbl_prod_fill_hint, 1)
-        v_c.addLayout(hint_row)
-
-        btn_confirm_create = QPushButton("确认新建")
-        btn_confirm_create.clicked.connect(self._on_create_product)
-        v_c.addWidget(btn_confirm_create)
-
-        layout.addWidget(grp_create)
-        layout.addStretch()
-        return page
-
-    # ── 产品页事件处理 ────────────────────────────────────────────────────────
-
-    def _make_prod_client(self) -> tuple["PlmApiClient | None", str]:
-        """构建 PlmApiClient；失败时返回 (None, 错误信息)。"""
-        base_url, login, password, workspace = self._read_conn()
-        if not base_url or not login:
-            return None, "请先在「连接」Tab 配置并保存 PLM 地址和用户名"
-        try:
-            client = PlmApiClient(base_url)
-            client.login(login, password)
-            return client, workspace
-        except Exception as exc:
-            return None, f"登录失败：{exc}"
-
-    def _on_refresh_products(self) -> None:
-        """刷新产品列表。"""
-        client, workspace = self._make_prod_client()
-        if client is None:
-            QMessageBox.warning(self, "PLM 产品", workspace)  # workspace 此时为错误信息
-            return
-        self._lbl_prod_fill_hint.setText("")
-
-        class _Worker(QThread):
-            done  = Signal(list)
-            error = Signal(str)
-            def __init__(self, c, ws):
-                super().__init__()
-                self._c, self._ws = c, ws
-            def run(self):
-                try:
-                    self.done.emit(self._c.list_products(self._ws))
-                except Exception as exc:
-                    self.error.emit(str(exc))
-
-        w = _Worker(client, workspace)
-        w.done.connect(self._populate_products_table)
-        w.error.connect(lambda msg: QMessageBox.warning(self, "PLM 产品", f"获取产品列表失败：{msg}"))
-        self._start_worker(w)
-
-    def _populate_products_table(self, products: list[dict]) -> None:
-        """将产品列表填充到表格。"""
-        self._tbl_products.setRowCount(0)
-        for prod in products:
-            row = self._tbl_products.rowCount()
-            self._tbl_products.insertRow(row)
-            prod_id  = prod.get("id", "")
-            din      = prod.get("designItemNumber", "")
-            div      = prod.get("designItemVersion", "A")
-            desc     = prod.get("description", "")
-            for col, val in enumerate([prod_id, din, div, desc]):
-                item = QTableWidgetItem(str(val))
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                item.setData(Qt.UserRole, prod)
-                self._tbl_products.setItem(row, col, item)
-
-    def _on_delete_product(self) -> None:
-        """删除选中的产品（二次确认）。"""
-        row = self._tbl_products.currentRow()
-        if row < 0:
-            QMessageBox.information(self, "PLM 产品", "请先选中要删除的产品。")
-            return
-        item = self._tbl_products.item(row, 0)
-        if item is None:
-            return
-        prod = item.data(Qt.UserRole) or {}
-        prod_id = prod.get("id", self._tbl_products.item(row, 0).text())
-
-        if QMessageBox.question(
-            self, "删除产品",
-            f"确定删除产品「{prod_id}」？此操作不可撤销。",
-            QMessageBox.Yes | QMessageBox.No,
-        ) != QMessageBox.Yes:
-            return
-
-        client, workspace = self._make_prod_client()
-        if client is None:
-            QMessageBox.warning(self, "PLM 产品", workspace)
-            return
-
-        class _DelWorker(QThread):
-            done  = Signal()
-            error = Signal(str)
-            def __init__(self, c, ws, pid):
-                super().__init__()
-                self._c, self._ws, self._pid = c, ws, pid
-            def run(self):
-                try:
-                    import urllib.parse
-                    ws = urllib.parse.quote(self._ws)
-                    pid = urllib.parse.quote(self._pid)
-                    self._c._request("DELETE", f"/workspaces/{ws}/products/{pid}")
-                    self.done.emit()
-                except Exception as exc:
-                    self.error.emit(str(exc))
-
-        w = _DelWorker(client, workspace, prod_id)
-        w.done.connect(lambda: (
-            QMessageBox.information(self, "PLM 产品", f"产品「{prod_id}」已删除。"),
-            self._on_refresh_products(),
-        ))
-        w.error.connect(lambda msg: QMessageBox.warning(self, "PLM 产品", f"删除失败：{msg}"))
-        self._start_worker(w)
-
-    def _on_fill_product_from_bom(self) -> None:
-        """从同步页已加载的 BOM 根节点自动填入「根零件号」和「产品 ID」。"""
-        if not self._bom_rows:
-            self._lbl_prod_fill_hint.setText("同步页尚未加载 BOM，请先在「同步」Tab 读取 BOM。")
-            return
-        # 找层级最高的节点（level 最小）作为根节点
-        root_row = min(self._bom_rows, key=lambda r: r.get("Level", 0))
-        pn  = str(root_row.get("PartNumber", "")).strip()
-        nom = str(root_row.get("Nomenclature", "")).strip()
-        if pn:
-            self._le_prod_pn.setText(pn)
-            # 产品 ID 默认为 PartNumber + "_Prod"，用户可自行修改
-            self._le_prod_id.setText(f"{pn}_Prod")
-        if nom and not self._le_prod_desc.text():
-            self._le_prod_desc.setText(nom)
-        self._lbl_prod_fill_hint.setText(f"已填入根节点：{pn}")
-
-    def _on_create_product(self) -> None:
-        """新建 PLM 产品。"""
-        prod_id  = self._le_prod_id.text().strip()
-        pn       = self._le_prod_pn.text().strip()
-        desc     = self._le_prod_desc.text().strip()
-
-        if not prod_id:
-            QMessageBox.warning(self, "新建产品", "请填写「产品 ID」。")
-            return
-        if not pn:
-            QMessageBox.warning(self, "新建产品", "请填写「根零件号」。")
-            return
-
-        client, workspace = self._make_prod_client()
-        if client is None:
-            QMessageBox.warning(self, "新建产品", workspace)
-            return
-
-        class _CreateWorker(QThread):
-            done  = Signal(dict)
-            error = Signal(str)
-            def __init__(self, c, ws, pid, design_pn, d):
-                super().__init__()
-                self._c, self._ws = c, ws
-                self._pid, self._design_pn, self._d = pid, design_pn, d
-            def run(self):
-                try:
-                    result = self._c.create_product(self._ws, self._pid, self._design_pn, self._d)
-                    self.done.emit(result)
-                except Exception as exc:
-                    self.error.emit(str(exc))
-
-        w = _CreateWorker(client, workspace, prod_id, pn, desc)
-        w.done.connect(lambda _: (
-            QMessageBox.information(self, "新建产品", f"产品「{prod_id}」已成功创建。"),
-            self._on_refresh_products(),
-            self._le_prod_id.clear(),
-            self._le_prod_pn.clear(),
-            self._le_prod_desc.clear(),
-        ))
-        w.error.connect(lambda msg: QMessageBox.warning(self, "新建产品", f"创建失败：{msg}"))
-        self._start_worker(w)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Tab 5 — 历史
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _build_history_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(6)
-
-        lbl_top = QLabel("最近同步记录（最多 20 条），点击条目查看详细日志：")
-        layout.addWidget(lbl_top)
-
-        splitter = QSplitter(Qt.Horizontal)
-
-        # ── 左侧：历史列表 ────────────────────────────────────────────────
-        left = QWidget()
-        v_l = QVBoxLayout(left)
-        v_l.setContentsMargins(0, 0, 0, 0)
-        v_l.setSpacing(4)
-
-        # 历史表格（比列表展示更多信息）
-        self._tbl_history = QTableWidget(0, 7)
-        self._tbl_history.setHorizontalHeaderLabels(["时间", "新建", "更新", "跳过", "失败", "用户名", "同步模式"])
-        _hdr_hist = self._tbl_history.horizontalHeader()
-        _hdr_hist.setStretchLastSection(True)
-        # 时间列宽稍宽，数字列紧凑，最后「同步模式」列 stretch 填满
-        _col_widths = [140, 50, 50, 50, 50, 100]
-        for i, w in enumerate(_col_widths):
-            _hdr_hist.setSectionResizeMode(i, QHeaderView.Interactive)
-            _hdr_hist.resizeSection(i, w)
-        _hdr_hist.setSectionResizeMode(6, QHeaderView.Stretch)
-        self._tbl_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_history.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_history.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._tbl_history.currentItemChanged.connect(self._on_history_selected)
-        v_l.addWidget(self._tbl_history, 1)
-
-        btn_clear = QPushButton("清空历史")
-        btn_clear.clicked.connect(self._on_clear_history)
-        v_l.addWidget(btn_clear)
-        splitter.addWidget(left)
-
-        # ── 右侧：详细日志 ────────────────────────────────────────────────
-        right = QWidget()
-        v_r = QVBoxLayout(right)
-        v_r.setContentsMargins(0, 0, 0, 0)
-        v_r.setSpacing(4)
-        v_r.addWidget(QLabel("详细日志："))
-        self._txt_hist = QPlainTextEdit()
-        self._txt_hist.setReadOnly(True)
-        self._txt_hist.setObjectName("logView")
-        self._txt_hist.setPlaceholderText("— 点击左侧记录查看详情 —")
-        v_r.addWidget(self._txt_hist, 1)
-        splitter.addWidget(right)
-
-        # 左:右 = 45:55，左侧列表宽度合理
-        splitter.setSizes([420, 540])
-        layout.addWidget(splitter, 1)
-        self._refresh_history_list()
-        return page
 
     def _save_history(self, result, user: str = "", mode: str = "") -> None:
         s = QSettings(_S_ORG, _S_HISTORY)
@@ -1908,7 +1738,6 @@ class PlmWorkbench(QDialog):
                 item = QTableWidgetItem(val)
                 item.setData(Qt.UserRole, rec)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                # 失败数非零时红色高亮
                 if key == "failed" and int(rec.get("failed", 0)) > 0:
                     item.setForeground(QColor("#e74c3c"))
                 self._tbl_history.setItem(row, col, item)
