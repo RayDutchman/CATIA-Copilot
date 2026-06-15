@@ -2,7 +2,7 @@
 
 [project]
 # 対象の CATIA VBA プロジェクト名
-target_project = "catia_copilot"
+target_project = "CDF_Toolkit_CATIA"
 language = "zh"
 encoding = "gbk"
 
