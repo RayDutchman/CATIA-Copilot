@@ -293,21 +293,56 @@ class _CreateTagWorker(QThread):
 
 
 class _PlmStatusWorker(QThread):
-    """查询 PLM 中所有零件的状态（version/iteration/checkOutUser），不下载文件。"""
-    success = Signal(list)   # list[dict]: [{number, version, iteration, checkOutUser}, ...]
-    failure = Signal(str)
+    """按本地 BOM 零件号列表精确查询 PLM 状态，不下载文件。
 
-    def __init__(self, base_url, login, password, workspace):
+    改进：不再 list_parts 全量拉取，而是用 search_parts 按零件号逐个精确查，
+    只返回本地 BOM 中实际存在的零件信息，避免全量拉取的性能开销。
+    """
+    success  = Signal(list)   # list[dict]: [{number, version, lastIterationNumber, checkOutUser}, ...]
+    failure  = Signal(str)
+    progress = Signal(int, int)  # (done, total) 查询进度
+
+    def __init__(self, base_url, login, password, workspace, part_numbers: list[str]):
         super().__init__()
-        self._base_url = base_url; self._login = login
-        self._password = password; self._workspace = workspace
+        self._base_url      = base_url
+        self._login         = login
+        self._password      = password
+        self._workspace     = workspace
+        self._part_numbers  = [pn for pn in part_numbers if pn]  # 过滤空值
 
     def run(self):
         try:
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
-            parts = c.list_parts(self._workspace) or []
-            self.success.emit(parts)
+
+            results: list[dict] = []
+            total = len(self._part_numbers)
+
+            if total == 0:
+                self.success.emit([])
+                return
+
+            # 按零件号精确查询，每次 search_parts 传 number= 做精确匹配
+            # DocdokuPLM 的 number 参数支持完整匹配，size=1 取第一条
+            for i, pn in enumerate(self._part_numbers, 1):
+                try:
+                    hits = c.search_parts(
+                        self._workspace,
+                        number=pn,
+                        fetch_head_only=True,
+                        size=1,
+                    )
+                    # search_parts 按 number 精确查，取第一条且编号完全吻合的
+                    for hit in (hits or []):
+                        if str(hit.get("number", "")) == pn:
+                            results.append(hit)
+                            break
+                except Exception:
+                    # 单个零件查询失败不中断整体
+                    pass
+                self.progress.emit(i, total)
+
+            self.success.emit(results)
         except Exception as exc:
             self.failure.emit(str(exc))
 
@@ -719,7 +754,11 @@ class PlmWorkbench(QDialog):
     _COL_PLM_ITER  = 6   # PLM 迭代号
     _COL_PLM_USER  = 7   # PLM 签出人
     _COL_PUSH      = 8   # 推送? (checkbox)
-    _BOM_COL_HEADERS = ["零件号", "术语", "本地版本", "本地迭代", "状态", "PLM版本", "PLM迭代", "签出人", "推送?"]
+    _COL_UPGRADE   = 9   # 升级方式（下拉：不推送/+迭代/+版本）
+    _BOM_COL_HEADERS = ["零件号", "术语", "本地版本", "本地迭代", "状态", "PLM版本", "PLM迭代", "签出人", "推送?", "升级方式"]
+    _UPGRADE_SKIP   = "不推送"
+    _UPGRADE_ITER   = "+迭代"
+    _UPGRADE_VER    = "+版本"
 
     def _build_sync_tab(self) -> QWidget:
         """构建同步 Tab：状态栏 + 合并单表格 + 操作按钮 + 高级选项 + 进度区 + 历史折叠。"""
@@ -766,6 +805,7 @@ class PlmWorkbench(QDialog):
         hdr.setSectionResizeMode(self._COL_PLM_ITER, QHeaderView.Interactive)
         hdr.setSectionResizeMode(self._COL_PLM_USER, QHeaderView.Stretch)
         hdr.setSectionResizeMode(self._COL_PUSH,     QHeaderView.Fixed)
+        hdr.setSectionResizeMode(self._COL_UPGRADE,  QHeaderView.Interactive)
         hdr.resizeSection(self._COL_PN,       160)
         hdr.resizeSection(self._COL_NOM,      120)
         hdr.resizeSection(self._COL_LOC_VER,   80)
@@ -774,6 +814,7 @@ class PlmWorkbench(QDialog):
         hdr.resizeSection(self._COL_PLM_VER,   80)
         hdr.resizeSection(self._COL_PLM_ITER,  80)
         hdr.resizeSection(self._COL_PUSH,      50)
+        hdr.resizeSection(self._COL_UPGRADE,   90)
         layout.addWidget(self._tbl_bom, 1)
 
         # D. 操作按钮行
@@ -1117,13 +1158,27 @@ class PlmWorkbench(QDialog):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _on_refresh_plm_status(self) -> None:
-        """触发 PLM 状态查询 Worker。"""
+        """触发 PLM 状态查询 Worker（按本地 BOM 零件号精确查询）。"""
         base_url, login, password, workspace = self._read_conn()
+        if not self._visible_bom_rows:
+            self._lbl_plm_query_status.setText("请先加载 BOM")
+            return
+        # 取本地 BOM 中所有零件号（去重，保序）
+        pns: list[str] = []
+        seen: set[str] = set()
+        for row in self._visible_bom_rows:
+            pn = str(row.get("Part Number", "")).strip()
+            if pn and pn not in seen:
+                pns.append(pn)
+                seen.add(pn)
         self._btn_refresh_plm.setEnabled(False)
-        self._lbl_plm_query_status.setText("查询中……")
-        w = _PlmStatusWorker(base_url, login, password, workspace)
+        self._lbl_plm_query_status.setText(f"查询中…… (0/{len(pns)})")
+        w = _PlmStatusWorker(base_url, login, password, workspace, pns)
         w.success.connect(self._on_plm_status_loaded)
         w.failure.connect(self._on_plm_status_error)
+        w.progress.connect(
+            lambda done, total: self._lbl_plm_query_status.setText(f"查询中…… ({done}/{total})")
+        )
         self._start_worker(w)
 
     def _on_plm_status_loaded(self, parts: list) -> None:
@@ -1242,6 +1297,47 @@ class PlmWorkbench(QDialog):
             chk.setEnabled(push_enabled)
             chk_layout.addWidget(chk)
             self._tbl_bom.setCellWidget(i, self._COL_PUSH, chk_widget)
+
+            # 写入升级方式下拉
+            cmb = QComboBox()
+            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER, self._UPGRADE_VER])
+            cmb.setToolTip(
+                "+迭代：签出→更新属性→签入，PLM 迭代号自动+1\n"
+                "+版本：创建新版本字母（A→B），写入后签入新版本\n"
+                "  ⚠ +版本功能待实现，当前将按+迭代处理"
+            )
+            if not push_enabled:
+                cmb.setCurrentText(self._UPGRADE_SKIP)
+                cmb.setEnabled(False)
+            elif default_push:
+                cmb.setCurrentText(self._UPGRADE_ITER)
+                cmb.setEnabled(True)
+            else:
+                cmb.setCurrentText(self._UPGRADE_SKIP)
+                cmb.setEnabled(True)
+
+            # checkbox 联动下拉：勾选→+迭代；取消→不推送
+            def _make_chk_handler(c: QCheckBox, cb: QComboBox):
+                def _on_chk(state):
+                    if state:
+                        if cb.currentText() == self._UPGRADE_SKIP:
+                            cb.setCurrentText(self._UPGRADE_ITER)
+                    else:
+                        cb.setCurrentText(self._UPGRADE_SKIP)
+                return _on_chk
+            chk.stateChanged.connect(_make_chk_handler(chk, cmb))
+
+            # 下拉联动 checkbox：选不推送→取消勾选；选其他→勾选
+            def _make_cmb_handler(c: QCheckBox, cb: QComboBox):
+                def _on_cmb(text):
+                    if text == self._UPGRADE_SKIP:
+                        c.setChecked(False)
+                    else:
+                        c.setChecked(True)
+                return _on_cmb
+            cmb.currentTextChanged.connect(_make_cmb_handler(chk, cmb))
+
+            self._tbl_bom.setCellWidget(i, self._COL_UPGRADE, cmb)
 
     # ─────────────────────────────────────────────────────────────────────────
     # BOM 加载（本地）
@@ -1363,6 +1459,12 @@ class PlmWorkbench(QDialog):
             chk.setEnabled(False)
             chk_layout.addWidget(chk)
             self._tbl_bom.setCellWidget(i, self._COL_PUSH, chk_widget)
+            # 升级方式下拉初始化（未查询 PLM 前禁用）
+            cmb = QComboBox()
+            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER, self._UPGRADE_VER])
+            cmb.setCurrentText(self._UPGRADE_SKIP)
+            cmb.setEnabled(False)
+            self._tbl_bom.setCellWidget(i, self._COL_UPGRADE, cmb)
 
     def _sync_table_row_heights(self) -> None:
         """兼容旧调用，现单表格无需同步行高。"""
@@ -1628,11 +1730,39 @@ class PlmWorkbench(QDialog):
                 return
 
         options = self._build_sync_options()
+
+        # 从表格读取用户选择的推送行和升级方式
+        push_map: dict[str, str] = {}  # {pn: "+迭代" / "+版本"}
+        for i, row in enumerate(self._visible_bom_rows):
+            chk_widget = self._tbl_bom.cellWidget(i, self._COL_PUSH)
+            cmb        = self._tbl_bom.cellWidget(i, self._COL_UPGRADE)
+            if chk_widget is None or cmb is None:
+                continue
+            # checkbox 的实际 QCheckBox 是 chk_widget 的子控件
+            chk = chk_widget.findChild(QCheckBox)
+            if chk is None or not chk.isChecked():
+                continue
+            upgrade = cmb.currentText() if isinstance(cmb, QComboBox) else self._UPGRADE_ITER
+            if upgrade == self._UPGRADE_SKIP:
+                continue
+            pn = str(row.get("Part Number", "")).strip()
+            if pn:
+                push_map[pn] = upgrade
+
+        if not push_map:
+            QMessageBox.information(
+                self, "未选择推送零件",
+                '没有勾选任何零件。\n\n请在表格中勾选"推送?"列，或先点"☁ 查询 PLM 状态"再勾选。',
+            )
+            return
+
+        # 记录升级方式供 Push 完成后写回 CATIA（当前 sync.py 尚不感知此信息）
+        self._sync_push_map = push_map
+
         self._btn_sync_start.setEnabled(False)
         self._btn_load_preview.setEnabled(False)
 
-        syncable_rows = [r for r in self._bom_rows if int(r.get("Level", 0)) > 0]
-        total_nodes = len(syncable_rows)
+        total_nodes = len(push_map)
         self._pgb_sync.setMaximum(max(total_nodes, 1))
         self._pgb_sync.setValue(0)
         self._pgb_sync.setVisible(True)
