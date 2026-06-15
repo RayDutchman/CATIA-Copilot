@@ -800,25 +800,114 @@ class PlmApiClient:
         qs  = urllib.parse.urlencode({"configSpec": config_spec, "path": path})
         return self._request("GET", f"/workspaces/{ws}/products/{pid}/bom?{qs}") or {}
 
+    def get_product_filter(
+        self,
+        workspace: str,
+        product_id: str,
+        config_spec: str = "wip",
+        path: str = "-1",
+        depth: int = -1,
+        link_type: str = "",
+        diverge: bool = False,
+    ) -> dict:
+        """获取产品结构过滤后的嵌套 BOM 树（ComponentDTO 递归树）。
+
+        端点：GET /workspaces/{ws}/products/{ciId}/filter
+        参数：
+            product_id:  产品 ID（配置项 ID）
+            config_spec: 配置规格，"wip"（含未签入）或 "latest"（最新已签入）
+            path:        起始路径，"-1" 表示从根开始
+            depth:       展开深度，-1 表示完全展开（所有层级）
+            link_type:   链接类型过滤（空字符串表示不过滤）
+            diverge:     是否展开发散节点
+        返回 ComponentDTO（嵌套结构）：
+            {
+              "partNumber": str,
+              "partVersion": str,
+              "partIteration": int,
+              "checkOutUser": dict | null,
+              "components": [ComponentDTO, ...],   ← 递归子节点
+              "cadInstances": [...],
+              ...
+            }
+        """
+        ws  = urllib.parse.quote(workspace)
+        pid = urllib.parse.quote(product_id)
+        params: dict[str, str] = {
+            "configSpec": config_spec,
+            "path":       path,
+            "depth":      str(depth),
+            "diverge":    str(diverge).lower(),
+        }
+        if link_type:
+            params["linkType"] = link_type
+        qs = urllib.parse.urlencode(params)
+        return self._request("GET", f"/workspaces/{ws}/products/{pid}/filter?{qs}") or {}
+
+    def get_products_by_part(
+        self,
+        workspace: str,
+        part_number: str,
+    ) -> list[dict]:
+        """获取以指定零件号为根的所有产品（ConfigurationItem）。
+
+        通过 list_products 获取全量产品列表，过滤出 designItemNumber 匹配的项。
+        返回列表，每项含 id / designItemNumber / description 等字段。
+        注意：PLM 前端创建 Product 时 id 可能与 designItemNumber 不同，
+        此方法同时按两个字段匹配。
+        """
+        all_products = self.list_products(workspace)
+        pn_lower = part_number.strip().lower()
+        result = []
+        for p in all_products:
+            din = str(p.get("designItemNumber") or "").lower()
+            pid = str(p.get("id") or "").lower()
+            if din == pn_lower or pid == pn_lower:
+                result.append(p)
+        return result
+
     def list_part_attachments(
         self,
         workspace: str,
         part_number: str,
         version: str,
-        iteration: int,
+        iteration: int | str,
     ) -> list[str]:
-        """获取零件迭代的附件文件名列表。
+        """获取零件迭代的附件文件名列表（attachedFiles + nativeCADFile）。
 
         通过 get_part_detail 获取完整的 PartRevisionDTO，
-        从中提取指定迭代的 attachedFiles。
+        从中提取指定迭代的所有附加文件名。
+        iteration 参数接受 int 或 str，内部统一转为 int 比较。
+        当 iteration 为 0 或空字符串时，返回最新迭代（lastIterationNumber）的附件。
         """
+        try:
+            target_iter = int(iteration)
+        except (ValueError, TypeError):
+            target_iter = 0  # 回退到最新迭代
+
         detail = self.get_part_detail(workspace, part_number, version)
-        iterations = detail.get("partIterations") or []
-        for it in iterations:
-            if int(it.get("iteration", -1)) == iteration:
-                attached = it.get("attachedFiles") or []
-                return [f.get("name", "") for f in attached if f.get("name")]
-        return []
+        part_iterations = detail.get("partIterations") or []
+
+        # iteration=0 表示取最新迭代（lastIterationNumber）
+        if target_iter == 0:
+            target_iter = int(detail.get("lastIterationNumber") or 0)
+
+        result: list[str] = []
+        for it in part_iterations:
+            if int(it.get("iteration", -1)) == target_iter:
+                # 普通附件
+                for f in (it.get("attachedFiles") or []):
+                    name = f.get("name") or f.get("fileName") or ""
+                    if name:
+                        result.append(name)
+                # 原生 CAD 文件（nativeCADFile 是独立字段）
+                native = it.get("nativeCADFile")
+                if native and isinstance(native, dict):
+                    name = native.get("name") or native.get("fileName") or ""
+                    if name and name not in result:
+                        result.append(name)
+                return result
+        return result
 
     def download_attached_file(
         self,
