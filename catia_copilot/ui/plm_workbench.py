@@ -438,6 +438,17 @@ class _PullWorker(QThread):
                 import os as _os
                 for fname in self._dl_files:
                     dest_path = _os.path.join(self._dl_dest, fname)
+                    # 重名处理：追加数字后缀避免覆盖
+                    if _os.path.exists(dest_path):
+                        base, ext = _os.path.splitext(fname)
+                        counter = 1
+                        while True:
+                            new_name = f"{base}_{counter}{ext}"
+                            new_path = _os.path.join(self._dl_dest, new_name)
+                            if not _os.path.exists(new_path):
+                                dest_path = new_path
+                                break
+                            counter += 1
 
                     def _progress(dl, total, speed, _fn=fname):
                         self.file_progress.emit(_fn, dl, total, speed)
@@ -499,7 +510,7 @@ class PlmWorkbench(QDialog):
         # 已加载的 BOM 行（预览后缓存，同步时复用）
         self._bom_rows: list[dict] = []
 
-        # 可见 BOM 行缓存（Level > 0）
+        # 可见 BOM 行缓存（所有层级，含根产品 Level=0）
         self._visible_bom_rows: list[dict] = []
 
         # PLM 零件缓存：PartNumber → dict
@@ -1420,8 +1431,8 @@ class PlmWorkbench(QDialog):
         self._lbl_node_count.setStyleSheet("color: red;")
 
     def _populate_local_table(self, rows: list) -> None:
-        """将 Level>0 的 BOM 行填充到合并表格（本地列），初始化状态和 PLM 列为占位。"""
-        visible = [r for r in rows if int(r.get("Level", 0)) > 0]
+        """将 BOM 行填充到合并表格（本地列），包含根产品（Level=0）。"""
+        visible = rows
         self._visible_bom_rows = visible
         self._tbl_bom.setRowCount(len(visible))
         for i, row in enumerate(visible):
