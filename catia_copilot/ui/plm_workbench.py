@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -905,7 +906,7 @@ class PlmWorkbench(QDialog):
         """构建设置 Tab：垂直滚动页，QGroupBox 堆叠。"""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(scroll.NoFrame)
+        scroll.setFrameShape(QFrame.NoFrame)
 
         page = QWidget()
         layout = QVBoxLayout(page)
