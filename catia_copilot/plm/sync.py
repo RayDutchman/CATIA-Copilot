@@ -126,6 +126,11 @@ class SyncOptions:
     # 所有上传完毕后的签入策略：批量签入 或 保留签出
     after_update_policy: AfterUpdatePolicy = AfterUpdatePolicy.CHECKIN
 
+    # 用户在 UI 中选择要推送的零件及升级方式。
+    # key = part_number，value = "+迭代"（当前唯一有效值）
+    # 空 dict 表示不过滤（全量同步，向后兼容）
+    part_upgrade_map: dict = field(default_factory=dict)
+
 
 # ── 数据结构 ──────────────────────────────────────────────────────────────────
 
@@ -220,7 +225,9 @@ _ALL_ATTR_COLS: list[str] = _BUILTIN_ATTR_COLS + _CUSTOM_COLS
 # PLM instanceAttributes 时跳过的列
 _STRUCTURAL_COLS: frozenset[str] = frozenset({
     "Level", "Type", "Filename", "Filepath", "Part Number", "Quantity",
-    "Nomenclature",   # 已作为零件名称（name 字段）写入
+    "Nomenclature",    # 已作为零件名称（name 字段）写入
+    "PLM_Version",     # PLM 对齐属性，由 PLM 系统管理，签入后写回 CATIA，不上传到 PLM
+    "PLM_Iteration",   # PLM 对齐属性，由 PLM 系统管理，签入后写回 CATIA，不上传到 PLM
 })
 
 # 网络错误重试参数
@@ -984,6 +991,12 @@ def _sync_node(
     if pn in uploaded_pns:
         logger.debug(f"{lbl}: 已处理过（跨层级去重），跳过上传，返回缓存引用")
         return uploaded_pns[pn]
+
+    # 用户勾选过滤：part_upgrade_map 非空时，只处理 map 中的零件
+    if options.part_upgrade_map and pn not in options.part_upgrade_map:
+        result.skipped += 1
+        cb(f">>  跳过-未勾选 | {lbl}")
+        return None
 
     # 2. 用 POST /parts 探测零件是否存在，同时完成新建
     try:

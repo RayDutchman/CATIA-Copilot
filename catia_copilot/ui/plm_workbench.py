@@ -19,7 +19,7 @@ import os
 import pythoncom
 from datetime import datetime
 
-from PySide6.QtCore import QSettings, QThread, Signal, Qt
+from PySide6.QtCore import QSettings, QThread, QTimer, Signal, Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -1311,11 +1311,10 @@ class PlmWorkbench(QDialog):
 
             # 写入升级方式下拉
             cmb = QComboBox()
-            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER, self._UPGRADE_VER])
+            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER])
             cmb.setToolTip(
                 "+迭代：签出→更新属性→签入，PLM 迭代号自动+1\n"
-                "+版本：创建新版本字母（A→B），写入后签入新版本\n"
-                "  ⚠ +版本功能待实现，当前将按+迭代处理"
+                "+版本（A→B）：待 PLM API 支持后开放"
             )
             if not push_enabled:
                 cmb.setCurrentText(self._UPGRADE_SKIP)
@@ -1472,7 +1471,7 @@ class PlmWorkbench(QDialog):
             self._tbl_bom.setCellWidget(i, self._COL_PUSH, chk_widget)
             # 升级方式下拉初始化（未查询 PLM 前禁用）
             cmb = QComboBox()
-            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER, self._UPGRADE_VER])
+            cmb.addItems([self._UPGRADE_SKIP, self._UPGRADE_ITER])
             cmb.setCurrentText(self._UPGRADE_SKIP)
             cmb.setEnabled(False)
             self._tbl_bom.setCellWidget(i, self._COL_UPGRADE, cmb)
@@ -1711,15 +1710,16 @@ class PlmWorkbench(QDialog):
             unsaved = []
 
         if unsaved:
+            # 强制阻止：所有未保存状态一律不允许继续同步
             dlg = QDialog(self)
-            dlg.setWindowTitle("存在未保存的文档")
-            dlg.setMinimumWidth(480)
+            dlg.setWindowTitle("存在未保存的文档 — 同步已阻止")
+            dlg.setMinimumWidth(500)
             vbox = QVBoxLayout(dlg)
             warn_lbl = QLabel(
-                "以下 CATIA 文档存在未保存问题（见各条目说明）：\n"
+                "以下 CATIA 文档存在未保存问题，同步已阻止：\n\n"
                 "  • 从未保存到磁盘：该零件的属性与几何体完全无法上传\n"
-                "  • 有未提交修改：将上传磁盘上的旧版本，本次修改不会包含在内\n\n"
-                "建议先切换到 CATIA ，保存所有文件后再同步。",
+                "  • 有未提交修改：上传内容与当前编辑状态不一致\n\n"
+                "请切换到 CATIA，保存所有文件后重新点击同步。",
                 dlg,
             )
             warn_lbl.setWordWrap(True)
@@ -1729,21 +1729,16 @@ class PlmWorkbench(QDialog):
                 lst.addItem(entry)
             lst.setMaximumHeight(120)
             vbox.addWidget(lst)
-            btns = QDialogButtonBox(dlg)
-            btn_cancel   = btns.addButton("取消（返回保存）", QDialogButtonBox.RejectRole)
-            btn_continue = btns.addButton("忽略并继续同步", QDialogButtonBox.AcceptRole)
-            btn_cancel.setDefault(True)
-            btn_continue.setDefault(False)
+            btns = QDialogButtonBox(QDialogButtonBox.Ok, dlg)
             btns.accepted.connect(dlg.accept)
-            btns.rejected.connect(dlg.reject)
             vbox.addWidget(btns)
-            if dlg.exec() != QDialog.Accepted:
-                return
+            dlg.exec()
+            return  # 无论用户点什么，强制返回
 
         options = self._build_sync_options()
 
         # 从表格读取用户选择的推送行和升级方式
-        push_map: dict[str, str] = {}  # {pn: "+迭代" / "+版本"}
+        push_map: dict[str, str] = {}  # {pn: "+迭代"}
         for i, row in enumerate(self._visible_bom_rows):
             chk_widget = self._tbl_bom.cellWidget(i, self._COL_PUSH)
             cmb        = self._tbl_bom.cellWidget(i, self._COL_UPGRADE)
@@ -1767,8 +1762,8 @@ class PlmWorkbench(QDialog):
             )
             return
 
-        # 记录升级方式供 Push 完成后写回 CATIA（当前 sync.py 尚不感知此信息）
-        self._sync_push_map = push_map
+        # 将勾选列表注入 SyncOptions，sync.py 的 _sync_node 会按此过滤
+        options.part_upgrade_map = push_map
 
         self._btn_sync_start.setEnabled(False)
         self._btn_load_preview.setEnabled(False)
@@ -1940,6 +1935,10 @@ class PlmWorkbench(QDialog):
             mode=getattr(self, "_last_sync_mode", "自定义模式"),
         )
         self._refresh_history_list()
+        # 有新建零件时，PLM_Version=A / PLM_Iteration=1 已在签入后写回 CATIA 文件；
+        # 重新加载 BOM 以便表格立即反映最新属性值。
+        if result.created > 0:
+            QTimer.singleShot(500, self._on_load_preview)
 
     def _on_sync_error(self, err: str) -> None:
         self._btn_sync_start.setEnabled(True)
