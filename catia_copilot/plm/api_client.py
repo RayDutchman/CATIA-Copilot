@@ -807,17 +807,18 @@ class PlmApiClient:
         version: str,
         iteration: int,
     ) -> list[str]:
-        """获取零件迭代的附件文件名列表（attachedfiles）。
+        """获取零件迭代的附件文件名列表。
 
-        端点：GET /workspaces/{ws}/parts/{pn}-{ver}/iterations/{iter}
-        从迭代详情的 attachedFiles 字段提取文件名列表。
+        通过 get_part_detail 获取完整的 PartRevisionDTO，
+        从中提取指定迭代的 attachedFiles。
         """
-        ws   = urllib.parse.quote(workspace)
-        pn   = urllib.parse.quote(part_number)
-        path = f"/workspaces/{ws}/parts/{pn}-{version}/iterations/{iteration}"
-        result = self._request("GET", path) or {}
-        attached = result.get("attachedFiles") or []
-        return [f.get("name", "") for f in attached if f.get("name")]
+        detail = self.get_part_detail(workspace, part_number, version)
+        iterations = detail.get("partIterations") or []
+        for it in iterations:
+            if int(it.get("iteration", -1)) == iteration:
+                attached = it.get("attachedFiles") or []
+                return [f.get("name", "") for f in attached if f.get("name")]
+        return []
 
     def download_attached_file(
         self,
