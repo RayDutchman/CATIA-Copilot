@@ -348,27 +348,30 @@ class _PlmStatusWorker(QThread):
 
 
 class _PullWorker(QThread):
-    """执行 Pull 下载：搜索零件 → 列出附件 → 下载文件 → 写回 PLM 属性。
+    """执行 Pull 操作的后台线程，支持三种模式：
+
+    MODE_SEARCH    — 按零件号搜索 PLM（search_parts）
+    MODE_BOM       — 递归拼装 Part BOM 树（get_part_components_flat）
+    MODE_DOWNLOAD  — 批量下载附件，每个零件保存到独立子目录
 
     信号：
-      search_done(list)      — 搜索完成，返回零件列表
-      attachments_done(list) — 列出附件完成，返回文件名列表
-      file_progress(str, int, int, float)
-                             — (filename, downloaded_bytes, total_bytes, speed_bps)
-      file_done(str, str)    — (filename, dest_path) 单文件下载完成
-      all_done()             — 全部完成
-      failure(str)           — 失败
+      search_done(list)                  — 搜索完成，返回 PartRevisionDTO 列表
+      bom_done(list)                     — BOM 树展开完成，返回扁平行列表
+      file_progress(str, int, int, float)— (filename, downloaded, total, speed_bps)
+      file_done(str, str)                — (filename, dest_path) 单文件完成
+      all_done(int)                      — 全部下载完成，参数为已下载文件总数
+      failure(str)                       — 失败
     """
-    search_done      = Signal(list)
-    attachments_done = Signal(list)
-    file_progress    = Signal(str, int, int, float)
-    file_done        = Signal(str, str)
-    all_done         = Signal()
-    failure          = Signal(str)
+    search_done   = Signal(list)
+    bom_done      = Signal(list)
+    file_progress = Signal(str, int, int, float)
+    file_done     = Signal(str, str)
+    all_done      = Signal(int)
+    failure       = Signal(str)
 
-    MODE_SEARCH      = "search"
-    MODE_ATTACHMENTS = "attachments"
-    MODE_DOWNLOAD    = "download"
+    MODE_SEARCH   = "search"
+    MODE_BOM      = "bom"
+    MODE_DOWNLOAD = "download"
 
     def __init__(self, base_url, login, password, workspace):
         super().__init__()
@@ -379,39 +382,39 @@ class _PullWorker(QThread):
         self._mode      = self.MODE_SEARCH
         # 搜索参数
         self._search_number = ""
-        self._search_q      = ""
-        # 列出附件参数
-        self._att_number  = ""
-        self._att_version = ""
-        self._att_iter    = ""
-        # 下载参数
-        self._dl_number  = ""
-        self._dl_version = ""
-        self._dl_iter    = ""
-        self._dl_files   = []   # list[str] 要下载的文件名
-        self._dl_dest    = ""   # 目标目录
+        # BOM 展开参数
+        self._bom_number  = ""
+        self._bom_version = "A"
+        # 下载参数：list of (part_number, version, iteration, filename)
+        self._dl_items: list[tuple[str, str, str, str]] = []
+        self._dl_base_dir = ""   # 基础目录，每个零件在此目录下建子目录
 
-    def set_search(self, number: str, q: str = "") -> None:
+    def set_search(self, number: str) -> None:
         self._mode = self.MODE_SEARCH
         self._search_number = number
-        self._search_q      = q
 
-    def set_list_attachments(self, number: str, version: str, iteration: str) -> None:
-        self._mode        = self.MODE_ATTACHMENTS
-        self._att_number  = number
-        self._att_version = version
-        self._att_iter    = iteration
+    def set_bom(self, number: str, version: str = "A") -> None:
+        self._mode        = self.MODE_BOM
+        self._bom_number  = number
+        self._bom_version = version
 
-    def set_download(self, number: str, version: str, iteration: str,
-                     files: list[str], dest: str) -> None:
-        self._mode       = self.MODE_DOWNLOAD
-        self._dl_number  = number
-        self._dl_version = version
-        self._dl_iter    = iteration
-        self._dl_files   = files
-        self._dl_dest    = dest
+    def set_download(
+        self,
+        items: list[tuple[str, str, str, str]],
+        base_dir: str,
+    ) -> None:
+        """设置批量下载参数。
+
+        items: list of (part_number, version, iteration, filename)
+               来自 BOM 表格勾选行，每行可能有多个文件
+        base_dir: 基础目录，每个零件的文件下载到 base_dir/{part_number}/
+        """
+        self._mode        = self.MODE_DOWNLOAD
+        self._dl_items    = items
+        self._dl_base_dir = base_dir
 
     def run(self):
+        import os as _os
         try:
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
@@ -420,50 +423,38 @@ class _PullWorker(QThread):
                 results = c.search_parts(
                     self._workspace,
                     number=self._search_number,
-                    q=self._search_q,
                     fetch_head_only=True,
+                    size=100,
                 )
                 self.search_done.emit(results or [])
 
-            elif self._mode == self.MODE_ATTACHMENTS:
-                files = c.list_part_attachments(
+            elif self._mode == self.MODE_BOM:
+                rows = c.get_part_components_flat(
                     self._workspace,
-                    self._att_number,
-                    self._att_version,
-                    self._att_iter,
+                    self._bom_number,
+                    self._bom_version,
                 )
-                self.attachments_done.emit(files or [])
+                self.bom_done.emit(rows or [])
 
             elif self._mode == self.MODE_DOWNLOAD:
-                import os as _os
-                for fname in self._dl_files:
-                    dest_path = _os.path.join(self._dl_dest, fname)
-                    # 重名处理：追加数字后缀避免覆盖
-                    if _os.path.exists(dest_path):
-                        base, ext = _os.path.splitext(fname)
-                        counter = 1
-                        while True:
-                            new_name = f"{base}_{counter}{ext}"
-                            new_path = _os.path.join(self._dl_dest, new_name)
-                            if not _os.path.exists(new_path):
-                                dest_path = new_path
-                                break
-                            counter += 1
+                total_done = 0
+                for pn, ver, itr, fname in self._dl_items:
+                    # 每个零件保存到独立子目录，避免同名文件冲突
+                    part_dir = _os.path.join(self._dl_base_dir, pn)
+                    _os.makedirs(part_dir, exist_ok=True)
+                    dest_path = _os.path.join(part_dir, fname)
 
                     def _progress(dl, total, speed, _fn=fname):
                         self.file_progress.emit(_fn, dl, total, speed)
 
                     c.download_attached_file(
-                        self._workspace,
-                        self._dl_number,
-                        self._dl_version,
-                        self._dl_iter,
-                        fname,
+                        self._workspace, pn, ver, itr, fname,
                         dest_path,
                         progress_cb=_progress,
                     )
                     self.file_done.emit(fname, dest_path)
-                self.all_done.emit()
+                    total_done += 1
+                self.all_done.emit(total_done)
 
         except Exception as exc:
             self.failure.emit(str(exc))
@@ -2152,15 +2143,32 @@ class PlmWorkbench(QDialog):
 # Pull 对话框
 # ─────────────────────────────────────────────────────────────────────────────
 
+# BOM 对比表格列常量
+_PC_DEPTH   = 0   # 层级缩进（只用于视觉，值为 depth 数字）
+_PC_PN      = 1   # 零件号
+_PC_VER     = 2   # PLM 版本
+_PC_ITER    = 3   # PLM 迭代
+_PC_COUT    = 4   # 签出人
+_PC_LOCAL   = 5   # 本地文件状态
+_PC_FILES   = 6   # 可下载文件列表（内部存储，不显示）
+_PC_PULL    = 7   # 下载? checkbox
+_PC_HEADERS = ["层级", "零件号", "版本", "迭代", "签出人", "本地文件", "可用文件", "下载?"]
+
+
 class _PullDialog(QDialog):
-    """Pull 对话框：搜索 PLM 零件 → 查看附件 → 选择并下载。"""
+    """Pull 对话框：输入根零件号 → 递归展开 Part BOM 树 → 对比本地文件 → 批量下载。
+
+    下载策略：
+      - 每个零件的附件保存到 work_dir/{part_number}/ 子目录
+      - 已有同名文件则直接覆盖（用户可通过状态列判断是否需要更新）
+    """
 
     def __init__(self, base_url: str, login: str, password: str,
                  workspace: str, work_dir: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Pull — 从 PLM 拉取文件")
-        self.setMinimumSize(700, 540)
-        self.resize(800, 600)
+        self.setWindowTitle("Pull — 从 PLM 拉取 BOM 树文件")
+        self.setMinimumSize(900, 600)
+        self.resize(1100, 700)
 
         self._base_url  = base_url
         self._login     = login
@@ -2168,10 +2176,14 @@ class _PullDialog(QDialog):
         self._workspace = workspace
         self._work_dir  = work_dir
         self._worker: _PullWorker | None = None
-        self._selected_part: dict | None = None   # 当前选中的零件信息
-        self._required_exts = {".catpart", ".catproduct"}  # 必选文件类型（不可取消）
+        # BOM 行缓存：每行 dict 来自 get_part_components_flat，追加了 files 列表
+        self._bom_rows: list[dict] = []
+        self._dl_total = 0
+        self._dl_done  = 0
 
         self._build_ui()
+
+    # ── UI 构建 ───────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -2180,81 +2192,79 @@ class _PullDialog(QDialog):
 
         _ef = QFont("Segoe UI Emoji"); _ef.setPointSize(9)
 
-        # ── 搜索行 ───────────────────────────────────────────────────────────
-        search_row = QHBoxLayout()
-        search_row.setSpacing(6)
-        search_row.addWidget(QLabel("零件号搜索："))
+        # ── 顶部：搜索行 ──────────────────────────────────────────────────────
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+        top_row.addWidget(QLabel("根零件号："))
         self._le_search = QLineEdit()
-        self._le_search.setPlaceholderText("输入零件号（支持前缀匹配），回车或点击搜索")
-        self._le_search.returnPressed.connect(self._on_search)
-        self._btn_search = QPushButton("搜索")
-        self._btn_search.setFont(_ef)
-        self._btn_search.clicked.connect(self._on_search)
-        search_row.addWidget(self._le_search, 1)
-        search_row.addWidget(self._btn_search)
-        layout.addLayout(search_row)
+        self._le_search.setPlaceholderText("输入顶层零件号，回车或点击展开 BOM 树")
+        self._le_search.returnPressed.connect(self._on_expand_bom)
+        self._btn_expand = QPushButton("展开 BOM 树")
+        self._btn_expand.setFont(_ef)
+        self._btn_expand.clicked.connect(self._on_expand_bom)
 
-        # ── 主体 Splitter：左搜索结果 / 右附件列表 ───────────────────────────
-        splitter = QSplitter(Qt.Horizontal)
+        # 全选 / 全不选 按钮
+        self._btn_select_all  = QPushButton("全选")
+        self._btn_select_none = QPushButton("全不选")
+        self._btn_select_all.setEnabled(False)
+        self._btn_select_none.setEnabled(False)
+        self._btn_select_all.clicked.connect(lambda: self._set_all_checked(True))
+        self._btn_select_none.clicked.connect(lambda: self._set_all_checked(False))
 
-        # 左：搜索结果列表
-        left_w = QWidget()
-        v_l = QVBoxLayout(left_w)
-        v_l.setContentsMargins(0, 0, 0, 0)
-        v_l.setSpacing(4)
-        v_l.addWidget(QLabel("搜索结果："))
-        self._tbl_results = QTableWidget(0, 4)
-        self._tbl_results.setHorizontalHeaderLabels(["零件号", "版本", "迭代", "签出人"])
-        hdr_r = self._tbl_results.horizontalHeader()
-        hdr_r.setSectionResizeMode(0, QHeaderView.Stretch)
-        hdr_r.setSectionResizeMode(1, QHeaderView.Interactive)
-        hdr_r.setSectionResizeMode(2, QHeaderView.Interactive)
-        hdr_r.resizeSection(1, 60); hdr_r.resizeSection(2, 60)
-        hdr_r.setSectionResizeMode(3, QHeaderView.Interactive)
-        hdr_r.resizeSection(3, 80)
-        self._tbl_results.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_results.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_results.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._tbl_results.currentItemChanged.connect(self._on_result_selected)
-        v_l.addWidget(self._tbl_results, 1)
-        splitter.addWidget(left_w)
+        top_row.addWidget(self._le_search, 1)
+        top_row.addWidget(self._btn_expand)
+        top_row.addWidget(self._btn_select_all)
+        top_row.addWidget(self._btn_select_none)
+        layout.addLayout(top_row)
 
-        # 右：附件列表
-        right_w = QWidget()
-        v_r = QVBoxLayout(right_w)
-        v_r.setContentsMargins(0, 0, 0, 0)
-        v_r.setSpacing(4)
-        v_r.addWidget(QLabel("附件列表（勾选要下载的文件）："))
-        self._lst_attachments = QListWidget()
-        v_r.addWidget(self._lst_attachments, 1)
+        # ── BOM 对比表格 ──────────────────────────────────────────────────────
+        self._tbl_bom = QTableWidget(0, len(_PC_HEADERS))
+        self._tbl_bom.setHorizontalHeaderLabels(_PC_HEADERS)
+        hdr = self._tbl_bom.horizontalHeader()
+        hdr.setSectionResizeMode(_PC_DEPTH,  QHeaderView.Fixed)
+        hdr.setSectionResizeMode(_PC_PN,     QHeaderView.Interactive)
+        hdr.setSectionResizeMode(_PC_VER,    QHeaderView.Fixed)
+        hdr.setSectionResizeMode(_PC_ITER,   QHeaderView.Fixed)
+        hdr.setSectionResizeMode(_PC_COUT,   QHeaderView.Interactive)
+        hdr.setSectionResizeMode(_PC_LOCAL,  QHeaderView.Interactive)
+        hdr.setSectionResizeMode(_PC_FILES,  QHeaderView.Interactive)
+        hdr.setSectionResizeMode(_PC_PULL,   QHeaderView.Fixed)
+        hdr.resizeSection(_PC_DEPTH,  40)
+        hdr.resizeSection(_PC_PN,     200)
+        hdr.resizeSection(_PC_VER,    60)
+        hdr.resizeSection(_PC_ITER,   50)
+        hdr.resizeSection(_PC_COUT,   100)
+        hdr.resizeSection(_PC_LOCAL,  140)
+        hdr.resizeSection(_PC_FILES,  200)
+        hdr.resizeSection(_PC_PULL,   55)
+        self._tbl_bom.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._tbl_bom.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._tbl_bom.setAlternatingRowColors(True)
+        layout.addWidget(self._tbl_bom, 1)
 
-        work_dir_lbl = QLabel(f"下载到：{self._work_dir}")
-        work_dir_lbl.setWordWrap(True)
-        work_dir_lbl.setStyleSheet("color: palette(mid);")
-        v_r.addWidget(work_dir_lbl)
-        splitter.addWidget(right_w)
-        splitter.setSizes([360, 360])
-        layout.addWidget(splitter, 1)
+        # ── 下载目录说明 ───────────────────────────────────────────────────────
+        dir_lbl = QLabel(f"下载到：{self._work_dir}/{{零件号}}/{{文件名}}")
+        dir_lbl.setStyleSheet("color: palette(mid);")
+        layout.addWidget(dir_lbl)
 
-        # ── 进度区 ───────────────────────────────────────────────────────────
+        # ── 进度区 ────────────────────────────────────────────────────────────
         self._pgb_dl = QProgressBar()
-        self._pgb_dl.setRange(0, 0)
         self._pgb_dl.setMaximumHeight(16)
         self._pgb_dl.setVisible(False)
         layout.addWidget(self._pgb_dl)
 
         prog_row = QHBoxLayout()
-        self._lbl_dl_status = QLabel("")
-        self._lbl_dl_speed  = QLabel("")
-        self._lbl_dl_speed.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        prog_row.addWidget(self._lbl_dl_status, 1)
-        prog_row.addWidget(self._lbl_dl_speed)
+        self._lbl_status = QLabel("")
+        self._lbl_speed  = QLabel("")
+        self._lbl_speed.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        prog_row.addWidget(self._lbl_status, 1)
+        prog_row.addWidget(self._lbl_speed)
         layout.addLayout(prog_row)
 
-        # ── 按钮行 ───────────────────────────────────────────────────────────
+        # ── 按钮行 ────────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._btn_download = QPushButton("⬇  开始下载")
+        self._btn_download = QPushButton("⬇  下载勾选文件")
         self._btn_download.setFont(_ef)
         self._btn_download.setEnabled(False)
         self._btn_download.clicked.connect(self._on_download)
@@ -2264,118 +2274,236 @@ class _PullDialog(QDialog):
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
+    # ── 内部辅助 ──────────────────────────────────────────────────────────────
+
     def _make_worker(self) -> _PullWorker:
         w = _PullWorker(self._base_url, self._login, self._password, self._workspace)
         w.search_done.connect(self._on_search_done)
-        w.attachments_done.connect(self._on_attachments_done)
+        w.bom_done.connect(self._on_bom_done)
         w.file_progress.connect(self._on_file_progress)
         w.file_done.connect(self._on_file_done)
         w.all_done.connect(self._on_all_done)
         w.failure.connect(self._on_failure)
         return w
 
-    def _on_search(self) -> None:
-        q = self._le_search.text().strip()
-        if not q:
+    def _local_files_for(self, part_number: str) -> set[str]:
+        """返回 work_dir/{part_number}/ 下已有的文件名集合（小写）。"""
+        import os as _os
+        part_dir = _os.path.join(self._work_dir, part_number)
+        if not _os.path.isdir(part_dir):
+            return set()
+        return {f.lower() for f in _os.listdir(part_dir)
+                if _os.path.isfile(_os.path.join(part_dir, f))}
+
+    def _set_all_checked(self, checked: bool) -> None:
+        """批量勾选或取消所有行的下载 checkbox。"""
+        for i in range(self._tbl_bom.rowCount()):
+            w = self._tbl_bom.cellWidget(i, _PC_PULL)
+            if w:
+                chk = w.findChild(QCheckBox)
+                if chk and chk.isEnabled():
+                    chk.setChecked(checked)
+
+    # ── 步骤 1：展开 BOM 树 ────────────────────────────────────────────────────
+
+    def _on_expand_bom(self) -> None:
+        pn = self._le_search.text().strip()
+        if not pn:
             return
-        self._btn_search.setEnabled(False)
-        self._tbl_results.setRowCount(0)
-        self._lst_attachments.clear()
+        self._btn_expand.setEnabled(False)
+        self._btn_select_all.setEnabled(False)
+        self._btn_select_none.setEnabled(False)
         self._btn_download.setEnabled(False)
-        self._lbl_dl_status.setText("搜索中……")
+        self._tbl_bom.setRowCount(0)
+        self._bom_rows = []
+        self._lbl_status.setText(f"正在递归展开 BOM 树：{pn} ……")
         w = self._make_worker()
-        w.set_search(number=q)
+        # 搜索先确认零件号 + 版本
+        w.set_search(number=pn)
         self._worker = w
         w.start()
 
     def _on_search_done(self, parts: list) -> None:
-        self._btn_search.setEnabled(True)
-        self._lbl_dl_status.setText(f"找到 {len(parts)} 个零件")
-        self._tbl_results.setRowCount(0)
-        for p in parts:
-            row = self._tbl_results.rowCount()
-            self._tbl_results.insertRow(row)
-            for col, val in enumerate([
-                str(p.get("number", "")),
-                str(p.get("version", "")),
-                str(p.get("lastIterationNumber", "")),
-                str(p.get("checkOutUser", "") or ""),
-            ]):
-                it = QTableWidgetItem(val)
-                it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-                it.setData(Qt.UserRole, p)
-                self._tbl_results.setItem(row, col, it)
-
-    def _on_result_selected(self, current, _prev) -> None:
-        if current is None:
+        """搜索完成后取第一个结果展开 BOM 树。"""
+        self._btn_expand.setEnabled(True)
+        if not parts:
+            self._lbl_status.setText("未找到零件，请检查零件号。")
             return
-        p = current.data(Qt.UserRole)
-        if not p:
-            return
-        self._selected_part = p
-        self._lst_attachments.clear()
-        self._btn_download.setEnabled(False)
-        self._lbl_dl_status.setText("正在获取附件列表……")
+        # 取最新版本（第一条结果）
+        p = parts[0]
+        pn  = str(p.get("number", ""))
+        ver = str(p.get("version", "") or "A")
+        self._lbl_status.setText(f"找到 {len(parts)} 个结果，正在展开 {pn}-{ver} 的 BOM 树……")
         w = self._make_worker()
-        w.set_list_attachments(
-            str(p.get("number", "")),
-            str(p.get("version", "")),
-            str(p.get("lastIterationNumber", "")),
-        )
+        w.set_bom(pn, ver)
         self._worker = w
         w.start()
 
-    def _on_attachments_done(self, files: list) -> None:
-        self._lst_attachments.clear()
-        self._lbl_dl_status.setText(f"共 {len(files)} 个附件")
-        for fname in files:
-            item = QListWidget.item if False else None  # 占位
-            from PySide6.QtWidgets import QListWidgetItem
-            it = QListWidgetItem(fname)
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            # CATPart / CATProduct 必选（不可取消）
-            ext = "." + fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
-            if ext in self._required_exts:
-                it.setCheckState(Qt.Checked)
-                it.setFlags(it.flags() & ~Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+    def _on_bom_done(self, rows: list) -> None:
+        """BOM 树展开完成，填充对比表格。"""
+        import os as _os
+        self._btn_expand.setEnabled(True)
+        self._btn_select_all.setEnabled(True)
+        self._btn_select_none.setEnabled(True)
+        self._bom_rows = rows
+
+        if not rows:
+            self._lbl_status.setText("BOM 树为空，可能该零件没有子件。")
+            return
+
+        self._tbl_bom.setRowCount(0)
+        total_files = 0
+
+        for row_data in rows:
+            pn        = str(row_data.get("part_number", ""))
+            ver       = str(row_data.get("version", ""))
+            itr       = str(row_data.get("iteration", ""))
+            name      = str(row_data.get("name", ""))
+            cout_user = str(row_data.get("check_out_user", "") or "")
+            depth     = int(row_data.get("depth", 0))
+
+            # 查询该零件的附件列表（同步，已在 Worker 中完成 BOM 展开，这里直接用缓存数据）
+            # 注意：附件列表在 BOM 展开时没有并行拉取，需要在 _on_bom_done 后异步补全
+            # 此版本先用 row_data 中已有数据（BOM 展开时不含附件），下载时实时查询
+            files: list[str] = row_data.get("_files", [])
+
+            # 本地文件状态
+            local_set  = self._local_files_for(pn)
+            local_text = "√ 已有" if local_set else "— 无"
+
+            # 层级缩进文本
+            indent = "  " * depth + ("└ " if depth > 0 else "")
+            depth_text = str(depth)
+
+            row_idx = self._tbl_bom.rowCount()
+            self._tbl_bom.insertRow(row_idx)
+
+            def _item(val: str, user_data=None) -> QTableWidgetItem:
+                it = QTableWidgetItem(val)
+                it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                if user_data is not None:
+                    it.setData(Qt.UserRole, user_data)
+                return it
+
+            self._tbl_bom.setItem(row_idx, _PC_DEPTH,  _item(depth_text))
+            self._tbl_bom.setItem(row_idx, _PC_PN,     _item(f"{indent}{pn}  {name}".strip(), pn))
+            self._tbl_bom.setItem(row_idx, _PC_VER,    _item(ver))
+            self._tbl_bom.setItem(row_idx, _PC_ITER,   _item(itr))
+
+            # 签出人：非空则标红
+            cout_item = _item(cout_user)
+            if cout_user:
+                cout_item.setForeground(QColor("#e74c3c"))
+            self._tbl_bom.setItem(row_idx, _PC_COUT, cout_item)
+
+            # 本地文件状态：已有标绿，无则灰色
+            local_item = _item(local_text)
+            if local_set:
+                local_item.setForeground(QColor("#27ae60"))
             else:
-                it.setCheckState(Qt.Checked)
-            self._lst_attachments.addItem(it)
-        self._btn_download.setEnabled(len(files) > 0)
+                local_item.setForeground(QColor("#7f8c8d"))
+            self._tbl_bom.setItem(row_idx, _PC_LOCAL, local_item)
+
+            # 文件列表列（占位，实际下载时动态查询）
+            self._tbl_bom.setItem(row_idx, _PC_FILES, _item("（下载时实时查询）"))
+
+            # 下载? checkbox：默认勾选本地没有文件的行
+            chk_w = QWidget()
+            chk_l = QHBoxLayout(chk_w)
+            chk_l.setContentsMargins(0, 0, 0, 0)
+            chk_l.setAlignment(Qt.AlignCenter)
+            chk = QCheckBox()
+            chk.setChecked(not bool(local_set))
+            chk_l.addWidget(chk)
+            self._tbl_bom.setCellWidget(row_idx, _PC_PULL, chk_w)
+
+            total_files += 1
+
+        checked = sum(
+            1 for i in range(self._tbl_bom.rowCount())
+            if (w := self._tbl_bom.cellWidget(i, _PC_PULL)) and
+               (c := w.findChild(QCheckBox)) and c.isChecked()
+        )
+        self._lbl_status.setText(
+            f"BOM 树：{len(rows)} 个零件  |  本地无文件：{checked} 个（已默认勾选）"
+        )
+        self._btn_download.setEnabled(True)
+
+    # ── 步骤 2：批量下载 ──────────────────────────────────────────────────────
 
     def _on_download(self) -> None:
-        if not self._selected_part:
+        """收集勾选行，为每行动态查询附件列表，然后批量下载。"""
+        # 收集勾选行的基本信息
+        checked_rows: list[tuple[int, str, str, str]] = []  # (row_idx, pn, ver, itr)
+        for i in range(self._tbl_bom.rowCount()):
+            w = self._tbl_bom.cellWidget(i, _PC_PULL)
+            if not w:
+                continue
+            chk = w.findChild(QCheckBox)
+            if not chk or not chk.isChecked():
+                continue
+            pn_item = self._tbl_bom.item(i, _PC_PN)
+            if not pn_item:
+                continue
+            pn  = str(pn_item.data(Qt.UserRole) or pn_item.text()).strip()
+            ver = str((self._tbl_bom.item(i, _PC_VER) or QTableWidgetItem("")).text())
+            itr = str((self._tbl_bom.item(i, _PC_ITER) or QTableWidgetItem("")).text())
+            if pn:
+                checked_rows.append((i, pn, ver, itr))
+
+        if not checked_rows:
+            QMessageBox.warning(self, "未选择", "请至少勾选一个零件行。")
             return
-        files = []
-        for i in range(self._lst_attachments.count()):
-            it = self._lst_attachments.item(i)
-            if it.checkState() == Qt.Checked:
-                files.append(it.text())
-        if not files:
-            QMessageBox.warning(self, "未选择文件", "请至少勾选一个文件。")
-            return
+
+        # 在当前线程中逐零件查询附件（数量通常不多，可接受）
+        # 为避免 UI 卡顿，这里启动一个"预查询+下载"组合 Worker
+        # 实现方式：先同步查询所有附件（用主线程的 PlmApiClient），收集 items，再下载
+        self._btn_download.setEnabled(False)
+        self._btn_expand.setEnabled(False)
+        self._lbl_status.setText("正在查询各零件附件列表……")
 
         import os as _os
-        _os.makedirs(self._work_dir, exist_ok=True)
+        try:
+            from catia_copilot.plm.api_client import PlmApiClient
+            c = PlmApiClient(self._base_url)
+            c.login(self._login, self._password)
+        except Exception as exc:
+            QMessageBox.critical(self, "连接失败", str(exc))
+            self._btn_download.setEnabled(True)
+            self._btn_expand.setEnabled(True)
+            return
 
-        self._btn_download.setEnabled(False)
-        self._btn_search.setEnabled(False)
-        self._dl_files_total = len(files)
-        self._dl_files_done  = 0
-        self._pgb_dl.setMaximum(len(files))
+        # (part_number, version, iteration, filename) 四元组列表
+        dl_items: list[tuple[str, str, str, str]] = []
+        for row_idx, pn, ver, itr in checked_rows:
+            try:
+                files = c.list_part_attachments(self._workspace, pn, ver, itr)
+            except Exception:
+                files = []
+            # 更新表格文件列显示
+            files_text = ", ".join(files) if files else "（无附件）"
+            file_item = QTableWidgetItem(files_text)
+            file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
+            self._tbl_bom.setItem(row_idx, _PC_FILES, file_item)
+            for fname in files:
+                dl_items.append((pn, ver, itr, fname))
+
+        if not dl_items:
+            QMessageBox.information(self, "无附件", "所有勾选零件均无可下载附件。")
+            self._btn_download.setEnabled(True)
+            self._btn_expand.setEnabled(True)
+            return
+
+        self._dl_total = len(dl_items)
+        self._dl_done  = 0
+        self._pgb_dl.setMaximum(self._dl_total)
         self._pgb_dl.setValue(0)
         self._pgb_dl.setVisible(True)
-        self._lbl_dl_status.setText(f"下载中…… (0 / {len(files)})")
+        self._lbl_status.setText(f"开始下载…… (0 / {self._dl_total} 个文件)")
 
-        p = self._selected_part
+        _os.makedirs(self._work_dir, exist_ok=True)
         w = self._make_worker()
-        w.set_download(
-            number   = str(p.get("number", "")),
-            version  = str(p.get("version", "")),
-            iteration= str(p.get("lastIterationNumber", "")),
-            files    = files,
-            dest     = self._work_dir,
-        )
+        w.set_download(dl_items, self._work_dir)
         self._worker = w
         w.start()
 
@@ -2383,37 +2511,52 @@ class _PullDialog(QDialog):
         mb_dl    = dl    / 1048576
         mb_total = total / 1048576 if total > 0 else 0
         kb_s     = speed / 1024
+        current  = self._dl_done + 1
         if total > 0:
-            self._lbl_dl_status.setText(
-                f"({self._dl_files_done + 1}/{self._dl_files_total})  {fname}  "
-                f"{mb_dl:.1f} / {mb_total:.1f} MB"
+            self._lbl_status.setText(
+                f"({current}/{self._dl_total})  {fname}  {mb_dl:.1f}/{mb_total:.1f} MB"
             )
         else:
-            self._lbl_dl_status.setText(
-                f"({self._dl_files_done + 1}/{self._dl_files_total})  {fname}  {mb_dl:.1f} MB"
+            self._lbl_status.setText(
+                f"({current}/{self._dl_total})  {fname}  {mb_dl:.1f} MB"
             )
-        self._lbl_dl_speed.setText(f"{kb_s:.1f} KB/s")
+        self._lbl_speed.setText(f"{kb_s:.1f} KB/s")
 
     def _on_file_done(self, fname: str, dest: str) -> None:
-        self._dl_files_done += 1
-        self._pgb_dl.setValue(self._dl_files_done)
+        self._dl_done += 1
+        self._pgb_dl.setValue(self._dl_done)
 
-    def _on_all_done(self) -> None:
+    def _on_all_done(self, total: int) -> None:
         self._pgb_dl.setVisible(False)
         self._btn_download.setEnabled(True)
-        self._btn_search.setEnabled(True)
-        self._lbl_dl_status.setText(
-            f"下载完成！共 {self._dl_files_done} 个文件 → {self._work_dir}"
+        self._btn_expand.setEnabled(True)
+        self._lbl_speed.setText("")
+        self._lbl_status.setText(
+            f"下载完成！共 {total} 个文件 → {self._work_dir}/{{零件号}}/{{文件名}}"
         )
-        self._lbl_dl_speed.setText("")
+        # 刷新本地文件状态列
+        for i in range(self._tbl_bom.rowCount()):
+            pn_item = self._tbl_bom.item(i, _PC_PN)
+            if not pn_item:
+                continue
+            pn = str(pn_item.data(Qt.UserRole) or "")
+            if not pn:
+                continue
+            local_set = self._local_files_for(pn)
+            local_text = "√ 已有" if local_set else "— 无"
+            local_item = QTableWidgetItem(local_text)
+            local_item.setFlags(local_item.flags() & ~Qt.ItemIsEditable)
+            local_item.setForeground(QColor("#27ae60") if local_set else QColor("#7f8c8d"))
+            self._tbl_bom.setItem(i, _PC_LOCAL, local_item)
         QMessageBox.information(
             self, "下载完成",
-            f"已下载 {self._dl_files_done} 个文件到：\n{self._work_dir}",
+            f"已下载 {total} 个文件\n保存位置：{self._work_dir}/{{零件号}}/{{文件名}}",
         )
 
     def _on_failure(self, err: str) -> None:
-        self._btn_search.setEnabled(True)
+        self._btn_expand.setEnabled(True)
         self._btn_download.setEnabled(True)
         self._pgb_dl.setVisible(False)
-        self._lbl_dl_status.setText(f"失败：{err}")
+        self._lbl_speed.setText("")
+        self._lbl_status.setText(f"失败：{err}")
         QMessageBox.critical(self, "操作失败", err)

@@ -866,6 +866,103 @@ class PlmApiClient:
                 result.append(p)
         return result
 
+    def get_part_components_flat(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str = "A",
+        max_depth: int = 20,
+        _depth: int = 0,
+        _seen: set | None = None,
+    ) -> list[dict]:
+        """递归拼装 Part BOM 树，返回扁平行列表（含层级信息）。
+
+        DocdokuPLM 没有 Part 子树端点，此方法通过逐层调用
+        get_part_detail 递归遍历 partIterations[-1].components
+        手动拼装完整树结构。
+
+        返回列表，每行 dict 包含：
+            part_number (str)       — 零件号
+            version     (str)       — 版本
+            iteration   (int)       — 最新迭代号
+            name        (str)       — 零件名
+            check_out_user (str)    — 签出人（空字符串表示未签出）
+            depth       (int)       — 层级深度（根节点=0）
+            parent_pn   (str|None)  — 父零件号，根节点为 None
+            quantity    (int)       — 使用数量（来自 PartUsageLinkDTO.amount）
+
+        注意：
+        - 已访问的零件号+版本组合不再展开子树（防止循环引用）
+        - 网络错误或访问受限的节点跳过（不中断整体遍历）
+        - 对于 Docdoku 的版本号，实际存储为单字母（"A"/"B"等），
+          PartUsageLinkDTO.component.version 有时为 null，
+          此时回退为 "A"
+        """
+        if _seen is None:
+            _seen = set()
+
+        key = f"{part_number}-{version}"
+        if key in _seen or _depth > max_depth:
+            return []
+        _seen.add(key)
+
+        rows: list[dict] = []
+
+        try:
+            detail = self.get_part_detail(workspace, part_number, version)
+        except Exception as exc:
+            logger.debug(f"get_part_components_flat: 跳过 {key} — {exc}")
+            return []
+
+        # 取最新迭代
+        part_iters = detail.get("partIterations") or []
+        if not part_iters:
+            return []
+        latest = part_iters[-1]
+        iter_num  = int(latest.get("iteration") or 0)
+        part_name = str(detail.get("name") or detail.get("number") or part_number)
+
+        checkout_raw = detail.get("checkOutUser")
+        if isinstance(checkout_raw, dict):
+            check_out_user = str(checkout_raw.get("login") or checkout_raw.get("name") or "")
+        else:
+            check_out_user = str(checkout_raw or "")
+
+        # 根节点自身（_depth==0 时由调用方决定是否追加，此处统一追加）
+        rows.append({
+            "part_number":    part_number,
+            "version":        version,
+            "iteration":      iter_num,
+            "name":           part_name,
+            "check_out_user": check_out_user,
+            "depth":          _depth,
+            "parent_pn":      None if _depth == 0 else None,  # 由递归调用方填入
+            "quantity":       1,
+        })
+
+        # 递归子件
+        components = latest.get("components") or []
+        for comp_link in components:
+            comp = comp_link.get("component") or {}
+            child_pn  = str(comp.get("number") or "").strip()
+            child_ver = str(comp.get("version") or "A").strip() or "A"
+            quantity  = int(comp_link.get("amount") or 1)
+            if not child_pn:
+                continue
+            child_rows = self.get_part_components_flat(
+                workspace, child_pn, child_ver,
+                max_depth=max_depth,
+                _depth=_depth + 1,
+                _seen=_seen,
+            )
+            # 填入 parent_pn 和 quantity
+            if child_rows:
+                child_rows[0]["parent_pn"] = part_number
+                child_rows[0]["quantity"]  = quantity
+            rows.extend(child_rows)
+
+        return rows
+
     def list_part_attachments(
         self,
         workspace: str,
