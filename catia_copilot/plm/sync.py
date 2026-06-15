@@ -6,7 +6,7 @@ CATIA BOM → DocdokuPLM 同步逻辑。
   - 后序深度优先遍历（子节点先于父节点同步）
   - 两阶段执行：
       阶段一：checkout → 属性更新 → 上传附件/STP（所有节点）
-      阶段二：等待所有上传了 STP 的零件转换完成，再批量 checkin
+      阶段二：批量 checkin（PLM 端已支持先签入再异步转换，无需等待转换完成）
   - 返回 SyncResult（汇总创建数、跳过数、失败数）
 
 注意：所有 CATIA COM 调用必须在主线程中完成，BOM 数据提取后
@@ -71,7 +71,7 @@ class OwnCheckedOutPolicy(Enum):
 
 class AfterUpdatePolicy(Enum):
     """所有零件上传完毕后的签入策略。"""
-    CHECKIN       = "checkin"       # 等待转换完成后批量签入（推荐）
+    CHECKIN       = "checkin"       # 所有节点更新完毕后批量签入（推荐）
     KEEP_CHECKOUT = "keep_checkout" # 保留签出状态，不执行签入
 
 
@@ -120,9 +120,8 @@ class SyncOptions:
     tag_rules: list[dict] = field(default_factory=list)
 
     # STP 上传后等待 CAD → OBJ 转换完成的超时时间（秒）。
-    # 转换由 PLM 异步处理，必须在转换结束（零件仍 checked-out）时才写入 geometry。
-    # 设为 0 表示上传后不等待（geometry 可能无法写入）。
-    conversion_timeout_s: int = 120
+    # PLM 端已支持先签入再异步转换，该字段当前不再使用（保留供历史兼容）。
+    conversion_timeout_s: int = 0
 
     # 所有上传完毕后的签入策略：批量签入 或 保留签出
     after_update_policy: AfterUpdatePolicy = AfterUpdatePolicy.CHECKIN
@@ -789,26 +788,13 @@ def sync_bom_to_plm(
     )
 
     # ════════════════════════════════════════════════════════════════════
-    # 阶段二：等待所有 STP 转换完成，再批量 checkin
+    # 阶段二：批量 checkin（PLM 端已支持先签入再异步转换，无需等待）
     # ════════════════════════════════════════════════════════════════════
     keep_checkout = (
         getattr(options, "after_update_policy", AfterUpdatePolicy.CHECKIN)
         == AfterUpdatePolicy.KEEP_CHECKOUT
     )
     if tickets:
-        conversion_tickets = [t for t in tickets if t.needs_conversion]
-        # 保留签出时不需要等待转换（零件不会被签入，geometry 写不写无所谓）
-        if conversion_tickets and not keep_checkout:
-            timeout = getattr(options, "conversion_timeout_s", 120)
-            _cb(f"── 等待 CAD 转换（{len(conversion_tickets)} 个零件，超时 {timeout}s）──")
-            for t in conversion_tickets:
-                if timeout > 0:
-                    _wait_for_conversion(
-                        client, workspace, t.part_number, t.version, t.iteration,
-                        timeout_s=timeout, poll_interval_s=3, cb=_cb,
-                        lbl=t.lbl, source=t.source,
-                    )
-
         if keep_checkout:
             # 保留签出：不执行 checkin，仅输出终态日志行（col3="保留签出"）
             _cb(f"── 保留签出（{len(tickets)} 个零件，不执行签入）──")
