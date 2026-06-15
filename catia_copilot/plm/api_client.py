@@ -43,19 +43,22 @@ class PlmApiClient:
     # 类型：TEXT 或 NUMBER
     _TEMPLATE_ATTRS = [
         # CATIA 内置属性
-        ("中文名称",  "TEXT"),
-        ("版本",      "TEXT"),
-        ("定义",      "TEXT"),
-        ("来源",      "TEXT"),
+        ("中文名称",      "TEXT"),
+        ("版本",          "TEXT"),
+        ("定义",          "TEXT"),
+        ("来源",          "TEXT"),
         # 用户自定义属性
-        ("零件类型",  "TEXT"),
-        ("设计状态",  "TEXT"),
-        ("材料",      "TEXT"),
-        ("重量",      "NUMBER"),
-        ("物料编码",  "TEXT"),
-        ("存货类别",  "TEXT"),
-        ("规格型号",  "TEXT"),
-        ("备注",      "TEXT"),
+        ("零件类型",      "TEXT"),
+        ("设计状态",      "TEXT"),
+        ("材料",          "TEXT"),
+        ("重量",          "NUMBER"),
+        ("物料编码",      "TEXT"),
+        ("存货类别",      "TEXT"),
+        ("规格型号",      "TEXT"),
+        ("备注",          "TEXT"),
+        # PLM 同步状态字段（由程序自动维护，工程师不手动编辑）
+        ("PLM_Version",   "TEXT"),
+        ("PLM_Iteration", "NUMBER"),
     ]
 
     def __init__(self, base_url: str):
@@ -738,3 +741,145 @@ class PlmApiClient:
         """
         ws = urllib.parse.quote(workspace)
         return self._request("GET", f"/workspaces/{ws}/users") or []
+
+    # ── 零件搜索 ─────────────────────────────────────────────────────────────
+
+    def search_parts(
+        self,
+        workspace: str,
+        number: str = "",
+        q: str = "",
+        fetch_head_only: bool = True,
+        page_from: int = 0,
+        size: int = 50,
+    ) -> list[dict]:
+        """按零件号或关键词搜索零件（DocdokuPLM 搜索端点）。
+
+        端点：GET /workspaces/{ws}/parts/search
+        参数：
+            number:          按零件号精确/前缀搜索
+            q:               通用关键词
+            fetch_head_only: 仅返回最新版本（默认 True）
+            page_from:       分页偏移
+            size:            每页条数（默认 50）
+        返回同 list_parts() 格式的列表。
+        """
+        ws     = urllib.parse.quote(workspace)
+        params: dict[str, str] = {
+            "fetchHeadOnly": str(fetch_head_only).lower(),
+            "from":          str(page_from),
+            "size":          str(size),
+        }
+        if number:
+            params["number"] = number
+        if q:
+            params["q"] = q
+        qs = urllib.parse.urlencode(params)
+        return self._request("GET", f"/workspaces/{ws}/parts/search?{qs}") or []
+
+    # ── 零件结构（BOM 树）查询 ────────────────────────────────────────────────
+
+    def get_part_bom(
+        self,
+        workspace: str,
+        product_id: str,
+        config_spec: str = "wip",
+        path: str = "-1",
+    ) -> dict:
+        """获取产品 BOM 树（递归子装配结构）。
+
+        端点：GET /workspaces/{ws}/products/{ciId}/bom
+        参数：
+            product_id:  产品 ID（配置项 ID，通常等于顶层零件号）
+            config_spec: 配置规格（"latest" / "wip"，默认 "wip" 显示未签入的 WIP）
+            path:        路径（"-1" 表示从根开始）
+        返回 ComponentDTO，含嵌套 components 数组。
+        """
+        ws  = urllib.parse.quote(workspace)
+        pid = urllib.parse.quote(product_id)
+        qs  = urllib.parse.urlencode({"configSpec": config_spec, "path": path})
+        return self._request("GET", f"/workspaces/{ws}/products/{pid}/bom?{qs}") or {}
+
+    def list_part_attachments(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        iteration: int,
+    ) -> list[str]:
+        """获取零件迭代的附件文件名列表（attachedfiles）。
+
+        端点：GET /workspaces/{ws}/parts/{pn}-{ver}/iterations/{iter}
+        从迭代详情的 attachedFiles 字段提取文件名列表。
+        """
+        ws   = urllib.parse.quote(workspace)
+        pn   = urllib.parse.quote(part_number)
+        path = f"/workspaces/{ws}/parts/{pn}-{version}/iterations/{iteration}"
+        result = self._request("GET", path) or {}
+        attached = result.get("attachedFiles") or []
+        return [f.get("name", "") for f in attached if f.get("name")]
+
+    def download_attached_file(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+        iteration: int,
+        filename: str,
+        dest_path: str,
+        sub_type: str = "attachedfiles",
+        progress_cb=None,
+    ) -> None:
+        """下载零件迭代的附件到本地路径。
+
+        端点：GET /files/{ws}/parts/{pn}/{ver}/{iter}/{subType}/{fileName}
+        参数：
+            sub_type:    "attachedfiles"（普通附件）或 "nativecad"（CAD 几何文件）
+            dest_path:   本地保存路径（完整文件路径）
+            progress_cb: 可选回调 progress_cb(downloaded_bytes, total_bytes, speed_bps)
+                         其中 speed_bps 为本次调用的瞬时速度（字节/秒），total_bytes 为 0
+                         表示服务端未返回 Content-Length。
+        """
+        import time as _time_mod
+
+        ws  = urllib.parse.quote(workspace,   safe="")
+        pn  = urllib.parse.quote(part_number, safe="")
+        fn  = urllib.parse.quote(filename,    safe="")
+        url = f"{self._base}/files/{ws}/parts/{pn}/{version}/{iteration}/{sub_type}/{fn}"
+
+        headers = self._headers({"Content-Type": None})
+        # 去掉 Content-Type（GET 请求不需要）
+        headers = {k: v for k, v in headers.items() if k != "Content-Type"}
+        req = urllib.request.Request(url, headers=headers, method="GET")
+
+        import os as _os_mod
+        _os_mod.makedirs(_os_mod.path.dirname(dest_path), exist_ok=True)
+
+        try:
+            with self._opener.open(req, timeout=300) as resp:
+                total = int(resp.headers.get("Content-Length") or 0)
+                downloaded = 0
+                chunk_size = 65536  # 64 KB
+                t0 = _time_mod.monotonic()
+                with open(dest_path, "wb") as fout:
+                    while True:
+                        chunk = resp.read(chunk_size)
+                        if not chunk:
+                            break
+                        fout.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_cb:
+                            elapsed = _time_mod.monotonic() - t0
+                            speed   = downloaded / elapsed if elapsed > 0 else 0
+                            progress_cb(downloaded, total, speed)
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode(errors="replace")
+            except Exception:
+                pass
+            raise PlmApiError(
+                f"下载附件失败 {part_number}/{filename}: HTTP {exc.code} — {body[:200]}",
+                exc.code,
+            ) from exc
+        logger.debug(f"PLM 附件已下载：{part_number}-{version}/{iteration}/{filename} → {dest_path}")

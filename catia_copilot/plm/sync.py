@@ -1404,6 +1404,14 @@ def _do_checkin_ticket(
     # 终态行：col1/col2/col3 均非空，UI 触发一次 node_done
     cb(_log_row(ticket.source, ticket.update_col, col3, ticket.lbl))
 
+    # ── 签入成功后：将 PLM_Version / PLM_Iteration 写回 CATIA 文件 ────────────
+    if col3 == "已签入" and ticket.node.filepath and _os.path.isfile(ticket.node.filepath):
+        _write_plm_attrs_to_catia(
+            ticket.node.filepath,
+            ticket.version,
+            ticket.iteration,
+        )
+
     # ── Tag 自动映射（checkin 后执行，不影响主流程） ─────────────────────────
     if ticket.update_ok and options.tag_rules:
         design_state = (ticket.node.attrs.get("设计状态") or "").strip()
@@ -1423,3 +1431,84 @@ def _do_checkin_ticket(
                 except PlmApiError as exc:
                     logger.warning(f"Tag 写入失败（不影响同步）：{ticket.lbl} — {exc}")
                     result.errors.append(f"{ticket.lbl}: Tag 写入失败 — {exc}")
+
+
+def _write_plm_attrs_to_catia(
+    filepath: str,
+    plm_version: str,
+    plm_iteration: int,
+) -> None:
+    """将 PLM_Version 和 PLM_Iteration 写回 CATIA 文件的用户自定义属性。
+
+    在后台线程中调用（已由调用方保证 CoInitialize），通过 COM 操作 CATIA 文档。
+    若 CATIA 未运行或文件未打开，则静默跳过，只记录 debug 日志。
+    """
+    try:
+        import pythoncom as _pcom_local
+        import win32com.client as _win32_local
+
+        try:
+            catia = _win32_local.GetActiveObject("CATIA.Application")
+        except Exception:
+            logger.debug(f"PLM 属性写回跳过（CATIA 未运行）：{filepath}")
+            return
+
+        # 在已打开的文档列表中找到对应文件
+        doc = None
+        try:
+            docs = catia.Documents
+            for i in range(1, docs.Count + 1):
+                try:
+                    d = docs.Item(i)
+                    if d.FullName.lower() == filepath.lower():
+                        doc = d
+                        break
+                except Exception:
+                    continue
+        except Exception as exc:
+            logger.debug(f"PLM 属性写回：遍历文档失败 — {exc}")
+            return
+
+        if doc is None:
+            logger.debug(f"PLM 属性写回跳过（文档未在 CATIA 中打开）：{filepath}")
+            return
+
+        # 获取零件根对象（PartDocument → Part；ProductDocument → Product）
+        try:
+            doc_type = doc.get_Type()
+        except Exception:
+            doc_type = ""
+
+        try:
+            if "Part" in doc_type:
+                root_obj = doc.Part
+            elif "Product" in doc_type:
+                root_obj = doc.Product
+            else:
+                logger.debug(f"PLM 属性写回：未知文档类型 {doc_type}，跳过 {filepath}")
+                return
+
+            params = root_obj.UserRefProperties
+            # 写入 PLM_Version（TEXT）
+            try:
+                p = params.GetItem("PLM_Version")
+                p.ValuateFromString(str(plm_version))
+            except Exception:
+                params.CreateString("PLM_Version", str(plm_version))
+
+            # 写入 PLM_Iteration（INTEGER，以字符串方式写入，CATIA 会自动转换）
+            try:
+                p = params.GetItem("PLM_Iteration")
+                p.ValuateFromString(str(int(plm_iteration)))
+            except Exception:
+                params.CreateInteger("PLM_Iteration", int(plm_iteration))
+
+            doc.Save()
+            logger.info(
+                f"PLM 属性已写回 CATIA：{_os.path.basename(filepath)} "
+                f"→ PLM_Version={plm_version}, PLM_Iteration={plm_iteration}"
+            )
+        except Exception as exc:
+            logger.warning(f"PLM 属性写回失败（不影响同步）：{filepath} — {exc}")
+    except Exception as exc:
+        logger.debug(f"PLM 属性写回异常（已忽略）：{exc}")
