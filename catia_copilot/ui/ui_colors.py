@@ -32,7 +32,9 @@
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 

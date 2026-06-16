@@ -38,7 +38,6 @@ import os
 import subprocess
 import sys
 import threading
-from pathlib import Path
 from typing import Callable, Optional
 
 import win32api
@@ -46,8 +45,8 @@ import win32con
 import win32gui
 import win32process
 
-from catia_copilot.utils import resource_path
 from catia_copilot.catia.macro import CATIA_COPILOT_MODULES
+from catia_copilot.utils import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -919,7 +918,9 @@ class CATIAEmbedManager:
         # 函数级懒加载以避免循环导入，PyInstaller 能通过 main_window 的顶层导入
         # 链追踪到此模块，不会漏打包。
         try:
-            from catia_copilot.ui.main_window import MainWindow  # noqa: PLC0415 — 循环依赖，必须懒加载
+            from catia_copilot.ui.main_window import (
+                MainWindow,  # noqa: PLC0415 — 循环依赖，必须懒加载
+            )
             L = MainWindow._ACTION_LABELS
         except Exception:
             L = {}

@@ -1133,6 +1133,7 @@ def _pad_geometry(pad) -> dict:
       sk_edge_count : 草图边数（矩形=4，圆=1，...）
     """
     import math
+
     from pycatia.sketcher_interfaces.sketch import Sketch as PySketch
 
     def _cross(a, b):
@@ -1205,7 +1206,6 @@ def get_pad_faces(part, pad) -> list[dict]:
     ----
     list[dict]，顺序：顶面、底面、侧面 1…N
     """
-    import math
 
     def _neg(v): return tuple(-x for x in v)
 
@@ -1384,6 +1384,7 @@ def _pocket_geometry(pocket) -> dict:
       depth         : 挖槽深度
     """
     import math
+
     from pycatia.sketcher_interfaces.sketch import Sketch as PySketch
 
     psk    = PySketch(pocket.sketch.com_object)

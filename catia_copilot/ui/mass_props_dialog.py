@@ -18,56 +18,75 @@ import csv
 import ctypes
 import logging
 import math
-import subprocess
 import uuid
 from pathlib import Path
 
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from PySide6.QtCore import QByteArray, QSettings, Qt, QUrl
+from PySide6.QtGui import QBrush, QDesktopServices, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QTreeWidgetItem, QHeaderView, QAbstractItemView,
-    QCheckBox, QGroupBox, QMessageBox, QApplication,
-    QFileDialog, QProgressDialog, QLineEdit, QGridLayout, QFrame,
-    QRadioButton, QButtonGroup, QWidget, QComboBox,
+    QAbstractItemView,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
     QMenu,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QRadioButton,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtGui import QBrush, QFont, QDesktopServices, QShortcut, QKeySequence
-from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
 
+from catia_copilot.catia.connection import open_document
+from catia_copilot.catia.mass_props_calc import rollup_mass_properties
+from catia_copilot.catia.mass_props_collect import (
+    _compute_root_mp_from_placement,
+    _identity_4x4,
+    _mat4_mul,
+    _measure_part_mass_props,
+    _measure_part_mass_props_analyze,
+    _position_to_mat4,
+    _rollup_one_product,
+    _row_inertia_to_root,
+    collect_mass_props_rows,
+    load_rows,
+    merge_rows,
+    recompute_product_rows,
+    save_rows,
+)
 from catia_copilot.constants import (
-    MASS_PROPS_COLUMNS,
+    FILENAME_UNSAVED,
     MASS_PROPS_COLUMN_DISPLAY_NAMES,
     MASS_PROPS_HIDEABLE_COLUMNS,
     MASS_PROPS_READONLY_COLUMNS,
-    FILENAME_NOT_FOUND,
-    FILENAME_UNSAVED,
     MAX_INERTIA_INDEX,
-    BomNodeType,
     TYPE_DISPLAY_NAMES,
+    BomNodeType,
 )
-from catia_copilot.catia.mass_props_collect import (
-    collect_mass_props_rows, _row_inertia_to_root, recompute_product_rows,
-    save_rows, load_rows, merge_rows,
-    _compute_root_mp_from_placement, _rollup_one_product,
-    _measure_part_mass_props, _measure_part_mass_props_analyze,
-    _position_to_mat4, _mat4_mul, _identity_4x4,
-)
-from catia_copilot.catia.mass_props_calc import rollup_mass_properties
-from catia_copilot.ui.ui_colors import (
-    EXCL_BG   as _EXCL_BG_COLOR,
-    EXCL_FG   as _EXCL_FG_COLOR,
-    MIRROR_BG as _MIRROR_BG_COLOR,
-    ROW_LOCKED_FG, ROW_NOT_FOUND_BG, ROW_MEAS_FAILED_BG,
-    ROW_LIGHTWEIGHT_BG, ROW_UNSAVED_BG, ROW_PRODUCT_BG,
-    get_colors as _get_colors,
+from catia_copilot.ui.bom_widgets import (
+    _BomSortItem,
+    _BomTreeWidget,
+    _RowHeightDelegate,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
-from catia_copilot.ui.bom_widgets import _BomTreeWidget, _BomSortItem, _RowHeightDelegate
+from catia_copilot.ui.ui_colors import (
+    get_colors as _get_colors,
+)
 from catia_copilot.ui.ui_layout import L
 from catia_copilot.utils import estimate_column_width
-from catia_copilot.catia.connection import open_document
 
 logger = logging.getLogger(__name__)
 
@@ -3118,7 +3137,7 @@ class MassPropsDialog(QDialog):
             msg += f"，另同步 {len(sibling_updated)} 个子树外同零件实例"
         msg += "。"
         if failed_pns:
-            msg += f"\n\n以下零件刷新失败：\n" + "\n".join(f"  • {p}" for p in failed_pns[:10])
+            msg += "\n\n以下零件刷新失败：\n" + "\n".join(f"  • {p}" for p in failed_pns[:10])
             QMessageBox.warning(self, "部分刷新失败", msg)
         else:
             QMessageBox.information(self, "刷新完成", msg)

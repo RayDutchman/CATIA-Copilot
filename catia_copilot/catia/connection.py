@@ -21,9 +21,9 @@ from pycatia.in_interfaces.application import Application as _PyApplication
 from pycatia.product_structure_interfaces.product import Product as _PyProduct
 
 from catia_copilot.utils import (
+    _is_catia_process_running,
     detect_catia_root,
     get_catia_v5_com_dispatch,
-    _is_catia_process_running,
     open_catia_file,
 )
 

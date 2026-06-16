@@ -66,16 +66,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from catia_copilot.constants import (
-    FILENAME_NOT_FOUND,
-    FILENAME_UNSAVED,
-    BomNodeType,
-    PRODUCT_ATTR_READ_MAP,
-    CATIA_DESIGN_MODE,
-)
 from catia_copilot.catia.bom_collect import flatten_bom_to_summary  # noqa: F401
 from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.constants import (
+    CATIA_DESIGN_MODE,
+    FILENAME_NOT_FOUND,
+    FILENAME_UNSAVED,
+    PRODUCT_ATTR_READ_MAP,
+    BomNodeType,
+)
 
 logger = logging.getLogger(__name__)
 

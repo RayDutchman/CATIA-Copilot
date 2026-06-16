@@ -10,14 +10,14 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from catia_copilot.constants import (
-    BOM_READONLY_COLUMNS,
-    SOURCE_FROM_DISPLAY,
-    PRODUCT_ATTR_WRITE_MAP,
-    CATIA_DESIGN_MODE,
-    BOM_INSTANCE_NAME_COLUMN,
-)
 from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.constants import (
+    BOM_INSTANCE_NAME_COLUMN,
+    BOM_READONLY_COLUMNS,
+    CATIA_DESIGN_MODE,
+    PRODUCT_ATTR_WRITE_MAP,
+    SOURCE_FROM_DISPLAY,
+)
 
 logger = logging.getLogger(__name__)
 

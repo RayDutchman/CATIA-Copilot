@@ -13,6 +13,7 @@ CATIA Copilot 实用工具函数模块。
 
 import ctypes
 import ctypes.wintypes as _wt
+import logging
 import os
 import shutil
 import struct
@@ -21,14 +22,13 @@ import sys
 import tempfile
 import unicodedata
 import winreg
-import logging
 from pathlib import Path
 from typing import Any
 
 import pythoncom
-import win32gui
-import win32con
 import win32com.client as _wcc
+import win32con
+import win32gui
 from win32com.client import gencache as _gencache
 
 try:

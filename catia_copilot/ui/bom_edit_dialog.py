@@ -12,49 +12,82 @@ import logging
 from pathlib import Path
 
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-
-from PySide6.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QTreeWidgetItem, QHeaderView, QAbstractItemView,
-    QComboBox, QCheckBox, QGroupBox, QMessageBox, QApplication,
-    QFileDialog, QProgressDialog, QRadioButton, QButtonGroup, QSpinBox, QGridLayout,
-    QMenu, QWidgetAction, QLineEdit,
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from PySide6.QtCore import QByteArray, QSettings, Qt, QUrl
+from PySide6.QtGui import (
+    QBrush,
+    QCloseEvent,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QKeySequence,
+    QPalette,
+    QPixmap,
+    QShortcut,
 )
-from PySide6.QtGui import QPixmap, QKeySequence, QCloseEvent, QDesktopServices, QShortcut, QBrush, QPalette, QColor, QFont
-from PySide6.QtCore import Qt, QSettings, QByteArray, QUrl
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QRadioButton,
+    QSpinBox,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
+)
 
+from catia_copilot.catia.bom_collect import (
+    collect_bom_rows_archive,
+    flatten_bom_to_summary,
+)
+from catia_copilot.catia.bom_write import write_bom_to_catia
+from catia_copilot.catia.connection import open_document
+from catia_copilot.catia.document import rename_document
 from catia_copilot.constants import (
-    PRESET_USER_REF_PROPERTIES,
-    PRESET_USER_REF_PROPERTY_OPTIONS,
-    BOM_EDIT_COLUMN_ORDER,
     BOM_COLUMN_DISPLAY_NAMES,
-    BOM_READONLY_COLUMNS,
+    BOM_EDIT_COLUMN_ORDER,
     BOM_HIDEABLE_COLUMNS,
+    BOM_READONLY_COLUMNS,
     BOM_ROW_NUMBER_COLUMN,
-    SOURCE_TO_DISPLAY,
-    SOURCE_OPTIONS,
-    PART_NUMBER_VALID_PATTERN,
+    BOM_THUMBNAIL_MAX_SIZE,
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,
-    BOM_THUMBNAIL_MAX_SIZE,
-    BomNodeType,
+    PART_NUMBER_VALID_PATTERN,
+    PRESET_USER_REF_PROPERTIES,
+    PRESET_USER_REF_PROPERTY_OPTIONS,
+    SOURCE_OPTIONS,
+    SOURCE_TO_DISPLAY,
     TYPE_DISPLAY_NAMES,
+    BomNodeType,
 )
-from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
-from catia_copilot.catia.bom_write import write_bom_to_catia
-from catia_copilot.utils import read_catia_thumbnail
-from catia_copilot.ui.bom_widgets import _BomTreeDelegate, _BomTreeWidget, _ITEM_LOCKED_ROLE, _BomSortItem
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
-from catia_copilot.ui.ui_colors import (
-    MODIFIED_FG          as _MODIFIED_FG,
-    ROW_LOCKED_FG, ROW_NOT_FOUND_BG, ROW_LIGHTWEIGHT_BG, ROW_UNSAVED_BG,
-    get_colors as _get_colors,
+from catia_copilot.ui.bom_widgets import (
+    _ITEM_LOCKED_ROLE,
+    _BomSortItem,
+    _BomTreeDelegate,
+    _BomTreeWidget,
 )
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
+from catia_copilot.ui.ui_colors import (
+    get_colors as _get_colors,
+)
 from catia_copilot.ui.ui_layout import L
-from catia_copilot.catia.document import rename_document
-from catia_copilot.catia.connection import open_document
+from catia_copilot.utils import read_catia_thumbnail
 
 logger = logging.getLogger(__name__)
 

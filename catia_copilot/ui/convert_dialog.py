@@ -12,12 +12,26 @@ import logging
 import re
 from pathlib import Path
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QFileDialog,
-    QAbstractItemView, QRadioButton, QButtonGroup, QLineEdit, QGroupBox,
-    QCheckBox, QPushButton, QMessageBox, QProgressBar, QApplication, QWidget,
+    QAbstractItemView,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QSettings
 
 from catia_copilot.catia.connection import get_active_document_path
 

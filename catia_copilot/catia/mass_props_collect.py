@@ -54,14 +54,15 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 
-
-
-from catia_copilot.constants import (
-    FILENAME_NOT_FOUND, FILENAME_UNSAVED, MAX_INERTIA_INDEX, BomNodeType,
-    CATIA_DESIGN_MODE, CATIA_VISUALIZATION_MODE,
-)
-from catia_copilot.catia.document import get_bom_node_type
 from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
+from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.constants import (
+    CATIA_DESIGN_MODE,
+    FILENAME_NOT_FOUND,
+    FILENAME_UNSAVED,
+    MAX_INERTIA_INDEX,
+    BomNodeType,
+)
 
 logger = logging.getLogger(__name__)
 

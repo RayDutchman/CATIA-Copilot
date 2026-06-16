@@ -11,6 +11,7 @@ PLM 同步对话框。
 import logging
 
 from PySide6.QtCore import QSettings, QThread, Signal
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -29,7 +30,6 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
 )
-from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
 
 from catia_copilot.plm.api_client import PlmApiClient, PlmApiError
 from catia_copilot.plm.sync import (

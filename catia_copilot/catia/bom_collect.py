@@ -16,12 +16,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from catia_copilot.constants import (
-    FILENAME_NOT_FOUND, FILENAME_UNSAVED, BomNodeType, PRODUCT_ATTR_READ_MAP,
-    CATIA_DESIGN_MODE, CATIA_VISUALIZATION_MODE, BOM_INSTANCE_NAME_COLUMN,
-)
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.constants import (
+    BOM_INSTANCE_NAME_COLUMN,
+    CATIA_DESIGN_MODE,
+    FILENAME_NOT_FOUND,
+    FILENAME_UNSAVED,
+    PRODUCT_ATTR_READ_MAP,
+    BomNodeType,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -21,28 +21,28 @@ import tempfile
 import time
 import time as _time
 import urllib.parse as _up
-import win32com.client as _win32
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path, Path as _Path
+from pathlib import Path as _Path
 from typing import Any
 
 import pythoncom as _pcom
+import win32com.client as _win32
 
+from catia_copilot.catia.bom_collect_v3 import (
+    CollectConfig,
+    MatrixCollectConfig,
+    collect_bom_part_masters,
+)
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.conversion import convert_drawing_to_pdf
 from catia_copilot.catia.dependencies import find_drawing_for_part
 from catia_copilot.catia.document import get_bom_node_type, set_document_properties
-from catia_copilot.catia.bom_collect_v3 import (
-    collect_bom_part_masters,
-    CollectConfig,
-    MatrixCollectConfig,
-)
 from catia_copilot.constants import (
-    PRESET_USER_REF_PROPERTIES,
     PLM_BUILTIN_ATTR_COLS,
-    BomNodeType,
+    PRESET_USER_REF_PROPERTIES,
     SOURCE_TO_DISPLAY,
+    BomNodeType,
 )
 from catia_copilot.plm.api_client import PlmApiError
 

@@ -22,36 +22,39 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
+from catia_copilot.catia.bom_collect import (
+    collect_bom_rows_archive,
+    flatten_bom_to_summary,
+)
+from catia_copilot.catia.bom_export import export_bom_to_excel
+from catia_copilot.catia.bom_write import write_bom_to_catia
+from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
+from catia_copilot.catia.dependencies import (
+    find_dependencies,
+    find_drawing_for_part,
+    find_part_for_drawing,
+    find_reverse_dependencies,
+)
+from catia_copilot.catia.document import (
+    get_document_properties,
+    get_document_type,
+    set_document_properties,
+)
+from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
+from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
+from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
+from catia_copilot.catia.template import apply_part_template
+from catia_copilot.constants import (
+    BOM_DEFAULT_COLUMNS,
+    PRESET_USER_REF_PROPERTIES,
+    PRESET_USER_REF_PROPERTY_OPTIONS,
+)
 from catia_copilot.utils import (
     check_catia_connection,
     diagnose_catia_connection,
     get_catia_v5_com_dispatch,
     open_catia_file,
 )
-from catia_copilot.constants import (
-    BOM_DEFAULT_COLUMNS,
-    PRESET_USER_REF_PROPERTIES,
-    PRESET_USER_REF_PROPERTY_OPTIONS,
-)
-from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
-from catia_copilot.catia.bom_export import export_bom_to_excel
-from catia_copilot.catia.bom_write import write_bom_to_catia
-from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
-from catia_copilot.catia.dependencies import (
-    find_dependencies,
-    find_reverse_dependencies,
-    find_part_for_drawing,
-    find_drawing_for_part,
-)
-from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
-from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
-from catia_copilot.catia.template import apply_part_template
-from catia_copilot.catia.document import (
-    get_document_type,
-    get_document_properties,
-    set_document_properties,
-)
-from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
 
 logger = logging.getLogger(__name__)
 
@@ -1230,7 +1233,11 @@ def tool_run_modeling_script(
         progress_signal.emit("build(ctx) 执行完成，正在读取模型状态...")
 
     try:
-        from catia_copilot.catia.modeling import get_active_part, list_features, get_mass_props
+        from catia_copilot.catia.modeling import (
+            get_active_part,
+            get_mass_props,
+            list_features,
+        )
         part     = get_active_part()
         features = list_features(part)
         mp       = get_mass_props(part)

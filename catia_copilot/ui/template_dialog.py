@@ -13,9 +13,14 @@
 """
 
 import logging
+
 from PySide6.QtCore import QByteArray, QSettings
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
 )
 
 logger = logging.getLogger(__name__)

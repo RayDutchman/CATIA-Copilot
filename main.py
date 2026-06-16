@@ -7,15 +7,15 @@ CATIA Copilot - 应用程序入口点。
 
 import sys
 
-# 确保在创建任何控件之前初始化日志系统和 Qt 信号发射器
-import catia_copilot.logging_setup  # noqa: F401
-
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
-from catia_copilot.utils import resource_path, ensure_clean_gencache
+
+# 确保在创建任何控件之前初始化日志系统和 Qt 信号发射器
+import catia_copilot.logging_setup  # noqa: F401
 from catia_copilot.constants import APP_ICON_PATH
 from catia_copilot.ui.main_window import MainWindow
+from catia_copilot.utils import ensure_clean_gencache, resource_path
 
 
 def main() -> None:

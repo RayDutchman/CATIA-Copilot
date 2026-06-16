@@ -13,14 +13,23 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QPushButton, QSpinBox, QSlider,
-    QComboBox, QDialogButtonBox, QFileDialog, QWidget,
-    QCheckBox, QMessageBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 from catia_copilot.ai import config as ai_config

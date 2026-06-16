@@ -1,8 +1,13 @@
 """BOM 树控件：自定义委托与 QTreeWidget 封装。"""
 
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem, QWidget
-from PySide6.QtCore import Qt, QSize, QModelIndex, QRect, QPersistentModelIndex
-from PySide6.QtGui import QPainter, QPen, QColor
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QRect, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import (
+    QStyledItemDelegate,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QWidget,
+)
 
 from catia_copilot.constants import BOM_READONLY_COLUMNS
 from catia_copilot.ui.theme_manager import _STYLE_NAME, theme_manager

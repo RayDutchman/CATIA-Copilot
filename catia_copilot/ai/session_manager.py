@@ -37,8 +37,6 @@ from typing import Any
 
 from catia_copilot.ai.session import ChatSession
 
-import sys
-
 logger = logging.getLogger(__name__)
 
 # 会话目录统一存放在 %APPDATA%\CATIA Copilot\ai_sessions\，开发与打包环境行为一致。

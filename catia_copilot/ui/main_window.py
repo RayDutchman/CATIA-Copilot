@@ -5,62 +5,98 @@
 - MainWindow – 带有分组按钮 UI 和菜单栏的主 QMainWindow。
 """
 
-import sys
+import ctypes
+import logging
 import os
 import re
 import shutil
 import subprocess
-import ctypes
+import sys
 import tempfile
-import logging
 from collections.abc import Callable
-from pathlib import Path
 from ctypes import wintypes
+from pathlib import Path
 
-from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QFileDialog, QInputDialog,
-    QDialog, QTabWidget, QScrollArea, QPlainTextEdit,
-    QSizePolicy, QListWidget, QListWidgetItem, QDialogButtonBox, QMenu,
+import win32con
+import win32gui
+from PySide6.QtCore import (
+    QByteArray,
+    QPoint,
+    QSettings,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
 )
-from PySide6.QtGui import QAction, QIcon, QFont, QFontMetrics, QGuiApplication
-from PySide6.QtCore import Qt, QTimer, QRect, QSettings, Slot, Signal, QPoint, QByteArray
+from PySide6.QtGui import QFont, QFontMetrics, QGuiApplication
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from catia_copilot.ui.theme_manager import theme_manager
+from catia_copilot.catia.connection import get_catia_v5_application, open_document
+from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
+from catia_copilot.catia.dependencies import (
+    find_drawing_for_part,
+    find_part_for_drawing,
+)
+from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
+from catia_copilot.catia.macro import CATIA_COPILOT_MODULES
+from catia_copilot.catia.macro import run_macro as _catia_run_macro
+from catia_copilot.catia.template import apply_part_template
 from catia_copilot.constants import (
-    APP_NAME,
     ABOUT_TEXT,
-    MAIN_WINDOW_DEFAULT_WIDTH,
-    MAIN_WINDOW_DEFAULT_HEIGHT,
+    AI_TAB_LABEL,
+    APP_NAME,
+    CRACK_DIR_PATH,
     FONT_FILE_PATH,
     ISO_XML_FILE_PATH,
-    CRACK_DIR_PATH,
-    AI_TAB_LABEL,
+    MAIN_WINDOW_DEFAULT_HEIGHT,
+    MAIN_WINDOW_DEFAULT_WIDTH,
 )
-import win32gui
-import win32con
-from catia_copilot.utils import resource_path, detect_catia_root, check_catia_connection, diagnose_catia_connection
-from catia_copilot.logging_setup import log_signal_emitter, LOG_FILE
-from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
-from catia_copilot.catia.template import apply_part_template
-from catia_copilot.catia.connection import get_catia_v5_application, open_document
-from catia_copilot.catia.macro import run_macro as _catia_run_macro, CATIA_COPILOT_MODULES
-from catia_copilot.catia.dependencies import find_drawing_for_part, find_part_for_drawing
-from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
-from catia_copilot.ui.convert_dialog import FileConvertDialog
-from catia_copilot.ui.export_bom_dialog import ExportBomDialog
-from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
+from catia_copilot.logging_setup import LOG_FILE, log_signal_emitter
+from catia_copilot.ui.ai_chat_panel import AIChatPanel
 from catia_copilot.ui.bom_edit_dialog import BomEditDialog
 from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
 from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
-from catia_copilot.ui.mass_props_dialog import MassPropsDialog
-from catia_copilot.ui.help_dialog import HelpDialog
-from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
+from catia_copilot.ui.catia_embed import (
+    DEFAULT_ANCHOR,
+    DEFAULT_ANCHOR_DX,
+    DEFAULT_ANCHOR_DY,
+    CATIAEmbedManager,
+)
 from catia_copilot.ui.catia_sidebar import CATIASidebarManager
+from catia_copilot.ui.convert_dialog import FileConvertDialog
+from catia_copilot.ui.export_bom_dialog import ExportBomDialog
+from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
+from catia_copilot.ui.help_dialog import HelpDialog
+from catia_copilot.ui.mass_props_dialog import MassPropsDialog
+from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
 from catia_copilot.ui.plm_workbench import PlmWorkbench
 from catia_copilot.ui.template_dialog import TemplateDialog
-from catia_copilot.ui.catia_embed import CATIAEmbedManager, DEFAULT_ANCHOR, DEFAULT_ANCHOR_DX, DEFAULT_ANCHOR_DY
-from catia_copilot.ui.ai_chat_panel import AIChatPanel
+from catia_copilot.ui.theme_manager import theme_manager
+from catia_copilot.utils import (
+    check_catia_connection,
+    detect_catia_root,
+    diagnose_catia_connection,
+    resource_path,
+)
 
 logger = logging.getLogger(__name__)
 

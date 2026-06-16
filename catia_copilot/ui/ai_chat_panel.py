@@ -23,29 +23,65 @@ import time
 import traceback
 import urllib.request
 from pathlib import Path
-from typing import Any
-from PySide6.QtCore import Qt, QEvent, QRect, QSizeF, Signal, Slot, QTimer, QSettings, QThread
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPalette, QTextCursor, QKeyEvent
+
+from PySide6.QtCore import (
+    QEvent,
+    QRect,
+    QSettings,
+    QSizeF,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QPainter,
+    QPalette,
+    QPen,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QLabel, QPushButton, QTextEdit, QTextBrowser,
-    QFrame, QSizePolicy, QDialog, QFormLayout,
-    QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox,
-    QDialogButtonBox, QListWidget, QListWidgetItem,
-    QMenu, QInputDialog, QMessageBox, QSplitter, QSplitterHandle, QFileDialog,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpinBox,
+    QSplitter,
+    QSplitterHandle,
+    QTextBrowser,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
-from catia_copilot.ui.theme_manager import theme_signal, theme_manager
-from catia_copilot.ui.ui_colors import get_chat_colors
-from catia_copilot.ui.ui_layout import L
 from catia_copilot.ai import config as ai_config
 from catia_copilot.ai.agent import AgentWorker
 from catia_copilot.ai.config import fetch_models_from_api
-from catia_copilot.ai.tools import tools_map, DEFAULT_SYSTEM_PROMPT
 from catia_copilot.ai.session import ChatSession
 from catia_copilot.ai.session_manager import SessionManager
+from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT, tools_map
 from catia_copilot.ui.session_config_dialog import SessionConfigDialog
+from catia_copilot.ui.theme_manager import theme_manager, theme_signal
+from catia_copilot.ui.ui_colors import get_chat_colors
+from catia_copilot.ui.ui_layout import L
 
 logger = logging.getLogger(__name__)
 

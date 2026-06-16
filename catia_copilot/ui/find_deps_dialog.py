@@ -19,37 +19,50 @@
     • strip_prefix_scan_dirs：去前缀后按同名文件扫描
 """
 
-import logging
 import ctypes
+import logging
 from pathlib import Path
 
+from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QBrush, QColor, QFont, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QMessageBox, QApplication,
-    QGroupBox, QCheckBox, QSplitter, QWidget,
-    QTreeWidget, QTreeWidgetItem, QHeaderView, QAbstractItemView,
-    QMenu, QWidgetAction,
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
 )
-from PySide6.QtCore import Qt, QSettings
-from PySide6.QtGui import QColor, QPixmap, QFont, QBrush
 
+from catia_copilot.catia.connection import get_active_document_path, open_document
 from catia_copilot.catia.dependencies import (
     find_dependencies,
-    find_reverse_dependencies,
-    find_part_for_drawing,
     find_drawing_for_part,
+    find_part_for_drawing,
+    find_reverse_dependencies,
 )
 from catia_copilot.constants import (
+    BOM_THUMBNAIL_MAX_SIZE,
     DRAWING_SEARCH_STRATEGIES,
-    SEARCH_MAX_LEVELS,
     PART_TO_DRAWING_STRATEGIES,
     SEARCH_MAX_LEVELS,
-    BOM_THUMBNAIL_MAX_SIZE,
 )
-from catia_copilot.utils import read_catia_thumbnail, bring_catia_to_foreground
-from catia_copilot.catia.connection import get_active_document_path, open_document
-from catia_copilot.ui.ui_colors import get_colors
 from catia_copilot.ui.theme_manager import theme_manager
+from catia_copilot.ui.ui_colors import get_colors
+from catia_copilot.utils import bring_catia_to_foreground, read_catia_thumbnail
 
 logger = logging.getLogger(__name__)
 

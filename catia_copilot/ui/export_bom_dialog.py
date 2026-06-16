@@ -7,25 +7,39 @@ BOM 导出对话框。
 
 import ctypes
 import logging
-import subprocess
 from pathlib import Path
 
-from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QFileDialog, QAbstractItemView, QRadioButton, QButtonGroup, QLineEdit,
-    QGroupBox, QPushButton, QMessageBox, QProgressDialog, QApplication,
-    QCheckBox, QComboBox, QWidget,
-)
-from PySide6.QtCore import Qt, QSettings, QUrl
+from PySide6.QtCore import QSettings, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QProgressDialog,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from catia_copilot.catia.bom_export import export_bom_to_excel
 from catia_copilot.constants import (
     BOM_ALL_COLUMNS,
+    BOM_COLUMN_DISPLAY_NAMES,
     BOM_DEFAULT_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
-    BOM_COLUMN_DISPLAY_NAMES,
 )
-from catia_copilot.catia.bom_export import export_bom_to_excel
 
 logger = logging.getLogger(__name__)
 

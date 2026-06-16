@@ -5,13 +5,20 @@
 - LogWindow – 显示应用程序日志的浮动、不可关闭 QWidget
 """
 
-import sys
+import logging
 import os
 import subprocess
-import logging
+import sys
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPlainTextEdit, QPushButton, QLabel, QMessageBox
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from catia_copilot.logging_setup import LOG_FILE
 

@@ -11,19 +11,21 @@ from collections.abc import Callable
 from pathlib import Path
 
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from PySide6.QtWidgets import QMessageBox
 
+from catia_copilot.catia.bom_collect import (
+    collect_bom_rows_archive,
+    flatten_bom_to_summary,
+)
 from catia_copilot.catia.connection import get_catia_v5_application
-
 from catia_copilot.constants import (
-    BOM_DEFAULT_COLUMNS,
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_COLUMN_MIN_WIDTHS,
+    BOM_DEFAULT_COLUMNS,
     SOURCE_TO_DISPLAY,
 )
 from catia_copilot.utils import estimate_column_width
-from catia_copilot.catia.bom_collect import collect_bom_rows_archive, flatten_bom_to_summary
 
 logger = logging.getLogger(__name__)
 

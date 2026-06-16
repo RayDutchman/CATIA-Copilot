@@ -11,15 +11,14 @@ from __future__ import annotations
 
 import json
 import logging
-import requests
 from pathlib import Path
 from typing import Any
+
+import requests
 
 logger = logging.getLogger(__name__)
 
 # 配置文件统一存放在 %APPDATA%\CATIA Copilot\，开发与打包环境行为一致。
-import sys as _sys
-import os as _os
 
 _USER_DATA_DIR = Path.home() / "AppData" / "Roaming" / "CATIA Copilot"
 _USER_DATA_DIR.mkdir(parents=True, exist_ok=True)

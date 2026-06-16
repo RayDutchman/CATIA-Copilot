@@ -16,13 +16,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pythoncom
-from typing import cast
 from datetime import datetime
 from functools import partial
+from typing import cast
 
+import pythoncom
 import shiboken6
-from PySide6.QtCore import QSettings, QThread, QTimer, Signal, Qt
+from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -40,48 +39,39 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QListWidget,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
-    QMessageBox,
     QPushButton,
     QRadioButton,
     QScrollArea,
-    QSizePolicy,
     QSplitter,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
-    QProgressDialog
 )
 
-from catia_copilot.ui.bom_widgets import _BomTreeWidget
-from catia_copilot.ui.ui_colors import get_colors as _get_colors
-from catia_copilot.ui.theme_manager import theme_manager
-from catia_copilot.ui.ui_layout import L
-
-from catia_copilot.catia.bom_collect import collect_bom_rows_archive, check_unsaved_docs
+from catia_copilot.catia.bom_collect import collect_bom_rows_archive
 from catia_copilot.constants import (
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_EDIT_COLUMN_ORDER,
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
-    PLM_SYNC_MAX_NODES,
-    BomNodeType,
 )
 from catia_copilot.plm.api_client import PlmApiClient
 from catia_copilot.plm.sync import (
-    extract_bom_v3,
-    sync_bom_to_plm,
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
     ExistingPartPolicy,
     OwnCheckedOutPolicy,
     SyncOptions,
+    extract_bom_v3,
+    sync_bom_to_plm,
 )
+from catia_copilot.ui.bom_widgets import _BomTreeWidget
+from catia_copilot.ui.theme_manager import theme_manager
 
 logger = logging.getLogger(__name__)
 
@@ -1209,8 +1199,8 @@ class PlmWorkbench(QDialog):
 
     def _populate_diff_table(self) -> None:
         """根据 _local_parts 和 _plm_cache 构建差异行并填充表格。"""
+
         from catia_copilot.plm.workspace_scanner import LocalPartInfo
-        from datetime import datetime as _dt
 
         self._tbl_diff.setRowCount(0)
         self._diff_rows = []
@@ -1425,8 +1415,8 @@ class PlmWorkbench(QDialog):
 
         使用 FontAwesome 4.7 字体，零依赖，无 SVG 截断问题。
         """
-        from PySide6.QtWidgets import QLabel as _QL
         from PySide6.QtGui import QFont as _QF
+        from PySide6.QtWidgets import QLabel as _QL
 
         ICON_PT    = 11           # 字体图标磅值
         ICON_COLOR = "#4C566A"   # 中性灰
@@ -1479,8 +1469,8 @@ class PlmWorkbench(QDialog):
     @staticmethod
     def _compute_diff_status(local, plm) -> str:
         """计算差异状态。"""
-        from catia_copilot.plm.workspace_scanner import LocalPartInfo
         from datetime import datetime as _dt
+
 
         if local is None and plm is None:
             return PlmWorkbench._ST_UNKNOWN
@@ -1705,7 +1695,6 @@ class PlmWorkbench(QDialog):
             QMessageBox.information(self, "未选择", "请先勾选有 PLM 版本信息的行。")
             return
 
-        import os as _os
         try:
             from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(base_url)

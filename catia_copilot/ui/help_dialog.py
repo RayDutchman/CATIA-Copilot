@@ -2,14 +2,23 @@
 帮助对话框 – 在可滚动的富文本窗口中显示用户文档。
 """
 
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTextBrowser, QPushButton, QHBoxLayout,
+    QDialog,
+    QHBoxLayout,
+    QPushButton,
+    QTextBrowser,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, QSettings
 
-from catia_copilot.constants import APP_NAME, APP_VERSION, APP_AUTHOR, APP_CONTACT, MAX_INERTIA_INDEX
+from catia_copilot.constants import (
+    APP_AUTHOR,
+    APP_CONTACT,
+    APP_NAME,
+    APP_VERSION,
+    MAX_INERTIA_INDEX,
+)
 from catia_copilot.utils import resource_path
-
 
 _HELP_HTML = f"""\
 <h2>{APP_NAME} v{APP_VERSION} — 帮助文档</h2>

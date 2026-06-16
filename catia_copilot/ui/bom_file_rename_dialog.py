@@ -3,8 +3,15 @@
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QDialog, QWidget, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QMessageBox, QFileDialog,
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QWidget,
 )
 
 from catia_copilot.constants import PART_NUMBER_VALID_PATTERN

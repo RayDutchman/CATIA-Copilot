@@ -14,11 +14,10 @@ CATIA 吸附边栏管理器。
 import logging
 from typing import Optional
 
-import win32gui
 import win32con
-
-from PySide6.QtCore import QTimer, QObject, Signal
-from PySide6.QtWidgets import QMainWindow, QApplication
+import win32gui
+from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtWidgets import QApplication, QMainWindow
 
 logger = logging.getLogger(__name__)
 

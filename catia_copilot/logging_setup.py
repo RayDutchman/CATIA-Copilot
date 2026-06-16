@@ -5,8 +5,8 @@ CATIA Copilot 日志基础设施模块。
 使日志消息可以转发到应用内的 LogWindow 窗口。
 """
 
-import sys
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 

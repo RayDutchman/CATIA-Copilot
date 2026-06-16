@@ -13,7 +13,7 @@ from __future__ import annotations
 import ctypes
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QStyleFactory
 
