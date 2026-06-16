@@ -1107,21 +1107,24 @@ class PlmApiClient:
         """从 get_part_detail 返回的原始 dict 中提取常用字段，返回摘要 dict。
 
         返回字段：
-            number           (str)
-            version          (str)
+            number              (str)
+            version             (str)
             lastIterationNumber (int)
-            name             (str)
-            checkOutUser     (str)   — login，未签出为空字符串
-            modificationDate (str)   — 最新迭代的签入/修改时间（ISO 格式）
-            authorLogin      (str)   — 最新迭代的作者 login
-            lifecycleState   (str)   — instanceAttributes 中"设计状态"属性值
-            tags             (list)  — 标签 ID 列表
+            name                (str)
+            checkOutUser        (str)  — login，未签出为空字符串
+            modificationDate    (str)  — 最新迭代的签入/修改时间（ISO 格式）
+            authorLogin         (str)  — 最新迭代的作者 login
+            lifecycleState      (str)  — PartRevisionDTO.status：WIP / RELEASED / OBSOLETE
+            tags                (list) — 标签 ID 列表
         """
         # 基础字段
-        number  = str(part_detail.get("number") or "")
-        version = str(part_detail.get("version") or "")
+        number    = str(part_detail.get("number") or "")
+        version   = str(part_detail.get("version") or "")
         last_iter = int(part_detail.get("lastIterationNumber") or 0)
-        name    = str(part_detail.get("name") or "")
+        name      = str(part_detail.get("name") or "")
+
+        # 生命周期状态（PartRevisionDTO 顶层 status 字段，枚举：WIP / RELEASED / OBSOLETE）
+        lifecycle_state = str(part_detail.get("status") or "")
 
         # 签出人
         cout_raw = part_detail.get("checkOutUser")
@@ -1130,9 +1133,8 @@ class PlmApiClient:
         else:
             check_out_user = str(cout_raw or "")
 
-        # 从最新迭代提取 modificationDate / author / lifecycleState
+        # 从最新迭代提取 modificationDate / author
         iterations = part_detail.get("partIterations") or []
-        # 找最新迭代（iteration 号最大）
         latest_it: dict = {}
         max_iter_num = -1
         for it in iterations:
@@ -1155,15 +1157,6 @@ class PlmApiClient:
             author = latest_it.get("author")
             if isinstance(author, dict):
                 author_login = str(author.get("login") or author.get("name") or "")
-
-        # 生命周期状态（instanceAttributes 中名为"设计状态"的属性）
-        lifecycle_state = ""
-        if latest_it:
-            for attr in (latest_it.get("instanceAttributes") or []):
-                attr_name = str(attr.get("name") or "")
-                if attr_name in ("设计状态", "lifecycleState", "Lifecycle State"):
-                    lifecycle_state = str(attr.get("value") or "")
-                    break
 
         # 标签
         tags_raw = part_detail.get("tags") or []

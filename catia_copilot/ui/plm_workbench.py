@@ -53,7 +53,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from catia_copilot.catia.bom_collect import collect_bom_rows_archive
 from catia_copilot.constants import (
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_EDIT_COLUMN_ORDER,
@@ -194,33 +193,6 @@ class _ConnectWorker(QThread):
             logger.exception("_ConnectWorker 运行异常")
             self.failure.emit(str(exc))
 
-
-class _BomPreviewWorker(QThread):
-    """从 CATIA 提取 BOM 行数据（不含 PLM 操作）。"""
-    success  = Signal(list)
-    failure  = Signal(str)
-    progress = Signal(int)
-
-    def run(self) -> None:
-        pythoncom.CoInitialize()
-        try:
-            all_cols = list(dict.fromkeys(
-                BOM_EDIT_COLUMN_ORDER
-                + [c for c in PRESET_USER_REF_PROPERTIES if c not in BOM_EDIT_COLUMN_ORDER]
-            ))
-            custom_cols = [c for c in all_cols if c in PRESET_USER_REF_PROPERTIES]
-            rows = collect_bom_rows_archive(
-                None,
-                all_cols,
-                custom_cols,
-                progress_callback=lambda n: self.progress.emit(n),
-            )
-            self.success.emit(rows or [])
-        except Exception as exc:
-            logger.exception("_BomPreviewWorker 运行异常")
-            self.failure.emit(str(exc))
-        finally:
-            pythoncom.CoUninitialize()
 
 
 class _SyncWorker(QThread):
@@ -551,7 +523,7 @@ class PlmWorkbench(QDialog):
     _DC_AUTHOR = 9   # 作者
     _DC_LMTIME = 10  # 本地修改时间
     _DC_PMTIME = 11  # PLM 修改时间
-    _DC_LCST   = 12  # 生命周期状态
+    _DC_LCST   = 12  # 生命周期状态（PartRevisionDTO.status：WIP/RELEASED/OBSOLETE）
     _DC_COUT   = 13  # 签出者
     _DC_FILES  = 14  # 文件（附件按钮）
     _DC_DIFF   = 15  # 差异状态
@@ -569,7 +541,7 @@ class PlmWorkbench(QDialog):
         "作者",         # 9
         "本地修改时间", # 10
         "PLM修改时间",  # 11
-        "生命周期状态", # 12
+        "生命周期状态", # 12 — PartRevisionDTO.status：WIP / RELEASED / OBSOLETE
         "签出者",       # 13
         "📎",   # 14 — 回形针表头图标
         "状态",         # 15
@@ -837,37 +809,47 @@ class PlmWorkbench(QDialog):
         return bar
 
     def _build_diff_table(self) -> QWidget:
-        """构建主体差异对比表（16 列，参考 PLM 前端风格，行高 34）。"""
+        """构建主体差异对比表（16 列，参考 PLM 前端风格）。"""
         self._tbl_diff = QTableWidget(0, len(self._DC_HEADERS))
         self._tbl_diff.setHorizontalHeaderLabels(self._DC_HEADERS)
         self._tbl_diff.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_diff.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_diff.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # 禁用行选中：不需要整行高亮，只用 checkbox 选取
+        self._tbl_diff.setSelectionMode(QAbstractItemView.NoSelection)
+        self._tbl_diff.setFocusPolicy(Qt.NoFocus)
+        # 禁用 hover 高亮（通过 stylesheet 覆盖）
+        self._tbl_diff.setStyleSheet(
+            "QTableWidget { selection-background-color: transparent; }"
+            "QTableWidget::item:hover { background-color: transparent; }"
+            "QTableWidget::item:selected { background-color: transparent; color: inherit; }"
+        )
         self._tbl_diff.setAlternatingRowColors(True)
         self._tbl_diff.verticalHeader().setDefaultSectionSize(28)
         self._tbl_diff.verticalHeader().setVisible(False)
+        # 禁止横向滚动条，确保最后一列始终可见
+        self._tbl_diff.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         hdr = self._tbl_diff.horizontalHeader()
         hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        # DIFF 列（最后一列）自动拉伸填满剩余空间
-        hdr.setStretchLastSection(True)
+        # DIFF（状态）列固定宽度，不拉伸；所有列挤不下时靠最右列裁剪而非滚动
+        hdr.setStretchLastSection(False)
 
-        # 固定列宽（不可调整）：checkbox/警告/版本迭代/附件
+        # 固定列宽（不可调整）：checkbox/警告/版本迭代/附件/状态
         VER_W = 54  # 版本/迭代/本地版本/本地迭代 四列同宽
         fixed_cols = {
-            self._DC_SEL:   28,   # 与行高相等
-            self._DC_WARN:  28,   # 警告图标列
+            self._DC_SEL:   30,   # checkbox
+            self._DC_WARN:  24,   # 警告图标
             self._DC_VER:   VER_W,
             self._DC_ITER:  VER_W,
             self._DC_LVER:  VER_W,
             self._DC_LITER: VER_W,
             self._DC_FILES: 30,
+            self._DC_DIFF:  80,   # 状态列固定宽，不被挤掉
         }
         for col, w in fixed_cols.items():
             hdr.setSectionResizeMode(col, QHeaderView.Fixed)
             hdr.resizeSection(col, w)
 
-        # 交互列宽（用户可拖拽调整）；_DC_DIFF 由 setStretchLastSection 自动填满
+        # 交互列宽（用户可拖拽调整）；NAME 列 Stretch 吸收剩余空间
         interactive_cols = {
             self._DC_PN:     260,
             self._DC_NAME:   180,
@@ -877,11 +859,13 @@ class PlmWorkbench(QDialog):
             self._DC_PMTIME: 140,
             self._DC_LCST:    90,
             self._DC_COUT:    80,
-            self._DC_DIFF:    80,
         }
         for col, w in interactive_cols.items():
             hdr.setSectionResizeMode(col, QHeaderView.Interactive)
             hdr.resizeSection(col, w)
+        # NAME 列拉伸填充剩余宽度，同时仍可手动调整（Stretch 模式下不可拖）
+        # 用 Interactive + 监听 resize 事件代价太高；改为让 PN 列做 Stretch
+        hdr.setSectionResizeMode(self._DC_NAME, QHeaderView.Stretch)
 
         # 居中对齐的列表头：版本/迭代四列 + SEL/WARN/状态列
         for _cc in (self._DC_SEL, self._DC_WARN,
@@ -1254,11 +1238,11 @@ class PlmWorkbench(QDialog):
             is_product = "Product" in ftype
 
             # ── Push/Pull 可用性 ─────────────────────────────────────────────
+            # 不再硬性排除 _ST_PLM_NEW，调试时可强制 Push（_on_sync_start 会弹确认）
             can_push = (local is not None and
                         not local.no_file and
                         local.is_saved and
-                        bool(local.part_number) and
-                        status != self._ST_PLM_NEW)
+                        bool(local.part_number))
             can_pull = (plm is not None)
 
             # ── PLM 版本信息 ─────────────────────────────────────────────────
@@ -1349,7 +1333,7 @@ class PlmWorkbench(QDialog):
             pmtime = self._format_plm_date(pmtime_raw) if pmtime_raw else "—"
             self._tbl_diff.setItem(row_idx, self._DC_PMTIME, _item(pmtime))
 
-            # col 10: 生命周期状态
+            # col 12: 生命周期状态（PartRevisionDTO.status：WIP/RELEASED/OBSOLETE）
             lc_state = str(plm.get("lifecycleState") or "") if plm else ""
             self._tbl_diff.setItem(row_idx, self._DC_LCST, _item(lc_state))
 
@@ -1442,7 +1426,7 @@ class PlmWorkbench(QDialog):
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(4, 0, 2, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
         # 图标1：eye / pencil（PLM 状态）
@@ -1469,8 +1453,7 @@ class PlmWorkbench(QDialog):
     @staticmethod
     def _compute_diff_status(local, plm) -> str:
         """计算差异状态。"""
-        from datetime import datetime as _dt
-
+        from datetime import datetime as _dt, timezone as _tz
 
         if local is None and plm is None:
             return PlmWorkbench._ST_UNKNOWN
@@ -1495,24 +1478,26 @@ class PlmWorkbench(QDialog):
             elif (loc_ver, loc_iter) < (plm_ver, plm_iter):
                 return PlmWorkbench._ST_PLM_NEW
             # 版本迭代相同，比修改时间
+            # PLM 时间是 UTC，local.mtime 是文件系统本地时间，必须统一时区再比较
             pmtime_raw = str(plm.get("modificationDate") or "")
             plm_mtime = None
             if pmtime_raw:
                 try:
-                    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
-                        try:
-                            plm_mtime = _dt.strptime(pmtime_raw[:19], fmt[:len(pmtime_raw[:19])])
-                            break
-                        except ValueError:
-                            pass
+                    plm_mtime = _dt.strptime(pmtime_raw[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                        tzinfo=_tz.utc
+                    )
                 except Exception:
                     pass
             if plm_mtime:
-                # 去掉 local.mtime 的 tzinfo（均视为本地时间）
-                local_naive = local.mtime.replace(tzinfo=None)
-                if local_naive > plm_mtime:
+                # local.mtime 转为带时区的本地时间（利用系统时区）
+                local_mtime = local.mtime
+                if local_mtime.tzinfo is None:
+                    local_mtime = local_mtime.astimezone()
+                # 截断到秒，消除文件系统亚秒精度与 PLM 秒精度之间的误差
+                local_utc = local_mtime.astimezone(_tz.utc).replace(microsecond=0)
+                if local_utc > plm_mtime:
                     return PlmWorkbench._ST_LOCAL_NEW
-                elif local_naive < plm_mtime:
+                elif local_utc < plm_mtime:
                     return PlmWorkbench._ST_PLM_NEW
             return PlmWorkbench._ST_OK
 
@@ -1521,15 +1506,18 @@ class PlmWorkbench(QDialog):
 
     @staticmethod
     def _format_plm_date(raw: str) -> str:
-        """将 PLM 返回的 ISO 日期字符串格式化为 2026-06-16 12:43:16 形式。"""
+        """将 PLM 返回的 UTC ISO 日期字符串转换为系统本地时间并格式化。"""
         if not raw:
             return "—"
         try:
-            # 截取前 19 字符（yyyy-mm-ddThh:mm:ss）
-            s = raw[:19].replace("T", " ")
-            return s
+            from datetime import datetime, timezone
+            s = raw.strip()
+            dt_utc = datetime.strptime(s[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            # astimezone() 无参数 → 系统本地时区
+            dt_local = dt_utc.astimezone()
+            return dt_local.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
-            return raw
+            return raw[:19].replace("T", " ") if len(raw) >= 19 else raw
 
     # ─────────────────────────────────────────────────────────────────────────
     # 附件弹窗
@@ -1591,6 +1579,21 @@ class PlmWorkbench(QDialog):
                 f"以下文件有未保存的修改，请先保存后再同步：\n\n{msg}",
             )
             return
+
+        # PLM_NEW 行警告（PLM 有更新版本，覆盖推送会丢失 PLM 侧修改）
+        plm_newer = [r["pn"] for r in push_rows if r.get("status") == self._ST_PLM_NEW]
+        if plm_newer:
+            msg = "\n".join(plm_newer[:10])
+            if len(plm_newer) > 10:
+                msg += f"\n…等共 {len(plm_newer)} 个"
+            ret = QMessageBox.warning(
+                self, "PLM 有更新版本",
+                f"以下零件在 PLM 中有更新版本，强制推送会覆盖 PLM 侧的修改：\n\n{msg}\n\n确认继续？",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if ret != QMessageBox.Yes:
+                return
 
         options = self._build_sync_options()
         push_map = {r["pn"]: self._UPGRADE_ITER for r in push_rows}
@@ -1923,19 +1926,15 @@ class PlmWorkbench(QDialog):
         self._log_to_conn(f"连接失败：{err}", "error")
 
     def _build_advanced_options(self) -> QWidget:
-        """构建同步选项区域（三区水平排列：radio组 | checkbox | 预设按钮）。"""
+        """构建同步选项区域（三区水平排列：radio+预设 | checkbox | 他人签出）。"""
         from PySide6.QtWidgets import QGridLayout
 
         self._adv_content = QWidget()
         outer = QHBoxLayout(self._adv_content)
         outer.setContentsMargins(8, 6, 8, 6)
-        outer.setSpacing(0)
+        outer.setSpacing(8)
 
-        _lbl_style = "color: palette(mid); padding-right: 4px;"
-
-        # ── 区1：4 组 radio，2×2 Grid（标签列 col0，按钮组 col1）─────────────────
-        grid1 = QGridLayout(); grid1.setSpacing(4); grid1.setContentsMargins(0,0,0,0)
-        grid1.setColumnStretch(1, 1)
+        _lbl_style = "color: palette(mid);"
 
         def _make_radio_grp(*labels) -> tuple[list[QRadioButton], QButtonGroup]:
             btns = [QRadioButton(lbl) for lbl in labels]
@@ -1944,26 +1943,35 @@ class PlmWorkbench(QDialog):
             btns[0].setChecked(True)
             return btns, grp
 
-        (self._rb_create_yes, self._rb_create_no),   self._bg_create = _make_radio_grp("新建",       "跳过")
-        (self._rb_exist_checkout, self._rb_exist_skip), self._bg_exist = _make_radio_grp("签出更新", "跳过")
-        (self._rb_other_skip, self._rb_other_force), self._bg_other  = _make_radio_grp("他人签出跳过", "强制")
-        (self._rb_after_checkin, self._rb_after_keep), self._bg_after = _make_radio_grp("自动签入",   "保留签出")
-        self._rb_other_force.setEnabled(False)
+        # ── 区1：3 组 radio（不存在/已签入/推送后）+ 预设按钮 ─────────────────
+        grid1 = QGridLayout(); grid1.setSpacing(4); grid1.setContentsMargins(0,0,0,0)
+        grid1.setColumnStretch(1, 0); grid1.setColumnStretch(2, 0); grid1.setColumnStretch(3, 1)
 
-        radio_rows = [
-            ("不存在：",    self._rb_create_yes,   self._rb_create_no),
-            ("已签入：",    self._rb_exist_checkout, self._rb_exist_skip),
-            ("他人签出：",  self._rb_other_skip,   self._rb_other_force),
-            ("推送后：",    self._rb_after_checkin, self._rb_after_keep),
+        (self._rb_create_yes, self._rb_create_no),     self._bg_create = _make_radio_grp("新建",     "跳过")
+        (self._rb_exist_checkout, self._rb_exist_skip), self._bg_exist  = _make_radio_grp("签出更新", "跳过")
+        (self._rb_after_checkin, self._rb_after_keep),  self._bg_after  = _make_radio_grp("自动签入", "保留签出")
+
+        radio_rows1 = [
+            ("不存在：", self._rb_create_yes,    self._rb_create_no),
+            ("已签入：", self._rb_exist_checkout, self._rb_exist_skip),
+            ("推送后：", self._rb_after_checkin,  self._rb_after_keep),
         ]
-        for r, (lbl_txt, rb1, rb2) in enumerate(radio_rows):
+        for r, (lbl_txt, rb1, rb2) in enumerate(radio_rows1):
             lbl = QLabel(lbl_txt); lbl.setStyleSheet(_lbl_style)
             lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            rb_box = QHBoxLayout(); rb_box.setSpacing(6); rb_box.setContentsMargins(0,0,0,0)
-            rb_box.addWidget(rb1); rb_box.addWidget(rb2); rb_box.addStretch()
-            rb_w = QWidget(); rb_w.setLayout(rb_box)
             grid1.addWidget(lbl, r, 0)
-            grid1.addWidget(rb_w, r, 1)
+            grid1.addWidget(rb1, r, 1)
+            grid1.addWidget(rb2, r, 2)
+
+        # 预设按钮竖向放在第3列（与 radio 行对齐）
+        btn_preset_new    = QPushButton("新建模式")
+        btn_preset_update = QPushButton("更新模式")
+        btn_preset_new.setToolTip("新建所有不存在的零件，跳过已有零件，不增量")
+        btn_preset_update.setToolTip("仅更新已有零件（签出后更新），不新建，开启增量")
+        btn_preset_new.clicked.connect(self._apply_preset_new)
+        btn_preset_update.clicked.connect(self._apply_preset_update)
+        grid1.addWidget(btn_preset_new,    0, 3)
+        grid1.addWidget(btn_preset_update, 1, 3)
 
         zone1 = QWidget(); zone1.setLayout(grid1)
         outer.addWidget(zone1)
@@ -1973,18 +1981,17 @@ class PlmWorkbench(QDialog):
             s = QFrame(); s.setFrameShape(QFrame.VLine); s.setFrameShadow(QFrame.Sunken)
             return s
         outer.addWidget(_vsep())
-        outer.setSpacing(8)
 
-        # ── 区2：6 个 checkbox，2×3 Grid（标签 col0，checkbox col1）──────────────
+        # ── 区2：6 个 checkbox，每行 2 个，共 3 行 ────────────────────────────
         grid2 = QGridLayout(); grid2.setSpacing(4); grid2.setContentsMargins(8,0,8,0)
-        grid2.setColumnStretch(1, 1)
+        grid2.setColumnStretch(1, 1); grid2.setColumnStretch(3, 1)
 
-        self._chk_incremental     = QCheckBox()
-        self._chk_reg_product     = QCheckBox()
-        self._chk_upload_catpart  = QCheckBox()
-        self._chk_upload_stp      = QCheckBox()
-        self._chk_upload_drw_file = QCheckBox()
-        self._chk_upload_drw_pdf  = QCheckBox()
+        self._chk_incremental     = QCheckBox("增量同步")
+        self._chk_reg_product     = QCheckBox("注册顶层产品")
+        self._chk_upload_catpart  = QCheckBox("上传 CATIA 文件")
+        self._chk_upload_stp      = QCheckBox("上传 STP 文件")
+        self._chk_upload_drw_file = QCheckBox("上传图纸文件")
+        self._chk_upload_drw_pdf  = QCheckBox("上传 PDF")
         self._chk_reg_product.setEnabled(False)
         self._chk_reg_product.setToolTip(
             "当前不可用：POST /products 接口返回 403。\n"
@@ -1996,40 +2003,37 @@ class PlmWorkbench(QDialog):
         self._chk_upload_drw_file.setToolTip("上传 CATDrawing 原文件")
         self._chk_upload_drw_pdf.setToolTip("上传图纸 PDF")
 
-        chk_rows = [
-            # row 0 (col 0-1), row 0 (col 2-3), row 0 (col 4-5)
-            # 排成 2行×3列：(行, 列标签, checkbox)
-            (0, 0, "增量：",     self._chk_incremental),
-            (0, 1, "注册产品：", self._chk_reg_product),
-            (0, 2, "↑CATIA：",  self._chk_upload_catpart),
-            (1, 0, "↑STP：",    self._chk_upload_stp),
-            (1, 1, "↑图纸：",   self._chk_upload_drw_file),
-            (1, 2, "↑PDF：",    self._chk_upload_drw_pdf),
+        # 每行2个：(行, 列偏移, checkbox)
+        chk_layout = [
+            (0, 0, self._chk_incremental),
+            (0, 1, self._chk_reg_product),
+            (1, 0, self._chk_upload_catpart),
+            (1, 1, self._chk_upload_stp),
+            (2, 0, self._chk_upload_drw_file),
+            (2, 1, self._chk_upload_drw_pdf),
         ]
-        for r, c, lbl_txt, chk in chk_rows:
-            lbl = QLabel(lbl_txt); lbl.setStyleSheet(_lbl_style)
-            lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            grid2.addWidget(lbl, r, c * 2)
-            grid2.addWidget(chk, r, c * 2 + 1)
+        for r, c, chk in chk_layout:
+            grid2.addWidget(chk, r, c)
 
         zone2 = QWidget(); zone2.setLayout(grid2)
         outer.addWidget(zone2)
 
         outer.addWidget(_vsep())
 
-        # ── 区3：预设按钮纵向 ──────────────────────────────────────────────────
-        zone3 = QWidget()
-        vbox3 = QVBoxLayout(zone3); vbox3.setSpacing(4); vbox3.setContentsMargins(8,0,0,0)
-        lbl_preset = QLabel("预设模式"); lbl_preset.setStyleSheet(_lbl_style)
-        btn_preset_new    = QPushButton("新建模式")
-        btn_preset_update = QPushButton("更新模式")
-        btn_preset_new.setToolTip("新建所有不存在的零件，跳过已有零件，不增量")
-        btn_preset_update.setToolTip("仅更新已有零件（签出后更新），不新建，开启增量")
-        btn_preset_new.clicked.connect(self._apply_preset_new)
-        btn_preset_update.clicked.connect(self._apply_preset_update)
-        vbox3.addWidget(lbl_preset)
-        vbox3.addWidget(btn_preset_new)
-        vbox3.addWidget(btn_preset_update)
+        # ── 区3：他人签出选项（未完全实现，标注说明）────────────────────────
+        grid3 = QGridLayout(); grid3.setSpacing(4); grid3.setContentsMargins(8,0,0,0)
+
+        (self._rb_other_skip, self._rb_other_force), self._bg_other = _make_radio_grp("跳过", "强制")
+        self._rb_other_force.setEnabled(False)
+        self._rb_other_force.setToolTip("强制覆盖他人签出（尚未实现）")
+
+        lbl_other = QLabel("他人签出："); lbl_other.setStyleSheet(_lbl_style)
+        lbl_other.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid3.addWidget(lbl_other,            0, 0)
+        grid3.addWidget(self._rb_other_skip,  0, 1)
+        grid3.addWidget(self._rb_other_force, 0, 2)
+
+        zone3 = QWidget(); zone3.setLayout(grid3)
         outer.addWidget(zone3)
 
         outer.addStretch()

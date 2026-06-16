@@ -89,7 +89,7 @@ def save(cfg: dict[str, Any]) -> None:
 
 
 def get_config_path() -> Path:
-    """返回配置文件路径（供 UI 显示用）。打包后指向 %APPDATA%\CATIA Copilot\ai_config.json。"""
+    """返回配置文件路径（供 UI 显示用）。打包后指向 %APPDATA%/CATIA Copilot/ai_config.json。"""
     return _CONFIG_PATH
 
 

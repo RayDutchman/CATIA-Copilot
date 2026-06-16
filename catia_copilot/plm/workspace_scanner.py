@@ -111,6 +111,10 @@ def load_catia_file(catia_app, file_path: str):
 def _read_part_attrs(doc) -> dict:
     """从 CATIA COM 文档读取零件属性，返回字典。
 
+    CATPart 和 CATProduct 均通过 doc.Product 访问——这与 bom_collect.py 的做法一致。
+    CATIA COM 模型对两种文档类型都提供 .Product 属性，无需分支处理。
+    UserRefProperties 优先从 product.ReferenceProduct 读，回退到 product 本身。
+
     返回键：
         part_number (str)
         nomenclature (str)
@@ -131,69 +135,64 @@ def _read_part_attrs(doc) -> dict:
     }
 
     try:
-        # 使用 document.py 中经过验证的类型判断函数
-        from catia_copilot.catia.document import get_document_type
-        doc_kind = get_document_type(doc)  # PartDocument / ProductDocument / DrawingDocument / Unknown
+        # doc.Product 对 CATPart 和 CATProduct 均有效（同 bom_collect.py 的统一做法）
+        product = doc.Product
 
-        if doc_kind == "PartDocument":
-            root_obj = doc.Part
-        elif doc_kind == "ProductDocument":
-            root_obj = doc.Product
-        else:
-            # Drawing 或 Unknown：标记不可读但不阻断
-            result["is_readable"] = False
-            return result
-
-        # 读取 Part Number
+        # Part Number
         try:
-            result["part_number"] = str(root_obj.PartNumber or "")
+            result["part_number"] = str(product.PartNumber or "")
         except Exception:
             pass
 
-        # 读取 Nomenclature
+        # Nomenclature
         try:
-            result["nomenclature"] = str(root_obj.get_Nomenclature() or "")
-        except Exception:
-            try:
-                result["nomenclature"] = str(root_obj.Nomenclature or "")
-            except Exception:
-                pass
-
-        # 读取 UserRefProperties（PLM_Version / PLM_Iteration）
-        try:
-            props = root_obj.UserRefProperties
-            try:
-                p = props.GetItem("PLM_Version")
-                result["plm_version"] = str(p.Value or "")
-            except Exception:
-                pass
-            try:
-                p = props.GetItem("PLM_Iteration")
-                val = p.Value
-                result["plm_iteration"] = int(val) if val else 0
-            except Exception:
-                pass
+            result["nomenclature"] = str(product.Nomenclature or "")
         except Exception:
             pass
 
-        # 读取 Saved 状态
+        # UserRefProperties：优先 ReferenceProduct，回退 product 本身（同 bom_collect.py）
+        def _get_user_prop(name: str) -> str:
+            for target in _prop_targets(product):
+                try:
+                    v = target.UserRefProperties.Item(name).Value
+                    if v is not None and str(v).strip():
+                        return str(v)
+                except Exception:
+                    pass
+            return ""
+
+        result["plm_version"]   = _get_user_prop("PLM_Version")
+        raw_iter = _get_user_prop("PLM_Iteration")
+        result["plm_iteration"] = int(raw_iter) if raw_iter else 0
+
+        # Saved 状态
         try:
             result["is_saved"] = bool(doc.Saved)
         except Exception:
             pass
 
-        # 检测 no_file（从未保存到磁盘）
+        # no_file
         try:
             full_name = str(doc.FullName or "")
             result["no_file"] = not bool(full_name) or not os.path.exists(full_name)
         except Exception:
             result["no_file"] = True
 
+        # Drawing / 无 Product 的文档（上面 doc.Product 会抛异常）
     except Exception as exc:
         logger.debug(f"_read_part_attrs 读取失败：{exc}")
         result["is_readable"] = False
 
     return result
+
+
+def _prop_targets(product):
+    """生成属性读取目标序列：优先 ReferenceProduct，回退 product 本身。"""
+    try:
+        yield product.ReferenceProduct
+    except Exception:
+        pass
+    yield product
 
 
 # ─────────────────────────────────────────────────────────────────────────────

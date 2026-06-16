@@ -3,7 +3,7 @@ AI 会话持久化管理模块。
 
 目录结构：
   开发环境：项目根目录/ai_sessions/
-  打包环境：%APPDATA%\CATIA Copilot\ai_sessions\
+  打包环境：%APPDATA%/CATIA Copilot/ai_sessions/
     index.json              ← 轻量索引，只存元数据，不存 messages
     session_<id>.json       ← 完整 session 数据
 
