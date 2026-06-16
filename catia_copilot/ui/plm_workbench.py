@@ -1628,7 +1628,12 @@ class PlmWorkbench(QDialog):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _on_add_plm_part(self) -> None:
-        """弹窗手动输入零件号，追加到本地 PLM 缓存。"""
+        """弹窗手动输入零件号，查询 PLM 并递归展开子孙，批量加入本地缓存。
+
+        行为：
+        - PLM 中存在该零件 → 递归获取其完整 BOM 子树，把所有节点都加入缓存
+        - PLM 中不存在    → 明确提示，不创建占位条目
+        """
         from PySide6.QtWidgets import QInputDialog
         pn, ok = QInputDialog.getText(self, "新增 PLM Part", "输入零件号（Part Number）：")
         if not ok or not pn.strip():
@@ -1645,29 +1650,89 @@ class PlmWorkbench(QDialog):
             from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(base_url)
             c.login(login, password)
+
+            # ── 1. 确认零件存在 ───────────────────────────────────────────────
             parts = c.search_parts(workspace, number=pn, size=1)
-            if parts:
-                p = parts[0]
-                ver = str(p.get("version") or "A")
-                detail = c.get_part_detail(workspace, pn, ver)
-                summary = c.extract_part_summary(detail)
-                self._plm_cache[pn] = summary
-            else:
-                # 未找到，创建占位条目
-                self._plm_cache[pn] = {
-                    "number": pn, "version": "", "lastIterationNumber": 0,
-                    "name": "", "checkOutUser": "", "modificationDate": "",
-                    "authorLogin": "", "lifecycleState": "", "tags": [],
-                }
-            # 持久化缓存
+            if not parts:
+                QMessageBox.warning(
+                    self, "PLM 中不存在",
+                    f"在 PLM 工作区中未找到零件号：{pn}\n\n请确认零件号是否正确。",
+                )
+                self._lbl_status.setText("未找到零件，操作已取消")
+                return
+
+            root_part = parts[0]
+            root_ver  = str(root_part.get("version") or "A")
+
+            # ── 2. 询问是否递归展开子孙 ───────────────────────────────────────
+            reply = QMessageBox.question(
+                self, "新增 PLM Part",
+                f"找到零件：{pn}（版本 {root_ver}）\n\n"
+                "是否递归展开其所有子孙零件并一并加入缓存？\n"
+                "（对于单个零件点「否」，对于装配体点「是」）",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Cancel:
+                self._lbl_status.setText("操作已取消")
+                return
+
+            # ── 3. 收集所有需要查询的零件号 ─────────────────────────────────
+            pns_to_query: list[str] = [pn]
+
+            if reply == QMessageBox.Yes:
+                # 递归获取 BOM 子树（仅取零件号，不需要附件）
+                self._lbl_status.setText(f"正在递归展开 {pn} 的子孙……")
+                try:
+                    bom_rows = c.get_part_components_flat(workspace, pn, root_ver)
+                    child_pns = [
+                        str(r.get("part_number", ""))
+                        for r in bom_rows
+                        if r.get("part_number") and r.get("depth", 0) > 0
+                    ]
+                    pns_to_query += child_pns
+                    pns_to_query = list(dict.fromkeys(pns_to_query))  # 去重保序
+                except Exception as exc:
+                    QMessageBox.warning(
+                        self, "递归展开失败",
+                        f"展开子树时出错（将只添加根零件）：\n{exc}",
+                    )
+
+            # ── 4. 批量查询摘要并写入缓存 ─────────────────────────────────────
+            self._lbl_status.setText(f"正在查询 {len(pns_to_query)} 个零件的 PLM 详情……")
+            self._pgb.setRange(0, len(pns_to_query))
+            self._pgb.setValue(0)
+            self._pgb.setVisible(True)
+
+            added = 0
+            for idx, qpn in enumerate(pns_to_query):
+                try:
+                    qparts = c.search_parts(workspace, number=qpn, size=1)
+                    if qparts:
+                        qver   = str(qparts[0].get("version") or "A")
+                        detail = c.get_part_detail(workspace, qpn, qver)
+                        self._plm_cache[qpn] = c.extract_part_summary(detail)
+                        added += 1
+                except Exception:
+                    pass  # 单个子零件查询失败不中断整体
+                self._pgb.setValue(idx + 1)
+
+            self._pgb.setVisible(False)
+
+            # ── 5. 持久化并刷新表格 ───────────────────────────────────────────
             work_dir = self._get_work_dir()
             if work_dir:
                 from catia_copilot.plm.workspace_scanner import save_plm_cache
                 save_plm_cache(work_dir, self._plm_cache)
+
             self._plm_parts_cache = {k: v for k, v in self._plm_cache.items() if v}
             self._populate_diff_table()
-            self._lbl_status.setText(f"已添加零件：{pn}")
+            self._lbl_status.setText(
+                f"已添加 {added} 个零件（共查询 {len(pns_to_query)} 个）"
+            )
+
         except Exception as exc:
+            self._pgb.setVisible(False)
             self._lbl_status.setText(f"查询失败：{exc}")
             QMessageBox.warning(self, "查询失败", str(exc))
 
@@ -2180,10 +2245,10 @@ class PlmWorkbench(QDialog):
         )
         self._start_worker(w)
 
-    def _on_plm_status_loaded(self, parts: list) -> None:
+    def _on_plm_status_loaded(self, parts: dict) -> None:
         """PLM 状态查询完成：缓存结果，更新合并表格中的 PLM 相关列。"""
         self._btn_refresh_plm.setEnabled(True)
-        self._plm_parts_cache = {p.get("number", ""): p for p in parts}
+        self._plm_parts_cache = parts
         self._plm_status_queried = True   # 已成功执行查询（即使结果为空也算查过）
         self._lbl_plm_query_status.setText(f"已查询 {len(parts)} 个零件")
 
@@ -2219,15 +2284,15 @@ class PlmWorkbench(QDialog):
             plm      = self._plm_parts_cache.get(pn) if self._plm_parts_cache else None
 
             if plm is None and not self._plm_status_queried:
-                status = self.ST_UNKNOWN
-                color  = self._get_status_colors()[self.ST_UNKNOWN]
+                status = self._ST_UNKNOWN
+                color  = self._STATUS_COLORS[self._ST_UNKNOWN]
                 default_push = False
                 plm_val  = ""
                 plm_user = ""
                 push_enabled = True
             elif plm is None:
-                status = self.ST_NEW_LOC
-                color  = self._get_status_colors()[self.ST_NEW_LOC]
+                status = self._ST_LOCAL_ONLY
+                color  = self._STATUS_COLORS[self._ST_LOCAL_ONLY]
                 default_push = True
                 plm_val  = "—"
                 plm_user = ""
@@ -2246,23 +2311,23 @@ class PlmWorkbench(QDialog):
 
                 if local_ver and plm_ver:
                     if local_ver == plm_ver:
-                        status = self.ST_OK
-                        color  = self._get_status_colors()[self.ST_OK]
+                        status = self._ST_OK
+                        color  = self._STATUS_COLORS[self._ST_OK]
                         default_push = False
                         push_enabled = True
                     elif local_ver > plm_ver:
-                        status = self.ST_PUSH
-                        color  = self._get_status_colors()[self.ST_PUSH]
+                        status = self._ST_LOCAL_NEW
+                        color  = self._STATUS_COLORS[self._ST_LOCAL_NEW]
                         default_push = True
                         push_enabled = True
                     else:
-                        status = self.ST_PULL
-                        color  = self._get_status_colors()[self.ST_PULL]
+                        status = self._ST_PLM_NEW
+                        color  = self._STATUS_COLORS[self._ST_PLM_NEW]
                         default_push = False
                         push_enabled = False
                 else:
-                    status = self.ST_OK
-                    color  = self._get_status_colors()[self.ST_OK]
+                    status = self._ST_OK
+                    color  = self._STATUS_COLORS[self._ST_OK]
                     default_push = False
                     push_enabled = True
 
@@ -2271,7 +2336,7 @@ class PlmWorkbench(QDialog):
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             status_item.setForeground(color)
             status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._tbl_bom.setItem(i, self.DC_STATUS, status_item)
+            self._tbl_bom.setItem(i, self._DC_DIFF, status_item)
 
             # 写入 PLM 版本/迭代合并列
             plm_item = QTableWidgetItem(plm_val)
@@ -2313,8 +2378,8 @@ class PlmWorkbench(QDialog):
             self._btn_push.setEnabled(False)
         else:
             all_pull = all(
-                self._tbl_bom.item(r, self.DC_STATUS) is not None
-                and self._tbl_bom.item(r, self.DC_STATUS).text() == self.ST_PULL
+                self._tbl_bom.item(r, self._DC_DIFF) is not None
+                and self._tbl_bom.item(r, self._DC_DIFF).text() == self._ST_PLM_NEW
                 for r in range(self._tbl_bom.rowCount())
             ) if self._tbl_bom.rowCount() > 0 else False
             if all_pull:
@@ -2439,11 +2504,11 @@ class PlmWorkbench(QDialog):
             self._tbl_bom.setItem(i, self.DC_DEPTH,  _item(str(depth)))
             self._tbl_bom.setItem(i, self.DC_PN,     _item(f"{indent}{pn}", pn))
             self._tbl_bom.setItem(i, self.DC_NOM,    _item(nom))
-            self._tbl_bom.setItem(i, self.DC_STATUS, _item(self.ST_UNKNOWN))
-            _st_item = self._tbl_bom.item(i, self.DC_STATUS)
+            self._tbl_bom.setItem(i, self._DC_DIFF, _item(self._ST_UNKNOWN))
+            _st_item = self._tbl_bom.item(i, self._DC_DIFF)
             if _st_item:
                 _st_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                _st_item.setForeground(self._get_status_colors()[self.ST_UNKNOWN])
+                _st_item.setForeground(self._STATUS_COLORS[self._ST_UNKNOWN])
             self._tbl_bom.setItem(i, self.DC_LOC_V,  _item(loc_val))
             self._tbl_bom.setItem(i, self.DC_PLM_V,  _item(""))
             self._tbl_bom.setItem(i, self.DC_COUT,   _item(""))
