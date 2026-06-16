@@ -309,20 +309,25 @@ class PlmApiClient:
         DocdokuPLM 端点须带版本后缀：/parts/{pn}-{ver}
         实际上零件版本几乎都从 A 开始，直接尝试 -A。
         """
+        result = self.get_part_head(workspace, part_number)
+        return part_number, result.get("version", "A"), int(result.get("lastIterationNumber", 1))
+
+    def get_part_head(self, workspace: str, part_number: str) -> dict:
+        """获取零件最新版本的完整 PartRevision 响应字典。
+
+        直接 GET /parts/{pn}-{ver}，依次尝试版本 A/B/C，返回第一个存在版本的完整响应。
+        若零件不存在则抛 PlmApiError(404)。
+        比 search_parts 更可靠：精确匹配，不受前缀/模糊匹配影响。
+        """
         ws = urllib.parse.quote(workspace)
         pn = urllib.parse.quote(part_number)
-        # 尝试常见版本序列 A→B→C
         for ver in ("A", "B", "C"):
             try:
                 result = self._request("GET", f"/workspaces/{ws}/parts/{pn}-{ver}") or {}
-                version   = result.get("version", ver)
-                iteration = result.get("lastIterationNumber", 1)
-                return part_number, version, iteration
+                return result
             except PlmApiError as exc:
                 if exc.status_code == 404:
                     continue
-                # PLM-06（ProductManagerBean:3509 NPE）已于 2026-05-20 服务端修复，
-                # 此处不再对 500 静默跳过，直接抛出，避免掩盖真实服务端错误。
                 raise
         raise PlmApiError(f"零件 {part_number} 不存在（A/B/C 均未找到）", 404)
 
@@ -1070,3 +1075,149 @@ class PlmApiClient:
                 exc.code,
             ) from exc
         logger.debug(f"PLM 附件已下载：{part_number}-{version}/{iteration}/{filename} → {dest_path}")
+
+    def get_part_iterations_detail(
+        self,
+        workspace: str,
+        part_number: str,
+        version: str,
+    ) -> list[dict]:
+        """获取零件所有迭代的详情列表（用于附件弹窗迭代切换）。
+
+        通过 get_part_detail 获取完整的 PartRevisionDTO，
+        返回 partIterations 列表，按 iteration 号升序排序。
+
+        每项 dict 结构（PartIterationDTO 字段子集）：
+            iteration        (int)    — 迭代号
+            iterationNote    (str)    — 迭代备注
+            checkInDate      (str)    — 签入时间（ISO 格式，可能为 null）
+            modificationDate (str)    — 修改时间
+            author           (dict)   — {"login": str, "name": str}
+            attachedFiles    (list)   — [{name, fullName, ...}]
+            nativeCADFile    (dict|None) — 原生 CAD 文件信息
+            components       (list)   — BOM 子件（1级）
+        """
+        detail = self.get_part_detail(workspace, part_number, version)
+        iterations = detail.get("partIterations") or []
+        # 按迭代号升序排序
+        return sorted(iterations, key=lambda it: int(it.get("iteration") or 0))
+
+    def extract_part_summary(self, part_detail: dict) -> dict:
+        """从 get_part_detail 返回的原始 dict 中提取常用字段，返回摘要 dict。
+
+        返回字段：
+            number           (str)
+            version          (str)
+            lastIterationNumber (int)
+            name             (str)
+            checkOutUser     (str)   — login，未签出为空字符串
+            modificationDate (str)   — 最新迭代的签入/修改时间（ISO 格式）
+            authorLogin      (str)   — 最新迭代的作者 login
+            lifecycleState   (str)   — instanceAttributes 中"设计状态"属性值
+            tags             (list)  — 标签 ID 列表
+        """
+        # 基础字段
+        number  = str(part_detail.get("number") or "")
+        version = str(part_detail.get("version") or "")
+        last_iter = int(part_detail.get("lastIterationNumber") or 0)
+        name    = str(part_detail.get("name") or "")
+
+        # 签出人
+        cout_raw = part_detail.get("checkOutUser")
+        if isinstance(cout_raw, dict):
+            check_out_user = str(cout_raw.get("login") or cout_raw.get("name") or "")
+        else:
+            check_out_user = str(cout_raw or "")
+
+        # 从最新迭代提取 modificationDate / author / lifecycleState
+        iterations = part_detail.get("partIterations") or []
+        # 找最新迭代（iteration 号最大）
+        latest_it: dict = {}
+        max_iter_num = -1
+        for it in iterations:
+            n = int(it.get("iteration") or 0)
+            if n > max_iter_num:
+                max_iter_num = n
+                latest_it = it
+
+        # 修改时间（优先 checkInDate，其次 modificationDate）
+        mod_date = ""
+        if latest_it:
+            mod_date = (
+                str(latest_it.get("checkInDate") or "")
+                or str(latest_it.get("modificationDate") or "")
+            )
+
+        # 作者 login
+        author_login = ""
+        if latest_it:
+            author = latest_it.get("author")
+            if isinstance(author, dict):
+                author_login = str(author.get("login") or author.get("name") or "")
+
+        # 生命周期状态（instanceAttributes 中名为"设计状态"的属性）
+        lifecycle_state = ""
+        if latest_it:
+            for attr in (latest_it.get("instanceAttributes") or []):
+                attr_name = str(attr.get("name") or "")
+                if attr_name in ("设计状态", "lifecycleState", "Lifecycle State"):
+                    lifecycle_state = str(attr.get("value") or "")
+                    break
+
+        # 标签
+        tags_raw = part_detail.get("tags") or []
+        tags = [str(t.get("id") or t) for t in tags_raw if t]
+
+        return {
+            "number":               number,
+            "version":              version,
+            "lastIterationNumber":  last_iter,
+            "name":                 name,
+            "checkOutUser":         check_out_user,
+            "modificationDate":     mod_date,
+            "authorLogin":          author_login,
+            "lifecycleState":       lifecycle_state,
+            "tags":                 tags,
+        }
+
+    def search_parts_summary(
+        self,
+        workspace: str,
+        part_numbers: list[str],
+        progress_callback=None,
+    ) -> dict[str, dict]:
+        """按零件号列表批量查询 PLM，返回 {pn: summary_dict}。
+
+        每个 summary_dict 的格式与 extract_part_summary() 返回值相同。
+        对查询失败的零件号，返回 None 值（表示 PLM 中不存在）。
+
+        Args:
+            part_numbers:      零件号列表
+            progress_callback: 可选，progress_callback(done: int, total: int)
+        """
+        result: dict[str, dict] = {}
+        total = len(part_numbers)
+
+        for i, pn in enumerate(part_numbers):
+            if progress_callback:
+                progress_callback(i, total)
+            try:
+                # search_parts 按精确零件号搜索，取第一条结果的版本
+                parts = self.search_parts(workspace, number=pn, size=1)
+                if not parts:
+                    result[pn] = None
+                    continue
+                p = parts[0]
+                ver = str(p.get("version") or "A")
+                # 获取完整详情（含 partIterations）
+                detail = self.get_part_detail(workspace, pn, ver)
+                result[pn] = self.extract_part_summary(detail)
+            except Exception as exc:
+                logger.debug(f"search_parts_summary: 查询 {pn} 失败 — {exc}")
+                result[pn] = None
+
+        if progress_callback:
+            progress_callback(total, total)
+
+        return result
+
