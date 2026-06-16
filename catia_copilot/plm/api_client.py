@@ -1039,7 +1039,8 @@ class PlmApiClient:
         fn  = urllib.parse.quote(filename,    safe="")
         url = f"{self._base}/files/{ws}/parts/{pn}/{version}/{iteration}/{sub_type}/{fn}"
 
-        headers = self._headers({"Content-Type": None})
+        # 文件下载：Accept 必须为 */* 而非 application/json，否则服务器返回 406
+        headers = self._headers({"Content-Type": None, "Accept": "*/*"})
         # 去掉 Content-Type（GET 请求不需要）
         headers = {k: v for k, v in headers.items() if k != "Content-Type"}
         req = urllib.request.Request(url, headers=headers, method="GET")
@@ -1202,12 +1203,14 @@ class PlmApiClient:
             if progress_callback:
                 progress_callback(i, total)
             try:
-                # search_parts 按精确零件号搜索，取第一条结果的版本
-                parts = self.search_parts(workspace, number=pn, size=1)
-                if not parts:
+                # search_parts 支持前缀匹配，必须校验返回的 number 与 pn 精确相同
+                parts = self.search_parts(workspace, number=pn, size=10)
+                # 精确匹配（大小写不敏感）
+                exact = [p for p in parts if str(p.get("number", "")).lower() == pn.lower()]
+                if not exact:
                     result[pn] = None
                     continue
-                p = parts[0]
+                p = exact[0]
                 ver = str(p.get("version") or "A")
                 # 获取完整详情（含 partIterations）
                 detail = self.get_part_detail(workspace, pn, ver)

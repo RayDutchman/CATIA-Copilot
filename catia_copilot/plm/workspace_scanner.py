@@ -78,14 +78,17 @@ def load_catia_file(catia_app, file_path: str):
     Raises:
         RuntimeError: documents.Open() 返回 None 时
     """
+    import os
     documents = catia_app.Documents
-    fp_lower  = file_path.lower()
+    # 标准化：转小写 + 反斜杠统一，避免路径格式不一致导致匹配失败
+    fp_norm = os.path.normcase(os.path.abspath(file_path))
 
-    # 先在集合中查找（大小写不敏感）
+    # 先在集合中查找（大小写不敏感、路径格式不敏感）
     for i in range(1, documents.Count + 1):
         try:
             d = documents.Item(i)
-            if d.FullName.lower() == fp_lower:
+            d_norm = os.path.normcase(os.path.abspath(str(d.FullName or "")))
+            if d_norm == fp_norm:
                 logger.debug(f"load_catia_file: 已在内存中，跳过 Open → {file_path}")
                 return d
         except Exception:
@@ -128,17 +131,16 @@ def _read_part_attrs(doc) -> dict:
     }
 
     try:
-        # 判断文档类型
-        try:
-            doc_type = doc.get_Type()
-        except Exception:
-            doc_type = ""
+        # 使用 document.py 中经过验证的类型判断函数
+        from catia_copilot.catia.document import get_document_type
+        doc_kind = get_document_type(doc)  # PartDocument / ProductDocument / DrawingDocument / Unknown
 
-        if "Part" in doc_type:
+        if doc_kind == "PartDocument":
             root_obj = doc.Part
-        elif "Product" in doc_type:
+        elif doc_kind == "ProductDocument":
             root_obj = doc.Product
         else:
+            # Drawing 或 Unknown：标记不可读但不阻断
             result["is_readable"] = False
             return result
 

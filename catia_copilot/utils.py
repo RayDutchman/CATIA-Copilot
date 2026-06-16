@@ -23,13 +23,12 @@ import unicodedata
 import winreg
 import logging
 from pathlib import Path
+from typing import Any
 
 import pythoncom
 import win32gui
 import win32con
 import win32com.client as _wcc
-from win32com.client import dynamic as _dyn
-from win32com.client import dynamic as _wcc_dynamic
 from win32com.client import gencache as _gencache
 
 try:
@@ -38,6 +37,9 @@ except ImportError:
     _win32com_client = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+# Keep late-bound Dispatch to avoid gen_py early-binding side effects.
+_dynamic_dispatch = getattr(getattr(_wcc, "dynamic", _wcc), "Dispatch")
 
 
 # ---------------------------------------------------------------------------
@@ -98,19 +100,20 @@ def _find_catia_v5_in_rot():
         enum = rot.EnumRunning()
         # 用于获取 moniker 显示名的 bind context
         try:
-            bind_ctx = pythoncom.CreateBindCtx(0)
+            bind_ctx = pythoncom.CreateBindCtx()
         except Exception:
             bind_ctx = None
         while True:
             monikers = enum.Next(1)
             if not monikers:
                 break
-            moniker = monikers[0]
+            moniker = monikers[0] if isinstance(monikers, (list, tuple)) else monikers
             # 尝试获取 moniker 显示名（用于日志/诊断）
             display_name = "<unknown>"
             if bind_ctx is not None:
                 try:
-                    display_name = moniker.GetDisplayName(bind_ctx, None)
+                    moniker_any: Any = moniker
+                    display_name = moniker_any.GetDisplayName(bind_ctx, None)
                 except Exception as dn_exc:
                     display_name = f"<DisplayName 失败: {dn_exc}>"
             try:
@@ -124,7 +127,7 @@ def _find_catia_v5_in_rot():
                         f"ROT moniker [{display_name}] QI(IID_IDispatch) 失败：{qi_exc}"
                     )
                     continue
-                dispatch = _wcc_dynamic.Dispatch(idispatch)
+                dispatch = _dynamic_dispatch(idispatch)
                 _ = dispatch.Name   # 浅层功能性测试
                 if not _is_catia_v5_dispatch(dispatch):
                     logger.debug(f"ROT moniker [{display_name}] 不是 CATIA V5，跳过")
@@ -223,7 +226,7 @@ def _try_get_active_object_by_clsid(clsid: str):
     try:
         _raw = _wcc.GetActiveObject(clsid)
         _oleobj = getattr(_raw, "_oleobj_", None)
-        return _dyn.Dispatch(_oleobj) if _oleobj is not None else _raw
+        return _dynamic_dispatch(_oleobj) if _oleobj is not None else _raw
     except Exception as exc:
         logger.debug(f"GetActiveObject({clsid!r}) 失败：{exc}")
         return None
@@ -242,8 +245,9 @@ def resource_path(filename: str) -> Path:
     返回：
         资源文件的绝对路径
     """
-    if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / filename
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass is not None:
+        return Path(meipass) / filename
     return Path(__file__).parent.parent / filename
 
 
@@ -409,7 +413,7 @@ def get_catia_v5_com_dispatch():
         try:
             _raw = _wcc.GetActiveObject(key)
             _oleobj = getattr(_raw, "_oleobj_", None)
-            candidate = _dyn.Dispatch(_oleobj) if _oleobj is not None else _raw
+            candidate = _dynamic_dispatch(_oleobj) if _oleobj is not None else _raw
             _ = candidate.Name  # 可用性测试
             if _is_catia_v5_dispatch(candidate):
                 return candidate
@@ -483,7 +487,7 @@ def check_catia_connection() -> str:
         try:
             _raw = _wcc.GetActiveObject(key)
             _oleobj = getattr(_raw, "_oleobj_", None)
-            return _dyn.Dispatch(_oleobj) if _oleobj is not None else _raw
+            return _dynamic_dispatch(_oleobj) if _oleobj is not None else _raw
         except Exception:
             return None
 
@@ -578,7 +582,11 @@ def diagnose_catia_connection() -> dict:
     gen_py_path: Path | None = None
     if _win32com_client is not None:
         try:
-            gen_py_path = Path(_gencache.GetGeneratePath())
+            get_generate_path = getattr(_gencache, "GetGeneratePath", None)
+            if callable(get_generate_path):
+                raw_generate_path = get_generate_path()
+                if isinstance(raw_generate_path, (str, os.PathLike)):
+                    gen_py_path = Path(raw_generate_path)
         except Exception:
             pass
     if gen_py_path is None:
@@ -599,7 +607,7 @@ def diagnose_catia_connection() -> dict:
         try:
             _raw = _wcc.GetActiveObject(key)
             _oleobj = getattr(_raw, "_oleobj_", None)
-            _candidate = _dyn.Dispatch(_oleobj) if _oleobj is not None else _raw
+            _candidate = _dynamic_dispatch(_oleobj) if _oleobj is not None else _raw
             _ = _candidate.Name  # 可用性测试
             return _candidate, None
         except Exception as exc:
@@ -685,7 +693,11 @@ def ensure_clean_gencache() -> None:
     # 1. 通过 gencache 模块获取版本特定路径（最准确）
     if _win32com_client is not None:
         try:
-            candidates.add(Path(_gencache.GetGeneratePath()))  # e.g., …/gen_py/3.13
+            get_generate_path = getattr(_gencache, "GetGeneratePath", None)
+            if callable(get_generate_path):
+                raw_generate_path = get_generate_path()
+                if isinstance(raw_generate_path, (str, os.PathLike)):
+                    candidates.add(Path(raw_generate_path))  # e.g., …/gen_py/3.13
         except Exception:
             pass
 
@@ -822,6 +834,9 @@ def _read_thumbnail_via_windows_shell_inner(filepath: str, size: int) -> bytes |
         filepath, None, ctypes.byref(_IID_ISIIF), ctypes.byref(pFactory),
     ) != 0 or not pFactory:
         return None
+    pFactory_value = pFactory.value
+    if pFactory_value is None:
+        return None
 
     try:
         # IShellItemImageFactory::GetImage (vtable slot 3)
@@ -829,7 +844,7 @@ def _read_thumbnail_via_windows_shell_inner(filepath: str, size: int) -> bytes |
         # is available; this prevents returning the CATIA icon as a thumbnail.
         hbm = ctypes.c_void_p(0)
         if _vtcall(
-            pFactory.value, 3,
+            pFactory_value, 3,
             ctypes.HRESULT,
             [_SIZE, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)],
             [_SIZE(size, size), 0x08, ctypes.byref(hbm)],
@@ -871,7 +886,7 @@ def _read_thumbnail_via_windows_shell_inner(filepath: str, size: int) -> bytes |
         finally:
             gdi32.DeleteObject(hbm)
     finally:
-        _vtcall(pFactory.value, 2, ctypes.c_ulong, [], [])   # IUnknown::Release
+        _vtcall(pFactory_value, 2, ctypes.c_ulong, [], [])   # IUnknown::Release
 
 
 # ---------------------------------------------------------------------------
@@ -995,7 +1010,8 @@ def safe_set_visible(application) -> None:
         # 已经可见，无需设置，直接返回（避免触发 CATIA 内部 ShowWindow）
         return
 
-    # 记录设置前的窗口状态    catia_hwnd = _find_catia_hwnd()
+    # 记录设置前的窗口状态
+    catia_hwnd = _find_catia_hwnd()
     show_cmd_before = 0
     if catia_hwnd:
         try:

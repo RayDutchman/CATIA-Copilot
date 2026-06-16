@@ -32,7 +32,7 @@ import pythoncom as _pcom
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.conversion import convert_drawing_to_pdf
 from catia_copilot.catia.dependencies import find_drawing_for_part
-from catia_copilot.catia.document import get_bom_node_type
+from catia_copilot.catia.document import get_bom_node_type, set_document_properties
 from catia_copilot.catia.bom_collect_v3 import (
     collect_bom_part_masters,
     CollectConfig,
@@ -213,6 +213,77 @@ class SyncResult:
         return "\n".join(lines)
 
 
+# ── 结构化同步事件（供 UI 进度解析使用，替代脆弱的文本解析） ────────────────────
+
+@dataclass
+class SyncEvent:
+    """结构化同步进度事件。
+
+    type: 事件类型
+      - "header": 表头
+      - "node_start": 开始处理节点
+      - "node_progress": 节点处理中（上传进度、转换进度）
+      - "node_done": 节点处理完成（终态）
+      - "node_skip": 节点跳过
+      - "node_fail": 节点失败
+      - "summary": 同步汇总
+    part_number: 零件编号
+    source: 签出来源（如 "新建"、"签出"、"已签出-本人"、"覆盖他人签出"）
+    update: 更新结果（如 "属性已写入"、"STP 已上传"、"✗ 更新失败"）
+    checkin: 签入状态（如 "已签入"、"保留签出"、""）
+    message: 原始日志消息（兼容旧代码）
+    speed_kbps: 上传速度 KB/s（可选）
+    """
+    type: str
+    part_number: str = ""
+    source: str = ""
+    update: str = ""
+    checkin: str = ""
+    message: str = ""
+    speed_kbps: float | None = None
+
+
+def _emit_text(cb, event: SyncEvent) -> None:
+    """将结构化事件转换为文本日志（兼容旧回调）。"""
+    if event.type == "header":
+        cb(_log_header())
+    elif event.type == "node_start":
+        cb(_log_row(event.source, "", "", event.part_number))
+    elif event.type == "node_progress":
+        if event.speed_kbps is not None:
+            cb(f"{event.message}  {event.speed_kbps:.1f} KB/s")
+        else:
+            cb(event.message)
+    elif event.type == "node_done":
+        cb(_log_row(event.source, event.update, event.checkin, event.part_number))
+    elif event.type == "node_skip":
+        cb(_log_skip(event.source, event.part_number))
+    elif event.type == "node_fail":
+        cb(_log_fail(event.source, event.part_number))
+    elif event.type == "summary":
+        cb(event.message)
+    else:
+        cb(event.message)
+
+
+def _makecb(textcb, structcb):
+    """创建同时支持文本和结构化回调的包装器。
+
+    返回的 cb 接受 str 或 SyncEvent：
+    - 传入 str 时自动包装为 SyncEvent(type="summary", message=str)，
+      保持向后兼容（调用方无需改动）。
+    - 传入 SyncEvent 时直接分发，供结构化消费方使用。
+    """
+    def cb(event: "str | SyncEvent") -> None:  # type: ignore[misc]
+        if isinstance(event, str):
+            event = SyncEvent(type="summary", message=event)
+        if textcb:
+            _emit_text(textcb, event)
+        if structcb:
+            structcb(event)
+    return cb
+
+
 # ── BOM 提取（CATIA COM，须在主线程调用） ──────────────────────────────────────
 
 # 从 constants 引入，避免重复定义：
@@ -274,7 +345,7 @@ def collect_bom_for_sync(progress_callback=None) -> list[dict] | None:
 
     返回 None 表示 CATIA 连接失败；返回空列表表示文档无产品结构。
     """
-    def _cb(msg: str) -> None:
+    def cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
         logger.debug(msg)
@@ -354,7 +425,7 @@ def collect_bom_for_sync(progress_callback=None) -> list[dict] | None:
             "_local_mat4":  local_mat4,
         }
         rows.append(row)
-        _cb(f"  已读取 {len(rows)} 个实例……")
+        cb(f"  已读取 {len(rows)} 个实例……")
 
         # ── 递归子节点（每个实例单独递归，不去重）───────────────────────────
         try:
@@ -379,24 +450,24 @@ def extract_bom(progress_callback=None) -> BomNode | None:
     _rows_to_bom_tree() 在构建树时按 pn 聚合同级同 pn 的多个实例，
     使 BomNode.instances 包含所有实例的局部变换矩阵。
     """
-    def _cb(msg: str) -> None:
+    def cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
         logger.debug(msg)
 
-    _cb("正在读取 BOM……")
+    cb("正在读取 BOM……")
 
     rows = collect_bom_for_sync(progress_callback=progress_callback)
 
     if rows is None:
-        _cb("BOM 提取失败：无法连接 CATIA 或无活动文档")
+        cb("BOM 提取失败：无法连接 CATIA 或无活动文档")
         return None
 
     if not rows:
         logger.warning("BOM 为空，无活动文档或文档无产品结构")
         return None
 
-    _cb(f"BOM 读取完成，共 {len(rows)} 个实例行，正在构建树……")
+    cb(f"BOM 读取完成，共 {len(rows)} 个实例行，正在构建树……")
     return _rows_to_bom_tree(rows)
 
 
@@ -413,12 +484,12 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
     须在主线程或已 CoInitialize 的后台线程中调用（win32com + pycatia 均需要）。
     返回 None 表示 CATIA 连接失败、无活动文档或产品结构为空。
     """
-    def _cb(msg: str) -> None:
+    def cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
         logger.debug(msg)
 
-    _cb("正在读取 BOM（v3，含位置信息）……")
+    cb("正在读取 BOM（v3，含位置信息）……")
 
     cols        = list(dict.fromkeys(_ALL_ATTR_COLS))   # 去重保序
     custom_cols = _CUSTOM_COLS
@@ -432,11 +503,11 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
             None,           # file_path=None：使用当前活动文档
             cols,
             custom_cols,
-            progress_callback=lambda n: _cb(f"  已读取 {n} 个节点……"),
+            progress_callback=lambda n: cb(f"  已读取 {n} 个节点……"),
             config=v3_config,
         )
     except Exception as exc:
-        _cb(f"BOM 提取失败：{exc}")
+        cb(f"BOM 提取失败：{exc}")
         logger.error("extract_bom_v3 失败：%s", exc)
         return None
 
@@ -445,10 +516,10 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
         logger.warning("extract_bom_v3: part_masters 为空，无活动文档或文档无产品结构")
         return None
 
-    _cb(f"BOM 读取完成，共 {n_pm} 个 PartMaster，正在构建同步树……")
+    cb(f"BOM 读取完成，共 {n_pm} 个 PartMaster，正在构建同步树……")
     result = _part_masters_to_bom_tree(root_pm_key, part_masters)
     if result is None:
-        _cb("BOM 树构建失败（根节点未找到）")
+        cb("BOM 树构建失败（根节点未找到）")
     return result
 
 
@@ -689,6 +760,7 @@ def sync_bom_to_plm(
     options: SyncOptions | None = None,
     upload_step: bool = False,
     progress_callback=None,
+    progress_callback_structured=None,
 ) -> SyncResult:
     """将 BOM 树同步到 DocdokuPLM（不涉及 CATIA COM，可在后台线程执行）。
 
@@ -698,6 +770,9 @@ def sync_bom_to_plm(
       阶段二：对上传了 STP 的零件轮询等待转换完成，再对所有票据批量 checkin。
 
     upload_step 参数保留兼容旧调用方，新调用方通过 options.upload_step_file 控制。
+
+    progress_callback: 旧式文本回调 fn(msg: str)
+    progress_callback_structured: 新式结构化回调 fn(event: SyncEvent)
     """
     if options is None:
         options = SyncOptions()
@@ -717,10 +792,8 @@ def sync_bom_to_plm(
 
     result = SyncResult()
 
-    def _cb(msg: str) -> None:
-        if progress_callback:
-            progress_callback(msg)
-        logger.debug(msg)
+    # 创建同时支持文本和结构化的回调包装器
+    cb = _makecb(progress_callback, progress_callback_structured)
 
     # ── 前置校验：BOM 中不允许存在"部件"节点 ──────────────────────────────────
     def _find_components(node: BomNode) -> list[str]:
@@ -743,7 +816,7 @@ def sync_bom_to_plm(
             "请在 CATIA 中将其转换为独立产品（CATProduct）后重新读取 BOM。"
         )
         result.errors.append(msg)
-        _cb(f"✗ 同步中止：BOM 包含部件节点 — {names}")
+        cb(f"✗ 同步中止：BOM 包含部件节点 — {names}")
         return result
 
     # 确保模板存在（失败不阻断同步）
@@ -752,12 +825,12 @@ def sync_bom_to_plm(
         tpl_id = client.ensure_part_template(workspace)
     except PlmApiError as exc:
         logger.warning(f"模板初始化失败（将以无模板方式继续）：{exc}")
-        _cb(f"警告：模板初始化失败，将以无模板方式继续 — {exc}")
+        cb(f"警告：模板初始化失败，将以无模板方式继续 — {exc}")
 
     # ── 增量同步：预加载工作区全量零件，建立属性缓存 ────────────────────────
     plm_parts_cache: dict[str, dict] = {}
     if options.incremental:
-        _cb("正在拉取工作区零件列表（增量判断）……")
+        cb("正在拉取工作区零件列表（增量判断）……")
         try:
             raw_parts = client.list_parts(workspace)
             for p in raw_parts:
@@ -778,18 +851,18 @@ def sync_bom_to_plm(
                     if bval:
                         attrs[f"__builtin_{builtin_key}"] = bval
                 plm_parts_cache[pn] = {"version": ver, "attrs": attrs}
-            _cb(f"已缓存 {len(plm_parts_cache)} 个已有零件（增量模式）")
+            cb(f"已缓存 {len(plm_parts_cache)} 个已有零件（增量模式）")
         except PlmApiError as exc:
             logger.warning(f"增量缓存拉取失败，将退化为全量同步：{exc}")
-            _cb(f"警告：增量缓存拉取失败，退化为全量同步 — {exc}")
+            cb(f"警告：增量缓存拉取失败，退化为全量同步 — {exc}")
 
     # ════════════════════════════════════════════════════════════════════
     # 阶段一：checkout + update + 上传，收集 CheckinTicket
     # ════════════════════════════════════════════════════════════════════
-    _cb(_log_header())
+    
     tickets: list[CheckinTicket] = []
     _sync_node(
-        bom_root, client, workspace, tpl_id, options, result, _cb,
+        bom_root, client, workspace, tpl_id, options, result, cb,
         plm_parts_cache=plm_parts_cache,
         tickets=tickets,
     )
@@ -803,25 +876,28 @@ def sync_bom_to_plm(
     )
     if tickets:
         if keep_checkout:
-            # 保留签出：不执行 checkin，仅输出终态日志行（col3="保留签出"）
-            _cb(f"── 保留签出（{len(tickets)} 个零件，不执行签入）──")
+            # 保留签出：不执行 checkin，输出终态日志行并写回 CATIA 属性
+            cb(f"── 保留签出（{len(tickets)} 个零件，不执行签入）──")
             for t in tickets:
-                _cb(_log_row(t.source, t.update_col or "属性已写入", "保留签出", t.lbl))
+                cb(_log_row(t.source, t.update_col or "属性已写入", "保留签出", t.lbl))
+                # checkout 时 PLM 已创建新 iteration，此处写回本地文件
+                if t.node.filepath and _os.path.isfile(t.node.filepath):
+                    _write_plm_attrs_to_catia(t.node.filepath, t.version, t.iteration)
         else:
-            _cb(f"── 批量签入（{len(tickets)} 个零件）──")
+            cb(f"── 批量签入（{len(tickets)} 个零件）──")
             for t in tickets:
-                _do_checkin_ticket(t, client, workspace, options, result, _cb)
+                _do_checkin_ticket(t, client, workspace, options, result, cb)
 
     # ── Product 注册 ──────────────────────────────────────────────────────────
     if options.register_product:
-        _cb("正在注册顶层产品（Product）……")
+        cb("正在注册顶层产品（Product）……")
         try:
             pn_root  = bom_root.part_number
             nom_root = (bom_root.attrs.get("Nomenclature") or "").strip() or pn_root
             prod_id  = pn_root.replace(" ", "_")
             client.create_product(workspace, prod_id, pn_root, nom_root)
             result.product_registered = True
-            _cb(f"产品已注册：{prod_id}（根零件 {pn_root}）")
+            cb(f"产品已注册：{prod_id}（根零件 {pn_root}）")
         except PlmApiError as exc:
             _msg = str(exc)
             if exc.status_code in (400, 409) and (
@@ -829,10 +905,10 @@ def sync_bom_to_plm(
                 or "duplicate" in _msg.lower()
             ):
                 result.product_registered = True
-                _cb(f"产品已存在，跳过注册：{bom_root.part_number}")
+                cb(f"产品已存在，跳过注册：{bom_root.part_number}")
             else:
                 result.errors.append(f"产品注册失败：{exc}")
-                _cb(f"警告：产品注册失败 — {exc}")
+                cb(f"警告：产品注册失败 — {exc}")
 
     return result
 
@@ -1031,6 +1107,7 @@ def _sync_node(
             or "已存在" in _msg
             or "不唯一" in _msg
             or "not unique" in _msg.lower()
+            or "may not be unique" in _msg.lower()  # 服务端 CreationException 消息
         ))
         if _is_exists:
             part_number, version = pn, "A"
@@ -1418,6 +1495,8 @@ def _do_checkin_ticket(
     cb(_log_row(ticket.source, ticket.update_col, col3, ticket.lbl))
 
     # ── 签入成功后：将 PLM_Version / PLM_Iteration 写回 CATIA 文件 ────────────
+    # ticket.iteration 是 checkout 时 PLM 返回的新迭代号；checkin 只是锁定该迭代，
+    # 不会再改变编号，直接使用即可。
     if col3 == "已签入" and ticket.node.filepath and _os.path.isfile(ticket.node.filepath):
         _write_plm_attrs_to_catia(
             ticket.node.filepath,
@@ -1457,71 +1536,23 @@ def _write_plm_attrs_to_catia(
     若 CATIA 未运行或文件未打开，则静默跳过，只记录 debug 日志。
     """
     try:
-        import pythoncom as _pcom_local
-        import win32com.client as _win32_local
-
-        try:
-            catia = _win32_local.GetActiveObject("CATIA.Application")
-        except Exception:
-            logger.debug(f"PLM 属性写回跳过（CATIA 未运行）：{filepath}")
-            return
-
-        # 在已打开的文档列表中找到对应文件
-        doc = None
-        try:
-            docs = catia.Documents
-            for i in range(1, docs.Count + 1):
-                try:
-                    d = docs.Item(i)
-                    if d.FullName.lower() == filepath.lower():
-                        doc = d
-                        break
-                except Exception:
-                    continue
-        except Exception as exc:
-            logger.debug(f"PLM 属性写回：遍历文档失败 — {exc}")
-            return
-
-        if doc is None:
-            logger.debug(f"PLM 属性写回跳过（文档未在 CATIA 中打开）：{filepath}")
-            return
-
-        # 获取零件根对象（PartDocument → Part；ProductDocument → Product）
-        try:
-            doc_type = doc.get_Type()
-        except Exception:
-            doc_type = ""
-
-        try:
-            if "Part" in doc_type:
-                root_obj = doc.Part
-            elif "Product" in doc_type:
-                root_obj = doc.Product
-            else:
-                logger.debug(f"PLM 属性写回：未知文档类型 {doc_type}，跳过 {filepath}")
-                return
-
-            params = root_obj.UserRefProperties
-            # 写入 PLM_Version（TEXT）
-            try:
-                p = params.GetItem("PLM_Version")
-                p.ValuateFromString(str(plm_version))
-            except Exception:
-                params.CreateString("PLM_Version", str(plm_version))
-
-            # 写入 PLM_Iteration（INTEGER，以字符串方式写入，CATIA 会自动转换）
-            try:
-                p = params.GetItem("PLM_Iteration")
-                p.ValuateFromString(str(int(plm_iteration)))
-            except Exception:
-                params.CreateInteger("PLM_Iteration", int(plm_iteration))
-
-            doc.Save()
-            logger.info(
-                f"PLM 属性已写回 CATIA：{_os.path.basename(filepath)} "
-                f"→ PLM_Version={plm_version}, PLM_Iteration={plm_iteration}"
-            )
-        except Exception as exc:
-            logger.warning(f"PLM 属性写回失败（不影响同步）：{filepath} — {exc}")
+        result = set_document_properties(
+            filepath,
+            user_defined={
+                "PLM_Version": str(plm_version),
+                "PLM_Iteration": str(int(plm_iteration)),
+            },
+            save=True,
+        )
+        logger.info(
+            f"PLM 属性已写回 CATIA：{_os.path.basename(filepath)} "
+            f"→ PLM_Version={plm_version}, PLM_Iteration={plm_iteration}"
+        )
+        if result.get("skipped"):
+            logger.warning(f"PLM 属性写回：部分属性跳过 {result['skipped']}（{filepath}）")
+    except FileNotFoundError:
+        logger.debug(f"PLM 属性写回跳过（文档未在 CATIA 中打开）：{filepath}")
+    except RuntimeError as exc:
+        logger.debug(f"PLM 属性写回跳过（{exc}）：{filepath}")
     except Exception as exc:
-        logger.debug(f"PLM 属性写回异常（已忽略）：{exc}")
+        logger.warning(f"PLM 属性写回失败（不影响同步）：{filepath} — {exc}")
