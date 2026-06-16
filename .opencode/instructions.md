@@ -65,7 +65,7 @@ ai_config.example.json           # 可提交的配置模板
 | `DRAWING_PYTHON_TEST_GUIDE.md` | 图纸操作 Python 改写后的测试指南 |
 | `PYCATIA_OVERVIEW.md` | pycatia 各模块主要类与功能摘要（重点：SAFEARRAY ByRef 封装） |
 | `PYTHON_COM_TYPE_CHECK.md` | win32com 中正确检测 CATIA 文档类型的方法 |
-| `THEMING.md` | 主题系统三层实现（windows11 风格 + native.qss + QPalette） |
+| `THEMING.md` | 主题系统：windows11 风格 + native.qss + DWM 着色 + ChatColors/RowColors 动态颜色 |
 | `DIALOG_BEHAVIOR.md` | 所有对话框的窗口行为、置顶机制、已知问题 |
 | `TRAY_AUTOSTART_PLAN.md` | 程序托盘化与随 CATIA 自启动的实施计划（未实施） |
 | `DEVELOPMENT.md` | 本地开发环境搭建、测试运行、打包、版本号管理 |
@@ -82,6 +82,15 @@ ai_config.example.json           # 可提交的配置模板
 
 ### 功能名称
 所有功能名称集中在 `MainWindow._ACTION_LABELS`，对话框标题必须与其一致，不要硬编码。
+
+### UI / 主题约定
+
+- **主题跟随系统**：始终使用 `windows11` 风格 + `native.qss`，无手动切换；`ThemeManager` 是唯一入口
+- **颜色动态取色**：聊天面板用 `get_chat_colors()`，表格行用 `get_colors()`，颜色从系统 QPalette 动态获取
+- **字体常量集中**：所有字号/间距/尺寸常量在 `ui_layout.py` 的 `L` 单例，不要硬编码数字
+- **QSS 选择器用精确 `#objectName`**：避免污染子树；不要写通用标签选择器（如 `QFrame { }`）
+- **emoji/符号按钮**：统一指定 `QFont("Segoe UI Emoji")`（如 Braille 转圈动画）
+- **文件写入**：`filesystem_write_file` 用正斜杠路径；超长文件用 PowerShell here-string + 临时 py 脚本
 
 ### import 规则（PyInstaller / Nuitka 打包）
 所有 `import` 必须在**模块顶层**，禁止函数体内懒加载。  
