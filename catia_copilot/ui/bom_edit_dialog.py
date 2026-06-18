@@ -129,7 +129,7 @@ class BomEditDialog(QDialog):
 
         # ── 配置与持久化设置 ──────────────────────────────────────────────────
         # 与"导出BOM"对话框共享自定义列配置
-        self._export_settings = QSettings("CATIACompanion", "ExportBOMDialog")
+        self._export_settings = QSettings("CATIACopilot", "ExportBOMDialog")
         self._last_browse_dir = self._export_settings.value("last_browse_dir", "")
 
         saved_custom = self._export_settings.value("custom_columns", [])
@@ -138,7 +138,7 @@ class BomEditDialog(QDialog):
         self._custom_columns: list[str] = list(saved_custom)
 
         # BomEditDialog 专用设置
-        self._edit_settings  = QSettings("CATIACompanion", "BomEditDialog")
+        self._edit_settings  = QSettings("CATIACopilot", "BomEditDialog")
         saved_visible        = self._edit_settings.value("visible_preset_columns", [])
         if isinstance(saved_visible, str):
             saved_visible = [saved_visible]

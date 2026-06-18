@@ -223,6 +223,7 @@ def collect_bom_part_masters(
     custom_columns: list[str],
     progress_callback: Callable[[int], None] | None = None,
     config: CollectConfig | None = None,
+    max_depth: int = -1,
 ) -> tuple[str, dict[str, dict], dict[int, dict]]:
     """遍历 CATIA 产品树，构建 part_masters 树和 inst_key_to_info 反向索引。
 
@@ -247,6 +248,14 @@ def collect_bom_part_masters(
         CollectConfig 实例，控制可选字段的收集行为。
         默认 None 等价于 CollectConfig()（全部 disabled），确保现有调用方零改动。
         各字段说明见 CollectConfig 及子 dataclass 的文档。
+
+    max_depth:
+        -1（默认）：完整递归，遍历整棵产品树。
+        N >= 0：只遍历到第 N 层（根节点为第 0 层）。
+        超出深度的子节点不调用 _traverse，不执行 ApplyWorkMode，
+        但仍会在父节点的 instances 列表中记录（pn、placement），
+        供 _part_masters_to_bom_tree 构建带装配关系的 BomNode 树。
+        用于按文件主键 sync 时只需一层子节点信息的场景。
     """
     if config is None:
         config = CollectConfig()
@@ -485,6 +494,41 @@ def collect_bom_part_masters(
                             _total_count += 1
                             if progress_callback is not None:
                                 progress_callback(_total_count)
+                        elif max_depth != -1 and level + 1 > max_depth:
+                            # 深度超限：不调 _traverse（避免 ApplyWorkMode 触发轻量化加载）
+                            # 直接建最小 part_master（仅含 pn），供父节点 instances 和
+                            # _part_masters_to_bom_tree 构建 BomNode 时使用
+                            child_pm_key = child_pm_key_candidate
+                            if child_pm_key not in part_masters:
+                                # 根据文件路径推断节点类型，确保 Component 能被正确识别
+                                if child_is_embedded:
+                                    _min_type = BomNodeType.COMPONENT
+                                elif child_filepath:
+                                    _ext = Path(child_filepath).suffix.lower()
+                                    _min_type = (BomNodeType.PART if _ext == ".catpart"
+                                                 else BomNodeType.PRODUCT if _ext == ".catproduct"
+                                                 else "")
+                                else:
+                                    _min_type = ""
+                                part_masters[child_pm_key] = {
+                                    "part_number":  child_pn_raw,
+                                    "pm_key":      child_pm_key,
+                                    "host_file_pn": child_host if child_is_embedded else "",
+                                    "nomenclature": "", "revision": "", "definition": "",
+                                    "source": "", "description": "",
+                                    "type":         _min_type,
+                                    "filename":     (Path(child_filepath).name
+                                                     if child_filepath else FILENAME_NOT_FOUND),
+                                    "filepath":     child_filepath,
+                                    "_not_found":   not bool(child_filepath),
+                                    "_no_file":     False,
+                                    "_unreadable":  True,  # 标记为未完整读取
+                                    "_product":     None,
+                                    "instances":    [],
+                                }
+                            _total_count += 1
+                            if progress_callback is not None:
+                                progress_callback(_total_count)
                         else:
                             child_pm_key = _traverse(
                                 child, level + 1, filepath, child_host,
@@ -535,8 +579,8 @@ def collect_bom_part_masters(
     if file_path is None:
         root_product = application.ActiveDocument.Product
     else:
-        from catia_copilot.utils import open_catia_file  # noqa: PLC0415
-        root_product = open_catia_file(application.Documents, file_path).Product
+        from catia_copilot.plm.workspace_scanner import load_catia_file  # noqa: PLC0415
+        root_product = load_catia_file(application, file_path).Product
 
     # 根节点始终是独立文件，pm_key == pn，host_file_pn 传 "" 即可（根节点不是嵌入部件）
     root_pm_key = _traverse(root_product, level=0, parent_filepath="", host_file_pn="")

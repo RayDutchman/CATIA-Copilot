@@ -52,7 +52,7 @@ class ExportBomDialog(QDialog):
         self.setWindowTitle("从产品导出 BOM")
         self.setMinimumSize(500, 700)
 
-        self._settings        = QSettings("CATIACompanion", "ExportBOMDialog")
+        self._settings        = QSettings("CATIACopilot", "ExportBOMDialog")
         self._last_browse_dir = self._settings.value("last_browse_dir", "")
         self._last_output_dir = self._settings.value("last_output_dir", "")
         self._use_active_doc: bool = self._settings.value("use_active_doc", False, type=bool)

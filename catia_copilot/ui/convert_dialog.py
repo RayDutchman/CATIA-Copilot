@@ -91,7 +91,7 @@ class FileConvertDialog(QDialog):
         self._show_update_option    = show_update_option
         self._show_active_doc_option = show_active_doc_option
 
-        self._settings         = QSettings("CATIACompanion", f"ConvertDialog_{settings_key}")
+        self._settings         = QSettings("CATIACopilot", f"ConvertDialog_{settings_key}")
         self._last_browse_dir  = self._settings.value("last_browse_dir", "")
         self._last_output_dir  = self._settings.value("last_output_dir", "")
         self._is_stamp_dialog  = settings_key == "StampPartTemplate"

@@ -73,7 +73,7 @@ QGroupBox "当前连接状态"（测试连接后显示）
 ```
 
 **持久化**：与现有 `PlmSyncDialog` 共用同一组 `QSettings` key
-（`CATIACompanion/PlmConfig`），两窗口配置互通。
+（`CATIACopilot/PlmConfig`），两窗口配置互通。
 
 **逻辑**：
 - "测试连接"按钮：后台线程执行 `login()` + `GET /workspaces` + `GET /users`，
@@ -157,7 +157,7 @@ QGroupBox "手动批量操作"
 ```
 
 **逻辑**：
-- 映射规则持久化到 `QSettings`（`CATIACompanion/PlmTagRules`）
+- 映射规则持久化到 `QSettings`（`CATIACopilot/PlmTagRules`）
 - 同步时在 `_do_update_and_checkin()` 后读取规则，调用 `update_part_tags()`
 - 批量操作：后台线程拉取全量零件后逐个 PUT
 
@@ -199,7 +199,7 @@ QTextEdit  详细日志（右侧，只读，objectName="logView"）
 [清空历史]（需二次确认）
 ```
 
-**持久化**：`QSettings`（`CATIACompanion/PlmSyncHistory`），最多 20 条。
+**持久化**：`QSettings`（`CATIACopilot/PlmSyncHistory`），最多 20 条。
 
 ---
 

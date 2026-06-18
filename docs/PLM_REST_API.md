@@ -259,8 +259,8 @@ Content-Type: application/json
 ### 3.4 Checkout / Checkin
 
 ```
-PUT /api/workspaces/{workspaceId}/parts/{partNumber}/versions/{version}/checkouts    ← checkout
-PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/checkin              ← checkin
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{partVersion}/checkout          ← checkout
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{partVersion}/checkin          ← checkin
 ```
 
 - Checkin 无请求体，返回更新后的 `PartRevisionDTO`
@@ -268,7 +268,7 @@ PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/checkin          
 ### 3.5 更新零件迭代（含 BOM 和装配位置）
 
 ```
-PUT /api/workspaces/{workspaceId}/parts/{partNumber}/versions/{version}/iterations/{iteration}
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{partVersion}/iterations/{partIteration}
 ```
 
 **ANGLE 模式（欧拉角，弧度）**：

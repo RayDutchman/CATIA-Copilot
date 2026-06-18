@@ -471,8 +471,17 @@ def extract_bom(progress_callback=None) -> BomNode | None:
     return _rows_to_bom_tree(rows)
 
 
-def extract_bom_v3(progress_callback=None) -> "BomNode | None":
-    """从当前活动 CATIA 文档提取 BOM 树（v3 路径，含位置信息）。
+def extract_bom_v3(progress_callback=None, file_path: str | None = None,
+                   depth: int = -1) -> "BomNode | None":
+    """从指定文件（或当前活动文档）提取 BOM 树（v3 路径，含位置信息）。
+
+    Args:
+        progress_callback: 文本进度回调 fn(msg: str)
+        file_path: 要提取的 CATIA 文件完整路径（CATPart / CATProduct）。
+                   None 表示使用当前活动文档（原有行为）。
+        depth:     BomNode 树的最大层数。-1 表示完整递归（默认）；
+                   1 表示只构建根节点 + 直接子节点（子节点 children 为空），
+                   用于按文件主键 sync 时避免重复处理下级文件。
 
     使用 collect_bom_part_masters（bom_collect_v3）遍历产品树，
     CollectConfig(placement=MatrixCollectConfig(enabled=True)) 确保每个子实例
@@ -482,14 +491,15 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
     同一父节点下相同 pm_key 的多个实例的 placement 矩阵聚合到同一 BomNode.instances。
 
     须在主线程或已 CoInitialize 的后台线程中调用（win32com + pycatia 均需要）。
-    返回 None 表示 CATIA 连接失败、无活动文档或产品结构为空。
+    返回 None 表示 CATIA 连接失败、文件不存在或产品结构为空。
     """
     def cb(msg: str) -> None:
         if progress_callback:
             progress_callback(msg)
         logger.debug(msg)
 
-    cb("正在读取 BOM（v3，含位置信息）……")
+    label = _os.path.basename(file_path) if file_path else "活动文档"
+    cb(f"正在读取 BOM（v3，含位置信息）：{label}……")
 
     cols        = list(dict.fromkeys(_ALL_ATTR_COLS))   # 去重保序
     custom_cols = _CUSTOM_COLS
@@ -500,24 +510,25 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
 
     try:
         root_pm_key, part_masters, _ = collect_bom_part_masters(
-            None,           # file_path=None：使用当前活动文档
+            file_path,      # None 使用活动文档，非 None 按路径打开
             cols,
             custom_cols,
             progress_callback=lambda n: cb(f"  已读取 {n} 个节点……"),
             config=v3_config,
+            max_depth=depth,   # 透传深度限制，避免 ApplyWorkMode 触发轻量化子节点加载
         )
     except Exception as exc:
         cb(f"BOM 提取失败：{exc}")
-        logger.error("extract_bom_v3 失败：%s", exc)
+        logger.error("extract_bom_v3 失败（%s）：%s", label, exc)
         return None
 
     n_pm = len(part_masters)
     if n_pm == 0:
-        logger.warning("extract_bom_v3: part_masters 为空，无活动文档或文档无产品结构")
+        logger.warning("extract_bom_v3: part_masters 为空（%s）", label)
         return None
 
     cb(f"BOM 读取完成，共 {n_pm} 个 PartMaster，正在构建同步树……")
-    result = _part_masters_to_bom_tree(root_pm_key, part_masters)
+    result = _part_masters_to_bom_tree(root_pm_key, part_masters, max_depth=depth)
     if result is None:
         cb("BOM 树构建失败（根节点未找到）")
     return result
@@ -526,6 +537,7 @@ def extract_bom_v3(progress_callback=None) -> "BomNode | None":
 def _part_masters_to_bom_tree(
     root_pm_key: str,
     part_masters: dict[str, dict],
+    max_depth: int = -1,
 ) -> "BomNode | None":
     """将 bom_collect_v3 的 part_masters 字典树转换为 BomNode 树。
 
@@ -537,6 +549,12 @@ def _part_masters_to_bom_tree(
         - 每个 inst_info["placement"] 依次追加到 BomNode.instances（None 跳过）
     - ancestors 集合防止 Component 循环引用导致无限递归。
 
+    max_depth:
+        -1（默认）：完整递归，构建完整子树。
+        N >= 0：只递归到第 N 层（根节点为第 0 层）。子节点在 max_depth 层时
+                仍建立 BomNode（含 attrs/filepath/instances），但其 children 为空。
+                用于按文件主键 sync 时，每个文件只需一层子节点（placement 信息）。
+
     attrs 映射：
     - 遍历 _ALL_ATTR_COLS（PLM_BUILTIN_ATTR_COLS + PRESET_USER_REF_PROPERTIES）
     - Source 字段：part_master["source"] 存原始值 "0"/"1"/"2"，经 SOURCE_TO_DISPLAY 转换后写入
@@ -546,7 +564,7 @@ def _part_masters_to_bom_tree(
         logger.error("_part_masters_to_bom_tree: root_pm_key=%r 不在 part_masters 中", root_pm_key)
         return None
 
-    def _walk(pm_key: str, ancestors: frozenset) -> "BomNode":
+    def _walk(pm_key: str, ancestors: frozenset, cur_depth: int) -> "BomNode":
         pm   = part_masters[pm_key]
         node = BomNode(part_number=pm.get("part_number", pm_key))
         node.filepath = pm.get("filepath", "")
@@ -561,6 +579,10 @@ def _part_masters_to_bom_tree(
                 val = SOURCE_TO_DISPLAY.get(val, val)
             if val:
                 node.attrs[col] = val
+
+        # max_depth 限制：已到最大深度时不再向下递归子节点
+        if max_depth != -1 and cur_depth >= max_depth:
+            return node
 
         # 子节点：按 child_pm_key 分组，聚合 placement，保持首次出现顺序
         seen_child_keys: dict[str, BomNode] = {}   # child_pm_key → 已建 BomNode
@@ -585,7 +607,7 @@ def _part_masters_to_bom_tree(
                         child_pm_key,
                     )
                     continue
-                child_node = _walk(child_pm_key, new_ancestors)
+                child_node = _walk(child_pm_key, new_ancestors, cur_depth + 1)
                 seen_child_keys[child_pm_key] = child_node
                 node.children.append(child_node)
 
@@ -596,7 +618,7 @@ def _part_masters_to_bom_tree(
 
         return node
 
-    return _walk(root_pm_key, frozenset())
+    return _walk(root_pm_key, frozenset(), 0)
 
 
 # part_master dict key → BOM 列名的反向映射（仅 _part_masters_to_bom_tree 内部使用）
@@ -761,6 +783,7 @@ def sync_bom_to_plm(
     upload_step: bool = False,
     progress_callback=None,
     progress_callback_structured=None,
+    shared_uploaded_pns: "dict[str, tuple] | None" = None,
 ) -> SyncResult:
     """将 BOM 树同步到 DocdokuPLM（不涉及 CATIA COM，可在后台线程执行）。
 
@@ -773,6 +796,9 @@ def sync_bom_to_plm(
 
     progress_callback: 旧式文本回调 fn(msg: str)
     progress_callback_structured: 新式结构化回调 fn(event: SyncEvent)
+    shared_uploaded_pns: 跨文件共享的已处理 pn 去重表 dict[pn -> (pn, version)]。
+                         按文件主键逐个调用本函数时传入，避免同一 pn 被重复 sync。
+                         None 表示单次调用（原有行为），内部创建局部去重表。
     """
     if options is None:
         options = SyncOptions()
@@ -833,12 +859,22 @@ def sync_bom_to_plm(
         cb("正在拉取工作区零件列表（增量判断）……")
         try:
             raw_parts = client.list_parts(workspace)
-            for p in raw_parts:
+            cb(f"工作区共 {len(raw_parts)} 个零件，逐一拉取详情中……")
+            for idx, p in enumerate(raw_parts, 1):
                 pn = p.get("number") or p.get("partNumber") or ""
                 if not pn:
                     continue
-                ver = p.get("version", "A")
-                last_iter = (p.get("partIterations") or [{}])[-1]
+                # list_parts 端点不返回 partIterations 完整数据，
+                # 改用 get_part_head() 逐个获取完整对象（含属性），
+                # 确保增量属性比较有效，避免退化成全量更新。
+                try:
+                    detail = client.get_part_head(workspace, pn)
+                except PlmApiError:
+                    # 单个零件拉取失败时跳过，不影响其他零件
+                    logger.warning(f"增量缓存：拉取 {pn} 详情失败，跳过")
+                    continue
+                ver      = detail.get("version", "A")
+                last_iter = (detail.get("partIterations") or [{}])[-1]
                 raw_attrs = last_iter.get("instanceAttributes") or []
                 attrs: dict[str, str] = {}
                 for a in raw_attrs:
@@ -847,10 +883,12 @@ def sync_bom_to_plm(
                     if name:
                         attrs[name] = val
                 for builtin_key in ("name", "description"):
-                    bval = str(p.get(builtin_key) or "").strip()
+                    bval = str(detail.get(builtin_key) or "").strip()
                     if bval:
                         attrs[f"__builtin_{builtin_key}"] = bval
                 plm_parts_cache[pn] = {"version": ver, "attrs": attrs}
+                if idx % 50 == 0:
+                    cb(f"  已缓存 {idx}/{len(raw_parts)} 个零件……")
             cb(f"已缓存 {len(plm_parts_cache)} 个已有零件（增量模式）")
         except PlmApiError as exc:
             logger.warning(f"增量缓存拉取失败，将退化为全量同步：{exc}")
@@ -859,13 +897,20 @@ def sync_bom_to_plm(
     # ════════════════════════════════════════════════════════════════════
     # 阶段一：checkout + update + 上传，收集 CheckinTicket
     # ════════════════════════════════════════════════════════════════════
-    
+
     tickets: list[CheckinTicket] = []
-    _sync_node(
-        bom_root, client, workspace, tpl_id, options, result, cb,
-        plm_parts_cache=plm_parts_cache,
-        tickets=tickets,
-    )
+    try:
+        _sync_node(
+            bom_root, client, workspace, tpl_id, options, result, cb,
+            plm_parts_cache=plm_parts_cache,
+            tickets=tickets,
+            uploaded_pns=shared_uploaded_pns if shared_uploaded_pns is not None else {},
+        )
+    except Exception as exc:
+        # 阶段一中途抛异常：记录错误，但必须进入阶段二对已生成的 tickets 执行 checkin，
+        # 避免已签出的零件因异常跳过 checkin 而永久残留签出状态。
+        logger.error("sync_bom_to_plm 阶段一异常（将尝试对已完成票据执行 checkin）：%s", exc)
+        result.errors.append(f"阶段一异常（{exc}）— 已尝试对已完成票据签入")
 
     # ════════════════════════════════════════════════════════════════════
     # 阶段二：批量 checkin（PLM 端已支持先签入再异步转换，无需等待）
@@ -930,16 +975,25 @@ def _plm_call_with_retry(fn, *args, max_retries: int = _RETRY_MAX, **kwargs):
     raise last_exc  # type: ignore[misc]
 
 
-def _get_checkout_owner(client, workspace: str, part_number: str, version: str) -> str | None:
-    """查询零件当前的 checkout 持有者用户名，未签出时返回 None。"""
+def _get_checkout_owner(client, workspace: str, part_number: str) -> tuple[str | None, str, int]:
+    """查询零件当前最新版本的 checkout 持有者用户名及最新迭代号。
+
+    返回 (checkout_owner, version, iteration)：
+      - checkout_owner: 签出人 login，未签出时为 None
+      - version: 找到的最新版本（如 "A"），用于后续 checkout/checkin 调用
+      - iteration: lastIterationNumber，已签出时直接使用，省去额外的 get_latest_version 调用
+
+    内部使用 get_part_head() 动态找到实际最新版本，不再依赖调用方传入版本号，
+    避免了零件已升版时版本硬编码为 "A" 的 Bug。
+    """
     try:
-        ws_q  = _up.quote(workspace)
-        pn_q  = _up.quote(part_number)
-        r = client._request("GET", f"/workspaces/{ws_q}/parts/{pn_q}-{version}") or {}
+        r    = client.get_part_head(workspace, part_number)
+        ver  = r.get("version", "A")
         user = (r.get("checkOutUser") or {}).get("login")
-        return str(user).strip() if user else None
+        itr  = int((r.get("partIterations") or [{}])[-1].get("iteration", 1))
+        return (str(user).strip() if user else None), ver, itr
     except Exception:
-        return None
+        return None, "A", 1
 
 
 def _find_drawing_for_part(filepath: str) -> str | None:
@@ -1044,7 +1098,7 @@ def _sync_node(
             child_pn, _ver = ref
             try:
                 _, latest_ver, _ = _plm_call_with_retry(
-                    client._get_latest_version, workspace, child_pn
+                    client.get_latest_version, workspace, child_pn
                 )
             except PlmApiError:
                 latest_ver = _ver
@@ -1068,11 +1122,18 @@ def _sync_node(
         logger.debug(f"{lbl}: 已处理过（跨层级去重），跳过上传，返回缓存引用")
         return uploaded_pns[pn]
 
-    # 用户勾选过滤：part_upgrade_map 非空时，只处理 map 中的零件
+    # 用户勾选过滤：part_upgrade_map 非空时，只 sync map 中的零件。
+    # 不在 map 中的零件（子节点）仍需查 PLM 最新 version，
+    # 供父节点构建 child_components（装配关系），但不做 checkout/update/upload。
     if options.part_upgrade_map and pn not in options.part_upgrade_map:
-        result.skipped += 1
-        cb(f">>  跳过-未勾选 | {lbl}")
-        return None
+        try:
+            _, latest_ver, _ = _plm_call_with_retry(
+                client.get_latest_version, workspace, pn
+            )
+            return (pn, latest_ver)
+        except PlmApiError:
+            # 子零件不存在于 PLM → 跳过，不触发自动创建空壳
+            return None
 
     # 2. 用 POST /parts 探测零件是否存在，同时完成新建
     try:
@@ -1110,7 +1171,10 @@ def _sync_node(
             or "may not be unique" in _msg.lower()  # 服务端 CreationException 消息
         ))
         if _is_exists:
-            part_number, version = pn, "A"
+            part_number = pn
+            # version 将由下方 _get_checkout_owner() 通过 get_part_head() 动态获取，
+            # 此处设兜底值，若 _get_checkout_owner 异常时使用
+            version = "A"
         else:
             result.failed += 1
             msg = f"创建失败({exc.status_code})"
@@ -1137,17 +1201,11 @@ def _sync_node(
             cached_ver = plm_parts_cache[pn].get("version", version)
             return part_number, cached_ver
 
-    # ── 已存在零件：查询 checkout 状态 ──────────────────────────────────────
-    checkout_owner = _get_checkout_owner(client, workspace, part_number, version)
+    # ── 已存在零件：查询 checkout 状态（同时获取实际最新版本和迭代号） ──────────
+    checkout_owner, version, head_iteration = _get_checkout_owner(client, workspace, part_number)
 
     if checkout_owner is None:
-        # 状态：Checked In（无人签出）
-        if options.existing_part_policy == ExistingPartPolicy.SKIP:
-            result.skipped += 1
-            result.errors.append(f"{lbl}: 跳过（策略：不更新已签入零件）")
-            cb(_log_skip("跳过-已签入", lbl))
-            return part_number, version
-
+        # 状态：Checked In（无人签出）— 签出后更新属性+附件
         try:
             iteration = _plm_call_with_retry(
                 client.checkout_part, workspace, part_number, version
@@ -1170,15 +1228,9 @@ def _sync_node(
     is_mine = (current_login is not None and checkout_owner.lower() == current_login.lower())
 
     if is_mine:
-        # 状态：Checked Out by me
-        try:
-            _, _, iteration = _plm_call_with_retry(
-                client._get_latest_version, workspace, part_number
-            )
-        except PlmApiError:
-            iteration = 1
+        # 状态：Checked Out by me — 直接使用 _get_checkout_owner 已返回的迭代号，无需再查
         _ref = _do_update_and_upload(
-            node, lbl, "已签出-本人", client, workspace, part_number, version, iteration,
+            node, lbl, "已签出-本人", client, workspace, part_number, version, head_iteration,
             child_components, options, result, cb, tickets,
         )
         uploaded_pns[pn] = _ref
@@ -1320,12 +1372,16 @@ def _do_update_and_upload(
         if k not in _STRUCTURAL_COLS and v
     }
 
+    # child_components 为空列表时传 None，让 PLM 保留现有装配关系而不是清空。
+    # PLM 端：components=null → 跳过更新；components=[] → 清空所有子组件。
+    components_to_send = child_components if child_components else None
+
     update_ok = True
     try:
         _plm_call_with_retry(
             client.update_iteration,
             workspace, part_number, version, iteration,
-            attr_values, child_components,
+            attr_values, components_to_send,
         )
         if source != "新建":
             result.updated += 1
@@ -1551,8 +1607,8 @@ def _write_plm_attrs_to_catia(
         if result.get("skipped"):
             logger.warning(f"PLM 属性写回：部分属性跳过 {result['skipped']}（{filepath}）")
     except FileNotFoundError:
-        logger.debug(f"PLM 属性写回跳过（文档未在 CATIA 中打开）：{filepath}")
+        logger.warning(f"PLM 属性写回跳过（文档未在 CATIA 中打开）：{filepath}")
     except RuntimeError as exc:
-        logger.debug(f"PLM 属性写回跳过（{exc}）：{filepath}")
+        logger.warning(f"PLM 属性写回跳过（{exc}）：{filepath}")
     except Exception as exc:
         logger.warning(f"PLM 属性写回失败（不影响同步）：{filepath} — {exc}")

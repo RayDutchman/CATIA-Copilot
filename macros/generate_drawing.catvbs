@@ -1,9 +1,9 @@
 Option Explicit
 ' generate_drawing.catvbs
 '
-' Called by CATIA Companion -- Drawing > Generate Drawing from CATPart/CATProduct.
+' Called by CATIA Copilot -- Drawing > Generate Drawing from CATPart/CATProduct.
 '
-' CATIA Companion passes the selected CATDrawing template path as a plain
+' CATIA Copilot passes the selected CATDrawing template path as a plain
 ' string in TemplatePath.  The macro uses it directly as tp.
 ' When invoked without a parameter, CATIA itself prompts the user.
 '

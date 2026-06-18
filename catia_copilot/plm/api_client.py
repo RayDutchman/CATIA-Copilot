@@ -300,17 +300,19 @@ class PlmApiClient:
         logger.info(f"PLM 零件已创建：{part_number}-{version} iter{iteration}")
         return part_number, version, iteration
 
-    def _get_latest_version(
+    def get_latest_version(
         self, workspace: str, part_number: str
     ) -> tuple[str, str, int]:
         """获取已存在零件的最新版本号和最新迭代号。
 
         返回：(零件号, 版本, 最新迭代号)
-        DocdokuPLM 端点须带版本后缀：/parts/{pn}-{ver}
-        实际上零件版本几乎都从 A 开始，直接尝试 -A。
+        内部调用 get_part_head()，依次尝试版本 A~Z，返回第一个存在版本的结果。
         """
         result = self.get_part_head(workspace, part_number)
         return part_number, result.get("version", "A"), int(result.get("lastIterationNumber", 1))
+
+    # 兼容别名：旧内部代码可能仍通过 _get_latest_version 调用，保留一个指向公开方法的别名
+    _get_latest_version = get_latest_version
 
     def get_part_head(self, workspace: str, part_number: str) -> dict:
         """获取零件最新版本的完整 PartRevision 响应字典。
@@ -321,7 +323,7 @@ class PlmApiClient:
         """
         ws = urllib.parse.quote(workspace)
         pn = urllib.parse.quote(part_number)
-        for ver in ("A", "B", "C"):
+        for ver in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
             try:
                 result = self._request("GET", f"/workspaces/{ws}/parts/{pn}-{ver}") or {}
                 return result
@@ -329,7 +331,7 @@ class PlmApiClient:
                 if exc.status_code == 404:
                     continue
                 raise
-        raise PlmApiError(f"零件 {part_number} 不存在（A/B/C 均未找到）", 404)
+        raise PlmApiError(f"零件 {part_number} 不存在（A~Z 均未找到）", 404)
 
     def update_iteration(
         self,
@@ -338,13 +340,15 @@ class PlmApiClient:
         version: str,
         iteration: int,
         attr_values: dict[str, str],
-        components: list[dict],
+        components: list[dict] | None,
     ) -> None:
         """更新零件迭代的属性和子组件列表。
 
         参数：
-            attr_values:  字段名→值 映射，重量字段自动转 NUMBER 类型
-            components:   子组件列表，每项为 {"component": {"number": ..., "version": ...}}
+            attr_values:  字段名→值 映射
+            components:   子组件列表，每项为 {"component": {"number": ..., "version": ...}}。
+                          None 表示不更新装配关系（PLM 端保留现有子组件）；
+                          空列表 [] 会清空所有子组件，不要误传。
         """
         ws = urllib.parse.quote(workspace)
         pn = urllib.parse.quote(part_number)
@@ -357,10 +361,12 @@ class PlmApiClient:
             atype = "NUMBER" if name in number_fields else "TEXT"
             instance_attrs.append({"type": atype, "name": name, "value": value})
 
-        self._request("PUT", path, {
-            "instanceAttributes": instance_attrs,
-            "components": components,
-        })
+        body: dict = {"instanceAttributes": instance_attrs}
+        # components=None 时不发此字段，PLM 端跳过装配关系更新（保留现有子组件）
+        if components is not None:
+            body["components"] = components
+
+        self._request("PUT", path, body)
         logger.debug(f"PLM 属性更新：{part_number}-{version} iter{iteration}")
 
     def checkout_part(self, workspace: str, part_number: str, version: str) -> int:
@@ -447,7 +453,6 @@ class PlmApiClient:
         ws  = urllib.parse.quote(workspace,   safe="")
         pn  = urllib.parse.quote(part_number, safe="")
         filename = os.path.basename(step_path)
-        fn_enc   = urllib.parse.quote(filename, safe="")
         # 源码：PartBinaryResource.uploadNativeCADFile
         # 路径常量：PartIteration.NATIVE_CAD_SUBTYPE = "nativecad"
         # 方法：POST，multipart/form-data
@@ -477,7 +482,7 @@ class PlmApiClient:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         logger.debug(f"PLM CAD 文件上传：{filename} → {part_number}-{version} iter{iteration}  URL={url}")
         try:
-            with self._opener.open(req, timeout=120):
+            with self._opener.open(req, timeout=600):
                 pass
         except urllib.error.HTTPError as exc:
             body_text = ""
@@ -688,12 +693,17 @@ class PlmApiClient:
         # 先 GET 当前数据，避免覆盖其他字段
         current = self._request("GET", path) or {}
 
-        # 只替换 tags 字段，其余字段原样保留
+        # 回填所有顶层标量字段 + tags，防止 PUT 全量覆盖时清空未提供的字段
         payload = {
-            "number":      current.get("number", part_number),
-            "name":        current.get("name", part_number),
-            "description": current.get("description", ""),
-            "tags":        tags,
+            "number":          current.get("number", part_number),
+            "name":            current.get("name", part_number),
+            "description":     current.get("description", ""),
+            "version":         current.get("version", version),
+            "status":          current.get("status", "WIP"),
+            "standardPart":    current.get("standardPart", False),
+            "publicShared":    current.get("publicShared", False),
+            "attributesLocked": current.get("attributesLocked", False),
+            "tags":            tags,
         }
         self._request("PUT", path, payload, expect_json=False)
         logger.debug(f"PLM 标签更新：{part_number}-{version} → {tags}")
@@ -934,15 +944,17 @@ class PlmApiClient:
             check_out_user = str(checkout_raw or "")
 
         # 根节点自身（_depth==0 时由调用方决定是否追加，此处统一追加）
+        mod_date = str(latest.get("modificationDate") or detail.get("modificationDate") or "")
         rows.append({
-            "part_number":    part_number,
-            "version":        version,
-            "iteration":      iter_num,
-            "name":           part_name,
-            "check_out_user": check_out_user,
-            "depth":          _depth,
-            "parent_pn":      None if _depth == 0 else None,  # 由递归调用方填入
-            "quantity":       1,
+            "part_number":      part_number,
+            "version":          version,
+            "iteration":        iter_num,
+            "name":             part_name,
+            "check_out_user":   check_out_user,
+            "depth":            _depth,
+            "parent_pn":        None,  # 由递归调用方在循环中填入
+            "quantity":         1,
+            "modification_date": mod_date,
         })
 
         # 递归子件
@@ -1143,12 +1155,15 @@ class PlmApiClient:
                 max_iter_num = n
                 latest_it = it
 
-        # 修改时间（优先 checkInDate，其次 modificationDate）
+        # 修改时间（优先 modificationDate，其次 checkInDate）
+        # modificationDate = update_iteration 时写入（属性/子组件变更时刻），
+        # checkInDate     = checkin_part 时写入（签入完成时刻）。
+        # 优先 modificationDate 更能反映零件实际被修改的时间，且在保留签出模式下仍然有值。
         mod_date = ""
         if latest_it:
             mod_date = (
-                str(latest_it.get("checkInDate") or "")
-                or str(latest_it.get("modificationDate") or "")
+                str(latest_it.get("modificationDate") or "")
+                or str(latest_it.get("checkInDate") or "")
             )
 
         # 作者 login
@@ -1185,6 +1200,9 @@ class PlmApiClient:
         每个 summary_dict 的格式与 extract_part_summary() 返回值相同。
         对查询失败的零件号，返回 None 值（表示 PLM 中不存在）。
 
+        实现：直接用 get_part_head() 按路径精确查询（GET /parts/{pn}-{ver}），
+        避免 search_parts 的全文检索在零件编号含常用词时因 size 截断漏查。
+
         Args:
             part_numbers:      零件号列表
             progress_callback: 可选，progress_callback(done: int, total: int)
@@ -1196,18 +1214,14 @@ class PlmApiClient:
             if progress_callback:
                 progress_callback(i, total)
             try:
-                # search_parts 支持前缀匹配，必须校验返回的 number 与 pn 精确相同
-                parts = self.search_parts(workspace, number=pn, size=10)
-                # 精确匹配（大小写不敏感）
-                exact = [p for p in parts if str(p.get("number", "")).lower() == pn.lower()]
-                if not exact:
-                    result[pn] = None
-                    continue
-                p = exact[0]
-                ver = str(p.get("version") or "A")
-                # 获取完整详情（含 partIterations）
-                detail = self.get_part_detail(workspace, pn, ver)
+                detail = self.get_part_head(workspace, pn)
                 result[pn] = self.extract_part_summary(detail)
+            except PlmApiError as exc:
+                if exc.status_code == 404:
+                    result[pn] = None
+                else:
+                    logger.debug(f"search_parts_summary: 查询 {pn} 失败 — {exc}")
+                    result[pn] = None
             except Exception as exc:
                 logger.debug(f"search_parts_summary: 查询 {pn} 失败 — {exc}")
                 result[pn] = None

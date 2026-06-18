@@ -46,7 +46,7 @@ class TemplateDialog(QDialog):
         self.setMinimumSize(500, 500)
         self.resize(500, 500)
 
-        self._settings = QSettings("CATIACompanion", self._SETTINGS_KEY)
+        self._settings = QSettings("CATIACopilot", self._SETTINGS_KEY)
         self._geometry_restored = False   # 标记：首次 showEvent 时恢复几何
 
         self._setup_ui()

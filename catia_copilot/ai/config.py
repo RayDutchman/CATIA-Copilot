@@ -43,7 +43,7 @@ DEFAULTS_RUNTIME: dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
-# 配置加载（直接抄 Standard-Agent-Server/server.py）
+# 配置加载
 # ---------------------------------------------------------------------------
 
 def load() -> dict[str, Any]:
@@ -94,7 +94,7 @@ def get_config_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# 模型路由（直接抄 Standard-Agent-Server/server.py）
+# 模型路由
 # ---------------------------------------------------------------------------
 
 def get_provider_for_model(cfg: dict, model_id: str) -> tuple[dict, dict]:
@@ -145,7 +145,7 @@ def list_model_ids(cfg: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 从 API 拉取模型列表（直接抄 Standard-Agent-Server/server.py _fetch_models）
+# 从 API 拉取模型列表
 # ---------------------------------------------------------------------------
 
 def fetch_models_from_api(api_base: str, api_key: str, timeout: int = 15) -> list[dict]:

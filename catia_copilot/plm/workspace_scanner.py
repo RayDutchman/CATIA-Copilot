@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
+import ctypes
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +30,15 @@ logger = logging.getLogger(__name__)
 # 工作区缓存文件名
 _PLM_CACHE_FILENAME = ".plm_parts_cache.json"
 _PLM_CACHE_VERSION  = 1
+
+
+def _set_file_hidden(path: Path) -> None:
+    """在 Windows 上设置文件隐藏属性（Linux/macOS 靠 . 前缀已隐藏）。"""
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.kernel32.SetFileAttributesW(str(path), 2)  # FILE_ATTRIBUTE_HIDDEN
+        except Exception:
+            pass  # 设置隐藏属性失败不影响主流程
 
 # 扫描目标扩展名（小写）
 _SCAN_EXTENSIONS = {".catpart", ".catproduct"}
@@ -375,8 +386,12 @@ def save_plm_cache(work_dir: str, parts: dict[str, dict]) -> None:
         "parts":      parts,
     }
     try:
+        # Windows 上 Hidden 属性会阻止 open(w) 写入，写前先清除，写后恢复
+        if platform.system() == "Windows" and cache_path.exists():
+            ctypes.windll.kernel32.SetFileAttributesW(str(cache_path), 32)  # FILE_ATTRIBUTE_ARCHIVE
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        _set_file_hidden(cache_path)
         logger.info(f"PLM 缓存已保存：{cache_path}（{len(parts)} 条）")
     except Exception as exc:
         logger.warning(f"写入 PLM 缓存失败：{cache_path} — {exc}")

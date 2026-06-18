@@ -188,7 +188,7 @@ class MassPropsDialog(QDialog):
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
-        self._settings = QSettings("CATIACompanion", "MassPropsDialog")
+        self._settings = QSettings("CATIACopilot", "MassPropsDialog")
         self._last_browse_dir: str = self._settings.value("last_browse_dir", "")
 
         # ── 持久化显示选项 ─────────────────────────────────────────────────

@@ -19,7 +19,7 @@
 | 项目 | 说明 |
 |---|---|
 | exe 路径 | 随版本变化（如 `CATIA Copilot 1.8.0.exe`），开机自启注册表值用 `sys.executable` 动态获取，不硬编码版本号 |
-| QSettings 组织名 | 统一用 `"CATIACopilot"`，与现有对话框用的 `"CATIACompanion"` 区分 |
+| QSettings 组织名 | 统一用 `"CATIACopilot"`，与现有对话框用的 `"CATIACopilot"` 区分 |
 | `broken` 状态处理 | CATIA 进程存在但 COM 不通时为 `broken`；embed 依赖 win32 窗口句柄而非 COM，理论上可工作；**暂定只在 `connected` 时自动激活**，待后续确认 |
 | build.spec | `QSystemTrayIcon` 属于 `QtWidgets`，已被打包，**不需要改 spec** |
 

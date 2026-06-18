@@ -140,7 +140,7 @@ class FindDependenciesDialog(QDialog):
         self.setMinimumSize(750, 600)
         self.resize(900, 650)
 
-        self._settings = QSettings("CATIACompanion", "FindDependenciesDialog")
+        self._settings = QSettings("CATIACopilot", "FindDependenciesDialog")
 
         # 恢复窗口几何
         saved_geom = self._settings.value("geometry")

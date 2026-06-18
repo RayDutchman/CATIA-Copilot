@@ -66,6 +66,7 @@ from catia_copilot.plm.sync import (
     ExistingPartPolicy,
     OwnCheckedOutPolicy,
     SyncOptions,
+    SyncResult,
     extract_bom_v3,
     sync_bom_to_plm,
 )
@@ -75,7 +76,7 @@ from catia_copilot.ui.theme_manager import theme_manager
 logger = logging.getLogger(__name__)
 
 # ── QSettings 键（与 PlmSyncDialog 共用 PlmConfig，保持配置互通） ─────────────
-_S_ORG       = "CATIACompanion"
+_S_ORG       = "CATIACopilot"
 _S_PLM_CFG   = "PlmConfig"
 _S_TAG_RULES = "PlmTagRules"
 _S_HISTORY   = "PlmSyncHistory"
@@ -87,6 +88,10 @@ _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
 
 _MAX_HISTORY = 20
+
+# 差异状态计算：版本+迭代号相同时，比较本地 mtime 与 PLM checkInDate 的容差
+# 60 秒内视为相等，避免文件系统时间精度差异导致误判
+_DIFF_TIME_TOLERANCE_SEC = 60
 
 
 def _app_palette() -> "QPalette | None":
@@ -196,41 +201,75 @@ class _ConnectWorker(QThread):
 
 
 class _SyncWorker(QThread):
-    """执行 BOM 同步（含 v3 路径 COM 遍历 + PLM 网络操作）。"""
+    """执行 Push 同步（按文件主键，逐文件提取 BOM 树后同步到 PLM）。"""
     progress   = Signal(str)
     upload_log = Signal(str, str, str, str)
     sync_done  = Signal(object)
     error      = Signal(str)
 
-    def __init__(self, base_url: str, login: str, password: str, workspace: str, options: SyncOptions) -> None:
+    def __init__(self, base_url: str, login: str, password: str, workspace: str,
+                 options: SyncOptions, push_rows: list[dict]) -> None:
         super().__init__()
-        self._base_url  = base_url
-        self._login     = login
-        self._password  = password
-        self._workspace = workspace
-        self._options   = options
+        self._base_url   = base_url
+        self._login      = login
+        self._password   = password
+        self._workspace  = workspace
+        self._options    = options
+        self._push_rows  = push_rows  # 每项含 "pn"、"local"(LocalPartInfo)
 
     def run(self) -> None:
         pythoncom.CoInitialize()
         try:
-            self.progress.emit("正在从 CATIA 提取 BOM（含位置信息）……")
-            bom_root = extract_bom_v3(
-                progress_callback=lambda m: self.progress.emit(m),
-            )
-            if bom_root is None:
-                self.error.emit(
-                    "BOM 提取失败：请确认 CATIA 已启动、有活动文档，且文档包含产品结构。"
-                )
-                return
-            self.progress.emit("BOM 提取完成，正在连接 PLM……")
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
-            result = sync_bom_to_plm(
-                bom_root, c, self._workspace,
-                options=self._options,
-                progress_callback=lambda m: self.progress.emit(m),
-            )
-            self.sync_done.emit(result)
+
+            merged = SyncResult()
+            # 跨文件共享的已处理 pn 去重表，防止同一零件被重复 sync
+            shared_uploaded_pns: dict[str, tuple] = {}
+
+            for row in self._push_rows:
+                local = row.get("local")
+                if local is None:
+                    continue
+
+                # depth=1：只读根节点 + 直接子节点（含 placement），不递归子树，
+                # 避免先 sync 根产品时把所有子零件都处理一遍，后续子零件 push_row 重复 sync
+                bom_root = extract_bom_v3(
+                    progress_callback=lambda m: self.progress.emit(m),
+                    file_path=local.filepath,
+                    depth=1,
+                )
+                if bom_root is None:
+                    merged.errors.append(
+                        f"{local.part_number}：BOM 提取失败，已跳过（文件：{local.filepath}）"
+                    )
+                    continue
+
+                def _struct_cb(event):
+                    if event.message:
+                        self.progress.emit(event.message)
+                    if event.type == "node_done" and event.part_number:
+                        self.upload_log.emit(
+                            event.part_number,
+                            event.source,
+                            event.update,
+                            event.checkin,
+                        )
+
+                sub = sync_bom_to_plm(
+                    bom_root, c, self._workspace,
+                    options=self._options,
+                    progress_callback=lambda m: self.progress.emit(m),
+                    progress_callback_structured=_struct_cb,
+                    shared_uploaded_pns=shared_uploaded_pns,
+                )
+                merged.created   += sub.created
+                merged.updated   += sub.updated
+                merged.skipped   += sub.skipped
+                merged.unchanged += sub.unchanged
+                merged.errors.extend(sub.errors)
+
+            self.sync_done.emit(merged)
         except Exception as exc:
             logger.exception("PLM 同步后台线程异常")
             self.error.emit(str(exc))
@@ -414,16 +453,19 @@ class _PullWorker(QThread):
         self,
         items: list[tuple[str, str, str, str]],
         base_dir: str,
+        mod_dates: "dict[str, str] | None" = None,
     ) -> None:
         """设置批量下载参数。
 
-        items: list of (part_number, version, iteration, filename)
-               来自 BOM 表格勾选行，每行可能有多个文件
-        base_dir: 基础目录，每个零件的文件下载到 base_dir/{part_number}/
+        items:     list of (part_number, version, iteration, filename)
+        base_dir:  基础目录，主键文件平铺到根目录，其他附件放 base_dir/{pn}/
+        mod_dates: {pn: modificationDate UTC str}，下载主键文件后设置其 mtime，
+                   避免 mtime 被刷新为下载时间而误判为"本地新"。
         """
         self._mode        = self.MODE_DOWNLOAD
         self._dl_items    = items
         self._dl_base_dir = base_dir
+        self._mod_dates   = mod_dates or {}
 
     def set_prequery_attachments(
         self,
@@ -462,10 +504,22 @@ class _PullWorker(QThread):
             elif self._mode == self.MODE_DOWNLOAD:
                 total_done = 0
                 for pn, ver, itr, fname in self._dl_items:
-                    # 每个零件保存到独立子目录，避免同名文件冲突
-                    part_dir = os.path.join(self._dl_base_dir, pn)
-                    os.makedirs(part_dir, exist_ok=True)
-                    dest_path = os.path.join(part_dir, fname)
+                    ext = os.path.splitext(fname)[1].lower()
+
+                    # STP/STEP 文件不下载（仅用于 PLM CAD 预览，本地已有源文件）
+                    if ext in (".stp", ".step"):
+                        continue
+
+                    # 主键文件（CATPart/CATProduct）平铺到 work_dir 根目录，
+                    # 保证 CATIA 打开 CATProduct 时能在同目录找到引用的子文件。
+                    # 其他附件（PDF、DXF 等）放 base_dir/{pn}/ 子目录。
+                    is_primary = ext in (".catpart", ".catproduct")
+                    if is_primary:
+                        dest_path = os.path.join(self._dl_base_dir, fname)
+                    else:
+                        part_dir  = os.path.join(self._dl_base_dir, pn)
+                        os.makedirs(part_dir, exist_ok=True)
+                        dest_path = os.path.join(part_dir, fname)
 
                     # 使用 functools.partial 避免闭包捕获问题（top-level import）
                     progress_cb = partial(self.file_progress.emit, fname)
@@ -475,6 +529,20 @@ class _PullWorker(QThread):
                         dest_path,
                         progress_cb=progress_cb,
                     )
+
+                    # 主键文件：将 mtime 回拨到 PLM 的修改时间，避免误判为"本地新"
+                    if is_primary and pn in self._mod_dates and self._mod_dates[pn]:
+                        try:
+                            from datetime import datetime, timezone as _tz
+                            raw = self._mod_dates[pn]
+                            plm_dt = datetime.strptime(raw[:19], "%Y-%m-%dT%H:%M:%S").replace(
+                                tzinfo=_tz.utc
+                            )
+                            ts = plm_dt.timestamp()
+                            os.utime(dest_path, (ts, ts))
+                        except Exception:
+                            pass  # 设置 mtime 失败不影响下载本身
+
                     self.file_done.emit(fname, dest_path)
                     total_done += 1
                 self.all_done.emit(total_done)
@@ -512,39 +580,33 @@ class PlmWorkbench(QDialog):
 
     # ── 差异对比表列常量 ──────────────────────────────────────────────────
     _DC_SEL    = 0   # 选择 checkbox（表头实现全选）
-    _DC_WARN   = 1   # 警告图标
-    _DC_PN     = 2   # 零件编号（前缀含 eye/pencil + cube/cubes SVG 图标，仅在 PLM 数据存在时显示）
-    _DC_VER    = 3   # 版本（PLM）
-    _DC_ITER   = 4   # 迭代（PLM）
-    _DC_LVER   = 5   # 本地版本（本地 PLM_Version 属性）
-    _DC_LITER  = 6   # 本地迭代（本地 PLM_Iteration 属性）
-    _DC_NAME   = 7   # 零件名称
-    _DC_TYPE   = 8   # 类型
-    _DC_AUTHOR = 9   # 作者
+    _DC_DIFF   = 1   # 差异状态（合并显示 _DC_WARN 的警告信息）
+    _DC_PN     = 2   # 零件编号（前缀含 eye/pencil + cube/cubes FontAwesome 4.7 字体，仅在 PLM 数据存在时显示）
+    _DC_VER    = 3   # 版本/迭代（PLM，合并显示）
+    _DC_LVER   = 4   # 本地版本/迭代（本地 PLM_Version / PLM_Iteration，合并显示）
+    _DC_NAME   = 5   # 零件名称
+    _DC_TYPE   = 6   # 类型
+    _DC_AUTHOR = 7   # 作者
+    _DC_COUT   = 8   # 签出者
+    _DC_LCST   = 9   # 生命周期状态（PartRevisionDTO.status：WIP/RELEASED/OBSOLETE）
     _DC_LMTIME = 10  # 本地修改时间
     _DC_PMTIME = 11  # PLM 修改时间
-    _DC_LCST   = 12  # 生命周期状态（PartRevisionDTO.status：WIP/RELEASED/OBSOLETE）
-    _DC_COUT   = 13  # 签出者
-    _DC_FILES  = 14  # 文件（附件按钮）
-    _DC_DIFF   = 15  # 差异状态
+    _DC_FILES  = 12  # 文件（附件按钮）
 
     _DC_HEADERS = [
         "",             # 0  — 选择 checkbox
-        "",             # 1  — 警告
+        "状态",         # 1  — 差异状态（含警告信息）
         "零件编号",     # 2  — 含状态/类型图标
-        "版本",         # 3  — PLM 版本
-        "迭代",         # 4  — PLM 迭代
-        "本地版本",     # 5  — 本地 PLM_Version
-        "本地迭代",     # 6  — 本地 PLM_Iteration
-        "零件名称",     # 7
-        "类型",         # 8
-        "作者",         # 9
+        "版本/迭代",    # 3  — PLM 版本/迭代
+        "本地版本",     # 4  — 本地版本
+        "零件名称",     # 5
+        "类型",         # 6
+        "作者",         # 7
+        "签出者",       # 8
+        "生命周期状态", # 9 — PartRevisionDTO.status：WIP / RELEASED / OBSOLETE
         "本地修改时间", # 10
         "PLM修改时间",  # 11
-        "生命周期状态", # 12 — PartRevisionDTO.status：WIP / RELEASED / OBSOLETE
-        "签出者",       # 13
-        "📎",   # 14 — 回形针表头图标
-        "状态",         # 15
+        "\uf0c6",       # 12 — 回形针图标（FontAwesome paperclip）
     ]
 
         # 差异状态
@@ -568,13 +630,13 @@ class PlmWorkbench(QDialog):
 
     # 兼容旧版业务逻辑方法引用的列常量（映射到新 _DC_* 值）
     _COL_PN        = 2   # _DC_PN
-    _COL_NOM       = 7   # _DC_NAME
-    _COL_STATUS    = 15  # _DC_DIFF
-    _COL_LOC_VER   = 5   # _DC_LVER
-    _COL_LOC_ITER  = 6   # _DC_LITER
-    _COL_PLM_VER   = 3   # _DC_VER
-    _COL_PLM_ITER  = 4   # _DC_ITER
-    _COL_PLM_USER  = 13  # _DC_COUT
+    _COL_NOM       = 5   # _DC_NAME
+    _COL_STATUS    = 1   # _DC_DIFF
+    _COL_LOC_VER   = 4   # _DC_LVER（合并 _DC_LITER）
+    _COL_LOC_ITER  = 4   # _DC_LVER（原 _DC_LITER，现合并至 _DC_LVER）
+    _COL_PLM_VER   = 3   # _DC_VER（合并 _DC_ITER）
+    _COL_PLM_ITER  = 3   # _DC_VER（原 _DC_ITER，现合并至 _DC_VER）
+    _COL_PLM_USER  = 8   # _DC_COUT
     _COL_PUSH      = 0   # _DC_SEL
     _COL_UPGRADE   = 0   # _DC_SEL
     _BOM_COL_HEADERS = _DC_HEADERS
@@ -621,6 +683,8 @@ class PlmWorkbench(QDialog):
         self._sync_done_nodes  = 0
         self._sync_seen_pns: set = set()
         self._sync_push_map: dict = {}
+        self._sync_just_pushed: set[str] = set()  # 刚 Push 成功的 PN，自动刷新时绕过时间比较
+        self._catia_search_order_warned = False   # session 级：已提醒过 CATIA 文档查找顺序设置
         self._last_sync_login = ""
         self._last_sync_mode  = ""
         # 进度辅助（兼容旧逻辑）
@@ -809,14 +873,12 @@ class PlmWorkbench(QDialog):
         return bar
 
     def _build_diff_table(self) -> QWidget:
-        """构建主体差异对比表（16 列，参考 PLM 前端风格）。"""
+        """构建主体差异对比表（13 列）。"""
         self._tbl_diff = QTableWidget(0, len(self._DC_HEADERS))
         self._tbl_diff.setHorizontalHeaderLabels(self._DC_HEADERS)
         self._tbl_diff.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        # 禁用行选中：不需要整行高亮，只用 checkbox 选取
         self._tbl_diff.setSelectionMode(QAbstractItemView.NoSelection)
         self._tbl_diff.setFocusPolicy(Qt.NoFocus)
-        # 禁用 hover 高亮（通过 stylesheet 覆盖）
         self._tbl_diff.setStyleSheet(
             "QTableWidget { selection-background-color: transparent; }"
             "QTableWidget::item:hover { background-color: transparent; }"
@@ -825,61 +887,56 @@ class PlmWorkbench(QDialog):
         self._tbl_diff.setAlternatingRowColors(True)
         self._tbl_diff.verticalHeader().setDefaultSectionSize(28)
         self._tbl_diff.verticalHeader().setVisible(False)
-        # 禁止横向滚动条，确保最后一列始终可见
-        self._tbl_diff.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # self._tbl_diff.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         hdr = self._tbl_diff.horizontalHeader()
         hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        # DIFF（状态）列固定宽度，不拉伸；所有列挤不下时靠最右列裁剪而非滚动
         hdr.setStretchLastSection(False)
-
-        # 固定列宽（不可调整）：checkbox/警告/版本迭代/附件/状态
-        VER_W = 54  # 版本/迭代/本地版本/本地迭代 四列同宽
+        # 固定列宽（不可调整）
         fixed_cols = {
-            self._DC_SEL:   30,   # checkbox
-            self._DC_WARN:  24,   # 警告图标
-            self._DC_VER:   VER_W,
-            self._DC_ITER:  VER_W,
-            self._DC_LVER:  VER_W,
-            self._DC_LITER: VER_W,
+            self._DC_SEL:   30,
+            self._DC_DIFF:  70,
+            self._DC_VER:   70,
+            self._DC_LVER:  70,
+            self._DC_TYPE:  80,
+            self._DC_AUTHOR: 80,
+            self._DC_COUT:  80,
+            self._DC_LCST:  80,
             self._DC_FILES: 30,
-            self._DC_DIFF:  80,   # 状态列固定宽，不被挤掉
+            self._DC_LMTIME: 140,
+            self._DC_PMTIME: 140
         }
         for col, w in fixed_cols.items():
             hdr.setSectionResizeMode(col, QHeaderView.Fixed)
             hdr.resizeSection(col, w)
 
-        # 交互列宽（用户可拖拽调整）；NAME 列 Stretch 吸收剩余空间
+        # 交互列宽（用户可拖拽调整）
         interactive_cols = {
-            self._DC_PN:     260,
-            self._DC_NAME:   180,
-            self._DC_TYPE:    70,
-            self._DC_AUTHOR:  80,
-            self._DC_LMTIME: 140,
-            self._DC_PMTIME: 140,
-            self._DC_LCST:    90,
-            self._DC_COUT:    80,
+            self._DC_PN:    200,
+            self._DC_NAME:  200
         }
         for col, w in interactive_cols.items():
             hdr.setSectionResizeMode(col, QHeaderView.Interactive)
             hdr.resizeSection(col, w)
-        # NAME 列拉伸填充剩余宽度，同时仍可手动调整（Stretch 模式下不可拖）
-        # 用 Interactive + 监听 resize 事件代价太高；改为让 PN 列做 Stretch
-        hdr.setSectionResizeMode(self._DC_NAME, QHeaderView.Stretch)
-
-        # 居中对齐的列表头：版本/迭代四列 + SEL/WARN/状态列
-        for _cc in (self._DC_SEL, self._DC_WARN,
-                    self._DC_VER, self._DC_ITER, self._DC_LVER, self._DC_LITER,
-                    self._DC_DIFF):
+        strectch_cols = {
+        }
+        for col, w in strectch_cols.items():
+            hdr.setSectionResizeMode(col, QHeaderView.Stretch)
+            hdr.resizeSection(col, w)
+        
+        # 居中对齐的列表头
+        for _cc in (self._DC_SEL, self._DC_DIFF, self._DC_VER, self._DC_LVER,
+                    self._DC_TYPE, self._DC_AUTHOR, self._DC_COUT, self._DC_LCST,
+                    self._DC_LMTIME, self._DC_PMTIME, self._DC_FILES):
             _hi = self._tbl_diff.horizontalHeaderItem(_cc)
             if _hi:
                 _hi.setTextAlignment(Qt.AlignCenter)
 
-        # 附件列表头用 Segoe UI Emoji 字体
+        # 附件列表头用 FontAwesome 字体
         _fhdr = self._tbl_diff.horizontalHeaderItem(self._DC_FILES)
         if _fhdr:
-            _ef2 = QFont("Segoe UI Emoji"); _ef2.setPointSize(11)
-            _fhdr.setFont(_ef2)
+            _ffa = QFont("FontAwesome"); _ffa.setPointSize(11)
+            _fhdr.setFont(_ffa)
             _fhdr.setTextAlignment(Qt.AlignCenter)
 
         return self._tbl_diff
@@ -987,12 +1044,47 @@ class PlmWorkbench(QDialog):
         return s.value("work_dir", "")
 
     def _on_show_settings(self) -> None:
+        # 记录打开前的关键配置，用于检测变更
+        s_before = QSettings(_S_ORG, _S_PLM_CFG)
+        _before = (
+            s_before.value("base_url",  ""),
+            s_before.value("workspace", ""),
+            s_before.value("work_dir",  ""),
+        )
+
         dlg = _SettingsDialog(self)
         dlg.exec()
         self._update_conn_status_bar()
+
         # 更新工作区路径显示
         wd = self._get_work_dir()
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
+
+        # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
+        s_after = QSettings(_S_ORG, _S_PLM_CFG)
+        _after = (
+            s_after.value("base_url",  ""),
+            s_after.value("workspace", ""),
+            s_after.value("work_dir",  ""),
+        )
+        if _after != _before:
+            # 配置已变更：清空差异表和缓存数据，避免显示过期内容
+            self._tbl_diff.setRowCount(0)
+            self._diff_rows = []
+            self._local_parts = []
+            self._plm_cache = {}
+            self._plm_parts_cache = {}
+            self._sync_just_pushed.clear()
+            changed_fields = []
+            if _after[0] != _before[0]:
+                changed_fields.append("服务器地址")
+            if _after[1] != _before[1]:
+                changed_fields.append("PLM 工作区")
+            if _after[2] != _before[2]:
+                changed_fields.append("本地工作目录")
+            self._lbl_status.setText(
+                f"配置已变更（{'/'.join(changed_fields)}），请重新加载工作区。"
+            )
 
     def _on_show_history(self) -> None:
         dlg = _HistoryDialog(self)
@@ -1039,8 +1131,53 @@ class PlmWorkbench(QDialog):
     # 加载工作区
     # ─────────────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _check_catia_doc_locator_order() -> bool:
+        """检查 CATIA 文档查找顺序设置：File_CurrentDir 是否在 File_StorageName 之前。
+
+        读取 %AppData%\\DassaultSystemes\\CATSettings\\SymbolicLinks.CATSettings
+        中的 DocLocators 字段（分号分隔的 locator:enabled 列表）。
+
+        返回 True 表示顺序正确（无需提醒），False 表示顺序不对或文件不可读。
+        """
+        import re as _re
+        try:
+            import os as _os, pathlib as _pl
+            f = _pl.Path(_os.environ['APPDATA']) / 'DassaultSystemes' / 'CATSettings' / 'SymbolicLinks.CATSettings'
+            data = f.read_bytes()
+            m = _re.search(rb'File_FeatCatalog:[^\x00\x80\x9f]+', data)
+            if not m:
+                return False
+            locators = m.group().decode('ascii', errors='ignore').rstrip('"').split(';')
+            names = [item.split(':')[0] for item in locators]
+            if 'File_CurrentDir' in names and 'File_StorageName' in names:
+                return names.index('File_CurrentDir') < names.index('File_StorageName')
+            return False
+        except Exception:
+            return False
+
     def _on_load_workspace(self) -> None:
         """扫描工作目录，通过 CATIA COM 读取每个文件的属性，填充差异表。"""
+        # 检查 CATIA 文档查找顺序设置（每次启动后仅提醒一次，设置正确则静默通过）
+        if not self._catia_search_order_warned:
+            self._catia_search_order_warned = True
+            if not self._check_catia_doc_locator_order():
+                ret = QMessageBox.warning(
+                    self, "CATIA 设置需要调整",
+                    "检测到 CATIA 文档查找顺序设置不正确。\n\n"
+                    "当前 CATIA 打开 CATProduct 时会优先按内部存储的绝对路径查找子件，\n"
+                    "可能导致找到的文件非工作目录中的文件。\n\n"
+                    "请前往 CATIA：\n"
+                    "  工具 > 选项 > 常规 > 文档\n"
+                    "  在「已链接的文档本地化」列表中，\n"
+                    "  将「指向文档的文件夹」移到「链接文件夹」之前。\n\n"
+                    "调整后重新启动 CATIA，使修改生效。",
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                )
+                if ret == QMessageBox.StandardButton.Cancel:
+                    self._catia_search_order_warned = False  # 取消则下次仍提醒
+                    return
+
         work_dir = self._get_work_dir()
         if not work_dir:
             QMessageBox.warning(self, "未设置工作目录", '请先在"设置"中配置工作目录。')
@@ -1092,6 +1229,8 @@ class PlmWorkbench(QDialog):
         n_local = len(local_parts)
         n_plm   = len(self._plm_cache)
         self._lbl_status.setText(f"工作区已加载：{n_local} 个本地文件，{n_plm} 条 PLM 缓存记录")
+        # 加载完成后自动刷新 PLM 状态
+        QTimer.singleShot(500, self._on_refresh_plm_status)
         self._btn_push.setEnabled(True)
         self._btn_pull_sel.setEnabled(True)
 
@@ -1099,6 +1238,10 @@ class PlmWorkbench(QDialog):
         self._btn_load_ws.setEnabled(True)
         self._pgb.setVisible(False)
         self._lbl_status.setText(f"扫描失败：{err}")
+        # 扫描失败时清空表格，避免显示上次的过期数据
+        self._tbl_diff.setRowCount(0)
+        self._diff_rows = []
+        self._local_parts = []
         QMessageBox.critical(self, "扫描工作区失败", err)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1107,6 +1250,10 @@ class PlmWorkbench(QDialog):
 
     def _on_refresh_plm_status(self) -> None:
         """按本地文件零件号列表查询 PLM，更新缓存和差异列。"""
+        # 互斥：已有 PLM 状态刷新 worker 在运行时，直接返回（避免并发写 _plm_cache）
+        if getattr(self, "_plm_status_running", False):
+            return
+
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", '请先在"设置"中配置 PLM 连接信息。')
@@ -1121,6 +1268,7 @@ class PlmWorkbench(QDialog):
             QMessageBox.information(self, "无零件", "请先加载工作区或新增 PLM Part。")
             return
 
+        self._plm_status_running = True
         self._btn_refresh_plm.setEnabled(False)
         self._pgb.setRange(0, len(all_pns))
         self._pgb.setValue(0)
@@ -1139,6 +1287,7 @@ class PlmWorkbench(QDialog):
 
     def _on_plm_status_done(self, result: dict) -> None:
         """PLM 查询完成：合并缓存，刷新表格差异列。"""
+        self._plm_status_running = False
         self._btn_refresh_plm.setEnabled(True)
         self._pgb.setVisible(False)
 
@@ -1155,6 +1304,19 @@ class PlmWorkbench(QDialog):
 
         self._plm_parts_cache = {pn: d for pn, d in self._plm_cache.items() if d}
 
+        # 更新本地已推送零件的本地版本/迭代信息（CATIA 文件已由 _write_plm_attrs_to_catia 更新）
+        if self._sync_just_pushed:
+            for info in self._local_parts:
+                if info.part_number in self._sync_just_pushed:
+                    plm_data = self._plm_cache.get(info.part_number)
+                    if plm_data:
+                        info.plm_version   = str(plm_data.get("version", info.plm_version))
+                        info.plm_iteration = int(plm_data.get("lastIterationNumber", info.plm_iteration))
+                    try:
+                        info.mtime = datetime.fromtimestamp(os.path.getmtime(info.filepath))
+                    except Exception:
+                        pass
+
         # 重新填充表格（含新 PLM 数据）
         self._populate_diff_table()
 
@@ -1165,6 +1327,7 @@ class PlmWorkbench(QDialog):
         )
 
     def _on_plm_status_fail(self, err: str) -> None:
+        self._plm_status_running = False
         self._btn_refresh_plm.setEnabled(True)
         self._pgb.setVisible(False)
         self._lbl_status.setText(f"PLM 查询失败：{err}")
@@ -1215,6 +1378,10 @@ class PlmWorkbench(QDialog):
 
             # ── 计算差异状态 ──────────────────────────────────────────────────
             status = self._compute_diff_status(local, plm)
+            # 刚 Push 完成的零件跳过时间比较（Phase 1 的 modificationDate
+            # 与 Phase 2 的本地保存时间差可能远大于容差）
+            if pn in self._sync_just_pushed:
+                status = self._ST_OK
 
             # ── 计算警告条件 ──────────────────────────────────────────────────
             warn = False
@@ -1270,10 +1437,14 @@ class PlmWorkbench(QDialog):
             chk_l.addWidget(chk)
             self._tbl_diff.setCellWidget(row_idx, self._DC_SEL, chk_w)
 
-            # col 1: 警告图标
-            warn_item = _item("▲" if warn else "", Qt.AlignCenter)
+            # col 1: 差异状态（合并显示警告信息）
+            st_text = status
             if warn:
-                warn_item.setForeground(QColor("#e74c3c"))
+                st_text = "⚠ " + st_text
+            st_item = _item(st_text, Qt.AlignCenter)
+            color = self._STATUS_COLORS.get(status, "#7f8c8d")
+            st_item.setForeground(QColor(color))
+            if warn:
                 tips = []
                 if local:
                     if local.no_file: tips.append("文件从未保存到磁盘")
@@ -1282,92 +1453,78 @@ class PlmWorkbench(QDialog):
                     if not local.part_number: tips.append("零件号为空")
                 if status == self._ST_PLM_NEW: tips.append("PLM 版本更新，建议先 Pull")
                 if tips:
-                    warn_item.setToolTip("\n".join(tips))
-            self._tbl_diff.setItem(row_idx, self._DC_WARN, warn_item)
+                    st_item.setToolTip("\n".join(tips))
+            self._tbl_diff.setItem(row_idx, self._DC_DIFF, st_item)
 
-            # col 2: 零件编号（前缀含 SVG 图标：eye/pencil + cube/cubes）
-            # 图标含义：eye=已签入(可读), pencil=已签出(可编辑); cube=零件, cubes=装配体
+            # col 2: 零件编号（前缀含 FontAwesome 4.7 字体：eye/pencil + cube/cubes）
             checkout_user = str(plm.get("checkOutUser") or "") if plm else ""
             is_checked_out = bool(checkout_user)
             pn_widget = self._make_pn_cell_widget(pn, is_product, bool(plm), is_checked_out, checkout_user)
             self._tbl_diff.setCellWidget(row_idx, self._DC_PN, pn_widget)
 
-            # col 3: 版本（PLM）
-            self._tbl_diff.setItem(row_idx, self._DC_VER, _item(ver, Qt.AlignCenter))
+            # col 3: 版本/迭代（PLM）
+            ver_text = f"{ver} / {itr}" if ver and itr else (ver or itr or "")
+            self._tbl_diff.setItem(row_idx, self._DC_VER, _item(ver_text, Qt.AlignCenter))
 
-            # col 4: 迭代（PLM）
-            self._tbl_diff.setItem(row_idx, self._DC_ITER, _item(itr, Qt.AlignCenter))
-
-            # col 5: 本地版本（PLM_Version 属性）
+            # col 4: 本地版本/迭代
             loc_ver = str(local.plm_version or "") if local else ""
-            lver_item = _item(loc_ver, Qt.AlignCenter)
-            if ver and loc_ver and loc_ver != ver:
+            loc_iter_int = int(local.plm_iteration or 0) if local else 0
+            loc_itr = str(loc_iter_int) if loc_iter_int else ""
+            lver_text = f"{loc_ver} / {loc_itr}" if loc_ver and loc_itr else (loc_ver or loc_itr or "")
+            lver_item = _item(lver_text, Qt.AlignCenter)
+            if (ver and loc_ver and loc_ver != ver) or (itr and loc_itr and loc_itr != itr):
                 lver_item.setForeground(QColor("#e67e22"))
             self._tbl_diff.setItem(row_idx, self._DC_LVER, lver_item)
 
-            # col 6: 本地迭代（PLM_Iteration 属性）
-            loc_iter_int = int(local.plm_iteration or 0) if local else 0
-            loc_itr = str(loc_iter_int) if loc_iter_int else ""
-            liter_item = _item(loc_itr, Qt.AlignCenter)
-            if itr and loc_itr and loc_itr != itr:
-                liter_item.setForeground(QColor("#e67e22"))
-            self._tbl_diff.setItem(row_idx, self._DC_LITER, liter_item)
-
-            # col 7: 零件名称
+            # col 5: 零件名称
             name = (plm.get("name") or "") if plm else (local.nomenclature if local else "")
             self._tbl_diff.setItem(row_idx, self._DC_NAME, _item(str(name)))
 
             # col 6: 类型
-            self._tbl_diff.setItem(row_idx, self._DC_TYPE, _item(ftype))
+            self._tbl_diff.setItem(row_idx, self._DC_TYPE, _item(ftype, Qt.AlignCenter))
 
             # col 7: 作者
             author = str(plm.get("authorLogin") or "") if plm else ""
-            self._tbl_diff.setItem(row_idx, self._DC_AUTHOR, _item(author))
+            self._tbl_diff.setItem(row_idx, self._DC_AUTHOR, _item(author, Qt.AlignCenter))
 
-            # col 8: 本地修改时间
-            lmtime = local.mtime.strftime("%Y-%m-%d %H:%M:%S") if local else "—"
-            self._tbl_diff.setItem(row_idx, self._DC_LMTIME, _item(lmtime))
-
-            # col 9: PLM 修改时间
-            pmtime_raw = str(plm.get("modificationDate") or "") if plm else ""
-            pmtime = self._format_plm_date(pmtime_raw) if pmtime_raw else "—"
-            self._tbl_diff.setItem(row_idx, self._DC_PMTIME, _item(pmtime))
-
-            # col 12: 生命周期状态（PartRevisionDTO.status：WIP/RELEASED/OBSOLETE）
-            lc_state = str(plm.get("lifecycleState") or "") if plm else ""
-            self._tbl_diff.setItem(row_idx, self._DC_LCST, _item(lc_state))
-
-            # col 13: 签出者（他人=橙色，本人=普通）
+            # col 8: 签出者（他人=橙色，本人=普通）
             cout_str = checkout_user
-            cout_item = _item(cout_str)
+            cout_item = _item(cout_str, Qt.AlignCenter)
             if cout_str:
                 _, _cur_login, _, _ = self._read_conn()
                 if cout_str != _cur_login:
                     cout_item.setForeground(QColor("#e67e22"))  # 他人签出：橙色
-                # 本人签出：不着色
             self._tbl_diff.setItem(row_idx, self._DC_COUT, cout_item)
 
-            # col 14: 附件按钮（📎 用 Segoe UI Emoji 字体，无边框）
+            # col 9: 生命周期状态
+            lc_state = str(plm.get("lifecycleState") or "") if plm else ""
+            self._tbl_diff.setItem(row_idx, self._DC_LCST, _item(lc_state, Qt.AlignCenter))
+
+            # col 10: 本地修改时间
+            lmtime = local.mtime.strftime("%Y-%m-%d %H:%M:%S") if local else "—"
+            self._tbl_diff.setItem(row_idx, self._DC_LMTIME, _item(lmtime, Qt.AlignCenter))
+
+            # col 11: PLM 修改时间
+            pmtime_raw = str(plm.get("modificationDate") or "") if plm else ""
+            pmtime = self._format_plm_date(pmtime_raw) if pmtime_raw else "—"
+            self._tbl_diff.setItem(row_idx, self._DC_PMTIME, _item(pmtime, Qt.AlignCenter))
+
+            # col 12: 附件图标（FontAwesome paperclip，与 PN 列图标样式一致）
             if plm:
-                btn_files = QPushButton("📎")
-                btn_files.setFixedSize(26, 20)
-                _emoji_f = QFont("Segoe UI Emoji"); _emoji_f.setPointSize(9)
-                btn_files.setFont(_emoji_f)
-                btn_files.setFlat(True)
-                btn_files.setStyleSheet("QPushButton { border: none; padding: 0; }")
-                btn_files.setToolTip("查看 PLM 附件")
-                btn_files.clicked.connect(
-                    lambda _, p=pn, v=ver, pi=plm: self._on_show_attachments(p, v, pi)
-                )
-                self._tbl_diff.setCellWidget(row_idx, self._DC_FILES, btn_files)
+                lbl_files = QLabel("\uf0c6")
+                _fa_f = QFont("FontAwesome"); _fa_f.setPointSize(11)
+                lbl_files.setFont(_fa_f)
+                lbl_files.setStyleSheet("color: #4C566A;")
+                lbl_files.setAlignment(Qt.AlignCenter)
+                lbl_files.setToolTip("查看 PLM 附件")
+                lbl_files.setCursor(Qt.PointingHandCursor)
+                lbl_files.mousePressEvent = lambda e, p=pn, v=ver, pi=plm: self._on_show_attachments(p, v, pi)
+                w = QWidget(); l = QHBoxLayout(w)
+                l.setContentsMargins(0, 0, 0, 0); l.setAlignment(Qt.AlignCenter)
+                l.addWidget(lbl_files)
+                self._tbl_diff.setCellWidget(row_idx, self._DC_FILES, w)
             else:
                 self._tbl_diff.setItem(row_idx, self._DC_FILES, _item(""))
-
-            # col 13: 差异状态
-            st_item = _item(status, Qt.AlignCenter)
-            color = self._STATUS_COLORS.get(status, "#7f8c8d")
-            st_item.setForeground(QColor(color))
-            self._tbl_diff.setItem(row_idx, self._DC_DIFF, st_item)
 
             # 记录差异行数据
             self._diff_rows.append({
@@ -1377,6 +1534,10 @@ class PlmWorkbench(QDialog):
                 "status": status,
                 "row":    row_idx,
             })
+
+        # 清空刚 Push 标记，后续刷新走正常时间比较
+        if self._sync_just_pushed:
+            self._sync_just_pushed.clear()
 
         # 同步旧兼容字段
         self._visible_bom_rows = [{"Part Number": r["pn"]} for r in self._diff_rows]
@@ -1477,7 +1638,7 @@ class PlmWorkbench(QDialog):
                 return PlmWorkbench._ST_LOCAL_NEW
             elif (loc_ver, loc_iter) < (plm_ver, plm_iter):
                 return PlmWorkbench._ST_PLM_NEW
-            # 版本迭代相同，比修改时间
+            # 版本迭代相同，比修改时间（带容差）
             # PLM 时间是 UTC，local.mtime 是文件系统本地时间，必须统一时区再比较
             pmtime_raw = str(plm.get("modificationDate") or "")
             plm_mtime = None
@@ -1495,14 +1656,21 @@ class PlmWorkbench(QDialog):
                     local_mtime = local_mtime.astimezone()
                 # 截断到秒，消除文件系统亚秒精度与 PLM 秒精度之间的误差
                 local_utc = local_mtime.astimezone(_tz.utc).replace(microsecond=0)
+                diff_sec = abs((local_utc - plm_mtime).total_seconds())
+                if diff_sec <= _DIFF_TIME_TOLERANCE_SEC:
+                    return PlmWorkbench._ST_OK
                 if local_utc > plm_mtime:
                     return PlmWorkbench._ST_LOCAL_NEW
-                elif local_utc < plm_mtime:
+                else:
                     return PlmWorkbench._ST_PLM_NEW
             return PlmWorkbench._ST_OK
 
-        # 缺少版本信息（未同步过）
-        return PlmWorkbench._ST_LOCAL_ONLY if not plm_ver else PlmWorkbench._ST_OK
+        # 缺少版本信息（未同步过）：
+        # - plm_ver 也为空 → 仅本地
+        # - plm_ver 非空但 loc_ver 为空 → PLM 有版本但本地从未同步，应提示 PLM 有更新可 Pull
+        if not plm_ver:
+            return PlmWorkbench._ST_LOCAL_ONLY
+        return PlmWorkbench._ST_PLM_NEW
 
     @staticmethod
     def _format_plm_date(raw: str) -> str:
@@ -1567,6 +1735,34 @@ class PlmWorkbench(QDialog):
             QMessageBox.information(self, "未选择", "请先勾选要 Push 的零件行。")
             return
 
+        # ── 实时查询 PLM 最新状态（替代缓存数据） ─────────────────────────────
+        try:
+            from catia_copilot.plm.api_client import PlmApiClient
+            c = PlmApiClient(base_url)
+            c.login(login, password)
+            pns_to_check = [r["pn"] for r in push_rows]
+            fresh_data = c.search_parts_summary(workspace, pns_to_check)
+            has_recheck = False
+            for row_data in push_rows:
+                pn = row_data["pn"]
+                if pn not in fresh_data or not fresh_data[pn]:
+                    continue
+                fresh_plm = fresh_data[pn]
+                old_plm = row_data.get("plm")
+                if (old_plm is None
+                    or old_plm.get("version") != fresh_plm.get("version")
+                    or old_plm.get("lastIterationNumber") != fresh_plm.get("lastIterationNumber")):
+                    row_data["plm"] = fresh_plm
+                    row_data["status"] = self._compute_diff_status(
+                        row_data.get("local"), fresh_plm
+                    )
+                    has_recheck = True
+            if has_recheck:
+                self._plm_cache.update({pn: fresh_data[pn]
+                                        for pn in fresh_data if fresh_data[pn]})
+        except Exception:
+            pass  # 实时查询失败则使用缓存数据，不阻断 Push
+
         # 检查未保存
         unsaved = [r["pn"] for r in push_rows
                    if r["local"] and not r["local"].is_saved]
@@ -1577,6 +1773,28 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(
                 self, "存在未保存文件",
                 f"以下文件有未保存的修改，请先保存后再同步：\n\n{msg}",
+            )
+            return
+
+        # 校验文件名 stem == 零件编号（Pull 后 CATIA 按文件名在同目录找引用，必须一致）
+        invalid_names = []
+        for r in push_rows:
+            local = r.get("local")
+            if local and local.filepath:
+                stem = os.path.splitext(os.path.basename(local.filepath))[0]
+                if stem != local.part_number:
+                    invalid_names.append(
+                        f"{local.part_number}  ←  文件：{os.path.basename(local.filepath)}"
+                    )
+        if invalid_names:
+            msg = "\n".join(invalid_names[:10])
+            if len(invalid_names) > 10:
+                msg += f"\n…等共 {len(invalid_names)} 个"
+            QMessageBox.critical(
+                self, "文件名与零件编号不一致",
+                f"以下文件的文件名（不含扩展名）与零件编号不一致：\n\n{msg}\n\n"
+                "Push 后 Pull 时 CATIA 将无法在同目录找到引用的子文件。\n"
+                "请在 CATIA 中另存为正确文件名后再 Push。",
             )
             return
 
@@ -1599,6 +1817,7 @@ class PlmWorkbench(QDialog):
         push_map = {r["pn"]: self._UPGRADE_ITER for r in push_rows}
         options.part_upgrade_map = push_map
         self._sync_push_map = push_map
+        self._sync_just_pushed = set(push_map.keys())
 
         self._btn_push.setEnabled(False)
         self._btn_load_ws.setEnabled(False)
@@ -1615,7 +1834,7 @@ class PlmWorkbench(QDialog):
         self._last_sync_login = login
         self._last_sync_mode  = "Push 选中"
 
-        w = _SyncWorker(base_url, login, password, workspace, options)
+        w = _SyncWorker(base_url, login, password, workspace, options, push_rows)
         w.progress.connect(self._on_sync_progress)
         w.upload_log.connect(self._on_upload_log)
         w.sync_done.connect(self._on_sync_done)
@@ -1635,6 +1854,14 @@ class PlmWorkbench(QDialog):
             f"失败 {result.failed}",
         ]
         self._lbl_summary.setText("  ".join(parts))
+        # 有异常时弹窗展示详情
+        if result.errors:
+            msg_lines = [f"同步完成，共 {len(result.errors)} 条警告/错误：\n"]
+            for e in result.errors[:20]:
+                msg_lines.append(f"  · {e}")
+            if len(result.errors) > 20:
+                msg_lines.append(f"  …等共 {len(result.errors)} 条")
+            QMessageBox.warning(self, "同步结果", "\n".join(msg_lines))
         self._save_history(result, user=self._last_sync_login, mode=self._last_sync_mode)
         self._refresh_history_list()
         # 同步完成后自动刷新 PLM 状态
@@ -1647,6 +1874,8 @@ class PlmWorkbench(QDialog):
         self._pgb.setVisible(False)
         self._lbl_speed.setText("")
         self._lbl_status.setText(f"同步失败：{err}")
+        # Push 失败时清空 _sync_just_pushed，避免差异表伪装成"一致"
+        self._sync_just_pushed.clear()
         QMessageBox.critical(self, "同步失败", err)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1706,7 +1935,31 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(self, "连接失败", str(exc))
             return
 
+        # ── 实时查询 PLM 最新版本（替代缓存数据） ──────────────────────────────
+        try:
+            pns_to_refresh = list(set(pn for pn, _, _ in checked))
+            fresh_data = c.search_parts_summary(workspace, pns_to_refresh)
+            updated_checked = []
+            for pn, ver, itr in checked:
+                if pn in fresh_data and fresh_data[pn]:
+                    fresh = fresh_data[pn]
+                    ver = str(fresh.get("version") or ver)
+                    itr = str(fresh.get("lastIterationNumber") or itr)
+                updated_checked.append((pn, ver, itr))
+            checked = updated_checked
+            self._plm_cache.update({pn: fresh_data[pn]
+                                    for pn in fresh_data if fresh_data[pn]})
+        except Exception:
+            pass  # 实时查询失败则使用缓存数据
+
+        self._pulled_pns = set(pn for pn, _, _ in checked)
+
         dl_items: list[tuple[str, str, str, str]] = []
+        # mod_dates：pn → PLM modificationDate，下载后设置文件 mtime 避免误判"本地新"
+        mod_dates: dict[str, str] = {
+            pn: str(self._plm_cache.get(pn, {}).get("modificationDate") or "")
+            for pn, _, _ in checked
+        }
         for pn, ver, itr in checked:
             try:
                 files = c.list_part_attachments(workspace, pn, ver, itr)
@@ -1727,17 +1980,30 @@ class PlmWorkbench(QDialog):
         w = _PullWorker(base_url, login, password, workspace)
         w.file_progress.connect(lambda fn, dl, tot, spd: self._lbl_speed.setText(f"{spd/1024:.1f} KB/s"))
         w.file_done.connect(lambda fn, dest: self._pgb.setValue(self._pgb.value() + 1))
-        w.all_done.connect(lambda n: (
-            self._pgb.__class__.setVisible(self._pgb, False),
-            self._lbl_status.setText(f"Pull 完成：{n} 个文件"),
-            self._lbl_speed.setText(""),
-        ))
+        w.all_done.connect(self._on_pull_all_done)
         w.failure.connect(lambda err: (
             self._pgb.__class__.setVisible(self._pgb, False),
             QMessageBox.critical(self, "Pull 失败", err),
         ))
-        w.set_download(dl_items, work_dir)
+        w.set_download(dl_items, work_dir, mod_dates=mod_dates)
         self._start_worker(w)
+
+    def _on_pull_all_done(self, n: int) -> None:
+        """Pull 全部完成后：更新本地文件信息 + 重新扫描工作区（含新增文件）+ 刷新 PLM 状态。"""
+        self._pgb.__class__.setVisible(self._pgb, False)
+        self._lbl_status.setText(f"Pull 完成：{n} 个文件，正在重新扫描工作区……")
+        self._lbl_speed.setText("")
+        # 更新已有条目的 mtime（快速路径，无需 COM）
+        for info in self._local_parts:
+            if info.part_number in self._pulled_pns and os.path.isfile(info.filepath):
+                try:
+                    info.mtime = datetime.fromtimestamp(os.path.getmtime(info.filepath))
+                except Exception:
+                    pass
+        # 重新扫描工作区：Pull 可能新增了本地没有的文件（PLM_ONLY → 有本地文件），
+        # 只有重新扫描才能让这些新文件出现在差异表中。
+        # _on_scan_done 末尾会自动触发 _on_refresh_plm_status，无需在此重复调用。
+        self._on_load_workspace()
 
     # ─────────────────────────────────────────────────────────────────────────
     # 新增 PLM Part（手动）
@@ -1767,9 +2033,12 @@ class PlmWorkbench(QDialog):
             c = PlmApiClient(base_url)
             c.login(login, password)
 
-            # ── 1. 确认零件存在 ───────────────────────────────────────────────
-            parts = c.search_parts(workspace, number=pn, size=1)
-            if not parts:
+            # ── 1. 确认零件存在（精确路径查询，避免全文搜索漏查）────────────────
+            try:
+                root_detail = c.get_part_head(workspace, pn)
+            except Exception:
+                root_detail = None
+            if not root_detail:
                 QMessageBox.warning(
                     self, "PLM 中不存在",
                     f"在 PLM 工作区中未找到零件号：{pn}\n\n请确认零件号是否正确。",
@@ -1777,8 +2046,7 @@ class PlmWorkbench(QDialog):
                 self._lbl_status.setText("未找到零件，操作已取消")
                 return
 
-            root_part = parts[0]
-            root_ver  = str(root_part.get("version") or "A")
+            root_ver = str(root_detail.get("version") or "A")
 
             # ── 2. 询问是否递归展开子孙 ───────────────────────────────────────
             reply = QMessageBox.question(
@@ -1823,12 +2091,9 @@ class PlmWorkbench(QDialog):
             added = 0
             for idx, qpn in enumerate(pns_to_query):
                 try:
-                    qparts = c.search_parts(workspace, number=qpn, size=1)
-                    if qparts:
-                        qver   = str(qparts[0].get("version") or "A")
-                        detail = c.get_part_detail(workspace, qpn, qver)
-                        self._plm_cache[qpn] = c.extract_part_summary(detail)
-                        added += 1
+                    detail = c.get_part_head(workspace, qpn)
+                    self._plm_cache[qpn] = c.extract_part_summary(detail)
+                    added += 1
                 except Exception:
                     pass  # 单个子零件查询失败不中断整体
                 self._pgb.setValue(idx + 1)
@@ -1838,8 +2103,11 @@ class PlmWorkbench(QDialog):
             # ── 5. 持久化并刷新表格 ───────────────────────────────────────────
             work_dir = self._get_work_dir()
             if work_dir:
-                from catia_copilot.plm.workspace_scanner import save_plm_cache
-                save_plm_cache(work_dir, self._plm_cache)
+                from catia_copilot.plm.workspace_scanner import merge_plm_cache
+                # 合并新查询的零件到缓存文件，确保不覆盖现有缓存
+                added_parts = {qpn: self._plm_cache[qpn]
+                               for qpn in pns_to_query if qpn in self._plm_cache}
+                self._plm_cache = merge_plm_cache(work_dir, added_parts)
 
             self._plm_parts_cache = {k: v for k, v in self._plm_cache.items() if v}
             self._populate_diff_table()
@@ -1948,12 +2216,15 @@ class PlmWorkbench(QDialog):
         grid1.setColumnStretch(1, 0); grid1.setColumnStretch(2, 0); grid1.setColumnStretch(3, 1)
 
         (self._rb_create_yes, self._rb_create_no),     self._bg_create = _make_radio_grp("新建",     "跳过")
-        (self._rb_exist_checkout, self._rb_exist_skip), self._bg_exist  = _make_radio_grp("签出更新", "跳过")
+        self._rb_exist_checkout = QRadioButton("签出更新")
+        self._rb_exist_checkout.setChecked(True)
+        self._bg_exist = QButtonGroup()
+        self._bg_exist.addButton(self._rb_exist_checkout)
         (self._rb_after_checkin, self._rb_after_keep),  self._bg_after  = _make_radio_grp("自动签入", "保留签出")
 
         radio_rows1 = [
             ("不存在：", self._rb_create_yes,    self._rb_create_no),
-            ("已签入：", self._rb_exist_checkout, self._rb_exist_skip),
+            ("已签入：", self._rb_exist_checkout, None),
             ("推送后：", self._rb_after_checkin,  self._rb_after_keep),
         ]
         for r, (lbl_txt, rb1, rb2) in enumerate(radio_rows1):
@@ -1961,7 +2232,8 @@ class PlmWorkbench(QDialog):
             lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             grid1.addWidget(lbl, r, 0)
             grid1.addWidget(rb1, r, 1)
-            grid1.addWidget(rb2, r, 2)
+            if rb2 is not None:
+                grid1.addWidget(rb2, r, 2)
 
         # 预设按钮竖向放在第3列（与 radio 行对齐）
         btn_preset_new    = QPushButton("新建模式")
@@ -2048,8 +2320,7 @@ class PlmWorkbench(QDialog):
 
         self._chk_incremental.setChecked(_chk_val("chk_incremental", True))
         self._chk_incremental.toggled.connect(_save_chk("chk_incremental"))
-        self._chk_reg_product.setChecked(_chk_val("chk_reg_product", False))
-        self._chk_reg_product.toggled.connect(_save_chk("chk_reg_product"))
+        self._chk_reg_product.setChecked(False)  # 功能未实现，强制不勾选
         self._chk_upload_catpart.setChecked(_chk_val("chk_upload_catpart", True))
         self._chk_upload_catpart.toggled.connect(_save_chk("chk_upload_catpart"))
         self._chk_upload_stp.setChecked(_chk_val("chk_upload_stp", True))
@@ -2434,7 +2705,6 @@ class PlmWorkbench(QDialog):
 
     def _apply_preset_new(self) -> None:
         self._rb_create_yes.setChecked(True)
-        self._rb_exist_skip.setChecked(True)
         self._rb_other_skip.setChecked(True)
         self._rb_after_checkin.setChecked(True)
         self._chk_incremental.setChecked(False)
@@ -2448,11 +2718,7 @@ class PlmWorkbench(QDialog):
 
     def _build_sync_options(self):
         return SyncOptions(
-            existing_part_policy=(
-                ExistingPartPolicy.SKIP
-                if self._rb_exist_skip.isChecked()
-                else ExistingPartPolicy.CHECKOUT_UPDATE
-            ),
+            existing_part_policy=ExistingPartPolicy.CHECKOUT_UPDATE,
             create_new_parts=self._rb_create_yes.isChecked(),
             own_checked_out_policy=OwnCheckedOutPolicy.UPDATE,
             other_checked_out_policy=CheckedOutByOtherPolicy.SKIP,
@@ -3172,16 +3438,21 @@ class _HistoryDialog(QDialog):
         data = current.data(Qt.ItemDataRole.UserRole)
         if not data:
             return
-        lines = []
-        lines.append(f"时间：{data.get('time', '')}")
-        lines.append(f"用户：{data.get('username', '')}")
-        lines.append(f"模式：{data.get('sync_mode', '')}")
-        lines.append(f"结果：新建 {data.get('created',0)}  更新 {data.get('updated',0)}  "
-                     f"跳过 {data.get('skipped',0)}  失败 {data.get('failed',0)}")
-        detail = data.get("detail", "")
-        if detail:
+        lines = [
+            f"时间：{data.get('time', '')}",
+            f"用户：{data.get('username', '—')}",
+            f"模式：{data.get('sync_mode', '—')}",
+            f"新建：{data.get('created', 0)}",
+            f"更新：{data.get('updated', 0)}",
+            f"跳过：{data.get('skipped', 0)}",
+            f"无变化：{data.get('unchanged', 0)}",
+            f"失败：{data.get('failed', 0)}",
+        ]
+        errors = data.get("errors", [])
+        if errors:
             lines.append("")
-            lines.append(detail)
+            lines.append("失败/警告详情：")
+            lines += [f"  · {e}" for e in errors]
         self._txt.setPlainText("\n".join(lines))
 
     def _on_clear(self) -> None:
@@ -3204,6 +3475,188 @@ _PC_LOCAL   = 5   # 本地文件状态
 _PC_FILES   = 6   # 可下载文件列表（内部存储，不显示）
 _PC_PULL    = 7   # 下载? checkbox
 _PC_HEADERS = ["层级", "零件号", "版本", "迭代", "签出人", "本地文件", "可用文件", "下载?"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 附件查看对话框
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _AttachmentDialog(QDialog):
+    """查看并下载某零件迭代的 PLM 附件列表。"""
+
+    def __init__(
+        self,
+        base_url: str,
+        login: str,
+        password: str,
+        workspace: str,
+        part_number: str,
+        version: str,
+        plm_data: dict,
+        work_dir: str = "",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(f"PLM 附件 — {part_number} / {version}")
+        self.setMinimumSize(640, 400)
+        self.resize(720, 480)
+
+        self._base_url    = base_url
+        self._login       = login
+        self._password    = password
+        self._workspace   = workspace
+        self._pn          = part_number
+        self._version     = version
+        self._work_dir    = work_dir
+        # 从 plm_data 中取迭代号，0 表示最新迭代
+        self._iteration   = int(plm_data.get("lastIterationNumber") or 0)
+        self._files: list[str] = []   # 当前已加载的文件名列表
+
+        self._build_ui()
+        # 对话框显示后自动拉取附件列表
+        from PySide6.QtCore import QTimer as _QT
+        _QT.singleShot(0, self._load_attachments)
+
+    # ── UI ───────────────────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        # 标题信息行
+        info_lbl = QLabel(
+            f"零件号：<b>{self._pn}</b>　版本：<b>{self._version}</b>　"
+            f"迭代：<b>{self._iteration or '最新'}</b>"
+        )
+        info_lbl.setTextFormat(Qt.TextFormat.RichText)
+        root.addWidget(info_lbl)
+
+        # 附件列表
+        self._lst = QTableWidget(0, 2)
+        self._lst.setHorizontalHeaderLabels(["文件名", "操作"])
+        self._lst.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._lst.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._lst.horizontalHeader().resizeSection(1, 90)
+        self._lst.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._lst.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._lst.setAlternatingRowColors(True)
+        self._lst.verticalHeader().setVisible(False)
+        root.addWidget(self._lst, 1)
+
+        # 状态行 + 全部下载按钮
+        bottom = QHBoxLayout()
+        self._lbl_status = QLabel("正在加载……")
+        self._lbl_status.setStyleSheet("color: palette(mid);")
+        bottom.addWidget(self._lbl_status, 1)
+        self._btn_dl_all = QPushButton("⬇ 全部下载")
+        self._btn_dl_all.setEnabled(False)
+        self._btn_dl_all.clicked.connect(self._on_download_all)
+        bottom.addWidget(self._btn_dl_all)
+        btn_close = QPushButton("关闭")
+        btn_close.clicked.connect(self.accept)
+        bottom.addWidget(btn_close)
+        root.addLayout(bottom)
+
+    # ── 加载附件列表 ──────────────────────────────────────────────────────────
+
+    def _load_attachments(self) -> None:
+        """在当前线程（已在主线程）查询 PLM 附件列表并填充表格。
+        
+        文件数量通常很少（个位数），同步请求即可，不需要后台 worker。
+        """
+        try:
+            from catia_copilot.plm.api_client import PlmApiClient
+            client = PlmApiClient(self._base_url)
+            client.login(self._login, self._password)
+            self._files = client.list_part_attachments(
+                self._workspace, self._pn, self._version, self._iteration
+            )
+        except Exception as exc:
+            self._lbl_status.setText(f"加载失败：{exc}")
+            return
+
+        self._lst.setRowCount(0)
+        if not self._files:
+            self._lbl_status.setText("该版本暂无附件。")
+            return
+
+        for fname in self._files:
+            row = self._lst.rowCount()
+            self._lst.insertRow(row)
+            self._lst.setItem(row, 0, QTableWidgetItem(fname))
+            # 判断 sub_type
+            ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+            sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
+            btn = QPushButton("下载")
+            btn.setFixedHeight(24)
+            btn.clicked.connect(lambda _, f=fname, s=sub_type: self._on_download_one(f, s))
+            self._lst.setCellWidget(row, 1, btn)
+
+        self._lbl_status.setText(f"共 {len(self._files)} 个附件")
+        self._btn_dl_all.setEnabled(bool(self._work_dir))
+
+    # ── 下载 ─────────────────────────────────────────────────────────────────
+
+    def _resolve_dest(self, filename: str) -> str:
+        """根据文件名决定本地保存路径。主键文件平铺到 work_dir，其余放子目录。"""
+        import os
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext in ("catpart", "catproduct"):
+            return os.path.join(self._work_dir, filename)
+        return os.path.join(self._work_dir, self._pn, filename)
+
+    def _on_download_one(self, filename: str, sub_type: str) -> None:
+        if not self._work_dir:
+            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置本地工作目录。")
+            return
+        dest = self._resolve_dest(filename)
+        try:
+            from catia_copilot.plm.api_client import PlmApiClient
+            client = PlmApiClient(self._base_url)
+            client.login(self._login, self._password)
+            client.download_attached_file(
+                self._workspace, self._pn, self._version,
+                self._iteration, filename, dest, sub_type=sub_type,
+            )
+            self._lbl_status.setText(f"已下载：{filename}")
+        except Exception as exc:
+            QMessageBox.critical(self, "下载失败", str(exc))
+
+    def _on_download_all(self) -> None:
+        if not self._work_dir:
+            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置本地工作目录。")
+            return
+        errors = []
+        try:
+            from catia_copilot.plm.api_client import PlmApiClient
+            client = PlmApiClient(self._base_url)
+            client.login(self._login, self._password)
+        except Exception as exc:
+            QMessageBox.critical(self, "连接失败", str(exc))
+            return
+
+        self._btn_dl_all.setEnabled(False)
+        for i, fname in enumerate(self._files):
+            ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+            sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
+            dest = self._resolve_dest(fname)
+            self._lbl_status.setText(f"下载中 {i+1}/{len(self._files)}：{fname}")
+            QApplication.processEvents()
+            try:
+                client.download_attached_file(
+                    self._workspace, self._pn, self._version,
+                    self._iteration, fname, dest, sub_type=sub_type,
+                )
+            except Exception as exc:
+                errors.append(f"{fname}：{exc}")
+
+        self._btn_dl_all.setEnabled(True)
+        if errors:
+            QMessageBox.warning(self, "部分下载失败", "\n".join(errors))
+            self._lbl_status.setText(f"完成，{len(errors)} 个失败")
+        else:
+            self._lbl_status.setText(f"全部下载完成，共 {len(self._files)} 个文件")
 
 
 class _PullDialog(QDialog):
@@ -3535,6 +3988,12 @@ class _PullDialog(QDialog):
 
         # (part_number, version, iteration, filename) 四元组列表
         dl_items: list[tuple[str, str, str, str]] = []
+        # mod_dates：从 _bom_rows 按 pn 取 PLM modificationDate，下载后设置文件 mtime
+        mod_dates: dict[str, str] = {
+            row.get("part_number", ""): str(row.get("modification_date") or "")
+            for row in self._bom_rows
+            if row.get("part_number")
+        }
         for row_idx, files in prequery_results:
             # 更新表格文件列显示
             files_text = ", ".join(files) if files else "（无附件）"
@@ -3566,7 +4025,7 @@ class _PullDialog(QDialog):
 
         os.makedirs(self._work_dir, exist_ok=True)
         w = self._make_worker()
-        w.set_download(dl_items, self._work_dir)
+        w.set_download(dl_items, self._work_dir, mod_dates=mod_dates)
         self._worker = w
         w.start()
 

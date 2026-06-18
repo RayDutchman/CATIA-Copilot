@@ -54,7 +54,7 @@ _DEFAULT_PLM_LOGIN     = "admin"
 _DEFAULT_PLM_PASSWORD  = "password"
 _DEFAULT_PLM_WORKSPACE = "Workspace_0"
 
-_SETTINGS_ORG = "CATIACompanion"
+_SETTINGS_ORG = "CATIACopilot"
 _SETTINGS_APP = "PlmConfig"
 _SETTINGS_OPT = "PlmSyncOptions"
 
@@ -64,7 +64,7 @@ _SETTINGS_OPT = "PlmSyncOptions"
 class _SyncOptionsDialog(QDialog):
     """同步策略选项对话框，在每次开始同步前弹出供用户确认。
 
-    选项持久化到 QSettings("CATIACompanion", "PlmSyncOptions")。
+    选项持久化到 QSettings("CATIACopilot", "PlmSyncOptions")。
     """
 
     def __init__(self, parent=None):

@@ -737,7 +737,7 @@ class HelpDialog(QDialog):
         self.resize(700, 560)
         self.setMinimumSize(500, 500)
 
-        self._settings = QSettings("CATIACompanion", "HelpDialog")
+        self._settings = QSettings("CATIACopilot", "HelpDialog")
         
         # 恢复窗口几何
         saved_geom = self._settings.value("geometry")
