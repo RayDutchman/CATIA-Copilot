@@ -3484,6 +3484,8 @@ _PC_HEADERS = ["层级", "零件号", "版本", "迭代", "签出人", "本地�
 class _AttachmentDialog(QDialog):
     """查看并下载某零件迭代的 PLM 附件列表。"""
 
+    _FA_DOWNLOAD = "\uf019"   # FontAwesome 4.7 download icon
+
     def __init__(
         self,
         base_url: str,
@@ -3498,22 +3500,21 @@ class _AttachmentDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(f"PLM 附件 — {part_number} / {version}")
-        self.setMinimumSize(640, 400)
-        self.resize(720, 480)
+        self.setMinimumSize(580, 380)
+        self.resize(660, 450)
 
-        self._base_url    = base_url
-        self._login       = login
-        self._password    = password
-        self._workspace   = workspace
-        self._pn          = part_number
-        self._version     = version
-        self._work_dir    = work_dir
+        self._base_url  = base_url
+        self._login     = login
+        self._password  = password
+        self._workspace = workspace
+        self._pn        = part_number
+        self._version   = version
+        self._work_dir  = work_dir
         # 从 plm_data 中取迭代号，0 表示最新迭代
-        self._iteration   = int(plm_data.get("lastIterationNumber") or 0)
-        self._files: list[str] = []   # 当前已加载的文件名列表
+        self._iteration = int(plm_data.get("lastIterationNumber") or 0)
+        self._files: list[str] = []
 
         self._build_ui()
-        # 对话框显示后自动拉取附件列表
         from PySide6.QtCore import QTimer as _QT
         _QT.singleShot(0, self._load_attachments)
 
@@ -3532,39 +3533,63 @@ class _AttachmentDialog(QDialog):
         info_lbl.setTextFormat(Qt.TextFormat.RichText)
         root.addWidget(info_lbl)
 
-        # 附件列表
+        # 附件列表：文件名列 + 下载图标列
         self._lst = QTableWidget(0, 2)
-        self._lst.setHorizontalHeaderLabels(["文件名", "操作"])
+        self._lst.setHorizontalHeaderLabels(["文件名", ""])
         self._lst.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._lst.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self._lst.horizontalHeader().resizeSection(1, 90)
+        self._lst.horizontalHeader().resizeSection(1, 36)
         self._lst.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._lst.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._lst.setAlternatingRowColors(True)
+        self._lst.verticalHeader().setDefaultSectionSize(28)
         self._lst.verticalHeader().setVisible(False)
         root.addWidget(self._lst, 1)
 
-        # 状态行 + 全部下载按钮
+        # 状态行 + 全部下载图标 + 关闭按钮
         bottom = QHBoxLayout()
         self._lbl_status = QLabel("正在加载……")
         self._lbl_status.setStyleSheet("color: palette(mid);")
         bottom.addWidget(self._lbl_status, 1)
-        self._btn_dl_all = QPushButton("⬇ 全部下载")
-        self._btn_dl_all.setEnabled(False)
-        self._btn_dl_all.clicked.connect(self._on_download_all)
-        bottom.addWidget(self._btn_dl_all)
+
+        # 全部下载：FontAwesome download 图标标签
+        _fa_f = QFont("FontAwesome"); _fa_f.setPointSize(14)
+        self._lbl_dl_all = QLabel(self._FA_DOWNLOAD)
+        self._lbl_dl_all.setFont(_fa_f)
+        self._lbl_dl_all.setStyleSheet("color: palette(mid);")
+        self._lbl_dl_all.setToolTip("全部下载到工作目录")
+        self._lbl_dl_all.setCursor(Qt.PointingHandCursor)
+        self._lbl_dl_all.mousePressEvent = lambda e: self._on_download_all()
+        bottom.addWidget(self._lbl_dl_all)
+
         btn_close = QPushButton("关闭")
         btn_close.clicked.connect(self.accept)
         bottom.addWidget(btn_close)
         root.addLayout(bottom)
 
+    # ── 辅助：构建行内下载图标 widget ─────────────────────────────────────────
+
+    def _make_dl_icon(self, filename: str, sub_type: str) -> QWidget:
+        """返回居中放置 FontAwesome download 图标的 QWidget，点击触发下载。"""
+        _fa_f = QFont("FontAwesome"); _fa_f.setPointSize(11)
+        lbl = QLabel(self._FA_DOWNLOAD)
+        lbl.setFont(_fa_f)
+        lbl.setStyleSheet("color: #4C566A;")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setToolTip(f"下载 {filename}")
+        lbl.setCursor(Qt.PointingHandCursor)
+        lbl.mousePressEvent = lambda e, f=filename, s=sub_type: self._on_download_one(f, s)
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setAlignment(Qt.AlignCenter)
+        lay.addWidget(lbl)
+        return w
+
     # ── 加载附件列表 ──────────────────────────────────────────────────────────
 
     def _load_attachments(self) -> None:
-        """在当前线程（已在主线程）查询 PLM 附件列表并填充表格。
-        
-        文件数量通常很少（个位数），同步请求即可，不需要后台 worker。
-        """
+        """查询 PLM 附件列表并填充表格（文件数量少，同步请求即可）。"""
         try:
             from catia_copilot.plm.api_client import PlmApiClient
             client = PlmApiClient(self._base_url)
@@ -3585,21 +3610,20 @@ class _AttachmentDialog(QDialog):
             row = self._lst.rowCount()
             self._lst.insertRow(row)
             self._lst.setItem(row, 0, QTableWidgetItem(fname))
-            # 判断 sub_type
             ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
             sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
-            btn = QPushButton("下载")
-            btn.setFixedHeight(24)
-            btn.clicked.connect(lambda _, f=fname, s=sub_type: self._on_download_one(f, s))
-            self._lst.setCellWidget(row, 1, btn)
+            self._lst.setCellWidget(row, 1, self._make_dl_icon(fname, sub_type))
 
         self._lbl_status.setText(f"共 {len(self._files)} 个附件")
-        self._btn_dl_all.setEnabled(bool(self._work_dir))
+        if self._work_dir:
+            self._lbl_dl_all.setStyleSheet("color: #4C566A;")
+        else:
+            self._lbl_dl_all.setToolTip("请先配置工作目录")
 
     # ── 下载 ─────────────────────────────────────────────────────────────────
 
     def _resolve_dest(self, filename: str) -> str:
-        """根据文件名决定本地保存路径。主键文件平铺到 work_dir，其余放子目录。"""
+        """主键文件平铺到 work_dir，其余放 work_dir/{pn}/ 子目录。"""
         import os
         ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if ext in ("catpart", "catproduct"):
@@ -3627,6 +3651,8 @@ class _AttachmentDialog(QDialog):
         if not self._work_dir:
             QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置本地工作目录。")
             return
+        if not self._files:
+            return
         errors = []
         try:
             from catia_copilot.plm.api_client import PlmApiClient
@@ -3636,7 +3662,7 @@ class _AttachmentDialog(QDialog):
             QMessageBox.critical(self, "连接失败", str(exc))
             return
 
-        self._btn_dl_all.setEnabled(False)
+        self._lbl_dl_all.setStyleSheet("color: palette(mid);")
         for i, fname in enumerate(self._files):
             ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
             sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
@@ -3651,7 +3677,7 @@ class _AttachmentDialog(QDialog):
             except Exception as exc:
                 errors.append(f"{fname}：{exc}")
 
-        self._btn_dl_all.setEnabled(True)
+        self._lbl_dl_all.setStyleSheet("color: #4C566A;")
         if errors:
             QMessageBox.warning(self, "部分下载失败", "\n".join(errors))
             self._lbl_status.setText(f"完成，{len(errors)} 个失败")
