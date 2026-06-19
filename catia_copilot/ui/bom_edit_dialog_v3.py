@@ -2521,20 +2521,30 @@ class BomEditDialogV3(QDialog):
         def _collect(pm_key: str, out: list) -> None:
             """按 PartNumber.n 规则为 part_masters[pm_key].instances 生成改名计划。
             instances 是文件视角，唯一一份，修改后所有引用自动同步。
+
+            no_file 节点（文件不在磁盘）本身的实例名可以改写（COM 引用有效，
+            实例信息存于父节点），因此加入计划；但跳过对其子树的递归，因为
+            无法读取其子节点的 PartNumber，强行递归会触发 COM 报错。
             """
             pm = self._part_masters.get(pm_key, {})
             pn_counter: dict[str, int] = {}
             for inst_info in pm.get("instances", []):
                 child_pn   = inst_info["pn"]
                 child_bk   = inst_info["pm_key"]
-                child_type = self._part_masters.get(child_bk, {}).get("type", "")
+                child_pm   = self._part_masters.get(child_bk, {})
+                child_type = child_pm.get("type", "")
+                child_no_file = child_pm.get("_no_file", False)
                 pn_counter[child_pn] = pn_counter.get(child_pn, 0) + 1
                 out.append((inst_info, f"{child_pn}.{pn_counter[child_pn]}"))
-                if child_type in BomNodeType.ASSEMBLY_TYPES:
+                if child_no_file:
+                    # 子树跳过，记录 pn 供确认弹窗提示
+                    skipped_no_file_subtrees.append(child_pn)
+                elif child_type in BomNodeType.ASSEMBLY_TYPES:
                     _collect(child_bk, out)
 
         # ── 收集目标子树改名计划 ──────────────────────────────────────────────────
         plan: list[tuple[dict, str]] = []
+        skipped_no_file_subtrees: list[str] = []   # 被跳过子树的节点 pn 列表
         _collect(target_pm_key, plan)
 
         if not plan:
@@ -2548,9 +2558,13 @@ class BomEditDialogV3(QDialog):
             QMessageBox.information(self, "无需修改", "所有实例名已符合 PartNumber.n 规则。")
             return
 
+        skip_hint = (
+            f"\n注意：{len(skipped_no_file_subtrees)} 个未保存节点的子树已跳过（PN：{', '.join(skipped_no_file_subtrees[:5])}）。"
+            if skipped_no_file_subtrees else ""
+        )
         reply = QMessageBox.question(
             self, "自动修改实例名（子树范围）",
-            f"共 {len(plan)} 个实例，其中 {need_change} 个需要修改。\n\n是否继续？",
+            f"共 {len(plan)} 个实例，其中 {need_change} 个需要修改。{skip_hint}\n\n是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
