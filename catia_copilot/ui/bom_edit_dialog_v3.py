@@ -2522,9 +2522,8 @@ class BomEditDialogV3(QDialog):
             """按 PartNumber.n 规则为 part_masters[pm_key].instances 生成改名计划。
             instances 是文件视角，唯一一份，修改后所有引用自动同步。
 
-            no_file 节点（文件不在磁盘）本身的实例名可以改写（COM 引用有效，
-            实例信息存于父节点），因此加入计划；但跳过对其子树的递归，因为
-            无法读取其子节点的 PartNumber，强行递归会触发 COM 报错。
+            no_file 节点（文件不在磁盘）：PN 无法可靠读取，直接跳过自身及子树，
+            避免用无效 PN 生成错误实例名或触发 COM 报错。
             """
             pm = self._part_masters.get(pm_key, {})
             pn_counter: dict[str, int] = {}
@@ -2534,12 +2533,13 @@ class BomEditDialogV3(QDialog):
                 child_pm   = self._part_masters.get(child_bk, {})
                 child_type = child_pm.get("type", "")
                 child_no_file = child_pm.get("_no_file", False)
+                # no_file 节点：PN 不可靠，跳过本节点及其子树
+                if child_no_file:
+                    skipped_no_file_subtrees.append(child_pn)
+                    continue
                 pn_counter[child_pn] = pn_counter.get(child_pn, 0) + 1
                 out.append((inst_info, f"{child_pn}.{pn_counter[child_pn]}"))
-                if child_no_file:
-                    # 子树跳过，记录 pn 供确认弹窗提示
-                    skipped_no_file_subtrees.append(child_pn)
-                elif child_type in BomNodeType.ASSEMBLY_TYPES:
+                if child_type in BomNodeType.ASSEMBLY_TYPES:
                     _collect(child_bk, out)
 
         # ── 收集目标子树改名计划 ──────────────────────────────────────────────────
