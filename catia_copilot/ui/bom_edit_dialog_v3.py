@@ -1161,12 +1161,20 @@ class BomEditDialogV3(QDialog):
                     if item.data(0, _ITEM_LOCKED_ROLE):
                         item.setData(ci, Qt.ItemDataRole.ForegroundRole, None)
                 if row_locked:
+                    tip = (
+                        "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
+                        if not_found else
+                        "该零件/产品处于轻量化模式，无法读取属性。"
+                    )
                     for ci in range(col_count):
                         item.setForeground(ci, c.ROW_LOCKED_FG)
                         item.setBackground(ci, c.ROW_NOT_FOUND_BG if not_found else c.ROW_LIGHTWEIGHT_BG)
+                        item.setToolTip(ci, tip)
                 elif no_file:
+                    no_file_tip = "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。"
                     for ci in range(col_count):
                         item.setBackground(ci, c.ROW_UNSAVED_BG)
+                        item.setToolTip(ci, no_file_tip)
         finally:
             self._is_updating = False
 
@@ -1656,13 +1664,13 @@ class BomEditDialogV3(QDialog):
                     # 更新 inst_info（唯一真相）
                     inst_info["instance_name"] = new_value
 
-                    # 刷新所有共享同一 inst_key 的树形项
+                    # 刷新所有共享同一 inst_key 的树形项（含 item 自身）
                     col_idx_inst = self._columns.index(BOM_INSTANCE_NAME_COLUMN) if BOM_INSTANCE_NAME_COLUMN in self._columns else -1
                     if col_idx_inst >= 0:
                         self._is_updating = True
                         try:
                             for other_item in self._inst_to_items.get(inst_key, []):
-                                if other_item is not item and other_item.text(col_idx_inst) != new_value:
+                                if other_item.text(col_idx_inst) != new_value:
                                     other_item.setText(col_idx_inst, new_value)
                         finally:
                             self._is_updating = False
@@ -2042,6 +2050,15 @@ class BomEditDialogV3(QDialog):
             else:
                 return
 
+        # 实例名列：同父下不允许重复，同值填充无意义，直接拒绝
+        if col_name == BOM_INSTANCE_NAME_COLUMN:
+            QMessageBox.information(
+                self, "无法批量填充",
+                "实例名称在同一父节点下必须唯一，不支持同值批量填充。\n"
+                "如需批量编号，请使用「序列填充」功能。",
+            )
+            return
+
         assignments = [(r, col_name, src_value) for r in target_row_indices]
         fail_count = self._apply_cell_values(assignments)
         if fail_count:
@@ -2345,6 +2362,18 @@ class BomEditDialogV3(QDialog):
                 return pfx + _num_to_alpha(alpha_base + i * alpha_step) + sfx
 
         generated = [_make_value(i) for i in range(len(ordered_row_indices))]
+
+        # 实例名列：不走 _apply_cell_values（pm_key 路径），逐行调用专用处理函数
+        if col_name == BOM_INSTANCE_NAME_COLUMN:
+            col_idx = self._columns.index(col_name) if col_name in self._columns else -1
+            if col_idx >= 0:
+                for r, val in zip(ordered_row_indices, generated):
+                    t_item = self._item_by_row[r] if r < len(self._item_by_row) else None
+                    if t_item is None:
+                        continue
+                    # 直接调用处理函数：内部负责写入 CATIA、更新显示和推撤销栈
+                    self._handle_instance_name_changed(t_item, col_idx, r, val)
+            return
 
         assignments = list(zip(ordered_row_indices, [col_name] * len(ordered_row_indices), generated))
         fail_count = self._apply_cell_values(assignments)
