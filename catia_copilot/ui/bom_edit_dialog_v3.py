@@ -2522,19 +2522,20 @@ class BomEditDialogV3(QDialog):
             """按 PartNumber.n 规则为 part_masters[pm_key].instances 生成改名计划。
             instances 是文件视角，唯一一份，修改后所有引用自动同步。
 
-            no_file 节点（文件不在磁盘）：PN 无法可靠读取，直接跳过自身及子树，
-            避免用无效 PN 生成错误实例名或触发 COM 报错。
+            no_file 节点（文件不在磁盘）和 not_found 节点（断链接）：
+            COM 写入会失败，直接跳过自身及子树。
             """
             pm = self._part_masters.get(pm_key, {})
             pn_counter: dict[str, int] = {}
             for inst_info in pm.get("instances", []):
-                child_pn   = inst_info["pn"]
-                child_bk   = inst_info["pm_key"]
-                child_pm   = self._part_masters.get(child_bk, {})
-                child_type = child_pm.get("type", "")
-                child_no_file = child_pm.get("_no_file", False)
-                # no_file 节点：PN 不可靠，跳过本节点及其子树
-                if child_no_file:
+                child_pn      = inst_info["pn"]
+                child_bk      = inst_info["pm_key"]
+                child_pm      = self._part_masters.get(child_bk, {})
+                child_type    = child_pm.get("type", "")
+                child_no_file  = child_pm.get("_no_file", False)
+                child_not_found = child_pm.get("_not_found", False)
+                # no_file / not_found 节点：COM 写入会失败，跳过本节点及其子树
+                if child_no_file or child_not_found:
                     skipped_no_file_subtrees.append(child_pn)
                     continue
                 pn_counter[child_pn] = pn_counter.get(child_pn, 0) + 1
@@ -2559,7 +2560,7 @@ class BomEditDialogV3(QDialog):
             return
 
         skip_hint = (
-            f"\n注意：{len(skipped_no_file_subtrees)} 个未保存节点的子树已跳过（PN：{', '.join(skipped_no_file_subtrees[:5])}）。"
+            f"\n注意：{len(skipped_no_file_subtrees)} 个断链/未保存节点的子树已跳过。"
             if skipped_no_file_subtrees else ""
         )
         reply = QMessageBox.question(
