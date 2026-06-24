@@ -1105,7 +1105,12 @@ def _sync_node(
 
             # 从该子节点的 instances 列表构造 cadInstances（局部变换矩阵→PLM 格式）
             cad_instances = _instances_to_cad_instances(child.instances)
-            comp_entry: dict = {"component": {"number": child_pn, "version": latest_ver}}
+            # amount 为该子零件在父装配中的实例数量；不设置时服务端 Java int 默认为 0，
+            # 导致前端结构树无法展开，因此必须显式写入。
+            comp_entry: dict = {
+                "component": {"number": child_pn, "version": latest_ver},
+                "amount": len(child.instances) if child.instances else 1,
+            }
             if cad_instances:
                 comp_entry["cadInstances"] = cad_instances
             child_components.append(comp_entry)
@@ -1401,9 +1406,15 @@ def _do_update_and_upload(
     # 1. 上传原始 CATIA 文件（CATPart / CATProduct）
     if options.upload_catpart_file and fp and _os.path.isfile(fp):
         try:
+            _t0 = _time.time()
             client.upload_attached_file(workspace, part_number, version, iteration, fp)
+            _elapsed = _time.time() - _t0
             upload_col = "CATIA文件已上传"
             cb(_log_row(source, "CATIA文件已上传", "", lbl))
+            if _elapsed > 0:
+                _fsize_kb = _os.path.getsize(fp) / 1024
+                if _fsize_kb > 0:
+                    cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
         except Exception as _exc:
             logger.warning(f"{lbl}: CATIA 文件上传失败 — {_exc}")
             result.errors.append(f"{lbl}: CATIA 文件上传失败 — {_exc}")
@@ -1437,11 +1448,17 @@ def _do_update_and_upload(
                     target_doc.ExportData(stp_path, "stp")
                     if not _os.path.isfile(stp_path):
                         raise FileNotFoundError(f"ExportData 未生成文件：{stp_path}")
+                    _t0 = _time.time()
                     client.upload_step(workspace, part_number, version, iteration, stp_path)
+                    _elapsed = _time.time() - _t0
                     result.step_uploaded += 1
                     upload_col       = "STP已上传"
                     needs_conversion = True
                     cb(_log_row(source, "STP已上传", "", lbl))
+                    if _elapsed > 0:
+                        _fsize_kb = _os.path.getsize(stp_path) / 1024
+                        if _fsize_kb > 0:
+                            cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
             finally:
                 _pcom.CoUninitialize()
         except Exception as _exc:
@@ -1466,11 +1483,17 @@ def _do_update_and_upload(
                         # convert_drawing_to_pdf 输出文件名与源文件同名，扩展名 .pdf
                         pdf_path = str(_pl.Path(tmpdir) / (_pl.Path(drawing_path).stem + ".pdf"))
                         if _os.path.isfile(pdf_path):
+                            _t0 = _time.time()
                             client.upload_attached_file(
                                 workspace, part_number, version, iteration, pdf_path
                             )
+                            _elapsed = _time.time() - _t0
                             upload_col = "图纸PDF已上传"
                             cb(_log_row(source, "图纸PDF已上传", "", lbl))
+                            if _elapsed > 0:
+                                _fsize_kb = _os.path.getsize(pdf_path) / 1024
+                                if _fsize_kb > 0:
+                                    cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
                         else:
                             raise FileNotFoundError(f"PDF 文件未生成：{pdf_path}")
                     else:
@@ -1487,11 +1510,17 @@ def _do_update_and_upload(
         drawing_path = _find_drawing_for_part(fp)
         if drawing_path and _os.path.isfile(drawing_path):
             try:
+                _t0 = _time.time()
                 client.upload_attached_file(
                     workspace, part_number, version, iteration, drawing_path
                 )
+                _elapsed = _time.time() - _t0
                 upload_col = "图纸文件已上传"
                 cb(_log_row(source, "图纸文件已上传", "", lbl))
+                if _elapsed > 0:
+                    _fsize_kb = _os.path.getsize(drawing_path) / 1024
+                    if _fsize_kb > 0:
+                        cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
             except Exception as _exc:
                 logger.warning(f"{lbl}: CATDrawing 上传失败 — {_exc}")
                 result.errors.append(f"{lbl}: CATDrawing 上传失败 — {_exc}")

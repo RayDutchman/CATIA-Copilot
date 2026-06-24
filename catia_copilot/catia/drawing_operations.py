@@ -18,6 +18,7 @@ from catia_copilot.catia.document import (
     get_document_type,  # noqa: F401 — re-exported for callers
 )
 from catia_copilot.constants import (
+    DRAWING_FILENAME_PREFIX,
     DRAWING_SYNC_STANDARD_PARAMS,
     DRAWING_SYNC_USER_PROPS,
 )
@@ -232,6 +233,11 @@ def generate_drawing(
             input_callback=input_callback,
         )
         
+        # 5.5 生成建议文件名，返回给 UI 层弹 SaveAs 对话框
+        part_number = sync_result.get("part_number", "")
+        if part_number:
+            sync_result["suggested_name"] = f"{DRAWING_FILENAME_PREFIX}{part_number}.CATDrawing"
+
         # 6. 激活第一张图纸页
         try:
             drawing_sheet = drawing_doc.Sheets.Item(1)

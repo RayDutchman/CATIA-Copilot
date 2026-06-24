@@ -2817,8 +2817,13 @@ class PlmWorkbench(QDialog):
 
         done = getattr(self, "_sync_done_nodes", 0)
         if done or is_terminal:
+            # 截断过长文本，但避免在 <名称> 中间切断
+            _show = stripped[:200]
+            _lt = _show.rfind("<")
+            if _lt >= 0 and ">" not in _show[_lt:]:
+                _show = _show[:_lt]
             self._lbl_sync_status.setText(
-                f"正在同步…… ({done} / {total})  {stripped[:60]}"
+                f"正在同步…… ({done} / {total})  {_show}"
             )
         else:
             self._lbl_sync_status.setText(stripped)

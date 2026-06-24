@@ -382,6 +382,10 @@ DRAWING_SYNC_STANDARD_PARAMS: list[str] = ["PartNumber", "Nomenclature", "Revisi
 
 DRAWING_SYNC_USER_PROPS: list[str] = ["物料编码", "材料", "重量"]
 
+# 新建图纸时文件名前缀，例如 "DR_" → DR_PartNumber.CATDrawing
+# 设为空字符串 "" 则文件名直接为 PartNumber.CATDrawing
+DRAWING_FILENAME_PREFIX: str = "DR_"
+
 # ---------------------------------------------------------------------------
 # CATDrawing 启发式查找策略（给图纸 → 找对应的 CATPart/CATProduct）
 # ---------------------------------------------------------------------------

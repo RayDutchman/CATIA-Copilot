@@ -59,6 +59,7 @@ from catia_copilot.catia.dependencies import (
 from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
 from catia_copilot.catia.macro import CATIA_COPILOT_MODULES
 from catia_copilot.catia.macro import run_macro as _catia_run_macro
+from catia_copilot.catia.part_from_template import create_part_from_template
 from catia_copilot.catia.template import apply_part_template
 from catia_copilot.constants import (
     ABOUT_TEXT,
@@ -414,7 +415,7 @@ class MainWindow(QMainWindow):
         self._tab_widget.setObjectName("mainTabWidget")  # 专属样式：Tab 标题 padding + 按钮高度
         self._tab_widget.addTab(self._build_workbench_page(), "工作台")  # 0
         self._tab_widget.addTab(self._build_export_page(),    "导出")    # 1
-        self._tab_widget.addTab(self._build_drawing_page(),   "图纸")    # 2
+        self._tab_widget.addTab(self._build_drawing_page(),   "模板")    # 2
         self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
 
         # AI 助手 Tab
@@ -615,13 +616,24 @@ class MainWindow(QMainWindow):
     # ── 图纸页面 ───────────────────────────────────────────────────────────
 
     def _build_drawing_page(self) -> QWidget:
-        """构建"图纸"功能页。"""
+        """构建"模板"功能页。"""
         body = QWidget()
         layout = QVBoxLayout(body)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
-        # Python 实现版本（新）
+        # ── 零件模板 ────────────────────────────────────────────────────────
+        layout.addWidget(self._make_section_label("零件模板"))
+
+        btn_part_from_tpl = QPushButton("从模板新建零件")
+        btn_part_from_tpl.setToolTip(
+            "以当前活动 CATPart 为模板，通过 NewFrom 创建新零件\n"
+            "（保留参数、关系、几何图形集结构、公式、发布等所有知识工程内容）"
+        )
+        btn_part_from_tpl.clicked.connect(self._open_part_from_template_dialog)
+        layout.addWidget(btn_part_from_tpl)
+
+        # ── 工程图纸 (Python 实现) ───────────────────────────────────────────
         layout.addWidget(self._make_section_label("工程图纸 (Python 实现)"))
 
         btn_new_py = QPushButton(self._ACTION_LABELS["drawing_new"])
@@ -1663,6 +1675,61 @@ class MainWindow(QMainWindow):
             return
         self._run_macro(catvbs_path)
 
+    # ── Part from template ──────────────────────────────────────────────────
+
+    def _part_templates_dir(self) -> Path:
+        return resource_path("part_templates")
+
+    def _open_part_from_template_dialog(self) -> None:
+        """从模板新建零件 — 从 part_templates 目录选择 CATPart 模板，NewFrom 创建新零件。"""
+        templates_dir = self._part_templates_dir()
+        templates_dir.mkdir(parents=True, exist_ok=True)
+
+        templates = sorted(templates_dir.glob("*.CATPart"))
+        if not templates:
+            QMessageBox.warning(
+                self, "未找到模板",
+                f"在以下目录中未找到任何 CATPart 模板文件：\n{templates_dir}\n\n"
+                "请将 *.CATPart 模板放入该文件夹后重试。",
+            )
+            return
+
+        name, ok = QInputDialog.getItem(
+            self,
+            "选择零件模板",
+            "请选择一个 CATPart 模板：",
+            [t.name for t in templates],
+            0,
+            False,
+        )
+        if not ok:
+            return
+
+        template_path = templates_dir / name
+
+        def input_callback(title: str, default: str) -> tuple[str, bool]:
+            text, ok = QInputDialog.getText(
+                self,
+                "输入新零件号",
+                f"请输入新零件的 PartNumber\n（留空则自动使用：{default}）：",
+                text="",
+            )
+            return (text, ok)
+
+        try:
+            result = create_part_from_template(
+                template_path=str(template_path),
+                input_callback=input_callback,
+            )
+
+            if result["success"]:
+                QMessageBox.information(self, "新建零件成功", result["message"])
+            else:
+                QMessageBox.critical(self, "新建零件失败", result["message"])
+
+        except Exception as e:
+            QMessageBox.critical(self, "新建零件失败", f"发生错误：\n{e}")
+
     # ── Drawing generation (Python implementation) ──────────────────────────
 
     def _open_generate_drawing_dialog_python(self) -> None:
@@ -1710,14 +1777,24 @@ class MainWindow(QMainWindow):
                 template_path=str(template_path),
                 input_callback=input_callback,
             )
-            
+
             if result["success"]:
-                # 显示同步日志
-                log_msg = "\n".join(result["details"])
-                QMessageBox.information(self, "同步日志", log_msg)
+                # 弹出 SaveAs 对话框，预填建议文件名
+                suggested_name = result.get("suggested_name", "")
+                save_path, ok = QFileDialog.getSaveFileName(
+                    self,
+                    "另存为",
+                    suggested_name,
+                    "CATDrawing (*.CATDrawing)",
+                )
+                if ok and save_path:
+                    try:
+                        result["drawing_doc"].SaveAs(save_path)
+                    except Exception as e:
+                        QMessageBox.critical(self, "保存图纸失败", f"SaveAs 失败：\n{e}")
             else:
                 QMessageBox.critical(self, "生成图纸失败", result["message"])
-                
+
         except Exception as e:
             QMessageBox.critical(
                 self, "生成图纸失败",

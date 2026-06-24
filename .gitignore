@@ -80,3 +80,5 @@ Temp/
 
 # ── 使用 Cat5Dev 从 catvba 文件中导出的 .bas 和 .frm 临时文件 ───────────────────
 modules/
+# Windows NUL device (spurious git untracked entry)
+nul
