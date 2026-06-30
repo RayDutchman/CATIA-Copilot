@@ -5,9 +5,10 @@ AI 建模状态面板 —— 非模态子窗口，展示当前零件特征、质
 """
 
 import json
-from PyQt5 import QtCore
-from PyQt5.QtCore import Qt, QByteArray
-from PyQt5.QtWidgets import (
+import os as _os
+
+from PySide6.QtCore import Qt, QByteArray, QSettings
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -18,11 +19,8 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QHeaderView,
-    QApplication,
 )
-from PyQt5.QtCore import QSettings
 
-import os as _os
 _STYLE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "styles", "native.qss")
 
 
@@ -31,15 +29,12 @@ class ModelStateDialog(QDialog):
 
     用法（AIChatPanel 中）::
 
-        dialog = ModelStateDialog(self)
+        dialog = ModelStateDialog(None)
         dialog.set_state(parsed_json)   # 从 tool_run_modeling_script 返回 JSON 解析
         dialog.show()
     """
 
-    _SETTINGS = QSettings("CATIA-Copilot", "ModelStateDialog")
-
-    # ── 信号 ──────────────────────────────────────────────────────────
-    request_state_update = QtCore.pyqtSignal()  # 可由外部发射，无实际handler，仅作占位
+    _SETTINGS = None
 
     # ── 常量 ──────────────────────────────────────────────────────────
     MIN_WIDTH = 420
@@ -82,6 +77,7 @@ class ModelStateDialog(QDialog):
             | Qt.WindowType.WindowMaximizeButtonHint
             | Qt.WindowType.WindowMinimizeButtonHint
         )
+        # 关闭时自动删除 C++ 对象，避免残留
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         root = QVBoxLayout(self)
@@ -150,7 +146,7 @@ class ModelStateDialog(QDialog):
         part_name = state.get("part_name", "—")
         success = state.get("success", None)
         if success is False:
-            self._title_label.setText(f"模型状态 — 失败")
+            self._title_label.setText("模型状态 — 失败")
         elif part_name and part_name != "—":
             self._title_label.setText(f"模型状态 — {part_name}")
         else:
@@ -203,13 +199,18 @@ class ModelStateDialog(QDialog):
         self._steps_log.setPlainText("\n".join(lines))
 
     # ── 窗口几何持久化 ────────────────────────────────────────────────
+    def _settings(self):
+        if ModelStateDialog._SETTINGS is None:
+            ModelStateDialog._SETTINGS = QSettings("CATIA-Copilot", "ModelStateDialog")
+        return ModelStateDialog._SETTINGS
+
     def _load_geometry(self) -> None:
-        saved = self._SETTINGS.value("geometry")
+        saved = self._settings().value("geometry")
         if isinstance(saved, QByteArray) and not saved.isEmpty():
             self.restoreGeometry(saved)
 
     def _save_geometry(self) -> None:
-        self._SETTINGS.setValue("geometry", self.saveGeometry())
+        self._settings().setValue("geometry", self.saveGeometry())
 
     def done(self, result: int) -> None:
         self._save_geometry()
