@@ -2246,6 +2246,10 @@ class AIChatPanel(QWidget):
         """打开或置前模型状态弹窗。"""
         if self._model_state_dialog is None:
             self._model_state_dialog = ModelStateDialog(None)
+            # WA_DeleteOnClose 关闭后 C++ 对象被删，Python 引用需置空才能重建
+            self._model_state_dialog.destroyed.connect(
+                lambda: setattr(self, '_model_state_dialog', None)
+            )
         self._model_state_dialog.show()
         self._model_state_dialog.raise_()
         self._model_state_dialog.activateWindow()
