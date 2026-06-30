@@ -45,6 +45,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -62,6 +63,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QTabWidget,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -79,6 +81,7 @@ from catia_copilot.ai.session import ChatSession
 from catia_copilot.ai.session_manager import SessionManager
 from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT, tools_map
 from catia_copilot.ui.session_config_dialog import SessionConfigDialog
+from catia_copilot.ui.model_state_dialog import ModelStateDialog
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
 from catia_copilot.ui.ui_colors import get_chat_colors
 from catia_copilot.ui.ui_layout import L
@@ -89,6 +92,21 @@ logger = logging.getLogger(__name__)
 _MEMORY_PATH = Path.home() / "AppData" / "Roaming" / "CATIA Copilot" / "memory.md"
 # 记忆注入上限（字符数）
 _MEMORY_MAX_CHARS = 8000
+
+
+# provider_type → 显示名（AIChatPanel 工具栏 combo 和 AISettingsDialog 共用）
+_PROVIDER_DISPLAY = {
+    "openai":     "OpenAI / 兼容",
+    "anthropic":  "Anthropic",
+    "openrouter": "OpenRouter",
+    "deepseek":   "DeepSeek",
+    "ollama":     "Ollama（本地）",
+    "iflytek":    "讯飞星火",
+    "bedrock":    "AWS Bedrock",
+    "vertex":     "Google Vertex AI",
+    "github":     "GitHub Copilot",
+    "custom":     "自定义端点",
+}
 
 
 def chat_colors():
@@ -805,280 +823,378 @@ class ChatScrollArea(QScrollArea):
 
 class AISettingsDialog(QDialog):
     """
-    AI 配置对话框。
-
-    包含：API Base URL、API Key、模型选择（刷新模型列表 + 测试连接）、运行时参数。
-    刷新模型列表时调用 fetch_models_from_api 并将结果写入 ai_config.json。
+    AI 多 Provider 设置对话框。
+    左侧列表 + 右侧凭证/模型编辑 + 底部运行时参数。
+    类型创建后不可更改；各 provider 凭证、模型列表完全隔离。
     """
+
+    _PROVIDER_FIELDS: dict[str, tuple] = {
+        "openai":     ("OpenAI / 兼容", [
+            ("API Base URL", "api_base", "https://api.openai.com", False),
+            ("API Key",      "api_key",  "sk-...",                 True),
+        ]),
+        "anthropic":  ("Anthropic", [
+            ("API Base URL", "api_base", "https://api.anthropic.com", False),
+            ("API Key",      "api_key",  "sk-ant-...",                True),
+        ]),
+        "openrouter": ("OpenRouter", [
+            ("API Base URL", "api_base", "https://openrouter.ai/api",  False),
+            ("API Key",      "api_key",  "sk-or-v1-...",               True),
+        ]),
+        "deepseek":   ("DeepSeek", [
+            ("API Base URL", "api_base", "https://api.deepseek.com",  False),
+            ("API Key",      "api_key",  "sk-...",                    True),
+        ]),
+        "ollama":     ("Ollama（本地）", [
+            ("API Base URL", "api_base", "http://localhost:11434",  False),
+        ]),
+        "iflytek":    ("讯飞星火", [
+            ("API Base URL", "api_base", "https://spark-api-open.xf-yun.com", False),
+            ("APIPassword",  "api_key",  "控制台 > HTTP 服务接口认证信息 > APIPassword", True),
+        ]),
+        "bedrock":    ("AWS Bedrock", [
+            ("AWS Region",        "aws_region",            "us-east-1", False),
+            ("Access Key ID",     "aws_access_key_id",     "AKIA...",   False),
+            ("Secret Access Key", "aws_secret_access_key", "",          True),
+        ]),
+        "vertex":     ("Google Vertex AI", [
+            ("GCP Project ID",       "gcp_project_id",           "my-project-123", False),
+            ("GCP Region",           "gcp_region",               "us-central1",    False),
+            ("Service Account JSON", "gcp_service_account_json", "留空则使用本机 ADC", False),
+        ]),
+        "github":     ("GitHub Copilot", [
+            ("API Base URL", "api_base", "https://api.individual.githubcopilot.com", False),
+            ("OAuth Token",  "oauth_token", "ghu_...",  True),
+        ]),
+        "custom":     ("自定义端点", [
+            ("API Base URL", "api_base", "http://host:port/v1",  False),
+            ("API Key",      "api_key",  "（无需认证时留空）",    True),
+        ]),
+    }
+
+    _DEFAULT_URLS: dict[str, str] = {
+        "openai":     "https://api.openai.com",
+        "anthropic":  "https://api.anthropic.com",
+        "openrouter": "https://openrouter.ai/api",
+        "deepseek":   "https://api.deepseek.com",
+        "ollama":     "http://localhost:11434",
+        "iflytek":    "https://spark-api-open.xf-yun.com",
+        "github":     "https://api.individual.githubcopilot.com",
+        "bedrock":    "https://bedrock-runtime.us-east-1.amazonaws.com",
+        "vertex":     "https://us-central1-aiplatform.googleapis.com",
+        "custom":     "",
+    }
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("AI 助手设置")
-        self.setMinimumWidth(480)
+        self.setMinimumSize(700, 540)
         self._cfg = ai_config.load()
+        self._cred_widgets: list[tuple[str, QLineEdit]] = []
+        self._model_checks: list[tuple[str, QCheckBox]] = []
+        self._prev_key: str | None = None
         self._build_ui()
+        self._load_list()
+        if self._provider_list.count() > 0:
+            self._provider_list.setCurrentRow(0)
+
+    # ── UI ────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        from PySide6.QtWidgets import QGroupBox  # noqa: PLC0415
+        root = QVBoxLayout(self); root.setSpacing(8)
 
-        cfg_path = ai_config.get_config_path()
-        hint = QLabel(f"配置文件：{cfg_path}")
+        hint = QLabel(f"配置文件：{ai_config.get_config_path()}")
         hint.setStyleSheet(f"color: gray; font-size: {L.SMALL_FONT_SIZE}px;")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        root.addWidget(hint)
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        body = QHBoxLayout(); body.setSpacing(10)
 
-        providers = self._cfg.get("providers", {})
-        first_provider = next(iter(providers.values()), {})
+        # 左侧 provider 列表
+        left = QVBoxLayout(); left.setSpacing(4)
+        self._provider_list = QListWidget()
+        self._provider_list.setFixedWidth(160)
+        self._provider_list.currentRowChanged.connect(self._on_select)
+        left.addWidget(self._provider_list, 1)
+        br = QHBoxLayout()
+        for (t, fn, w) in [("＋", self._add, 36), ("－", self._del, 36)]:
+            b = QPushButton(t); b.setFixedWidth(w); b.clicked.connect(fn); br.addWidget(b)
+        br.addStretch(); left.addLayout(br)
+        body.addLayout(left)
 
-        self._api_base = QLineEdit(first_provider.get("api_base", "https://api.openai.com"))
-        self._api_base.setPlaceholderText("https://api.openai.com")
-        form.addRow("API Base URL:", self._api_base)
+        # 右侧
+        right = QVBoxLayout(); right.setSpacing(8)
 
-        self._api_key = QLineEdit(first_provider.get("api_key", ""))
-        self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self._api_key.setPlaceholderText("sk-...")
-        form.addRow("API Key:", self._api_key)
+        # 凭证 GroupBox
+        cb = QGroupBox("凭证")
+        cbl = QVBoxLayout(cb); cbl.setSpacing(4)
+        self._cred_form = QFormLayout()
+        self._cred_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._cred_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        cbl.addLayout(self._cred_form)
+        cr = QHBoxLayout()
+        self._test_btn = QPushButton("测试连接"); self._test_btn.clicked.connect(self._test)
+        cr.addStretch(); cr.addWidget(self._test_btn); cbl.addLayout(cr)
+        right.addWidget(cb)
 
-        model_row = QHBoxLayout()
-        model_row.setSpacing(4)
+        # 模型 GroupBox
+        mb = QGroupBox("模型"); mbl = QVBoxLayout(mb); mbl.setSpacing(4)
+        mt = QHBoxLayout()
+        self._fetch_btn = QPushButton("从 API 获取"); self._fetch_btn.clicked.connect(self._fetch)
+        for (t, fn, w) in [("全选", True, 44), ("全不选", False, 56)]:
+            b = QPushButton(t); b.setFixedWidth(w); b.clicked.connect(lambda _s, s=t: self._toggle(s)); mt.addWidget(b)
+        mt.insertWidget(0, self._fetch_btn); mt.addStretch(); mbl.addLayout(mt)
+        self._model_list = QListWidget()
+        self._model_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        mbl.addWidget(self._model_list, 1)
+        right.addWidget(mb, 1)
+        body.addLayout(right, 1)
+        root.addLayout(body, 1)
 
-        current_models = [m["id"] for m in first_provider.get("models", [])]
-        default_id = self._cfg.get("default_model", "")
-
-        self._model_combo = QComboBox()
-        self._model_combo.setEditable(True)
-        self._model_combo.addItems(current_models)
-        idx = self._model_combo.findText(default_id)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
-        else:
-            self._model_combo.setCurrentText(default_id)
-        model_row.addWidget(self._model_combo, 1)
-
-        self._fetch_btn = QPushButton("刷新模型列表")
-        self._fetch_btn.setToolTip("从 API 拉取模型列表并更新下拉选项")
-        self._fetch_btn.clicked.connect(self._fetch_models)
-        model_row.addWidget(self._fetch_btn)
-
-        self._test_btn = QPushButton("测试连接")
-        self._test_btn.setToolTip("发送一条测试消息，验证 API 可用")
-        self._test_btn.clicked.connect(self._test_connection)
-        model_row.addWidget(self._test_btn)
-
-        form.addRow("默认模型：", model_row)
-
-        self._temperature = QDoubleSpinBox()
-        self._temperature.setRange(0.0, 2.0)
-        self._temperature.setSingleStep(0.1)
-        self._temperature.setDecimals(1)
-        self._temperature.setValue(self._cfg.get("temperature", 0.7))
-        self._temperature.setMinimumHeight(24)
-        temp_row = QHBoxLayout()
-        temp_row.addWidget(self._temperature)
-        
-        temp_row.addWidget(QLabel("  (0=最确定，1=平衡，2=最富创造性；建议 0.5–0.7)"), 1)
-        form.addRow("Temperature:", temp_row)
-
-        self._max_rounds = QSpinBox()
-        self._max_rounds.setRange(1, 50)
-        self._max_rounds.setValue(self._cfg.get("max_tool_rounds", 20))
-        self._max_rounds.setMinimumHeight(24)
-        rounds_row = QHBoxLayout()
-        rounds_row.addWidget(self._max_rounds)
-        
-        rounds_row.addWidget(QLabel("  (单次回复中 AI 调用工具的最大次数)"), 1)
-        form.addRow("最大工具调用轮数:", rounds_row)
-
-        self._timeout = QSpinBox()
-        self._timeout.setRange(10, 600)
-        self._timeout.setSuffix(" 秒")
-        self._timeout.setValue(self._cfg.get("timeout", 120))
-        self._timeout.setMinimumHeight(24)
-        timeout_row = QHBoxLayout()
-        timeout_row.addWidget(self._timeout)
-        timeout_row.addWidget(QLabel("  (单次 LLM 请求的最长等待时间)"), 1)
-        form.addRow("请求超时:", timeout_row)
-
-        layout.addLayout(form)
+        # 运行时参数
+        runtime = QFormLayout(); runtime.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._temperature = QDoubleSpinBox(); self._temperature.setRange(0.0, 2.0); self._temperature.setSingleStep(0.1); self._temperature.setDecimals(1); self._temperature.setValue(self._cfg.get("temperature", 0.7)); self._temperature.setMinimumHeight(24)
+        rt = QHBoxLayout(); rt.addWidget(self._temperature); rt.addWidget(QLabel("  (0=最确定  1=平衡  2=最富创造性；建议 0.5–0.7)"), 1); runtime.addRow("Temperature:", rt)
+        self._max_rounds = QSpinBox(); self._max_rounds.setRange(1, 50); self._max_rounds.setValue(self._cfg.get("max_tool_rounds", 20)); self._max_rounds.setMinimumHeight(24)
+        rr = QHBoxLayout(); rr.addWidget(self._max_rounds); rr.addWidget(QLabel("  (单次回复中 AI 调用工具的最大次数)"), 1); runtime.addRow("最大工具调用轮数:", rr)
+        self._timeout = QSpinBox(); self._timeout.setRange(10, 600); self._timeout.setSuffix(" 秒"); self._timeout.setValue(self._cfg.get("timeout", 120)); self._timeout.setMinimumHeight(24)
+        tor = QHBoxLayout(); tor.addWidget(self._timeout); tor.addWidget(QLabel("  (单次 LLM 请求的最长等待时间)"), 1); runtime.addRow("请求超时:", tor)
+        root.addLayout(runtime)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet(f"font-size: {L.SMALL_FONT_SIZE}px;")
-        self._status_label.setWordWrap(True)
-        layout.addWidget(self._status_label)
+        self._status_label.setStyleSheet(f"font-size: {L.SMALL_FONT_SIZE}px;"); self._status_label.setWordWrap(True)
+        root.addWidget(self._status_label)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self._save); btns.rejected.connect(self.reject); root.addWidget(btns)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._save_and_accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+    # ── Provider 列表 ──────────────────────────────────────────────────────────
 
-    def _fetch_models(self):
-        api_base = self._api_base.text().strip().rstrip("/")
-        api_key = self._api_key.text().strip()
-        if not api_base or not api_key:
-            self._set_status("请先填写 API Base URL 和 API Key", error=True)
+    def _display_name(self, ptype, keys, pid):
+        base = self._PROVIDER_FIELDS.get(ptype, (ptype, []))[0]
+        same = [k for k in keys if self._cfg.get("providers", {}).get(k, {}).get("provider_type") == ptype]
+        return f"{base} {same.index(pid)+1}" if len(same) > 1 else base
+
+    def _load_list(self):
+        self._provider_list.clear()
+        keys = list(self._cfg.get("providers", {}).keys())
+        for pid in keys:
+            ptype = self._cfg["providers"][pid].get("provider_type", "openai")
+            it = QListWidgetItem(self._display_name(ptype, keys, pid))
+            it.setData(Qt.ItemDataRole.UserRole, pid); self._provider_list.addItem(it)
+
+    def _refresh_names(self):
+        keys = list(self._cfg.get("providers", {}).keys())
+        for i in range(self._provider_list.count()):
+            it = self._provider_list.item(i)
+            pid = it.data(Qt.ItemDataRole.UserRole)
+            ptype = self._cfg.get("providers", {}).get(pid, {}).get("provider_type", "openai")
+            it.setText(self._display_name(ptype, keys, pid))
+
+    def _current_key(self):
+        it = self._provider_list.currentItem()
+        return it.data(Qt.ItemDataRole.UserRole) if it else None
+
+    def _on_select(self, _row):
+        if self._prev_key is not None:
+            self._flush_to(self._prev_key)
+        self._prev_key = self._current_key()
+        pid = self._prev_key
+        if pid is None: return
+        provider = self._cfg.get("providers", {}).get(pid, {})
+        ptype = provider.get("provider_type", "openai")
+        self._rebuild_creds(ptype, provider)
+        self._rebuild_models(provider.get("models", []))
+
+    def _add(self):
+        types = list(self._PROVIDER_FIELDS.keys())
+        names = [self._PROVIDER_FIELDS[t][0] for t in types]
+        choice, ok = QInputDialog.getItem(self, "选择 Provider 类型", "类型：", names, 0, False)
+        if not ok: return
+        ptype = types[names.index(choice)]
+        provs = self._cfg.setdefault("providers", {})
+        pid = ptype; n = 2
+        while pid in provs: pid = f"{ptype}{n}"; n += 1
+        provs[pid] = {"provider_type": ptype, "api_base": "", "api_key": "", "models": []}
+        keys = list(provs.keys())
+        it = QListWidgetItem(self._display_name(ptype, keys, pid))
+        it.setData(Qt.ItemDataRole.UserRole, pid); self._provider_list.addItem(it)
+        self._refresh_names(); self._provider_list.setCurrentItem(it)
+
+    def _del(self):
+        pid = self._current_key()
+        if pid is None: return
+        ptype = self._cfg.get("providers", {}).get(pid, {}).get("provider_type", "openai")
+        display = self._PROVIDER_FIELDS.get(ptype, (pid, []))[0]
+        if QMessageBox.question(self, "确认删除", f"删除 Provider「{display}」及其所有凭证和模型配置？",
+                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
+        row = self._provider_list.currentRow(); self._provider_list.takeItem(row)
+        self._cfg.get("providers", {}).pop(pid, None)
+        if self._cfg.get("default_provider") == pid:
+            r = list(self._cfg.get("providers", {}).keys())
+            self._cfg["default_provider"] = r[0] if r else ""
+        self._prev_key = None; self._refresh_names()
 
-        self._fetch_btn.setEnabled(False)
-        self._fetch_btn.setText("...")
-        self._set_status("正在拉取模型列表...")
+    # ── 凭证字段 ───────────────────────────────────────────────────────────────
 
-        class _FetchThread(QThread):
-            def __init__(self, base, key, parent=None):
-                super().__init__(parent)
-                self.base, self.key = base, key
-                self.result = []
+    def _rebuild_creds(self, ptype, saved=None):
+        while self._cred_form.rowCount() > 0: self._cred_form.removeRow(0)
+        self._cred_widgets.clear()
+        _, defs = self._PROVIDER_FIELDS.get(ptype, ("", []))
+        saved = saved or {}
+        for label, key, ph, pw in defs:
+            w = QLineEdit(saved.get(key, "")); w.setPlaceholderText(ph)
+            if pw: w.setEchoMode(QLineEdit.EchoMode.Password)
+            self._cred_form.addRow(f"{label}:", w); self._cred_widgets.append((key, w))
 
+    def _cred_values(self): return {k: w.text().strip() for k, w in self._cred_widgets}
+
+    def _resolve_params(self):
+        pid = self._current_key()
+        ptype = "openai"
+        if pid:
+            ptype = self._cfg.get("providers", {}).get(pid, {}).get("provider_type", "openai")
+        creds = self._cred_values()
+        base = creds.get("api_base", "").rstrip("/")
+        if not base: base = self._DEFAULT_URLS.get(ptype, "")
+        key = creds.get("api_key", "")
+        if ptype == "github": key = creds.get("oauth_token", "") or key
+        return {"provider_type": ptype, "api_base": base, "api_key": key}
+
+    # ── 模型列表 ───────────────────────────────────────────────────────────────
+
+    def _rebuild_models(self, models):
+        self._model_list.clear(); self._model_checks.clear()
+        for m in models:
+            mid = m.get("id", "").strip()
+            if not mid: continue
+            item = QListWidgetItem(); cb = QCheckBox(mid)
+            cb.setChecked(m.get("enabled", True))
+            self._model_list.addItem(item); self._model_list.setItemWidget(item, cb)
+            item.setSizeHint(cb.sizeHint()); self._model_checks.append((mid, cb))
+
+    def _toggle(self, state):
+        for _, cb in self._model_checks: cb.setChecked(state)
+
+    def _get_models(self):
+        pid = self._current_key(); orig = {}
+        if pid:
+            for m in self._cfg.get("providers", {}).get(pid, {}).get("models", []): orig[m.get("id", "")] = m
+        r = []
+        for mid, cb in self._model_checks:
+            e = dict(orig.get(mid, {"id": mid, "name": mid, "supports_tools": True, "max_tokens": 8192}))
+            e["enabled"] = cb.isChecked(); r.append(e)
+        return r
+
+    # ── 获取 / 测试 ────────────────────────────────────────────────────────────
+
+    def _fetch(self):
+        p = self._resolve_params()
+        if not p["api_base"]: self._set_status("未找到 API Base URL", error=True); return
+        # 不需要 api_key 的 provider (Ollama 本地)
+        self._fetch_btn.setEnabled(False); self._fetch_btn.setText("获取中…")
+        self._set_status("正在拉取模型列表…")
+
+        class _T(QThread):
+            def __init__(self, b, k, parent=None):
+                super().__init__(parent); self.b, self.k = b, k; self.r = []
+            def run(self): self.r = fetch_models_from_api(self.b, self.k, timeout=15)
+
+        self._ft = _T(p["api_base"], p["api_key"], self)
+        def _done():
+            self._fetch_btn.setEnabled(True); self._fetch_btn.setText("从 API 获取")
+            models = self._ft.r
+            if not models: self._set_status("未获取到模型，请检查凭证和 URL", error=True); return
+            ex = {m: c.isChecked() for m, c in self._model_checks}
+            for m in models: m["enabled"] = ex.get(m["id"], True)
+            self._set_status(f"已获取 {len(models)} 个模型"); self._rebuild_models(models)
+            pid = self._current_key()
+            if pid: self._cfg.setdefault("providers", {}).setdefault(pid, {})["models"] = models
+        self._ft.finished.connect(_done); self._ft.start()
+
+    def _test(self):
+        p = self._resolve_params(); ptype = p["provider_type"]
+        test_model = next((mid for mid, cb in self._model_checks if cb.isChecked()), None)
+        if not test_model: self._set_status("请先在模型列表中勾选至少一个模型", error=True); return
+        if not p["api_base"]: self._set_status("未找到 API Base URL", error=True); return
+        self._test_btn.setEnabled(False); self._test_btn.setText("…")
+        self._set_status("正在测试…")
+
+        class _T(QThread):
+            def __init__(self, base, key, mdl, ptype, parent=None):
+                super().__init__(parent); self.base, self.key, self.mdl, self.ptype = base, key, mdl, ptype
+                self.msg = ""; self.ok = False
             def run(self):
-                self.result = fetch_models_from_api(self.base, self.key, timeout=15)
-
-        self._fetch_thread = _FetchThread(api_base, api_key, self)
-
-        def _on_done():
-            models = self._fetch_thread.result
-            self._fetch_btn.setEnabled(True)
-            self._fetch_btn.setText("刷新模型列表")
-            if not models:
-                self._set_status("未获取到模型，请检查 API Base URL 和 API Key", error=True)
-                return
-            model_ids = [m["id"] for m in models]
-            self._set_status(f"已获取 {len(models)} 个模型")
-            current = self._model_combo.currentText()
-            self._model_combo.clear()
-            self._model_combo.addItems(model_ids)
-            idx = self._model_combo.findText(current)
-            if idx >= 0:
-                self._model_combo.setCurrentIndex(idx)
-            elif model_ids:
-                self._model_combo.setCurrentIndex(0)
-            self._persist_models(api_base, api_key, models)
-
-        self._fetch_thread.finished.connect(_on_done)
-        self._fetch_thread.start()
-
-    def _test_connection(self):
-        api_base = self._api_base.text().strip().rstrip("/")
-        api_key = self._api_key.text().strip()
-        model = self._model_combo.currentText().strip()
-        if not api_base or not api_key or not model:
-            self._set_status("请先填写 API Base URL、API Key 和模型", error=True)
-            return
-
-        self._test_btn.setEnabled(False)
-        self._test_btn.setText("...")
-        self._set_status("正在测试...")
-
-        class _TestThread(QThread):
-            def __init__(self, base, key, mdl, parent=None):
-                super().__init__(parent)
-                self.base, self.key, self.mdl = base, key, mdl
-                self.status_msg = ""
-                self.success = False
-
-            def run(self):
-                url = f"{self.base}/v1/chat/completions"
-                body = json.dumps({
-                    "model": self.mdl,
-                    "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
-                    "max_tokens": 10,
-                    "stream": False,
-                }).encode("utf-8")
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.key}",
-                }
-                t0 = time.time()
+                import urllib.request, urllib.error, json, time as _t
+                t0 = _t.time()
                 try:
-                    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-                    with urllib.request.urlopen(request, timeout=30) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                    elapsed = time.time() - t0
-                    reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    tokens = data.get("usage", {}).get("total_tokens", "?")
-                    self.status_msg = (
-                        f"测试通过 ✔  耗时 {elapsed:.1f}s，消耗 {tokens} tokens，"
-                        f"回复：「{reply[:40]}」"
-                    )
-                    self.success = True
+                    if self.ptype == "anthropic":
+                        u = f"{self.base}/v1/messages"
+                        b = json.dumps({"model": self.mdl, "max_tokens": 10, "messages": [{"role": "user", "content": "Reply: OK"}]}).encode()
+                        h = {"Content-Type": "application/json", "x-api-key": self.key, "anthropic-version": "2023-06-01"}
+                    elif self.ptype == "ollama":
+                        u = f"{self.base}/api/generate"
+                        b = json.dumps({"model": self.mdl, "prompt": "Reply: OK", "stream": False}).encode()
+                        h = {"Content-Type": "application/json"}
+                    else:
+                        base = self.base or "https://api.openai.com"
+                        u = f"{base}/v1/chat/completions"
+                        b = json.dumps({"model": self.mdl, "max_tokens": 10, "stream": False, "messages": [{"role": "user", "content": "Reply: OK"}]}).encode()
+                        h = {"Content-Type": "application/json"}
+                        if self.key: h["Authorization"] = f"Bearer {self.key}"
+                    req = urllib.request.Request(u, data=b, headers=h, method="POST")
+                    with urllib.request.urlopen(req, timeout=30) as resp: data = json.loads(resp.read().decode())
+                    elapsed = _t.time() - t0
+                    reply = "?"
+                    if self.ptype == "anthropic":
+                        reply = (data.get("content") or [{}])[0].get("text", "").strip()
+                        tokens = data.get("usage", {}).get("input_tokens", "?")
+                    elif self.ptype == "ollama":
+                        reply = data.get("response", "").strip(); tokens = "0"
+                    else:
+                        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        tokens = data.get("usage", {}).get("total_tokens", "?")
+                    self.msg = f"✔ 通过  {elapsed:.1f}s  {tokens} tokens  回复：「{reply[:40]}」"
+                    self.ok = True
                 except Exception as e:
-                    elapsed = time.time() - t0
-                    self.status_msg = f"测试失败 ✖  {elapsed:.1f}s：{str(e)[:80]}"
-                    self.success = False
+                    self.msg = f"✖ 失败  {_t.time()-t0:.1f}s：{str(e)[:120]}"
 
-        self._test_thread = _TestThread(api_base, api_key, model, self)
+        self._tt = _T(p["api_base"], p["api_key"], test_model, ptype, self)
+        def _done():
+            self._test_btn.setEnabled(True); self._test_btn.setText("测试连接")
+            self._set_status(self._tt.msg, error=not self._tt.ok)
+        self._tt.finished.connect(_done); self._tt.start()
 
-        def _on_done():
-            self._test_btn.setEnabled(True)
-            self._test_btn.setText("测试连接")
-            self._set_status(self._test_thread.status_msg, error=not self._test_thread.success)
+    # ── 持久化 ────────────────────────────────────────────────────────────────
 
-        self._test_thread.finished.connect(_on_done)
-        self._test_thread.start()
+    def _flush_to(self, pid):
+        if not pid: return
+        provider = self._cfg.setdefault("providers", {}).setdefault(pid, {})
+        for k, v in self._cred_values().items(): provider[k] = v
+        provider["models"] = self._get_models()
 
-    def _set_status(self, msg: str, error: bool = False):
-        color = "#c0392b" if error else "gray"
-        self._status_label.setStyleSheet(f"color: {color}; font-size: {L.SMALL_FONT_SIZE}px;")
-        self._status_label.setText(msg)
-
-    def _persist_models(self, api_base: str, api_key: str, models: list):
-        cfg = ai_config.load()
+    def _save(self):
+        self._flush_to(self._current_key() or "")
+        cfg = self._cfg
         providers = cfg.get("providers", {})
-        if providers:
-            provider_key = next(iter(providers))
-            provider = providers[provider_key]
-        else:
-            provider_key = "default"
-            provider = {"name": "Default"}
-            providers[provider_key] = provider
-        provider["api_base"] = api_base
-        provider["api_key"] = api_key
-        provider["models"] = models
-        cfg["providers"] = providers
-        if not cfg.get("default_provider"):
-            cfg["default_provider"] = provider_key
-        try:
-            ai_config.save(cfg)
-        except Exception as e:
-            logger.error("写入模型列表失败：%s", e)
-
-    def _save_and_accept(self):
-        api_base = self._api_base.text().strip().rstrip("/")
-        api_key = self._api_key.text().strip()
-        default_model = self._model_combo.currentText().strip()
-
-        cfg = ai_config.load()
-        providers = cfg.get("providers", {})
-        if providers:
-            provider_key = next(iter(providers))
-            provider = providers[provider_key]
-        else:
-            provider_key = "default"
-            provider = {"name": "Default", "models": []}
-            providers[provider_key] = provider
-        provider["api_base"] = api_base
-        provider["api_key"] = api_key
-        cfg["providers"] = providers
-        if not cfg.get("default_provider"):
-            cfg["default_provider"] = provider_key
-        cfg["default_model"]   = default_model
-        cfg["temperature"]     = self._temperature.value()
+        if providers and not cfg.get("default_provider"):
+            cfg["default_provider"] = next(iter(providers))
+        cfg["temperature"] = self._temperature.value()
         cfg["max_tool_rounds"] = self._max_rounds.value()
-        cfg["timeout"]         = self._timeout.value()
-        try:
-            ai_config.save(cfg)
-        except Exception as e:
-            logger.error("保存 AI 配置失败：%s", e)
+        cfg["timeout"] = self._timeout.value()
+        cur = cfg.get("default_model", "")
+        all_enabled = [m.get("id", "") for p in providers.values() for m in p.get("models", []) if m.get("enabled", True)]
+        if cur not in all_enabled and all_enabled: cfg["default_model"] = all_enabled[0]
+        try: ai_config.save(cfg)
+        except Exception as e: logger.error("保存 AI 配置失败：%s", e)
         self.accept()
 
-    def get_config(self) -> dict:
-        """返回当前生效的 AI 配置（从磁盘重新加载）。"""
-        return ai_config.load()
+    def _set_status(self, msg, error=False):
+        c = "#c0392b" if error else "gray"
+        self._status_label.setStyleSheet(f"color: {c}; font-size: {L.SMALL_FONT_SIZE}px;")
+        self._status_label.setText(msg)
+
+    def get_config(self): return ai_config.load()
 
 
 # ---------------------------------------------------------------------------
@@ -1541,6 +1657,8 @@ class AIChatPanel(QWidget):
         self._widget_park.hide()
 
         self._build_ui()
+        # 模型状态弹窗（懒初始化）
+        self._model_state_dialog: ModelStateDialog | None = None
         # 启动时重建历史消息 widget
         if self._current_session is not None:
             self._rebuild_chat_widgets()
@@ -1645,6 +1763,15 @@ class AIChatPanel(QWidget):
         self._session_cfg_btn.clicked.connect(self._open_session_config)
         layout.addWidget(self._session_cfg_btn)
 
+        # 📊 模型状态按钮
+        model_state_btn = QPushButton("📊")
+        model_state_btn.setFixedSize(*L.ICON_BTN_SIZE)
+        model_state_btn.setToolTip("模型状态 — 查看当前零件的特征树、质量属性和步骤日志")
+        model_state_btn.setStyleSheet(_icon_style)
+        model_state_btn.setFont(_emoji_font)
+        model_state_btn.clicked.connect(self._toggle_model_state)
+        layout.addWidget(model_state_btn)
+
         layout.addStretch()
 
         # Token 用量小标签（初始隐藏，收到 usage_updated 后显示）
@@ -1664,6 +1791,8 @@ class AIChatPanel(QWidget):
         )
         self._model_combo.setMinimumContentsLength(L.MODEL_COMBO_MIN_CHARS)
         self._model_combo.setMaximumWidth(L.MODEL_COMBO_MAX_WIDTH)
+        # 安装 event filter：阻止点击 Provider 标题行时关闭弹出框
+        self._model_combo.view().viewport().installEventFilter(self)
         self._refresh_model_combo()
         layout.addWidget(self._model_combo)
 
@@ -1927,10 +2056,18 @@ class AIChatPanel(QWidget):
         if session is None:
             return
         session_model = session.model
-        if session_model:
-            idx = self._model_combo.findText(session_model)
-            if idx >= 0:
-                self._model_combo.setCurrentIndex(idx)
+        if not session_model:
+            return
+        for i in range(self._model_combo.count()):
+            data = self._model_combo.itemData(i, Qt.ItemDataRole.UserRole) or ""
+            # 精确匹配 provider_key::model_id 格式
+            if data == session_model:
+                self._model_combo.setCurrentIndex(i)
+                return
+            # 兼容旧格式：session_model 是纯 model_id，data 是 provider_key::model_id
+            if "::" in data and data.split("::", 1)[1] == session_model:
+                self._model_combo.setCurrentIndex(i)
+                return
 
     # ── 聊天区 widget 管理 ────────────────────────────────────────────────────
 
@@ -2015,17 +2152,66 @@ class AIChatPanel(QWidget):
     # ── 模型下拉框 ────────────────────────────────────────────────────────────
 
     def _refresh_model_combo(self):
+        """重建模型下拉框，按 provider 分组显示。
+
+        Provider 标题 → 不可选灰色行
+        模型项       → UserRole 存 "provider_key::model_id"
+        分隔线       → 多 provider 时插入
+        光标准位     → 优先 default_model，其次第一个 enabled model
+        """
+        from PySide6.QtGui import QStandardItem  # noqa: PLC0415
         cfg = ai_config.load()
-        model_ids = ai_config.list_model_ids(cfg)
+        groups = ai_config.list_models_grouped(cfg)
         default_model = ai_config.get_default_model_id(cfg)
+
         self._model_combo.clear()
-        if model_ids:
-            self._model_combo.addItems(model_ids)
-        else:
+
+        if not groups:
             self._model_combo.addItem(default_model)
-        idx = self._model_combo.findText(default_model)
-        if idx >= 0:
-            self._model_combo.setCurrentIndex(idx)
+            self._model_combo.setCurrentText(default_model)
+            return
+
+        mdl = self._model_combo.model()  # QStandardItemModel
+        first_enabled_idx = -1
+        default_idx = -1
+        enabled_count = 0   # 有启用模型的 provider 数量（用于控制分隔线）
+
+        for g_idx, group in enumerate(groups):
+            indent = "    " if len(groups) > 1 else ""
+            pkey = group["provider_key"]
+            # 只收集启用的模型，全禁用的 provider 跳过不显示
+            enabled_ms = [m for m in group["models"] if m["enabled"]]
+            if not enabled_ms:
+                continue
+
+            if g_idx > 0 and enabled_count > 0:
+                self._model_combo.insertSeparator(self._model_combo.count())
+            enabled_count += 1
+
+            # Provider 标题行（多 provider 时显示）
+            if len(groups) > 1:
+                display = _PROVIDER_DISPLAY.get(group["provider_type"], group["provider_name"])
+                header = QStandardItem(f"▶ {display}")
+                header.setEnabled(False)
+                header.setData("__header__", Qt.ItemDataRole.UserRole)
+                header.setForeground(Qt.GlobalColor.gray)
+                mdl.appendRow(header)
+
+            for m in enabled_ms:
+                item = QStandardItem(indent + m["name"])
+                item.setData(f"{pkey}::{m['id']}", Qt.ItemDataRole.UserRole)
+                mdl.appendRow(item)
+
+                idx = self._model_combo.count() - 1
+                if first_enabled_idx == -1:
+                    first_enabled_idx = idx
+                if m["id"] == default_model:
+                    default_idx = idx
+
+        if default_idx >= 0:
+            self._model_combo.setCurrentIndex(default_idx)
+        elif first_enabled_idx >= 0:
+            self._model_combo.setCurrentIndex(first_enabled_idx)
         else:
             self._model_combo.setCurrentText(default_model)
 
@@ -2056,15 +2242,31 @@ class AIChatPanel(QWidget):
             self._update_session_title_tooltip()
             self._refresh_model_combo_for_session()
 
+    def _toggle_model_state(self):
+        """打开或置前模型状态弹窗。"""
+        if self._model_state_dialog is None:
+            self._model_state_dialog = ModelStateDialog(self)
+        self._model_state_dialog.show()
+        self._model_state_dialog.raise_()
+        self._model_state_dialog.activateWindow()
+
     # ── 事件过滤（Ctrl+Enter 发送）────────────────────────────────────────────
 
     def eventFilter(self, obj, event: QEvent) -> bool:
-        if obj is self._input_box and event.type() == QEvent.Type.KeyPress:
+        # Ctrl+Enter 发送
+        if (hasattr(self, '_input_box') and obj is self._input_box
+                and event.type() == QEvent.Type.KeyPress):
             key_event = event  # type: QKeyEvent
             if (key_event.key() == Qt.Key.Key_Return
                     and key_event.modifiers() & Qt.KeyboardModifier.ControlModifier):
                 self._send_message()
                 return True
+        # 阻止点击 Provider 标题行时关闭 combo 弹出框
+        if hasattr(self, '_model_combo') and obj is self._model_combo.view().viewport():
+            if event.type() == QEvent.Type.MouseButtonPress:
+                idx = self._model_combo.view().indexAt(event.position().toPoint())
+                if idx.isValid() and self._model_combo.itemData(idx.row(), Qt.ItemDataRole.UserRole) == "__header__":
+                    return True  # 吞掉事件，不关闭弹出框
         return super().eventFilter(obj, event)
 
     # ── 消息发送 ──────────────────────────────────────────────────────────────
@@ -2150,9 +2352,16 @@ class AIChatPanel(QWidget):
 
         # 构建运行时 config
         cfg = ai_config.load()
-        selected_model = self._model_combo.currentText().strip()
-        if selected_model:
-            cfg["default_model"] = selected_model
+        # 读 UserRole 获取 provider_key::model_id，精确定位 provider
+        combo_data = (self._model_combo.currentData(Qt.ItemDataRole.UserRole) or "").strip()
+        if "::" in combo_data:
+            pk, sm = combo_data.split("::", 1)
+            cfg["default_provider"] = pk
+            cfg["default_model"]    = sm
+        else:
+            sm = combo_data or self._model_combo.currentText().strip()
+            if sm:
+                cfg["default_model"] = sm
         # per-session temperature 覆盖全局（此处 _current_session 必然非 None）
         session_temp = self._current_session.config.get("temperature")
         if session_temp is not None:
@@ -2291,6 +2500,14 @@ class AIChatPanel(QWidget):
                 "tool_call_id": pending["tool_call_id"],
                 "content": result,
             })
+
+        # 建模脚本执行完毕后，更新模型状态面板
+        if tool_name == "run_modeling_script" and self._model_state_dialog is not None:
+            try:
+                parsed = json.loads(result) if isinstance(result, str) else result
+                self._model_state_dialog.set_state(parsed)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         if is_visible:
             self._pending_tool_call = None
