@@ -799,7 +799,8 @@ def add_hole_from_sketch(part, sketch, diameter: float, depth: float):
     diameter : 孔径，mm
     depth    : 孔深，mm
     """
-    hole = part.shape_factory.add_new_hole_from_sketch(sketch, diameter / 2.0, depth)
+    hole = part.shape_factory.add_new_hole_from_sketch(sketch, depth)
+    hole.diameter.value = diameter
     logger.debug(f"[MODELING] add_hole: d={diameter}mm, depth={depth}mm")
     return hole
 
