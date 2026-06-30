@@ -2245,7 +2245,7 @@ class AIChatPanel(QWidget):
     def _toggle_model_state(self):
         """打开或置前模型状态弹窗。"""
         if self._model_state_dialog is None:
-            self._model_state_dialog = ModelStateDialog(self)
+            self._model_state_dialog = ModelStateDialog(None)
         self._model_state_dialog.show()
         self._model_state_dialog.raise_()
         self._model_state_dialog.activateWindow()
