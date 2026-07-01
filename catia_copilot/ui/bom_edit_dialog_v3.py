@@ -1328,7 +1328,7 @@ class BomEditDialogV3(QDialog):
         old_vals: dict = {}
         affected_pm_keys: set[str] = set()
         for r in direct_rows:
-            pm_key = str(self._rows[r].get("_pm_key", "")).strip()
+            pm_key = str(self._rows[r].get("_pm_key", ""))
             if not pm_key or pm_key not in self._part_masters:
                 continue
             if pm_key in affected_pm_keys:
@@ -1353,7 +1353,7 @@ class BomEditDialogV3(QDialog):
                 self._is_updating = True
                 try:
                     for r in direct_rows:
-                        if str(self._rows[r].get("_pm_key", "")).strip() == pm_key:
+                        if str(self._rows[r].get("_pm_key", "")) == pm_key:
                             src_item = self._item_by_row[r] if r < len(self._item_by_row) else None
                             if src_item is not None:
                                 combo = self._table.itemWidget(src_item, col_idx)
@@ -1456,7 +1456,7 @@ class BomEditDialogV3(QDialog):
         # PN 冲突检查：在循环内逐行检查，任一行冲突则整体拒绝并回退触发行的显示
         if col_name == "Part Number":
             for r in direct_rows:
-                row_pm_key = str(self._rows[r].get("_pm_key", "")).strip()
+                row_pm_key = str(self._rows[r].get("_pm_key", ""))
                 if self._is_pn_conflicting(row_pm_key, new_value):
                     msg = (
                         f"零件编号 \"{new_value}\" 与同一产品文件内已有的零件编号冲突，"
@@ -1477,17 +1477,13 @@ class BomEditDialogV3(QDialog):
         insts_to_update:   set[int]      = set()  # 用于 _refresh_keys_appearance
 
         for r in direct_rows:
-            row_pm_key = str(self._rows[r].get("_pm_key", "")).strip()
+            row_pm_key = str(self._rows[r].get("_pm_key", ""))
             if not row_pm_key or row_pm_key not in self._part_masters:
                 continue
             if row_pm_key in affected_pm_keys:
                 continue   # 同 pm_key 只处理一次
 
             old_val = get_part_master_attr(self._part_masters, row_pm_key, col_name, "")
-            logger.debug(
-                "_on_item_changed: col=%r pm_key=%r old_val=%r new_value=%r skip=%s",
-                col_name, row_pm_key, old_val, new_value, old_val == new_value,
-            )
             if old_val == new_value:
                 continue   # 无变化，跳过
 
@@ -1745,7 +1741,7 @@ class BomEditDialogV3(QDialog):
             row = self._rows[row_idx]
             if row.get("_not_found") or row.get("_unreadable"):
                 continue
-            pm_key = str(row.get("_pm_key", "")).strip()
+            pm_key = str(row.get("_pm_key", ""))
             if not pm_key or pm_key not in self._part_masters:
                 continue
             if col_name in BOM_READONLY_COLUMNS or col_name in (BOM_INSTANCE_NAME_COLUMN, "description_inst"):
@@ -1807,7 +1803,7 @@ class BomEditDialogV3(QDialog):
             for row_idx, col_name, new_value in assignments:
                 if row_idx < 0 or row_idx >= len(self._rows):
                     continue
-                pm_key = str(self._rows[row_idx].get("_pm_key", "")).strip()
+                pm_key = str(self._rows[row_idx].get("_pm_key", ""))
                 if not pm_key or pm_key not in affected_pm_keys:
                     continue
                 col_idx = self._columns.index(col_name) if col_name in self._columns else -1
@@ -1833,7 +1829,7 @@ class BomEditDialogV3(QDialog):
         for row_idx, col_name, new_value in assignments:
             if row_idx < 0 or row_idx >= len(self._rows):
                 continue
-            pm_key = str(self._rows[row_idx].get("_pm_key", "")).strip()
+            pm_key = str(self._rows[row_idx].get("_pm_key", ""))
             key = (pm_key, col_name)
             if key in seen:
                 continue
@@ -2032,7 +2028,7 @@ class BomEditDialogV3(QDialog):
             return
 
         # 取源值（从 part_masters 读取，优先）
-        src_pm_key = str(self._rows[source_row_idx].get("_pm_key", "")).strip()
+        src_pm_key = str(self._rows[source_row_idx].get("_pm_key", ""))
         if src_pm_key and src_pm_key in self._part_masters:
             src_value = get_part_master_attr(self._part_masters, src_pm_key, col_name, "")
         else:
@@ -2501,7 +2497,7 @@ class BomEditDialogV3(QDialog):
         """
         target_row       = self._rows[row_idx]
         target_inst_key  = target_row.get("_inst_key")
-        target_pm_key   = str(target_row.get("_pm_key", "")).strip()
+        target_pm_key   = str(target_row.get("_pm_key", ""))
         target_inst_info = self._inst_key_to_info.get(target_inst_key) if target_inst_key is not None else None
 
         # 根节点行（_inst_key 为 None）：用 part_masters[root_pm_key] 本身代表，
@@ -2932,7 +2928,7 @@ class BomEditDialogV3(QDialog):
         # 使用与 _populate_table 相同的取值逻辑收集行数据
         rows_data: list[dict] = []
         for row_data in self._rows:
-            pm_key_exp = str(row_data.get("_pm_key", "")).strip()
+            pm_key_exp = str(row_data.get("_pm_key", ""))
             row_out: dict = {}
             for col_name in export_cols:
                 if col_name == "Source":
@@ -3307,7 +3303,7 @@ class BomEditDialogV3(QDialog):
         for row_idx in row_indices:
             if row_idx >= len(self._rows):
                 continue
-            pm_key = str(self._rows[row_idx].get("_pm_key", "")).strip()
+            pm_key = str(self._rows[row_idx].get("_pm_key", ""))
             if pm_key and pm_key in self._part_masters and pm_key not in seen_starts:
                 seen_starts.add(pm_key)
                 start_pm_keys.append(pm_key)
