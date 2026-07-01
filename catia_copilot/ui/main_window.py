@@ -72,7 +72,7 @@ from catia_copilot.constants import (
     MAIN_WINDOW_DEFAULT_WIDTH,
 )
 from catia_copilot.logging_setup import LOG_FILE, log_signal_emitter
-from catia_copilot.ui.ai_chat_panel import AIChatPanel
+# AIChatPanel 懒加载：首次切到 AI 助手 Tab 时才 import，避免拖慢启动
 from catia_copilot.ui.bom_edit_dialog import BomEditDialog
 from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
 from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
@@ -418,9 +418,11 @@ class MainWindow(QMainWindow):
         self._tab_widget.addTab(self._build_drawing_page(),   "模板")    # 2
         self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
 
-        # AI 助手 Tab
-        self._ai_chat_panel = AIChatPanel()
-        self._tab_widget.addTab(self._ai_chat_panel, AI_TAB_LABEL)       # 4
+        # AI 助手 Tab：占位符，首次切到时懒加载
+        self._ai_chat_panel = None
+        self._ai_tab_placeholder = QWidget()
+        self._tab_widget.addTab(self._ai_tab_placeholder, AI_TAB_LABEL)  # 4
+        self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
         self._tab_widget.addTab(self._build_more_page(),      "≡")       # 5
 
@@ -437,6 +439,16 @@ class MainWindow(QMainWindow):
 
         # 隐藏默认菜单栏
         self.menuBar().hide()
+
+    def _on_tab_changed(self, index: int) -> None:
+        """首次切换到 AI 助手 Tab 时懒加载 AIChatPanel。"""
+        AI_TAB_INDEX = 4
+        if index == AI_TAB_INDEX and self._ai_chat_panel is None:
+            from catia_copilot.ui.ai_chat_panel import AIChatPanel  # noqa: PLC0415
+            self._ai_chat_panel = AIChatPanel()
+            self._tab_widget.removeTab(AI_TAB_INDEX)
+            self._tab_widget.insertTab(AI_TAB_INDEX, self._ai_chat_panel, AI_TAB_LABEL)
+            self._tab_widget.setCurrentIndex(AI_TAB_INDEX)
 
     def _build_log_panel(self) -> QWidget:
         """构建嵌入在主窗口底部的日志面板（默认隐藏）。

@@ -24,6 +24,7 @@ from typing import Any
 from PySide6.QtCore import QThread, Signal
 
 from catia_copilot.ai import config as ai_config
+from catia_copilot.ai import providers as ai_providers
 from catia_copilot.ai.tools import tools_schema
 
 logger = logging.getLogger(__name__)
@@ -173,93 +174,148 @@ class AgentWorker(QThread):
           ("tool_calls", list)  — 完整的工具调用列表
           ("error", str)        — 错误信息
 
-        通过 config.get_provider_for_model 路由到对应 provider，
-        支持 ai_config.json 的多 provider / 多模型配置。
+        根据 provider_type 自动分发到对应 provider 实现。
         """
         cfg = self._config
         model_id = cfg.get("default_model", "gpt-4o")
 
-        # 通过 config 模块路由到具体 provider
+        # 从配置中路由到具体 provider
         provider, model_cfg = ai_config.get_provider_for_model(cfg, model_id)
-
-        api_base = provider.get("api_base", "https://api.openai.com").rstrip("/")
-        api_key  = provider.get("api_key", "")
-        timeout  = cfg.get("timeout", 120)
+        provider_type = provider.get("provider_type", "openai").lower()
+        timeout = cfg.get("timeout", 120)
         temperature = cfg.get("temperature", 0.7)
         supports_tools = model_cfg.get("supports_tools", True)
+        max_tokens = model_cfg.get("max_tokens", 16384)
 
-        url = f"{api_base}/v1/chat/completions"
-        payload: dict[str, Any] = {
-            "model":          model_id,
-            "messages":       messages,
-            "stream":         True,
-            "stream_options": {"include_usage": True},   # 获取 token 用量
-            "temperature":    temperature,
-        }
-        if tools and supports_tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+        if provider_type == "bedrock":
+            yield from self._stream_bedrock(messages, tools if supports_tools else None,
+                                            provider, model_id, max_tokens, temperature)
+        elif provider_type == "ollama":
+            yield from self._stream_ollama(messages, tools if supports_tools else None,
+                                           provider, model_id, max_tokens, timeout)
+        elif provider_type == "anthropic":
+            yield from self._stream_openai_compat(
+                messages, tools if supports_tools else None,
+                provider, model_id, max_tokens, temperature, timeout,
+                provider_type="anthropic",
+            )
+        elif provider_type in ("vertex",):
+            yield from self._stream_vertex(messages, tools if supports_tools else None,
+                                           provider, model_id, max_tokens, temperature, timeout)
+        else:
+            # openai / openrouter / deepseek / alibaba / iflytek / github / custom / 其他
+            yield from self._stream_openai_compat(
+                messages, tools if supports_tools else None,
+                provider, model_id, max_tokens, temperature, timeout,
+                provider_type=provider_type,
+            )
 
-        body = json.dumps(payload).encode("utf-8")
-        headers = {
-            "Content-Type":  "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "Accept":        "text/event-stream",
-        }
+    def _stream_openai_compat(self, messages, tools, provider_cfg, model_id,
+                              max_tokens, temperature, timeout, provider_type="openai"):
+        """
+        通用 OpenAI 兼容流式实现，同时处理 Anthropic / GitHub Copilot / 讯飞等。
+        使用 providers.py 构造 URL、headers 和 request body，
+        并用对应的 StreamParser 解析 SSE。
+        """
+        provider_id = provider_cfg.get("provider_id", provider_type)
 
-        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        # GitHub Copilot：先获取 copilot_token
+        token = None
+        if provider_type == "github":
+            oauth_token = provider_cfg.get("oauth_token", "")
+            if not oauth_token:
+                yield "error", "GitHub Copilot 未配置 oauth_token，请先绑定 GitHub 账号"
+                return
+            try:
+                token = ai_providers.get_copilot_token(oauth_token)
+            except RuntimeError as e:
+                yield "error", str(e)
+                return
+
+        try:
+            url = ai_providers.get_api_url(provider_id, provider_cfg)
+        except Exception as e:
+            yield "error", f"获取 API URL 失败: {e}"
+            return
+
+        headers = ai_providers.get_api_headers(provider_id, provider_cfg, token=token)
+        body = ai_providers.build_request_body(
+            provider_id=provider_id,
+            model=model_id,
+            messages=messages,
+            tools=tools,
+            stream=True,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            api_url=url,
+            provider_cfg=provider_cfg,
+        )
+        # 讯飞：根据 model 修正实际 URL 和 model 字段
+        if provider_type == "iflytek":
+            url = ai_providers._iflytek_chat_url(model_id)
+            body["model"] = ai_providers._iflytek_real_model(model_id)
+
+        body_bytes = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=body_bytes, headers=headers, method="POST")
+
+        # 选择流解析器
+        if provider_type == "anthropic":
+            parser = ai_providers.AnthropicStreamParser()
+            parse_fn = parser.parse_line
+        else:
+            parse_fn = lambda line: ai_providers._parse_openai_stream(line)
+
+        tool_calls_acc: dict[int, dict] = {}
+        last_usage: tuple[int, int] | None = None
 
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 self._resp = resp
-                tool_calls_acc: dict[int, dict] = {}
-                last_usage: tuple[int, int] | None = None
-
                 try:
                     for raw_line in resp:
                         if self._stop:
                             return
                         line = raw_line.decode("utf-8").rstrip("\n\r")
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                        except json.JSONDecodeError:
+                        delta = parse_fn(line)
+                        if delta is None:
                             continue
 
-                        # 捕获 token 用量（stream_options.include_usage 时出现）
-                        usage = chunk.get("usage")
-                        if usage:
+                        # 完成标志
+                        if delta.get("done"):
+                            break
+
+                        # token 用量
+                        usage = delta.get("usage")
+                        if usage and isinstance(usage, dict):
                             last_usage = (
                                 usage.get("prompt_tokens", 0),
                                 usage.get("completion_tokens", 0),
                             )
 
-                        choices = chunk.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {})
-                        finish_reason = choices[0].get("finish_reason")
-
+                        # 文字内容
                         content = delta.get("content")
                         if content:
                             yield "text", content
 
-                        for dt in delta.get("tool_calls", []):
-                            idx = dt.get("index", 0)
-                            if idx not in tool_calls_acc:
-                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                            tc = tool_calls_acc[idx]
-                            if dt.get("id"):                    tc["id"] = dt["id"]
-                            fn = dt.get("function", {})
-                            if fn.get("name"):                  tc["name"] += fn["name"]
-                            if fn.get("arguments"):             tc["arguments"] += fn["arguments"]
+                        # 工具调用增量
+                        tcs = delta.get("tool_calls")
+                        if tcs:
+                            for tc in tcs:
+                                idx = tc.get("index", 0)
+                                if idx not in tool_calls_acc:
+                                    tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                                entry = tool_calls_acc[idx]
+                                if tc.get("id"):
+                                    entry["id"] = tc["id"]
+                                if tc.get("name"):
+                                    entry["name"] += tc["name"]
+                                if tc.get("arguments"):
+                                    entry["arguments"] += tc["arguments"]
 
-                        if finish_reason in ("stop", "tool_calls", "length"):
-                            if finish_reason == "length" and tool_calls_acc:
+                        # 结束原因
+                        finish = delta.get("finish_reason")
+                        if finish in ("stop", "end_turn", "tool_calls", "tool_use", "length"):
+                            if finish == "length" and tool_calls_acc:
                                 yield "error", (
                                     "LLM 输出因 token 超限被截断，工具调用参数不完整。"
                                     "请尝试缩短对话历史或减少上下文消息数。"
@@ -268,18 +324,11 @@ class AgentWorker(QThread):
                             break
 
                 except Exception:
-                    # resp.close() 被 stop() 调用后读取会抛异常；若是正常停止则静默退出
                     if self._stop:
                         return
                     raise
                 finally:
                     self._resp = None
-
-                if last_usage:
-                    self.usage_updated.emit(*last_usage)
-
-                if tool_calls_acc:
-                    yield "tool_calls", list(tool_calls_acc.values())
 
         except urllib.error.HTTPError as e:
             body_bytes = e.read()
@@ -288,13 +337,336 @@ class AgentWorker(QThread):
             except Exception:
                 err_msg = body_bytes.decode("utf-8", errors="replace")
             yield "error", f"HTTP {e.code}：{err_msg}"
-
+            return
         except urllib.error.URLError as e:
-            # urllib 超时时 e.reason 是 socket.timeout 实例
             if isinstance(e.reason, (TimeoutError, OSError)) and "timed out" in str(e.reason).lower():
                 yield "error", f"请求超时（{timeout}s）"
             else:
                 yield "error", f"网络错误：{e.reason}"
+            return
+        except Exception:
+            yield "error", traceback.format_exc()
+            return
+
+        if last_usage:
+            self.usage_updated.emit(*last_usage)
+
+        if tool_calls_acc:
+            yield "tool_calls", list(tool_calls_acc.values())
+
+    def _stream_ollama(self, messages, tools, provider_cfg, model_id, max_tokens, timeout):
+        """Ollama 原生 /api/chat NDJSON 流式实现。"""
+        base_url = provider_cfg.get("api_base", "http://localhost:11434").rstrip("/")
+        # 若是 OpenAI compat URL，转换为 native URL
+        if "/v1" in base_url:
+            url = ai_providers.get_ollama_native_url(base_url + "/chat/completions")
+        else:
+            url = f"{base_url}/api/chat"
+
+        body = ai_providers.build_ollama_native_body(
+            model=model_id,
+            messages=messages,
+            tools=tools,
+            stream=True,
+            max_tokens=max_tokens,
+        )
+        body_bytes = json.dumps(body).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=body_bytes, headers=headers, method="POST")
+
+        tool_calls_acc: dict[int, dict] = {}
+        last_usage: tuple[int, int] | None = None
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                self._resp = resp
+                try:
+                    for raw_line in resp:
+                        if self._stop:
+                            return
+                        line = raw_line.decode("utf-8")
+                        delta = ai_providers._parse_ollama_native_stream(line)
+                        if delta is None:
+                            continue
+                        if delta.get("done"):
+                            usage = delta.get("usage")
+                            if usage:
+                                last_usage = (
+                                    usage.get("prompt_tokens", 0),
+                                    usage.get("completion_tokens", 0),
+                                )
+                            break
+                        content = delta.get("content")
+                        if content:
+                            yield "text", content
+                        tcs = delta.get("tool_calls")
+                        if tcs:
+                            for tc in tcs:
+                                idx = tc.get("index", 0)
+                                if idx not in tool_calls_acc:
+                                    tool_calls_acc[idx] = {"id": tc.get("id", ""), "name": "", "arguments": ""}
+                                entry = tool_calls_acc[idx]
+                                if tc.get("name"):
+                                    entry["name"] += tc["name"]
+                                if tc.get("arguments"):
+                                    entry["arguments"] += tc["arguments"]
+                except Exception:
+                    if self._stop:
+                        return
+                    raise
+                finally:
+                    self._resp = None
+        except urllib.error.HTTPError as e:
+            yield "error", f"Ollama HTTP {e.code}：{e.read().decode('utf-8', errors='replace')[:200]}"
+            return
+        except Exception:
+            yield "error", traceback.format_exc()
+            return
+
+        if last_usage:
+            self.usage_updated.emit(*last_usage)
+        if tool_calls_acc:
+            yield "tool_calls", list(tool_calls_acc.values())
+
+    def _stream_bedrock(self, messages, tools, provider_cfg, model_id, max_tokens, temperature):
+        """AWS Bedrock converse_stream 实现（需要 boto3）。"""
+        try:
+            import boto3
+        except ImportError:
+            yield "error", "AWS Bedrock 需要安装 boto3：pip install boto3"
+            return
+
+        region = provider_cfg.get("aws_region", "us-east-1")
+        access_key = provider_cfg.get("aws_access_key_id", "")
+        secret_key = provider_cfg.get("aws_secret_access_key", "")
+
+        bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            aws_access_key_id=access_key or None,
+            aws_secret_access_key=secret_key or None,
+        )
+
+        # 转换 messages 为 Bedrock converse 格式
+        system_parts = []
+        bedrock_msgs = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "system":
+                system_parts.append({"text": content or ""})
+            elif role == "user":
+                bedrock_msgs.append({"role": "user", "content": [{"text": content or ""}]})
+            elif role == "assistant":
+                if msg.get("tool_calls"):
+                    parts = []
+                    if content:
+                        parts.append({"text": content})
+                    for tc in msg["tool_calls"]:
+                        fn = tc.get("function", {})
+                        args_str = fn.get("arguments", "{}")
+                        try:
+                            args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        except Exception:
+                            args = {}
+                        parts.append({
+                            "toolUse": {
+                                "toolUseId": tc.get("id", ""),
+                                "name": fn.get("name", ""),
+                                "input": args,
+                            }
+                        })
+                    bedrock_msgs.append({"role": "assistant", "content": parts})
+                else:
+                    bedrock_msgs.append({"role": "assistant", "content": [{"text": content or ""}]})
+            elif role == "tool":
+                bedrock_msgs.append({
+                    "role": "user",
+                    "content": [{
+                        "toolResult": {
+                            "toolUseId": msg.get("tool_call_id", ""),
+                            "content": [{"text": content or ""}],
+                        }
+                    }]
+                })
+
+        # 转换 tools
+        bedrock_tools = None
+        if tools:
+            tool_specs = []
+            for t in tools:
+                if t.get("type") == "function":
+                    fn = t["function"]
+                    tool_specs.append({
+                        "toolSpec": {
+                            "name": fn["name"],
+                            "description": fn.get("description", ""),
+                            "inputSchema": {"json": fn.get("parameters", {"type": "object", "properties": {}})},
+                        }
+                    })
+            if tool_specs:
+                bedrock_tools = {"tools": tool_specs}
+
+        kwargs = {
+            "modelId": model_id,
+            "messages": bedrock_msgs,
+            "inferenceConfig": {
+                "maxTokens": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        if system_parts:
+            kwargs["system"] = system_parts
+        if bedrock_tools:
+            kwargs["toolConfig"] = bedrock_tools
+
+        try:
+            response = bedrock.converse_stream(**kwargs)
+            stream = response.get("stream")
+            if not stream:
+                yield "error", "Bedrock 返回空流"
+                return
+
+            tool_calls_acc = {}
+            input_tokens = 0
+            output_tokens = 0
+
+            for event in stream:
+                if self._stop:
+                    return
+                if "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"].get("delta", {})
+                    if "text" in delta:
+                        yield "text", delta["text"]
+                    if "toolUse" in delta:
+                        idx = event["contentBlockDelta"].get("contentBlockIndex", 0)
+                        if idx not in tool_calls_acc:
+                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                        tool_calls_acc[idx]["arguments"] += delta["toolUse"].get("input", "")
+                elif "contentBlockStart" in event:
+                    start = event["contentBlockStart"].get("start", {})
+                    if "toolUse" in start:
+                        idx = event["contentBlockStart"].get("contentBlockIndex", 0)
+                        tool_calls_acc[idx] = {
+                            "id": start["toolUse"].get("toolUseId", ""),
+                            "name": start["toolUse"].get("name", ""),
+                            "arguments": "",
+                        }
+                elif "metadata" in event:
+                    usage = event["metadata"].get("usage", {})
+                    input_tokens = usage.get("inputTokens", 0)
+                    output_tokens = usage.get("outputTokens", 0)
+
+            if input_tokens or output_tokens:
+                self.usage_updated.emit(input_tokens, output_tokens)
+            if tool_calls_acc:
+                yield "tool_calls", list(tool_calls_acc.values())
 
         except Exception:
             yield "error", traceback.format_exc()
+
+    def _stream_vertex(self, messages, tools, provider_cfg, model_id,
+                       max_tokens, temperature, timeout):
+        """Google Vertex AI streamGenerateContent 实现（需要 google-auth）。"""
+        project = provider_cfg.get("gcp_project_id", "")
+        region = provider_cfg.get("gcp_region", "us-central1")
+        if not project:
+            yield "error", "Vertex AI 未配置 gcp_project_id"
+            return
+
+        try:
+            access_token = ai_providers._get_vertex_access_token(provider_cfg)
+        except Exception as e:
+            yield "error", f"Vertex AI 认证失败: {e}"
+            return
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+
+        if ai_providers._is_vertex_anthropic_model(model_id):
+            body = ai_providers._build_vertex_anthropic_body(
+                model_id, messages, tools, stream=True,
+                max_tokens=max_tokens, temperature=temperature,
+            )
+            base_url = (
+                f"https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+                f"/locations/{region}/publishers/anthropic/models/{model_id}:streamRawPredict"
+            )
+            # Anthropic on Vertex 用 AnthropicStreamParser
+            parser = ai_providers.AnthropicStreamParser()
+            parse_fn = parser.parse_line
+        else:
+            body = ai_providers._build_vertex_body(
+                model_id, messages, tools, stream=True,
+                max_tokens=max_tokens, temperature=temperature,
+            )
+            base_url = (
+                f"https://{region}-aiplatform.googleapis.com/v1/projects/{project}"
+                f"/locations/{region}/publishers/google/models/{model_id}:streamGenerateContent"
+            )
+            vertex_parser = ai_providers._VertexStreamParser()
+            parse_fn = vertex_parser.parse_line
+
+        url = base_url
+        body_bytes = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=body_bytes, headers=headers, method="POST")
+
+        tool_calls_acc: dict[int, dict] = {}
+        last_usage: tuple[int, int] | None = None
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                self._resp = resp
+                try:
+                    for raw_line in resp:
+                        if self._stop:
+                            return
+                        line = raw_line.decode("utf-8").rstrip()
+                        delta = parse_fn(line)
+                        if delta is None:
+                            continue
+                        if delta.get("done"):
+                            break
+                        usage = delta.get("usage")
+                        if usage:
+                            last_usage = (
+                                usage.get("prompt_tokens", 0),
+                                usage.get("completion_tokens", 0),
+                            )
+                        content = delta.get("content")
+                        if content:
+                            yield "text", content
+                        tcs = delta.get("tool_calls")
+                        if tcs:
+                            for tc in tcs:
+                                idx = tc.get("index", 0)
+                                if idx not in tool_calls_acc:
+                                    tool_calls_acc[idx] = {"id": tc.get("id", ""), "name": "", "arguments": ""}
+                                entry = tool_calls_acc[idx]
+                                if tc.get("name"):
+                                    entry["name"] += tc["name"]
+                                if tc.get("arguments"):
+                                    entry["arguments"] += tc["arguments"]
+                        finish = delta.get("finish_reason")
+                        if finish in ("stop", "end_turn", "tool_calls", "tool_use"):
+                            break
+                except Exception:
+                    if self._stop:
+                        return
+                    raise
+                finally:
+                    self._resp = None
+        except urllib.error.HTTPError as e:
+            yield "error", f"Vertex HTTP {e.code}：{e.read().decode('utf-8', errors='replace')[:300]}"
+            return
+        except Exception:
+            yield "error", traceback.format_exc()
+            return
+
+        if last_usage:
+            self.usage_updated.emit(*last_usage)
+        if tool_calls_acc:
+            yield "tool_calls", list(tool_calls_acc.values())
+
