@@ -158,6 +158,12 @@ $NuitkaArgs = @(
     # Pythonwin：pywin32 MFC GUI 组件，项目只用 win32com/win32api
     '--nofollow-import-to=Pythonwin',
 
+    # Nuitka 会误收集大型无用包，手动排除以控制体积
+    '--nofollow-import-to=scipy',          # pandas 可选依赖，项目不用
+    '--nofollow-import-to=jedi',           # IPython 自动补全，项目不用
+    '--nofollow-import-to=cryptography',   # TLS 加密库，项目不用
+    '--nofollow-import-to=Cython',         # C 扩展编译器，项目不用
+
     # ── 编译优化（可选）─────────────────────────────────────────────────────
     # '--lto=yes',         # 启用链接时优化（编译更慢，产物更小）
     # '--jobs=4',          # 并行编译线程数
