@@ -1484,6 +1484,10 @@ class BomEditDialogV3(QDialog):
                 continue   # 同 pm_key 只处理一次
 
             old_val = get_part_master_attr(self._part_masters, row_pm_key, col_name, "")
+            logger.debug(
+                "_on_item_changed: col=%r pm_key=%r old_val=%r new_value=%r skip=%s",
+                col_name, row_pm_key, old_val, new_value, old_val == new_value,
+            )
             if old_val == new_value:
                 continue   # 无变化，跳过
 
