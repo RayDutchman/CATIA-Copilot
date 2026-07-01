@@ -163,6 +163,9 @@ $NuitkaArgs = @(
     '--nofollow-import-to=jedi',           # IPython 自动补全，项目不用
     '--nofollow-import-to=cryptography',   # TLS 加密库，项目不用
     '--nofollow-import-to=Cython',         # C 扩展编译器，项目不用
+    '--nofollow-import-to=nuitka',         # Nuitka 自身内部模块（_rust 9.4MB!），项目不用
+    '--nofollow-import-to=psutil',         # 系统监控，项目不用
+    '--nofollow-import-to=PySide6.QtPrintSupport',  # 打印支持，项目不用
 
     # ── 编译优化（可选）─────────────────────────────────────────────────────
     # '--lto=yes',         # 启用链接时优化（编译更慢，产物更小）
