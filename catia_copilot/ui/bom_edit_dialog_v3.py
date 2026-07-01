@@ -2592,8 +2592,32 @@ class BomEditDialogV3(QDialog):
                     undo_actions.append((ik, BOM_INSTANCE_NAME_COLUMN, old_name, new_name))
                 changed += 1
             except Exception as e:
-                errors.append(f"{inst_inf.get('inst_key', '?')}: {e}")
-                logger.error("auto_rename_instance_names error inst_key=%s: %s", ik, e)
+                # ── COM 诊断：探查失败的 product 到底是什么状态 ──
+                pn_label  = inst_inf.get("pn", "?")
+                diag_info: list[str] = []
+                try:
+                    diag_info.append(f"Name={getattr(product, 'Name', '?')!r}")
+                except Exception as ex:
+                    diag_info.append(f"Name_read_err={ex}")
+                try:
+                    diag_info.append(f"PN={getattr(product, 'PartNumber', '?')!r}")
+                except Exception as ex:
+                    diag_info.append(f"PN_read_err={ex}")
+                try:
+                    diag_info.append(f"WorkMode={getattr(product, 'GetWorkMode', lambda: '?' )()}")
+                except Exception as ex:
+                    diag_info.append(f"WorkMode_err={ex}")
+                try:
+                    rp = getattr(product, 'ReferenceProduct', None)
+                    diag_info.append(f"Path={getattr(rp, 'Parent', 'no_rp') if rp is not None else 'no_rp'}")
+                except Exception as ex:
+                    diag_info.append(f"Path_err={ex}")
+                diag_str = " | ".join(diag_info)
+                errors.append(f"[PN={pn_label}] 实例名 {old_name!r} → {new_name!r}: {e}; COM诊断: {diag_str}")
+                logger.error(
+                    "auto_rename_instance_names error inst_key=%s pn=%r old=%r new=%r diag=%s: %s",
+                    ik, pn_label, old_name, new_name, diag_str, e,
+                )
 
         # ── 推入撤销栈（整批作为一个原子步骤）────────────────────────────────────
         if undo_actions:
