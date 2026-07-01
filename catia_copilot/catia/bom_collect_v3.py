@@ -319,13 +319,13 @@ def collect_bom_part_masters(
 
         # ── PartNumber（优先用父节点传入的 hint，省一次 COM）─────────────────
         if _hint_pn:
-            pn = _hint_pn
+            pn = _hint_pn.strip()
         else:
             try:
-                pn = str(product.PartNumber)
+                pn = str(product.PartNumber).strip()
             except Exception:
                 name = product.Name
-                pn   = name.rsplit(".", 1)[0] if "." in name else name
+                pn   = (name.rsplit(".", 1)[0] if "." in name else name).strip()
 
         # ── 文件路径（优先用父节点传入的 hint，省一次 COM）──────────────────
         if _hint_filepath is not None:
@@ -389,22 +389,24 @@ def collect_bom_part_masters(
 
         # ── 建立 part_master ──────────────────────────────────────────────────
         part_masters[pm_key] = {
-            "part_number":  pn,           # CATIA 属性值，显示/写回用
+            "part_number":  pn.strip(),           # CATIA 属性值，显示/写回用
             "pm_key":      pm_key,      # 唯一查找 key
             "host_file_pn": host_file_pn if is_embedded else "",
             # host_file_pn：嵌入部件所属宿主文件的 pn（独立文件节点为空串）。
             # 用于冲突检测：同一宿主文件内所有 Component 的 host_file_pn 相同。
             # rename_part_master 改宿主 pn 时会同步更新所有子 Component 的此字段。
-            "nomenclature": str(props.get("Nomenclature", "")),
-            "revision":     str(props.get("Revision", "")),
-            "definition":   str(props.get("Definition", "")),
-            "source":       str(props.get("Source", "")),
-            "description":  str(props.get("Description", "")),
-            **{col: str(props.get(col, "")) for col in extra_cols},
-            "type":         node_type,
-            "filename":     (FILENAME_UNSAVED   if no_file   else
-                             Path(filepath).name if filepath  else
-                             FILENAME_NOT_FOUND),
+            "nomenclature": str(props.get("Nomenclature", "")).strip(),
+            "revision":     str(props.get("Revision", "")).strip(),
+            "definition":   str(props.get("Definition", "")).strip(),
+            "source":       str(props.get("Source", "")).strip(),
+            "description":  str(props.get("Description", "")).strip(),
+            **{col: str(props.get(col, "")).strip() for col in extra_cols},
+            "type":         node_type.strip() if node_type else "",
+            "filename":     (
+                FILENAME_UNSAVED   if no_file   else
+                Path(filepath).name.strip() if filepath  else
+                FILENAME_NOT_FOUND
+            ),
             "filepath":     filepath,
             "_not_found":   not_found,
             "_no_file":     no_file,
@@ -474,10 +476,10 @@ def collect_bom_part_masters(
 
                         # ── PartNumber / filepath（文件视角，用于 pm_key 和属性去重）─────
                         try:
-                            child_pn_raw = str(child.PartNumber)
+                            child_pn_raw = str(child.PartNumber).strip()
                         except Exception:
                             n = child.Name
-                            child_pn_raw = n.rsplit(".", 1)[0] if "." in n else n
+                            child_pn_raw = (n.rsplit(".", 1)[0] if "." in n else n).strip()
 
                         try:
                             child_filepath = child.ReferenceProduct.Parent.FullName
@@ -814,6 +816,7 @@ def rename_part_master(
         logger.warning("rename_part_master: pm_key=%r 不存在", pm_key)
         return False
 
+    new_pn = new_pn.strip()
     old_pn = pm["part_number"]
     pm["part_number"] = new_pn
 
