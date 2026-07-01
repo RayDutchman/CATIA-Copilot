@@ -3,3 +3,8 @@ openpyxl>=3.1.0
 requests>=2.31.0
 pyinstaller>=6.19.0
 pycatia>=0.9.6
+nuitka>=4.0.0,<5.0.0       # 构建打包（build_nuitka_installer.ps1）
+
+# 多 Provider 可选依赖（按需安装）
+# boto3>=1.35.0          # AWS Bedrock
+# google-auth>=2.29.0    # Google Vertex AI
