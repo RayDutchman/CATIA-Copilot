@@ -1430,13 +1430,6 @@ class BomEditDialogV3(QDialog):
                 self._is_updating = False
                 return
 
-            # ── 静默去除首尾空格 ──────────────────────────────────────────────
-            if new_value != new_value.strip():
-                new_value = new_value.strip()
-                self._is_updating = True
-                item.setText(col_idx, new_value)
-                self._is_updating = False
-
             # ── 字符合法性校验 ────────────────────────────────────────────────
             if not PART_NUMBER_VALID_PATTERN.fullmatch(new_value):
                 QMessageBox.warning(
