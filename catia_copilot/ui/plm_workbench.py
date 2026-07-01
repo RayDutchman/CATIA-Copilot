@@ -208,7 +208,8 @@ class _SyncWorker(QThread):
     error      = Signal(str)
 
     def __init__(self, base_url: str, login: str, password: str, workspace: str,
-                 options: SyncOptions, push_rows: list[dict]) -> None:
+                 options: SyncOptions, push_rows: list[dict],
+                 plm_target: str = "docdoku") -> None:
         super().__init__()
         self._base_url   = base_url
         self._login      = login
@@ -216,11 +217,16 @@ class _SyncWorker(QThread):
         self._workspace  = workspace
         self._options    = options
         self._push_rows  = push_rows  # 每项含 "pn"、"local"(LocalPartInfo)
+        self._plm_target = plm_target
 
     def run(self) -> None:
         pythoncom.CoInitialize()
         try:
-            c = PlmApiClient(self._base_url)
+            if self._plm_target == "unified":
+                from catia_copilot.plm.unified_client import UnifiedPlmClient
+                c = UnifiedPlmClient(self._base_url)
+            else:
+                c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
 
             merged = SyncResult()
@@ -339,17 +345,23 @@ class _PlmStatusWorker(QThread):
     success  = done
 
     def __init__(self, base_url: str, login: str, password: str,
-                 workspace: str, part_numbers: list[str]) -> None:
+                 workspace: str, part_numbers: list[str],
+                 plm_target: str = "docdoku") -> None:
         super().__init__()
         self._base_url     = base_url
         self._login        = login
         self._password     = password
         self._workspace    = workspace
         self._part_numbers = [pn for pn in part_numbers if pn]
+        self._plm_target   = plm_target
 
     def run(self) -> None:
         try:
-            c = PlmApiClient(self._base_url)
+            if self._plm_target == "unified":
+                from catia_copilot.plm.unified_client import UnifiedPlmClient
+                c = UnifiedPlmClient(self._base_url)
+            else:
+                c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
             result = c.search_parts_summary(
                 self._workspace,
@@ -1027,6 +1039,7 @@ class PlmWorkbench(QDialog):
         s.setValue("password",  self._le_password.text())
         s.setValue("workspace", self._le_workspace.text().strip())
         s.setValue("work_dir",  self._le_work_dir.text().strip())
+        # plm_target 由 _SettingsDialog._on_save 保存，_save_conn 不覆盖已有值
 
     def _start_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
@@ -1275,7 +1288,8 @@ class PlmWorkbench(QDialog):
         self._pgb.setVisible(True)
         self._lbl_status.setText(f"正在查询 PLM 状态（0/{len(all_pns)}）……")
 
-        w = _PlmStatusWorker(base_url, login, password, workspace, all_pns)
+        w = _PlmStatusWorker(base_url, login, password, workspace, all_pns,
+                             plm_target=QSettings(_S_ORG, _S_PLM_CFG).value("plm_target", "docdoku"))
         w.progress.connect(self._on_plm_status_progress)
         w.done.connect(self._on_plm_status_done)
         w.failure.connect(self._on_plm_status_fail)
@@ -1834,7 +1848,8 @@ class PlmWorkbench(QDialog):
         self._last_sync_login = login
         self._last_sync_mode  = "Push 选中"
 
-        w = _SyncWorker(base_url, login, password, workspace, options, push_rows)
+        w = _SyncWorker(base_url, login, password, workspace, options, push_rows,
+                        plm_target=QSettings(_S_ORG, _S_PLM_CFG).value("plm_target", "docdoku"))
         w.progress.connect(self._on_sync_progress)
         w.upload_log.connect(self._on_upload_log)
         w.sync_done.connect(self._on_sync_done)
@@ -3117,6 +3132,16 @@ class _SettingsDialog(QDialog):
         base_url, login, password, workspace = self._wb._read_conn()
         s_plm    = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = str(s_plm.value("work_dir", ""))
+        plm_target = str(s_plm.value("plm_target", "docdoku"))
+
+        # PLM 后端选择下拉框
+        self._cmb_plm_target = QComboBox()
+        self._cmb_plm_target.addItem("DocDoku PLM",  "docdoku")
+        self._cmb_plm_target.addItem("plm-unified",  "unified")
+        idx = self._cmb_plm_target.findData(plm_target)
+        if idx >= 0:
+            self._cmb_plm_target.setCurrentIndex(idx)
+        self._cmb_plm_target.currentIndexChanged.connect(self._on_target_changed)
 
         self._le_base_url  = QLineEdit(base_url)
         self._le_login     = QLineEdit(login)
@@ -3132,6 +3157,7 @@ class _SettingsDialog(QDialog):
         work_dir_row.addWidget(self._le_work_dir)
         work_dir_row.addWidget(btn_browse)
 
+        form.addRow("PLM 后端：",   self._cmb_plm_target)
         form.addRow("服务端地址：", self._le_base_url)
         form.addRow("用户名：",     self._le_login)
         form.addRow("密码：",       self._le_password)
@@ -3244,6 +3270,18 @@ class _SettingsDialog(QDialog):
 
     # ── 事件处理 ──────────────────────────────────────────────────────────────
 
+    def _on_target_changed(self) -> None:
+        """PLM 后端切换时联动更新 base_url 默认值。"""
+        _DOCDOKU_DEFAULT = _DEFAULT_BASE_URL
+        _UNIFIED_DEFAULT = "http://localhost:8010"
+        target = self._cmb_plm_target.currentData()
+        current_url = self._le_base_url.text().strip()
+        # 仅当当前 URL 是另一个后端的默认值时才自动替换（用户自填的不覆盖）
+        if target == "unified" and (not current_url or current_url == _DOCDOKU_DEFAULT):
+            self._le_base_url.setText(_UNIFIED_DEFAULT)
+        elif target == "docdoku" and (not current_url or current_url == _UNIFIED_DEFAULT):
+            self._le_base_url.setText(_DOCDOKU_DEFAULT)
+
     def _on_browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "选择工作目录",
                                                  self._le_work_dir.text())
@@ -3253,11 +3291,12 @@ class _SettingsDialog(QDialog):
     def _on_save(self) -> None:
         """保存配置到 QSettings。"""
         s = QSettings(_S_ORG, _S_PLM_CFG)
-        s.setValue("base_url",  self._le_base_url.text().strip())
-        s.setValue("login",     self._le_login.text().strip())
-        s.setValue("password",  self._le_password.text())
-        s.setValue("workspace", self._le_workspace.text().strip())
-        s.setValue("work_dir",  self._le_work_dir.text().strip())
+        s.setValue("base_url",   self._le_base_url.text().strip())
+        s.setValue("login",      self._le_login.text().strip())
+        s.setValue("password",   self._le_password.text())
+        s.setValue("workspace",  self._le_workspace.text().strip())
+        s.setValue("work_dir",   self._le_work_dir.text().strip())
+        s.setValue("plm_target", self._cmb_plm_target.currentData() or "docdoku")
         # 同步 workbench 的工作目录输入框（如果存在）
         if hasattr(self._wb, "_le_work_dir") and self._wb._le_work_dir:
             self._wb._le_work_dir.setText(self._le_work_dir.text())

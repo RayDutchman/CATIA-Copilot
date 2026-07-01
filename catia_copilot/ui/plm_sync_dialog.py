@@ -233,10 +233,11 @@ def _load_plm_config() -> dict:
 def _save_plm_config(cfg: dict) -> None:
     """将 PLM 连接配置写入 QSettings 持久化。"""
     s = QSettings(_SETTINGS_ORG, _SETTINGS_APP)
-    s.setValue("base_url",  cfg["base_url"])
-    s.setValue("login",     cfg["login"])
-    s.setValue("password",  cfg["password"])
-    s.setValue("workspace", cfg["workspace"])
+    s.setValue("base_url",   cfg["base_url"])
+    s.setValue("login",      cfg["login"])
+    s.setValue("password",   cfg["password"])
+    s.setValue("workspace",  cfg["workspace"])
+    s.setValue("plm_target", cfg.get("plm_target", "docdoku"))
     s.sync()
 
 
@@ -282,7 +283,12 @@ class _SyncWorker(QThread):
         """后台线程：登录 PLM → 同步 BOM 。"""
         cfg = self._cfg
         self.log_line.emit(f"正在连接 PLM 服务端：{cfg['base_url']} …")
-        client = PlmApiClient(cfg["base_url"])
+        plm_target = cfg.get("plm_target", "docdoku")
+        if plm_target == "unified":
+            from catia_copilot.plm.unified_client import UnifiedPlmClient
+            client = UnifiedPlmClient(cfg["base_url"])
+        else:
+            client = PlmApiClient(cfg["base_url"])
         try:
             client.login(cfg["login"], cfg["password"])
         except PlmApiError as exc:
@@ -411,10 +417,11 @@ class PlmSyncDialog(QDialog):
     def _read_config_from_ui(self) -> dict:
         """从 UI 控件读取当前配置值。"""
         return {
-            "base_url":  self._edit_url.text().strip(),
-            "login":     self._edit_login.text().strip(),
-            "password":  self._edit_password.text(),
-            "workspace": self._edit_workspace.text().strip(),
+            "base_url":   self._edit_url.text().strip(),
+            "login":      self._edit_login.text().strip(),
+            "password":   self._edit_password.text(),
+            "workspace":  self._edit_workspace.text().strip(),
+            "plm_target": QSettings(_SETTINGS_ORG, _SETTINGS_APP).value("plm_target", "docdoku"),
         }
 
     def _save_config(self) -> None:
