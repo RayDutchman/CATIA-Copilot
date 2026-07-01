@@ -98,7 +98,7 @@ ai_config.example.json           # 可提交的配置模板
 
 ### 版本号
 唯一来源：`catia_copilot/constants.py` 的 `APP_VERSION`。  
-升版时同步更新：`pyproject.toml`、`README.md`、`docs/README.md`、`CHANGELOG.md`。
+升版时同步更新：`pyproject.toml`、`README.md`、`docs/README.md`、`CHANGELOG.md`、`setup.iss`。
 
 ### 不要自动 push / commit
 除非用户明确要求，不提交、不推送。

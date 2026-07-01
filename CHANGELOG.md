@@ -4,6 +4,39 @@
 
 ---
 
+## [2.2.0] — 2026-07-01
+
+### 新增
+
+- **AI 建模完整工具链**：AI Agent 可通过 `build(ctx)` 脚本自主完成复杂零件建模（PR #70）。
+- **几何查询 API（方向 B）**：`get_pad_faces` / `get_pad_faces_by_normal` / `get_pad_face_edges` 等，支持按法向筛选面、获取面所有边引用，纯从草图坐标系推导，不依赖 SPA。
+- **BRep 边引用扩展（方向 A）**：Pocket（底楞/侧楞/开口楞）、Shaft（旋转体相邻面交线）、圆柱 Pad 侧面格式已验证并封装。
+- **自动圆角 `add_auto_fillet`**：等价于 CATIA GUI「自动圆角」，无需逐边指定，一键对所有适合的边施加圆角。
+- **System Prompt 参数化约束**：要求 AI 将所有关键尺寸声明为 `build(ctx)` 开头具名变量，禁止硬编码数字。
+- **ModelStateDialog**：📊 按钮弹出独立窗口，展示当前零件特征树、质量重心、步骤日志，每次建模后自动刷新。
+- **多模型提供者支持**（`feat/multi-provider`）：支持 OpenAI / Anthropic / OpenRouter / DeepSeek / Ollama / 讯飞星火 / AWS Bedrock / Google Vertex AI / GitHub Copilot / 自定义端点 共 10 种 LLM 后端。
+
+### 修复
+
+- **`create_part` 命名无效**：`part.part.PartNumber`（`CATIAPart` 无此属性）→ `Product.PartNumber`，新增 `nomenclature` 参数写入 `Product.Nomenclature`。
+- **`add_hole_from_sketch` 签名错误**：COM 方法仅接受 `(sketch, depth)` 两个参数，孔径通过 `hole.diameter.value` 单独设置。
+- **`add_shaft` / `add_groove` 轴线树顺序**：先建轴线再建特征，避免树中轴线出现在 Shaft/Groove 之后。
+- **`_pad_geometry` 草图边数穷举越界**：改用 `GeometricElements` 计数（排除坐标轴和点），不再用 BRep 枚举试探。
+
+### 已有 API 现状
+
+| 分类 | 已实现 | 暂不可用 |
+|------|--------|----------|
+| 草图 | 6 种平面（`xy`/`yz`/`zx` + BRep 顶/底/侧面） | — |
+| 草图绘图 | `draw_rect` / `draw_circle` / `draw_arc` / `draw_line` / `draw_slot` / `draw_point` | — |
+| 实体特征 | `add_pad` / `add_pocket` / `add_shaft` / `add_groove` / `add_hole_from_sketch` | Rib / Loft / Stiffener |
+| 修饰 | `add_fillet_edges` / `add_auto_fillet` / `add_chamfer` | Shell / Draft / Thread |
+| 变换 | — | Mirror |
+| 阵列 | — | `add_rect_pattern` / `add_circ_pattern`（方向参数 bug） |
+| 查询 | `list_features` / `list_sketches` / `get_mass_props` / 几何查询全套 | — |
+
+---
+
 ## [2.1.0] — 2026-06-06
 
 ### 新增

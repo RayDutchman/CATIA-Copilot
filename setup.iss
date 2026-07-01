@@ -13,11 +13,11 @@
 ; 卸载：控制面板"程序和功能"中可完整卸载
 
 #define AppName      "CATIA Copilot"
-#define AppVersion   "2.1.0"
+#define AppVersion   "2.2.0"
 #define AppPublisher "Chen Weibo"
-#define AppExeName   "CATIA Copilot 2.1.0.exe"
+#define AppExeName   "CATIA Copilot 2.2.0.exe"
 ; Nuitka 编译产物目录（相对于本 .iss 文件所在的项目根目录）
-#define SourceDir    "..\CATIA-Copilot-dist-nuitka\CATIA Copilot 2.1.0"
+#define SourceDir    "..\CATIA-Copilot-dist-nuitka\CATIA Copilot 2.2.0"
 
 [Setup]
 AppId={{89E7150F-7E21-4B13-B613-999FC8E4C4E7}
@@ -80,7 +80,7 @@ var
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
-    Exec('taskkill.exe', '/F /IM "CATIA Copilot 2.1.0.exe"', '',
+    Exec('taskkill.exe', '/F /IM "CATIA Copilot 2.2.0.exe"', '',
          SW_HIDE, ewWaitUntilTerminated, ResultCode);
     { ResultCode 忽略：进程不存在时 taskkill 返回非零，属正常情况 }
 end;
