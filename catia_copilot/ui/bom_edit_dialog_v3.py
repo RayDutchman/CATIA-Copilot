@@ -2574,50 +2574,97 @@ class BomEditDialogV3(QDialog):
 
         # ── 写入 CATIA 并更新 part_masters 树 ────────────────────────────────────
         # instances 是文件视角唯一一份，修改后所有引用自动同步，不需要兄弟同步逻辑
-        errors: list[str] = []
-        undo_actions: list[tuple] = []
-        changed = 0
+        #
+        # 两阶段换名：同父节点下实例名不可重名，逐个换名时目标名可能被旧 owner
+        # 占用，CATIA 拒绝写入。第一阶段先全部改为临时名 _{inst_key} 释放
+        # namespace，第二阶段再改为正确的 PartNumber.N。
+
+        # 筛选实际需要改名的项（跳过已符合规则、无 COM 引用的）
+        need_rename: list[tuple[dict, str, str]] = []  # (inst_inf, old_name, new_name)
         for inst_inf, new_name in plan:
             old_name = inst_inf.get("instance_name", "")
             if old_name == new_name:
                 continue
-            product = inst_inf.get("product")
-            if product is None:
+            if inst_inf.get("product") is None:
                 continue
-            ik = inst_inf.get("inst_key")
-            try:
-                product.Name = new_name
-                inst_inf["instance_name"] = new_name
-                if ik is not None:
-                    undo_actions.append((ik, BOM_INSTANCE_NAME_COLUMN, old_name, new_name))
-                changed += 1
-            except Exception as e:
-                # ── COM 诊断：探查失败的 product 到底是什么状态 ──
-                pn_label  = inst_inf.get("pn", "?")
-                diag_info: list[str] = []
+            need_rename.append((inst_inf, old_name, new_name))
+
+        errors: list[str] = []
+        undo_actions: list[tuple] = []
+        changed = 0
+
+        if need_rename:
+            # ── 第一阶段：全部改为临时名 _{inst_key}，释放 namespace ──────────
+            tmp_renamed: list[tuple[dict, str]] = []   # (inst_inf, old_name)
+            phase1_failed = False
+            for inst_inf, old_name, _new_name in need_rename:
+                ik = inst_inf.get("inst_key")
+                tmp_name = f"_{ik}"
                 try:
-                    diag_info.append(f"Name={getattr(product, 'Name', '?')!r}")
-                except Exception as ex:
-                    diag_info.append(f"Name_read_err={ex}")
-                try:
-                    diag_info.append(f"PN={getattr(product, 'PartNumber', '?')!r}")
-                except Exception as ex:
-                    diag_info.append(f"PN_read_err={ex}")
-                try:
-                    diag_info.append(f"WorkMode={getattr(product, 'GetWorkMode', lambda: '?' )()}")
-                except Exception as ex:
-                    diag_info.append(f"WorkMode_err={ex}")
-                try:
-                    rp = getattr(product, 'ReferenceProduct', None)
-                    diag_info.append(f"Path={getattr(rp, 'Parent', 'no_rp') if rp is not None else 'no_rp'}")
-                except Exception as ex:
-                    diag_info.append(f"Path_err={ex}")
-                diag_str = " | ".join(diag_info)
-                errors.append(f"[PN={pn_label}] 实例名 {old_name!r} → {new_name!r}: {e}; COM诊断: {diag_str}")
-                logger.error(
-                    "auto_rename_instance_names error inst_key=%s pn=%r old=%r new=%r diag=%s: %s",
-                    ik, pn_label, old_name, new_name, diag_str, e,
+                    inst_inf["product"].Name = tmp_name
+                    inst_inf["instance_name"] = tmp_name
+                    tmp_renamed.append((inst_inf, old_name))
+                except Exception as e:
+                    logger.error("auto_rename phase1 tmp-rename failed inst_key=%s: %s", ik, e)
+                    # 回滚已改为临时名的节点
+                    for roll_inf, roll_old in tmp_renamed:
+                        try:
+                            roll_inf["product"].Name = roll_old
+                            roll_inf["instance_name"] = roll_old
+                        except Exception as rb_e:
+                            logger.error("auto_rename phase1 rollback failed inst_key=%s: %s",
+                                         roll_inf.get("inst_key"), rb_e)
+                    phase1_failed = True
+                    break
+
+            if phase1_failed:
+                QMessageBox.warning(
+                    self, "写入失败",
+                    "自动修改实例名第一阶段（临时名）失败，所有变更已回滚。",
                 )
+                return
+
+            # ── 第二阶段：改为最终 PartNumber.N ─────────────────────────────────
+            for inst_inf, old_name, new_name in need_rename:
+                product = inst_inf.get("product")
+                ik = inst_inf.get("inst_key")
+                try:
+                    product.Name = new_name
+                    inst_inf["instance_name"] = new_name
+                    if ik is not None:
+                        undo_actions.append((ik, BOM_INSTANCE_NAME_COLUMN, old_name, new_name))
+                    changed += 1
+                except Exception as e:
+                    pn_label  = inst_inf.get("pn", "?")
+                    diag_info: list[str] = []
+                    try:
+                        diag_info.append(f"Name={getattr(product, 'Name', '?')!r}")
+                    except Exception as ex:
+                        diag_info.append(f"Name_read_err={ex}")
+                    try:
+                        diag_info.append(f"PN={getattr(product, 'PartNumber', '?')!r}")
+                    except Exception as ex:
+                        diag_info.append(f"PN_read_err={ex}")
+                    try:
+                        diag_info.append(f"WorkMode={getattr(product, 'GetWorkMode', lambda: '?')()}")
+                    except Exception as ex:
+                        diag_info.append(f"WorkMode_err={ex}")
+                    try:
+                        rp = getattr(product, 'ReferenceProduct', None)
+                        diag_info.append(
+                            f"Path={getattr(rp, 'Parent', 'no_rp') if rp is not None else 'no_rp'}"
+                        )
+                    except Exception as ex:
+                        diag_info.append(f"Path_err={ex}")
+                    diag_str = " | ".join(diag_info)
+                    errors.append(
+                        f"[PN={pn_label}] 实例名 {old_name!r} → {new_name!r}: {e}; "
+                        f"COM诊断: {diag_str}"
+                    )
+                    logger.error(
+                        "auto_rename phase2 error inst_key=%s pn=%r old=%r new=%r diag=%s: %s",
+                        ik, pn_label, old_name, new_name, diag_str, e,
+                    )
 
         # ── 推入撤销栈（整批作为一个原子步骤）────────────────────────────────────
         if undo_actions:
