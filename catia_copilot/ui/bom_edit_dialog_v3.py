@@ -2522,8 +2522,8 @@ class BomEditDialogV3(QDialog):
             """按 PartNumber.n 规则为 part_masters[pm_key].instances 生成改名计划。
             instances 是文件视角，唯一一份，修改后所有引用自动同步。
 
-            no_file 节点（文件不在磁盘）和 not_found 节点（断链接）：
-            COM 写入会失败，直接跳过自身及子树。
+            no_file 节点（文件不在磁盘）、not_found 节点（断链接）和
+            unreadable 节点（轻量化/不可切设计模式）：COM 写入会失败，直接跳过。
             """
             pm = self._part_masters.get(pm_key, {})
             pn_counter: dict[str, int] = {}
@@ -2532,10 +2532,11 @@ class BomEditDialogV3(QDialog):
                 child_bk      = inst_info["pm_key"]
                 child_pm      = self._part_masters.get(child_bk, {})
                 child_type    = child_pm.get("type", "")
-                child_no_file  = child_pm.get("_no_file", False)
-                child_not_found = child_pm.get("_not_found", False)
-                # no_file / not_found 节点：COM 写入会失败，跳过本节点及其子树
-                if child_no_file or child_not_found:
+                child_no_file    = child_pm.get("_no_file", False)
+                child_not_found  = child_pm.get("_not_found", False)
+                child_unreadable = child_pm.get("_unreadable", False)
+                # no_file / not_found / unreadable 节点：COM 写入会失败，跳过本身及子树
+                if child_no_file or child_not_found or child_unreadable:
                     skipped_no_file_subtrees.append(child_pn)
                     continue
                 pn_counter[child_pn] = pn_counter.get(child_pn, 0) + 1
