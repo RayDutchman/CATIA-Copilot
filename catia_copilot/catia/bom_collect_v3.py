@@ -55,10 +55,12 @@ pm_key 规则：
                                 (root_pm_key, part_masters, inst_key_to_info)
 - iter_full_rows()            – 完整 BOM（每实例一行）
 - iter_hierarchical_rows()    – 层级 BOM（同父节点同 pm_key 合并）
-- flatten_bom_to_summary()    – 汇总 BOM（复用 bom_collect）
+- flatten_bom_to_summary()    – 汇总 BOM
+- refresh_row_from_com()     – 从 COM 重读单产品属性
 - get_part_master_attr()      – O(1) 读属性
 - set_part_master_attr()      – O(1) 写属性
 - rename_part_master()        – 统一处理 PN 改名
+- refresh_row_from_com()      – 从 COM 重读单产品属性
 """
 
 import logging
@@ -66,7 +68,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from catia_copilot.catia.bom_collect import flatten_bom_to_summary  # noqa: F401
 from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 from catia_copilot.catia.document import get_bom_node_type
 from catia_copilot.constants import (
@@ -78,6 +79,110 @@ from catia_copilot.constants import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def flatten_bom_to_summary(
+    rows: list[dict],
+    include_assemblies: bool = False,
+    sort_column: str | None = None,
+) -> list[dict]:
+    """Collapse a hierarchical BOM into a flat summary BOM.
+
+    Each unique part appears exactly once in the result.  All node types
+    (零件, 产品, 部件) are identified by their Part Number.  Using Part Number
+    as the universal key is consistent with CATIA's own identity model and
+    correctly handles embedded sub-assemblies (部件), which share their
+    parent product's backing filepath and therefore cannot be distinguished
+    by filepath alone.
+
+    The ``Quantity`` value is the *total* count across the whole assembly tree,
+    computed by multiplying the per-level quantities along every path from the
+    root to that part.
+
+    The root row (Level == 0) is always excluded from the result.
+
+    Parameters
+    ----------
+    rows:
+        The hierarchical BOM rows returned by :func:`collect_bom_rows`.
+    include_assemblies:
+        When ``False`` (default) rows whose ``Type`` is ``"产品"`` or
+        ``"部件"`` are omitted so that only leaf parts appear in the summary.
+        Set to ``True`` to include sub-assemblies and assemblies as well.
+    sort_column:
+        Internal column name to sort the result by.  Sorting is case-
+        insensitive string comparison.  Defaults to ``"Part Number"`` when
+        ``None``.
+
+    Returns
+    -------
+    list[dict]
+        Flat list of row dicts.  Each dict contains the same keys as the input
+        rows except that ``Level`` is removed and ``Quantity`` reflects the
+        total accumulated count.
+    """
+    if not rows:
+        return []
+
+    # ── Step 1: compute absolute quantity for every row ──────────────────────
+    cum_qty_stack: list[tuple[int, int]] = []  # (level, cumulative_qty)
+    absolute_qtys: list[int] = []
+
+    for row in rows:
+        level = row.get("Level", 0)
+        qty   = int(row.get("Quantity", 1) or 1)
+
+        while cum_qty_stack and cum_qty_stack[-1][0] >= level:
+            cum_qty_stack.pop()
+
+        parent_cum = cum_qty_stack[-1][1] if cum_qty_stack else 1
+
+        abs_qty = parent_cum * qty
+        absolute_qtys.append(abs_qty)
+        cum_qty_stack.append((level, abs_qty))
+
+    # ── Step 2: deduplicate ─────────────────────────────────────────────────
+    seen_order:  list[str]       = []
+    summary:     dict[str, dict] = {}
+    key_to_qty:  dict[str, int]  = {}
+
+    _assembly_types = BomNodeType.ASSEMBLY_TYPES
+
+    for row, abs_qty in zip(rows, absolute_qtys):
+        level = row.get("Level", 0)
+
+        if level == 0 and not include_assemblies:
+            continue
+
+        if not include_assemblies and row.get("Type", "") in _assembly_types:
+            continue
+
+        key = str(row.get("Part Number", ""))
+        if not key:
+            continue
+
+        if key not in summary:
+            seen_order.append(key)
+            merged = {k: v for k, v in row.items() if k != "Level"}
+            merged["Quantity"] = abs_qty
+            summary[key]       = merged
+            key_to_qty[key]    = abs_qty
+        else:
+            key_to_qty[key]          += abs_qty
+            summary[key]["Quantity"]  = key_to_qty[key]
+
+    # ── Step 3: sort and return ───────────────────────────────────────────────
+    result    = [summary[k] for k in seen_order]
+    sort_key  = sort_column if sort_column else "Part Number"
+    def _sort_key(r: dict) -> tuple:
+        val = r.get(sort_key, "")
+        try:
+            return (0, float(val), "")
+        except (TypeError, ValueError):
+            return (1, 0.0, str(val).lower())
+
+    result.sort(key=_sort_key)
+    return result
 
 # 列名 → part_master dict key 映射（标准列）
 _COL_TO_PM_KEY: dict[str, str] = {
@@ -825,3 +930,74 @@ def rename_part_master(
 
     logger.debug("rename_part_master: pm_key=%r  %r → %r", pm_key, old_pn, new_pn)
     return True
+
+
+def refresh_row_from_com(
+    product,
+    columns: list[str],
+    custom_columns: list[str],
+    is_component: bool = False,
+) -> dict[str, str]:
+    """Re-read attribute values for a single product COM object.
+
+    Switches the product to DESIGN_MODE if needed, then reads every column
+    listed in *columns* (built-in attributes and user-defined properties).
+
+    Returns a ``{column_name: value}`` dict for all columns successfully read.
+    Columns that cannot be read are omitted; the caller keeps the existing value.
+
+    Parameters
+    ----------
+    product:
+        A win32com Product object with a live COM connection.
+    columns:
+        Internal column names to re-read.
+    custom_columns:
+        Column names that are user-defined properties.
+    is_component:
+        若为 True，表示该行是嵌入部件（Component），不尝试读取 ReferenceProduct。
+        Component 的 ReferenceProduct 指向父产品，读取会得到父产品的属性值。
+    """
+    DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
+
+    try:
+        if product.GetWorkMode() != CATIA_DESIGN_MODE:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+    except Exception:
+        try:
+            product.ApplyWorkMode(CATIA_DESIGN_MODE)
+        except Exception:
+            pass
+
+    targets = [product]
+    # Component 嵌入部件不走 ReferenceProduct：
+    # Component 实例的 ReferenceProduct 返回的是父产品对象，
+    # 读取会得到父产品的属性，导致属性值被父产品值覆盖。
+    if not is_component:
+        try:
+            targets.insert(0, product.ReferenceProduct)
+        except Exception:
+            pass
+
+    result: dict[str, str] = {}
+    for col in columns:
+        if col in DIRECT_ATTR_MAP:
+            attr = DIRECT_ATTR_MAP[col]
+            for target in targets:
+                try:
+                    v = getattr(target, attr)
+                    if v is not None:
+                        result[col] = str(v)
+                        break
+                except Exception:
+                    pass
+        elif col in custom_columns:
+            for target in targets:
+                try:
+                    prop_obj = target.UserRefProperties.Item(col)
+                    if prop_obj.Value is not None and str(prop_obj.Value).strip():
+                        result[col] = str(prop_obj.Value)
+                        break
+                except Exception:
+                    pass
+    return result

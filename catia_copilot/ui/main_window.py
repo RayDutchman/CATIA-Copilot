@@ -73,8 +73,6 @@ from catia_copilot.constants import (
 )
 from catia_copilot.logging_setup import LOG_FILE, log_signal_emitter
 # AIChatPanel 懒加载：首次切到 AI 助手 Tab 时才 import，避免拖慢启动
-from catia_copilot.ui.bom_edit_dialog import BomEditDialog
-from catia_copilot.ui.bom_edit_dialog_v2 import BomEditDialogV2
 from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
 from catia_copilot.ui.catia_embed import (
     DEFAULT_ANCHOR,
@@ -567,17 +565,9 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._make_section_label("工作台"))
 
-        btn_bom_edit = QPushButton(self._ACTION_LABELS["bom_edit"])
-        btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并写回 CATIA")
-        btn_bom_edit.clicked.connect(self._open_bom_edit_dialog)
-
-        btn_bom_edit_v2 = QPushButton("BOM 工作台 V2（即时写回）")
-        btn_bom_edit_v2.setToolTip("编辑即时写回 CATIA 的新版 BOM 工作台（V2）")
-        btn_bom_edit_v2.clicked.connect(self._open_bom_edit_dialog_v2)
-
-        btn_bom_edit_v3 = QPushButton("BOM 工作台 V3（part_master 架构）")
-        btn_bom_edit_v3.setToolTip("V3 架构：part_master/instance 分离，同文件多实例天然共享属性")
-        btn_bom_edit_v3.clicked.connect(self._open_bom_edit_dialog_v3)
+        btn_bom_edit = QPushButton("BOM 工作台")
+        btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并即时写回 CATIA")
+        btn_bom_edit.clicked.connect(self._open_bom_edit_dialog_v3)
 
         btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
         btn_mass_props.setToolTip(
@@ -597,7 +587,7 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench_unified.clicked.connect(self._open_plm_workbench_unified)
 
-        for btn in (btn_bom_edit, btn_bom_edit_v2, btn_bom_edit_v3, btn_mass_props,
+        for btn in (btn_bom_edit, btn_mass_props,
                     btn_plm_workbench, btn_plm_workbench_unified):
             layout.addWidget(btn)
 
@@ -1202,7 +1192,7 @@ class MainWindow(QMainWindow):
             触发该动作的 MDI 子窗口句柄（0 表示从主窗口按钮触发）
         """
         action_map = {
-            "bom_edit":        self._do_open_bom_dialog,
+            "bom_edit":        self._do_open_bom_dialog_v3,
             "bom_export":      self._do_open_export_bom,
             "mass_props":      self._do_open_mass_props,
             "close":           self._do_close_embed,
@@ -1227,9 +1217,9 @@ class MainWindow(QMainWindow):
             logger.warning("未知的嵌入面板动作: %s", action)
 
     @Slot()
-    def _do_open_bom_dialog(self) -> None:
-        """在主线程打开 BomEditDialog。"""
-        self._open_bom_edit_dialog()
+    def _do_open_bom_dialog_v3(self) -> None:
+        """在主线程打开 BomEditDialogV3。"""
+        self._open_bom_edit_dialog_v3()
 
     @Slot()
     def _do_open_export_bom(self) -> None:
@@ -1457,14 +1447,6 @@ class MainWindow(QMainWindow):
     def _open_export_bom_dialog(self) -> None:
         self._show_dialog("_dlg_export_bom", lambda: ExportBomDialog(self))
 
-    def _open_bom_edit_dialog(self) -> None:
-        self._show_dialog("_dlg_bom_edit", lambda: BomEditDialog(self))
-
-    @Slot()
-    def _open_bom_edit_dialog_v2(self) -> None:
-        self._show_dialog("_dlg_bom_edit_v2", lambda: BomEditDialogV2(self))
-
-    @Slot()
     def _open_bom_edit_dialog_v3(self) -> None:
         self._show_dialog("_dlg_bom_edit_v3", lambda: BomEditDialogV3(self))
 

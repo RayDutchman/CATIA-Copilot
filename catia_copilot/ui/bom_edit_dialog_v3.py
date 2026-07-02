@@ -60,13 +60,13 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from catia_copilot.catia.bom_collect import refresh_row_from_com
 from catia_copilot.catia.bom_collect_v3 import (
     collect_bom_part_masters,
     flatten_bom_to_summary,
     get_part_master_attr,
     iter_full_rows,
     iter_hierarchical_rows,
+    refresh_row_from_com,
     rename_part_master,
     set_part_master_attr,
 )
