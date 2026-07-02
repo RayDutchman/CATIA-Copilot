@@ -82,7 +82,7 @@ _S_TAG_RULES = "PlmTagRules"
 _S_HISTORY   = "PlmSyncHistory"
 _S_WB        = "PlmWorkbench"        # 工作台专用（列可见性等）
 
-_DEFAULT_BASE_URL  = "http://localhost:8010"
+_DEFAULT_BASE_URL  = "http://127.0.0.1:8010"
 _DEFAULT_LOGIN     = "admin"
 _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
@@ -191,7 +191,7 @@ class _ConnectWorker(QThread):
                 "name": self._workspace,
                 "_current_user_role": "已登录（plm-unified）",
             }
-            self.success.emit(self._login, users, ws_info)
+            self.success.emit(self._login, [], ws_info)
         except Exception as exc:
             logger.exception("_ConnectWorker 运行异常")
             self.failure.emit(str(exc))
