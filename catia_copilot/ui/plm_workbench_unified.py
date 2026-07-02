@@ -77,10 +77,10 @@ logger = logging.getLogger(__name__)
 
 # ── QSettings 键（与 PlmSyncDialog 共用 PlmConfig，保持配置互通） ─────────────
 _S_ORG       = "CATIACopilot"
-_S_PLM_CFG   = "PlmConfig"
-_S_TAG_RULES = "PlmTagRules"
-_S_HISTORY   = "PlmSyncHistory"
-_S_WB        = "PlmWorkbench"        # 工作台专用（列可见性等）
+_S_PLM_CFG   = "PlmConfigUnified"   # 独立配置，与 DocDoku 工作台隔离
+_S_TAG_RULES = "PlmTagRulesUnified"
+_S_HISTORY   = "PlmSyncHistoryUnified"
+_S_WB        = "PlmWorkbenchUnified"
 
 _DEFAULT_BASE_URL  = "http://127.0.0.1:8010"
 _DEFAULT_LOGIN     = "admin"
