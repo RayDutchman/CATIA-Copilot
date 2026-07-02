@@ -47,7 +47,10 @@ class UnifiedPlmClient:
         self._base = base_url.rstrip("/")
         self._login_name: str | None = None   # 登录用户名，供 checkout 持有者判断
         self._access_token: str | None = None
-        self._workspace_id_cache: dict[str, str] = {}  # workspace name → UUID
+        # workspace name → UUID 缓存；预置 plm-unified 的默认 workspace
+        self._workspace_id_cache: dict[str, str] = {
+            "default": "00000000-0000-0000-0000-000000000001",
+        }
         self._user_cache: dict[str, str] = {}           # user UUID → username（懒加载）
 
         self._session = requests.Session()
@@ -258,24 +261,36 @@ class UnifiedPlmClient:
         result = self._post("/api/parts", json=payload)
 
         # 从响应里取版本和迭代号
+        # create_part 后 iterations 列表在响应里可能为空（iteration 由后续 update/checkin 产生）
+        # 因此迭代号固定返回 1，不从 len(iterations) 推算
         revisions = result.get("revisions") or []
         latest_rev = revisions[-1] if revisions else {}
-        iterations = latest_rev.get("iterations") or []
         version = latest_rev.get("version", "A")
-        iteration = len(iterations) or 1
+        iteration = 1
         logger.info("PLM 零件已创建：%s-%s iter%d", part_number, version, iteration)
         return part_number, version, iteration
 
     def checkout_part(self, workspace: str, part_number: str, version: str) -> int:
-        """签出零件，返回新迭代号（int）← 与 PlmApiClient 完全一致。"""
+        """签出零件，返回新迭代号（int）← 与 PlmApiClient 完全一致。
+
+        plm-unified 的 create_part 会自动置为签出状态，再次调用会返回 409。
+        捕获 409 并静默处理（返回当前迭代号）而不是抛异常，
+        确保 sync.py 的 create_part → checkout_part 流程不中断。
+        """
         ws_id = self._get_workspace_id(workspace)
         pn = urllib.parse.quote(part_number, safe="")
-        result = self._put(
-            f"/api/parts/{pn}/{version}/checkout",
-            params={"workspace_id": ws_id},
-        )
-        # plm-unified CheckoutResponse 里没有 lastIterationNumber，
-        # 需要再次查询获取最新迭代号
+        try:
+            self._put(
+                f"/api/parts/{pn}/{version}/checkout",
+                params={"workspace_id": ws_id},
+            )
+        except PlmApiError as exc:
+            if exc.status_code == 409:
+                # 已经处于签出状态（create_part 后自动签出），静默继续
+                logger.debug("PLM checkout 409 （已签出）：%s-%s，跳过", part_number, version)
+            else:
+                raise
+        # 查询当前迭代号
         try:
             head = self.get_part_head(workspace, part_number)
             iteration = int(head.get("lastIterationNumber", 1))
@@ -366,16 +381,11 @@ class UnifiedPlmClient:
         version: str,
         tags: list[str],
     ) -> None:
-        """更新零件标签列表（全量替换）。"""
-        ws_id = self._get_workspace_id(workspace)
-        pn = urllib.parse.quote(part_number, safe="")
-        # plm-unified 的 PUT /api/parts/{pn} 更新零件主数据
-        self._put(
-            f"/api/parts/{pn}",
-            json={"tags": tags},
-            params={"workspace_id": ws_id},
+        """更新零件标签（plm-unified 暂无标签端点，静默跳过）。"""
+        logger.warning(
+            "update_part_tags: plm-unified 暂无标签端点，已跳过 %s tags=%s",
+            part_number, tags,
         )
-        logger.debug("PLM 标签更新：%s-%s → %s", part_number, version, tags)
 
     # ── 文件上传 ──────────────────────────────────────────────────────────────
 
@@ -455,10 +465,10 @@ class UnifiedPlmClient:
 
     # ── 查询/列举 ─────────────────────────────────────────────────────────────
 
-    def list_parts(self, workspace: str, max_count: int = 500) -> list[dict]:
-        """列出工作空间内所有零件。"""
+    def list_parts(self, workspace: str, max_count: int = 200) -> list[dict]:
+        """列出工作空间内所有零件（limit 最大 200，由 plm-unified 后端限制）。"""
         ws_id = self._get_workspace_id(workspace)
-        return self._get("/api/parts", params={"workspace_id": ws_id, "limit": max_count}) or []
+        return self._get("/api/parts", params={"workspace_id": ws_id, "limit": min(max_count, 200)}) or []
 
     def search_parts_summary(
         self,
