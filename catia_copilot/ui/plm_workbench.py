@@ -434,13 +434,15 @@ class _PullWorker(QThread):
     MODE_BOM      = "bom"
     MODE_DOWNLOAD = "download"
 
-    def __init__(self, base_url: str, login: str, password: str, workspace: str) -> None:
+    def __init__(self, base_url: str, login: str, password: str, workspace: str,
+                 plm_target: str = "docdoku") -> None:
         super().__init__()
-        self._base_url  = base_url
-        self._login     = login
-        self._password  = password
-        self._workspace = workspace
-        self._mode      = self.MODE_SEARCH
+        self._base_url   = base_url
+        self._login      = login
+        self._password   = password
+        self._workspace  = workspace
+        self._plm_target = plm_target
+        self._mode       = self.MODE_SEARCH
         # 搜索参数
         self._search_number = ""
         # BOM 展开参数
@@ -493,7 +495,7 @@ class _PullWorker(QThread):
     def run(self) -> None:
         pythoncom.CoInitialize()
         try:
-            c = PlmApiClient(self._base_url)
+            c = PlmWorkbench._make_plm_client(self._base_url, self._plm_target)
             c.login(self._login, self._password)
 
             if self._mode == self.MODE_SEARCH:
@@ -1041,6 +1043,21 @@ class PlmWorkbench(QDialog):
         s.setValue("work_dir",  self._le_work_dir.text().strip())
         # plm_target 由 _SettingsDialog._on_save 保存，_save_conn 不覆盖已有值
 
+    @staticmethod
+    def _make_plm_client(base_url: str, plm_target: str | None = None):
+        """根据 plm_target 创建对应的 PLM 客户端实例（未登录）。
+
+        plm_target:
+            "unified" → UnifiedPlmClient（plm-unified FastAPI 后端）
+            其他 / None → PlmApiClient（DocDoku PLM 后端，默认）
+        """
+        if plm_target is None:
+            plm_target = QSettings(_S_ORG, _S_PLM_CFG).value("plm_target", "docdoku")
+        if plm_target == "unified":
+            from catia_copilot.plm.unified_client import UnifiedPlmClient
+            return UnifiedPlmClient(base_url)
+        return PlmApiClient(base_url)
+
     def _start_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
         self._workers.append(worker)
@@ -1060,9 +1077,10 @@ class PlmWorkbench(QDialog):
         # 记录打开前的关键配置，用于检测变更
         s_before = QSettings(_S_ORG, _S_PLM_CFG)
         _before = (
-            s_before.value("base_url",  ""),
-            s_before.value("workspace", ""),
-            s_before.value("work_dir",  ""),
+            s_before.value("base_url",   ""),
+            s_before.value("workspace",  ""),
+            s_before.value("work_dir",   ""),
+            s_before.value("plm_target", "docdoku"),
         )
 
         dlg = _SettingsDialog(self)
@@ -1076,9 +1094,10 @@ class PlmWorkbench(QDialog):
         # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
         s_after = QSettings(_S_ORG, _S_PLM_CFG)
         _after = (
-            s_after.value("base_url",  ""),
-            s_after.value("workspace", ""),
-            s_after.value("work_dir",  ""),
+            s_after.value("base_url",   ""),
+            s_after.value("workspace",  ""),
+            s_after.value("work_dir",   ""),
+            s_after.value("plm_target", "docdoku"),
         )
         if _after != _before:
             # 配置已变更：清空差异表和缓存数据，避免显示过期内容
@@ -1095,6 +1114,8 @@ class PlmWorkbench(QDialog):
                 changed_fields.append("PLM 工作区")
             if _after[2] != _before[2]:
                 changed_fields.append("本地工作目录")
+            if _after[3] != _before[3]:
+                changed_fields.append("PLM 后端")
             self._lbl_status.setText(
                 f"配置已变更（{'/'.join(changed_fields)}），请重新加载工作区。"
             )
@@ -1751,8 +1772,7 @@ class PlmWorkbench(QDialog):
 
         # ── 实时查询 PLM 最新状态（替代缓存数据） ─────────────────────────────
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
-            c = PlmApiClient(base_url)
+            c = PlmWorkbench._make_plm_client(base_url)
             c.login(login, password)
             pns_to_check = [r["pn"] for r in push_rows]
             fresh_data = c.search_parts_summary(workspace, pns_to_check)
@@ -1907,7 +1927,9 @@ class PlmWorkbench(QDialog):
         if not work_dir:
             QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置工作目录。")
             return
-        dlg = _PullDialog(base_url, login, password, workspace, work_dir, parent=self)
+        dlg = _PullDialog(base_url, login, password, workspace, work_dir,
+                          plm_target=QSettings(_S_ORG, _S_PLM_CFG).value("plm_target", "docdoku"),
+                          parent=self)
         dlg.exec()
 
     def _on_pull_selected(self) -> None:
@@ -1943,8 +1965,7 @@ class PlmWorkbench(QDialog):
             return
 
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
-            c = PlmApiClient(base_url)
+            c = PlmWorkbench._make_plm_client(base_url)
             c.login(login, password)
         except Exception as exc:
             QMessageBox.critical(self, "连接失败", str(exc))
@@ -1992,7 +2013,8 @@ class PlmWorkbench(QDialog):
         self._pgb.setVisible(True)
         self._lbl_status.setText(f"开始下载 {len(dl_items)} 个文件……")
 
-        w = _PullWorker(base_url, login, password, workspace)
+        w = _PullWorker(base_url, login, password, workspace,
+                        plm_target=QSettings(_S_ORG, _S_PLM_CFG).value("plm_target", "docdoku"))
         w.file_progress.connect(lambda fn, dl, tot, spd: self._lbl_speed.setText(f"{spd/1024:.1f} KB/s"))
         w.file_done.connect(lambda fn, dest: self._pgb.setValue(self._pgb.value() + 1))
         w.all_done.connect(self._on_pull_all_done)
@@ -2044,8 +2066,7 @@ class PlmWorkbench(QDialog):
 
         self._lbl_status.setText(f"正在查询 PLM：{pn}……")
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
-            c = PlmApiClient(base_url)
+            c = PlmWorkbench._make_plm_client(base_url)
             c.login(login, password)
 
             # ── 1. 确认零件存在（精确路径查询，避免全文搜索漏查）────────────────
@@ -3738,17 +3759,19 @@ class _PullDialog(QDialog):
     """
 
     def __init__(self, base_url: str, login: str, password: str,
-                 workspace: str, work_dir: str, parent=None):
+                 workspace: str, work_dir: str,
+                 plm_target: str = "docdoku", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Pull — 从 PLM 拉取 BOM 树文件")
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
-        self._base_url  = base_url
-        self._login     = login
-        self._password  = password
-        self._workspace = workspace
-        self._work_dir  = work_dir
+        self._base_url   = base_url
+        self._login      = login
+        self._password   = password
+        self._workspace  = workspace
+        self._work_dir   = work_dir
+        self._plm_target = plm_target
         self._worker: _PullWorker | None = None
         # BOM 行缓存：每行 dict 来自 get_part_components_flat，追加了 files 列表
         self._bom_rows: list[dict] = []
@@ -3851,7 +3874,8 @@ class _PullDialog(QDialog):
     # ── 内部辅助 ──────────────────────────────────────────────────────────────
 
     def _make_worker(self) -> _PullWorker:
-        w = _PullWorker(self._base_url, self._login, self._password, self._workspace)
+        w = _PullWorker(self._base_url, self._login, self._password, self._workspace,
+                        plm_target=self._plm_target)
         w.search_done.connect(self._on_search_done)
         w.bom_done.connect(self._on_bom_done_or_prequery)
         w.file_progress.connect(self._on_file_progress)
