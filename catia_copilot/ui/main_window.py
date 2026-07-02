@@ -88,7 +88,6 @@ from catia_copilot.ui.export_bom_dialog import ExportBomDialog
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
-from catia_copilot.ui.plm_sync_dialog import PlmSyncDialog
 from catia_copilot.ui.plm_workbench import PlmWorkbench
 from catia_copilot.ui.template_dialog import TemplateDialog
 from catia_copilot.ui.theme_manager import theme_manager
@@ -161,7 +160,6 @@ class MainWindow(QMainWindow):
                 "bom_edit":        self._open_bom_dialog_from_embed,
                 "bom_export":      self._open_export_bom_from_embed,
                 "mass_props":      self._open_mass_props_from_embed,
-                "plm_sync":        self._open_plm_sync_from_embed,
                 "plm_workbench":   self._open_plm_workbench_from_embed,
                 "export_pdf":      self._open_export_pdf_from_embed,
                 "export_stp":      self._open_export_stp_from_embed,
@@ -1117,11 +1115,6 @@ class MainWindow(QMainWindow):
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("close", view_hwnd)
 
-    def _open_plm_sync_from_embed(self) -> None:
-        """嵌入面板菜单 → 同步 BOM 到 PLM 。"""
-        view_hwnd = self._embed_manager._current_view_hwnd or 0
-        self._embed_action_signal.emit("plm_sync", view_hwnd)
-
     def _open_plm_workbench_from_embed(self) -> None:
         """嵌入面板菜单 → PLM 工作台。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
@@ -1198,7 +1191,6 @@ class MainWindow(QMainWindow):
             "bom_export":      self._do_open_export_bom,
             "mass_props":      self._do_open_mass_props,
             "close":           self._do_close_embed,
-            "plm_sync":        self._do_open_plm_sync,
             "plm_workbench":   self._do_open_plm_workbench,
             "export_pdf":      self._do_open_export_pdf,
             "export_stp":      self._do_open_export_stp,
@@ -1240,11 +1232,6 @@ class MainWindow(QMainWindow):
         self._btn_embed.setChecked(False)
         QSettings("CATIACopilot", "EmbedPanel").setValue("active", False)
         self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
-
-    @Slot()
-    def _do_open_plm_sync(self) -> None:
-        """在主线程打开 PLM 同步对话框。"""
-        self._open_plm_sync_dialog()
 
     @Slot()
     def _do_open_plm_workbench(self) -> None:
@@ -1354,8 +1341,8 @@ class MainWindow(QMainWindow):
         # 停止 CATIA 状态监听定时器
         self._stop_catia_monitor()
 
-        # 停止 AI Agent（如果正在运行）
-        if hasattr(self, "_ai_chat_panel"):
+        # 停止 AI Agent（如果正在运行；懒加载时可能为 None）
+        if self._ai_chat_panel is not None:
             self._ai_chat_panel.stop_agent()
 
         # 关闭所有对话框和子窗口（包括 QDialog 和 QMainWindow）
@@ -1462,15 +1449,6 @@ class MainWindow(QMainWindow):
 
     def _open_mass_props_dialog(self) -> None:
         self._show_dialog("_dlg_mass_props", lambda: MassPropsDialog(self))
-
-    def _open_plm_sync_dialog(self) -> None:
-        def factory():
-            dlg = PlmSyncDialog(self)
-            # 同步运行期间暂停 CATIA 连接检查，避免 COM 调用持有 GIL 阻塞 Worker 线程
-            dlg.sync_started.connect(self._connection_timer.stop)
-            dlg.sync_done.connect(self._connection_timer.start)
-            return dlg
-        self._show_dialog("_dlg_plm_sync", factory)
 
     def _open_plm_workbench(self) -> None:
         """打开 PLM 工作台（非模态独立窗口，单例）。"""

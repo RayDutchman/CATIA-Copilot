@@ -59,7 +59,7 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
 )
-from catia_copilot.plm.api_client import PlmApiClient
+from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -82,7 +82,7 @@ _S_TAG_RULES = "PlmTagRules"
 _S_HISTORY   = "PlmSyncHistory"
 _S_WB        = "PlmWorkbench"        # 工作台专用（列可见性等）
 
-_DEFAULT_BASE_URL  = "http://127.0.0.1:8001/docdoku-plm-server-rest/api"
+_DEFAULT_BASE_URL  = "http://localhost:8010"
 _DEFAULT_LOGIN     = "admin"
 _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
@@ -181,18 +181,16 @@ class _ConnectWorker(QThread):
         try:
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
-            users = c.list_users(self._workspace) or []
-            ws_info: dict = {}
             try:
-                all_ws = c._request("GET", "/workspaces") or {}
-                admin_ids = {w.get("id") for w in (all_ws.get("administratedWorkspaces") or [])}
-                for w in (all_ws.get("allWorkspaces") or []) + (all_ws.get("administratedWorkspaces") or []):
-                    if w.get("id") == self._workspace:
-                        ws_info.update(w)
-                        break
-                ws_info["_current_user_role"] = "管理员" if self._workspace in admin_ids else "普通成员"
-            except Exception as e:
-                ws_info["_current_user_role"] = f"未知（{e}）"
+                users = c.list_users(self._workspace) or []
+            except Exception:
+                users = []
+            # plm-unified 没有 /workspaces 端点，直接构造工作区信息
+            ws_info: dict = {
+                "id":   self._workspace,
+                "name": self._workspace,
+                "_current_user_role": "已登录（plm-unified）",
+            }
             self.success.emit(self._login, users, ws_info)
         except Exception as exc:
             logger.exception("_ConnectWorker 运行异常")
@@ -1737,7 +1735,7 @@ class PlmWorkbench(QDialog):
 
         # ── 实时查询 PLM 最新状态（替代缓存数据） ─────────────────────────────
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             c = PlmApiClient(base_url)
             c.login(login, password)
             pns_to_check = [r["pn"] for r in push_rows]
@@ -1928,7 +1926,7 @@ class PlmWorkbench(QDialog):
             return
 
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             c = PlmApiClient(base_url)
             c.login(login, password)
         except Exception as exc:
@@ -2029,7 +2027,7 @@ class PlmWorkbench(QDialog):
 
         self._lbl_status.setText(f"正在查询 PLM：{pn}……")
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             c = PlmApiClient(base_url)
             c.login(login, password)
 
@@ -3596,7 +3594,7 @@ class _AttachmentDialog(QDialog):
     def _load_attachments(self) -> None:
         """查询 PLM 附件列表并填充表格（文件数量少，同步请求即可）。"""
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             client = PlmApiClient(self._base_url)
             client.login(self._login, self._password)
             self._files = client.list_part_attachments(
@@ -3641,7 +3639,7 @@ class _AttachmentDialog(QDialog):
             return
         dest = self._resolve_dest(filename)
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             client = PlmApiClient(self._base_url)
             client.login(self._login, self._password)
             client.download_attached_file(
@@ -3660,7 +3658,7 @@ class _AttachmentDialog(QDialog):
             return
         errors = []
         try:
-            from catia_copilot.plm.api_client import PlmApiClient
+            from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
             client = PlmApiClient(self._base_url)
             client.login(self._login, self._password)
         except Exception as exc:
