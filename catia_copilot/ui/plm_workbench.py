@@ -181,6 +181,7 @@ class _ConnectWorker(QThread):
         try:
             c = PlmApiClient(self._base_url)
             c.login(self._login, self._password)
+            users = c.list_users(self._workspace) or []
             ws_info: dict = {}
             try:
                 all_ws = c._request("GET", "/workspaces") or {}
@@ -192,7 +193,7 @@ class _ConnectWorker(QThread):
                 ws_info["_current_user_role"] = "管理员" if self._workspace in admin_ids else "普通成员"
             except Exception as e:
                 ws_info["_current_user_role"] = f"未知（{e}）"
-            self.success.emit(self._login, [], ws_info)
+            self.success.emit(self._login, users, ws_info)
         except Exception as exc:
             logger.exception("_ConnectWorker 运行异常")
             self.failure.emit(str(exc))
