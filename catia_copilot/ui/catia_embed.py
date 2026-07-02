@@ -81,8 +81,9 @@ DEFAULT_ANCHOR_DY = 4                  # 向下偏移（正值）
 MENU_BOM_EDIT       = 2001   # BOM 属性补全
 MENU_BOM_EXPORT     = 2002   # BOM 导出
 MENU_MASS_PROPS     = 2003   # 质量特性
-MENU_PLM_SYNC       = 2004   # 同步 BOM 到 PLM
-MENU_PLM_WORKBENCH  = 2005   # PLM 工作台
+MENU_PLM_SYNC       = 2004   # 同步 BOM 到 PLM（已废弃）
+MENU_PLM_WORKBENCH  = 2005   # PLM 工作台 (DocDoku)
+MENU_PLM_WORKBENCH_UNIFIED = 2006  # PLM 工作台 (plm-unified)
 
 # 导出相关
 MENU_EXPORT_PDF     = 2010   # CATDrawing → PDF
@@ -931,7 +932,8 @@ class CATIAEmbedManager:
         # ── 工作台 ────────────────────────────────────────────────────
         append(hmenu, MF_STRING,    MENU_BOM_EDIT,       label("bom_edit",        "BOM 工作台"))
         append(hmenu, MF_STRING,    MENU_MASS_PROPS,     label("mass_props",      "质量特性工作台"))
-        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   "PLM 工作台"))
+        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   "PLM 工作台 (DocDoku)"))
+        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH_UNIFIED, label("plm_workbench_unified", "PLM 工作台 (plm-unified)"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
         # ── 导出 ──────────────────────────────────────────────────────
         append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      "从产品导出 BOM"))
@@ -1050,6 +1052,7 @@ class CATIAEmbedManager:
             MENU_BOM_EXPORT:     "bom_export",
             MENU_MASS_PROPS:     "mass_props",
             MENU_PLM_WORKBENCH:  "plm_workbench",
+            MENU_PLM_WORKBENCH_UNIFIED: "plm_workbench_unified",
             MENU_EXPORT_PDF:     "export_pdf",
             MENU_EXPORT_STP:     "export_stp",
             MENU_DRAWING_NEW:    "drawing_new",
