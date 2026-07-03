@@ -1168,7 +1168,7 @@ def _sync_node(
         return _ref
     except PlmApiError as exc:
         _msg = str(exc)
-        _is_exists = (exc.status_code == 400 and (
+        _is_exists = ((exc.status_code in (400, 409)) and (
             "already exists" in _msg
             or "已存在" in _msg
             or "不唯一" in _msg

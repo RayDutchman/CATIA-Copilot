@@ -1435,10 +1435,8 @@ class PlmWorkbench(QDialog):
             chk_l.addWidget(chk)
             self._tbl_diff.setCellWidget(row_idx, self._DC_SEL, chk_w)
 
-            # col 1: 差异状态（合并显示警告信息）
+            # col 1: 差异状态
             st_text = status
-            if warn:
-                st_text = "⚠ " + st_text
             st_item = _item(st_text, Qt.AlignCenter)
             color = self._STATUS_COLORS.get(status, "#7f8c8d")
             st_item.setForeground(QColor(color))
@@ -1760,6 +1758,29 @@ class PlmWorkbench(QDialog):
                                         for pn in fresh_data if fresh_data[pn]})
         except Exception:
             pass  # 实时查询失败则使用缓存数据，不阻断 Push
+
+        # 实时刷新 push_rows 里各文件的保存状态（COM 查询，避免用户在 CATIA 里保存后不重扫仍报未保存）
+        try:
+            from catia_copilot.catia.connection import get_catia
+            _catia = get_catia()
+            if _catia is not None:
+                _open_docs = {}
+                for _d in _catia.Documents:
+                    try:
+                        _open_docs[_d.FullName.lower()] = _d
+                    except Exception:
+                        pass
+                for _row in push_rows:
+                    _local = _row.get("local")
+                    if _local and _local.filepath:
+                        _doc = _open_docs.get(_local.filepath.lower())
+                        if _doc is not None:
+                            try:
+                                _local.is_saved = not bool(_doc.Modified)
+                            except Exception:
+                                pass
+        except Exception:
+            pass  # COM 不可用时降级用缓存値
 
         # 检查未保存
         unsaved = [r["pn"] for r in push_rows
