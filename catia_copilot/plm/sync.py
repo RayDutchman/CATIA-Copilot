@@ -1229,7 +1229,7 @@ def _sync_node(
         uploaded_pns[pn] = _ref
         return _ref
 
-    current_login = getattr(client, "_login", None)
+    current_login = getattr(client, "_login", None) or getattr(client, "_login_name", None)
     is_mine = (current_login is not None and checkout_owner.lower() == current_login.lower())
 
     if is_mine:
@@ -1247,6 +1247,7 @@ def _sync_node(
             result.skipped += 1
             result.errors.append(f"{lbl}: 已被 {checkout_owner} 签出，已跳过")
             cb(_log_skip(f"跳过-被@{checkout_owner}", lbl))
+            uploaded_pns[pn] = (part_number, version)  # 防止同零件多层级出现时重复报警
             return part_number, version
 
         try:
