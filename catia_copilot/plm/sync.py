@@ -251,7 +251,7 @@ def _emit_text(cb, event: SyncEvent) -> None:
         cb(_log_row(event.source, "", "", event.part_number))
     elif event.type == "node_progress":
         if event.speed_kbps is not None:
-            cb(f"{event.message}  {event.speed_kbps:.1f} KB/s")
+            cb(f"{event.message}  {_fmt_speed(event.speed_kbps)}")
         else:
             cb(event.message)
     elif event.type == "node_done":
@@ -731,6 +731,13 @@ def _ljust(s: str, width: int) -> str:
 _W1 = 13   # 列1：最宽"覆盖他人签出"dw=12，+1
 _W2 = 11   # 列2：最宽"属性已写入"dw=10，+1
 _W3 = 9    # 列3：最宽"保留签出"dw=8，+1
+
+
+def _fmt_speed(kbps: float) -> str:
+    """将 KB/s 速度格式化为可读字符串，超过 1024 KB/s 自动切换为 MB/s。"""
+    if kbps >= 1024:
+        return f"{kbps / 1024:.1f} MB/s"
+    return f"{kbps:.1f} KB/s"
 
 
 def _lbl(part_number: str, name: str | None) -> str:
@@ -1415,7 +1422,7 @@ def _do_update_and_upload(
             if _elapsed > 0:
                 _fsize_kb = _os.path.getsize(fp) / 1024
                 if _fsize_kb > 0:
-                    cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
+                    cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
         except Exception as _exc:
             logger.warning(f"{lbl}: CATIA 文件上传失败 — {_exc}")
             result.errors.append(f"{lbl}: CATIA 文件上传失败 — {_exc}")
@@ -1459,7 +1466,7 @@ def _do_update_and_upload(
                     if _elapsed > 0:
                         _fsize_kb = _os.path.getsize(stp_path) / 1024
                         if _fsize_kb > 0:
-                            cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
+                            cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
             finally:
                 _pcom.CoUninitialize()
         except Exception as _exc:
@@ -1494,7 +1501,7 @@ def _do_update_and_upload(
                             if _elapsed > 0:
                                 _fsize_kb = _os.path.getsize(pdf_path) / 1024
                                 if _fsize_kb > 0:
-                                    cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
+                                    cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
                         else:
                             raise FileNotFoundError(f"PDF 文件未生成：{pdf_path}")
                     else:
@@ -1521,7 +1528,7 @@ def _do_update_and_upload(
                 if _elapsed > 0:
                     _fsize_kb = _os.path.getsize(drawing_path) / 1024
                     if _fsize_kb > 0:
-                        cb(f"  {upload_col} ({_fsize_kb/_elapsed:.1f} KB/s)")
+                        cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
             except Exception as _exc:
                 logger.warning(f"{lbl}: CATDrawing 上传失败 — {_exc}")
                 result.errors.append(f"{lbl}: CATDrawing 上传失败 — {_exc}")
@@ -1581,13 +1588,19 @@ def _do_checkin_ticket(
     cb(_log_row(ticket.source, ticket.update_col, col3, ticket.lbl))
 
     # ── 签入成功后：将 PLM_Version / PLM_Iteration 写回 CATIA 文件 ────────────
-    # ticket.iteration 是 checkout 时 PLM 返回的新迭代号；checkin 只是锁定该迭代，
-    # 不会再改变编号，直接使用即可。
+    # checkin 后重查一次真实迭代号（不同后端行为不同：
+    #   DocdokuPLM: checkout 时创建新迭代，checkin 只锁定，迭代号不变
+    #   plm-unified: checkin 时创建新迭代，就地查询才能拿到正确的号码
     if col3 == "已签入" and ticket.node.filepath and _os.path.isfile(ticket.node.filepath):
+        write_iter = ticket.iteration
+        try:
+            _, _, write_iter = client.get_latest_version(workspace, ticket.part_number)
+        except Exception:
+            pass  # 查询失败时降级用 ticket.iteration
         _write_plm_attrs_to_catia(
             ticket.node.filepath,
             ticket.version,
-            ticket.iteration,
+            write_iter,
         )
 
     # ── Tag 自动映射（checkin 后执行，不影响主流程） ─────────────────────────

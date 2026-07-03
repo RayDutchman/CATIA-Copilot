@@ -1999,7 +1999,7 @@ class PlmWorkbench(QDialog):
         self._lbl_status.setText(f"开始下载 {len(dl_items)} 个文件……")
 
         w = _PullWorker(base_url, login, password, workspace)
-        w.file_progress.connect(lambda fn, dl, tot, spd: self._lbl_speed.setText(f"{spd/1024:.1f} KB/s"))
+        w.file_progress.connect(lambda fn, dl, tot, spd: self._lbl_speed.setText(f"{spd/1024/1024:.1f} MB/s" if spd >= 1048576 else f"{spd/1024:.1f} KB/s"))
         w.file_done.connect(lambda fn, dest: self._pgb.setValue(self._pgb.value() + 1))
         w.all_done.connect(self._on_pull_all_done)
         w.failure.connect(lambda err: (
@@ -2780,9 +2780,9 @@ class PlmWorkbench(QDialog):
             return
 
         # 解析上传速度（格式：xx.x KB/s 或 xxx KB/s）
-        _speed_m = _re.search(r'(\d+(?:\.\d+)?)\s*KB/s', stripped, _re.IGNORECASE)
+        _speed_m = _re.search(r'(\d+(?:\.\d+)?)\s*(KB|MB)/s', stripped, _re.IGNORECASE)
         if _speed_m:
-            self._lbl_upload_speed.setText(f"{_speed_m.group(1)} KB/s")
+            self._lbl_upload_speed.setText(f"{_speed_m.group(1)} {_speed_m.group(2)}/s")
 
         extracted_pn: str | None = None
         is_terminal = False
@@ -4094,7 +4094,7 @@ class _PullDialog(QDialog):
             self._lbl_status.setText(
                 f"({current}/{self._dl_total})  {fname}  {mb_dl:.1f} MB"
             )
-        self._lbl_speed.setText(f"{kb_s:.1f} KB/s")
+        self._lbl_speed.setText(f"{kb_s/1024:.1f} MB/s" if kb_s >= 1024 else f"{kb_s:.1f} KB/s")
 
     def _on_file_done(self, fname: str, dest: str) -> None:
         self._dl_done += 1
