@@ -317,21 +317,12 @@ class PlmApiClient:
     def get_part_head(self, workspace: str, part_number: str) -> dict:
         """获取零件最新版本的完整 PartRevision 响应字典。
 
-        直接 GET /parts/{pn}-{ver}，依次尝试版本 A/B/C，返回第一个存在版本的完整响应。
+        使用 GET /parts/{pn}/latest-revision 一次精确查询，不再穷举 A~Z 版本。
         若零件不存在则抛 PlmApiError(404)。
-        比 search_parts 更可靠：精确匹配，不受前缀/模糊匹配影响。
         """
         ws = urllib.parse.quote(workspace)
         pn = urllib.parse.quote(part_number)
-        for ver in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            try:
-                result = self._request("GET", f"/workspaces/{ws}/parts/{pn}-{ver}") or {}
-                return result
-            except PlmApiError as exc:
-                if exc.status_code == 404:
-                    continue
-                raise
-        raise PlmApiError(f"零件 {part_number} 不存在（A~Z 均未找到）", 404)
+        return self._request("GET", f"/workspaces/{ws}/parts/{pn}/latest-revision") or {}
 
     def update_iteration(
         self,
