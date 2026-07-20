@@ -1166,8 +1166,24 @@ class PlmWorkbench(QDialog):
             QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
             return
 
-        # Step 3: 层级树（同件号合并，保留父子关系）
+        # Step 3: 层级树（同件号合并，保留父子关系，含根节点）
         rows = flatten_tree_hierarchical(tree)
+
+        # 将根装配体作为顶层节点
+        root_row = {
+            "instance_name": tree.get("instance_name", ""),
+            "part_number": tree.get("part_number", ""),
+            "path": tree.get("path", "0"),
+            "level": 0,
+            "is_assembly": tree.get("is_assembly", True),
+            "quantity": 1,
+            "instances": [{"matrix": tree.get("matrix"), "label": tree.get("instance_name", "")}],
+            "doc_path": tree.get("doc_path", ""),
+            "builtin": dict(tree.get("builtin", {})),
+            "user_properties": dict(tree.get("user_properties", {})),
+            "children": rows,
+        }
+        rows = [root_row]
         # 同时生成平铺列表用于 BOM 匹配
         flat_rows = flatten_tree(tree)
         self._log_to_conn(f"CAD入口：装配树 — {len(flat_rows)} 个零件节点", "ok")
@@ -1288,22 +1304,22 @@ class PlmWorkbench(QDialog):
         self._cad_user_cols = list(PRESET_USER_REF_PROPERTIES)
 
         # ── 列定义 ─────────────────────────────────────────────────────────────
-        self._CAD_COL_PN      = 0   # 件号
-        self._CAD_COL_QTY     = 1   # 用量
-        self._CAD_COL_REV     = 2   # 版本
-        self._CAD_COL_DEF     = 3   # 定义
-        self._CAD_COL_NOM     = 4   # 术语
-        self._CAD_COL_DESC    = 5   # 描述
-        # 用户属性动态列 6 ~ 5+N
-        self._CAD_COL_USER_START = 6
-        self._CAD_COL_CAD_ATT  = 6 + len(self._cad_user_cols)   # CAD附件
-        self._CAD_COL_PROD_ATT = 7 + len(self._cad_user_cols)   # 生产附件
-        self._CAD_COL_PDM      = 8 + len(self._cad_user_cols)   # PDM匹配
-        self._CAD_COL_MATCH    = 9 + len(self._cad_user_cols)   # 匹配状态
-        self._CAD_COL_CO       = 10 + len(self._cad_user_cols)  # 签出状态
-        self._CAD_COL_OP       = 11 + len(self._cad_user_cols)  # 操作
+        self._CAD_COL_LVL     = 0   # 层级
+        self._CAD_COL_PN      = 1   # 件号
+        self._CAD_COL_QTY     = 2   # 用量
+        self._CAD_COL_REV     = 3   # 版本
+        self._CAD_COL_DEF     = 4   # 定义
+        self._CAD_COL_NOM     = 5   # 术语
+        self._CAD_COL_DESC    = 6   # 描述
+        self._CAD_COL_USER_START = 7
+        self._CAD_COL_CAD_ATT  = 7 + len(self._cad_user_cols)
+        self._CAD_COL_PROD_ATT = 8 + len(self._cad_user_cols)
+        self._CAD_COL_PDM      = 9 + len(self._cad_user_cols)
+        self._CAD_COL_MATCH    = 10 + len(self._cad_user_cols)
+        self._CAD_COL_CO       = 11 + len(self._cad_user_cols)
+        self._CAD_COL_OP       = 12 + len(self._cad_user_cols)
 
-        headers = ["件号", "用量", "版本", "定义", "术语", "描述"]
+        headers = ["层级", "件号", "用量", "版本", "定义", "术语", "描述"]
         headers += self._cad_user_cols
         headers += ["CAD附件", "生产附件", "PDM匹配", "匹配状态", "签出状态", "操作"]
 
@@ -1323,8 +1339,8 @@ class PlmWorkbench(QDialog):
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Stretch)
         for ci, w in [
-            (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60), (self._CAD_COL_DEF, 80),
-            (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
+            (self._CAD_COL_LVL, 50), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
+            (self._CAD_COL_DEF, 80), (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
             (self._CAD_COL_CAD_ATT, 70), (self._CAD_COL_PROD_ATT, 70),
             (self._CAD_COL_PDM, 120), (self._CAD_COL_MATCH, 70),
             (self._CAD_COL_CO, 70), (self._CAD_COL_OP, 140),
@@ -1352,6 +1368,10 @@ class PlmWorkbench(QDialog):
                 label = f"{pn}  [{inst_name}]"
 
             node = QTreeWidgetItem(parent or tree)
+            # 层级（深度数字）
+            level = row.get("level", 0)
+            node.setText(self._CAD_COL_LVL, str(level))
+            node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
             node.setText(self._CAD_COL_PN, label)
             node.setText(self._CAD_COL_QTY, qty)
             node.setTextAlignment(self._CAD_COL_QTY, Qt.AlignCenter)
