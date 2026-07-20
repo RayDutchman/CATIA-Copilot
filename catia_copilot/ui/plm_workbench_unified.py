@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTreeWidgetItem,
@@ -739,6 +740,16 @@ class PlmWorkbench(QDialog):
         root.addWidget(self._adv_widget)
 
         root.addWidget(self._build_diff_table(), 1)
+        # 内容区：QStackedWidget 切换 diff 表 / CAD入口 表
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(self._build_diff_table())
+        # CAD入口页先放占位，点击时动态构建
+        self._cad_page = QWidget()
+        self._cad_page_layout = QVBoxLayout(self._cad_page)
+        self._cad_page_layout.setContentsMargins(0, 0, 0, 0)
+        self._cad_page_layout.setSpacing(0)
+        self._content_stack.addWidget(self._cad_page)
+        root.addWidget(self._content_stack, 1)
 
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine); sep2.setFrameShadow(QFrame.Sunken)
         root.addWidget(sep2)
@@ -1123,10 +1134,9 @@ class PlmWorkbench(QDialog):
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
 
     def _on_cad_entry(self) -> None:
-        """CAD入口：CATIA 装配树 → myPDM BOM 匹配。"""
+        """CAD入口：CATIA 装配树 → myPDM BOM 匹配 → 内联编辑表格。"""
         base_url, login, password, _ws, backend = self._read_conn()
         if backend != _BACKEND_MYPDM:
-            QMessageBox.information(self, "CAD入口", "CAD入口仅支持 myPDM 后端。")
             return
         if not login or not password:
             QMessageBox.warning(self, "未登录", "请先在设置中配置 myPDM 并测试连接。")
@@ -1137,24 +1147,18 @@ class PlmWorkbench(QDialog):
         status = detect_catia_status()
         if not status.get("active"):
             QMessageBox.warning(self, "CATIA 未运行", "请先启动 CATIA V5。")
-            self._log_to_conn("CAD入口：CATIA 未运行", "warn")
             return
         if not status.get("has_document"):
             QMessageBox.warning(self, "未打开文档", "请在 CATIA 中打开一个装配体 (.CATProduct)。")
-            self._log_to_conn("CAD入口：CATIA 中未打开文档", "warn")
             return
-
-        doc_name = status.get("doc_name", "?")
-        doc_type = status.get("doc_type", "?")
-        self._log_to_conn(f"CAD入口：CATIA 已连接 — {doc_name} ({doc_type})", "ok")
+        self._log_to_conn(f"CAD入口：CATIA 已连接 — {status.get('doc_name', '?')}", "ok")
 
         # Step 2: 读取装配结构
         self._log_to_conn("CAD入口：正在读取装配结构……")
         try:
             tree = read_assembly_tree()
         except Exception as e:
-            self._log_to_conn(f"CAD入口：读取装配结构失败 — {e}", "error")
-            QMessageBox.critical(self, "读取失败", f"读取 CATIA 装配结构失败：\n{e}")
+            self._log_to_conn(f"CAD入口：读取失败 — {e}", "error")
             return
         if tree is None:
             QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
@@ -1162,19 +1166,17 @@ class PlmWorkbench(QDialog):
 
         # Step 3: 扁平化
         rows = flatten_tree(tree)
-        self._log_to_conn(f"CAD入口：装配树扁平化完成 — {len(rows)} 个零件节点", "ok")
+        self._log_to_conn(f"CAD入口：装配树扁平化 — {len(rows)} 个零件节点", "ok")
 
-        # Step 4: BOM 匹配 myPDM
-        self._log_to_conn("CAD入口：正在与 myPDM 进行 BOM 匹配……")
+        # Step 4: BOM 匹配
+        self._log_to_conn("CAD入口：正在进行 myPDM BOM 匹配……")
         client = MyPdmApiClient(base_url)
         try:
             client.login(login, password)
         except MyPdmApiError as e:
             self._log_to_conn(f"CAD入口：myPDM 登录失败 — {e}", "error")
-            QMessageBox.critical(self, "登录失败", f"myPDM 登录失败：\n{e}")
             return
 
-        # 收集去重的 (code, version) 对
         seen = set()
         items = []
         for row in rows:
@@ -1189,83 +1191,288 @@ class PlmWorkbench(QDialog):
             match_results = client.cad_bom_match(items)
         except MyPdmApiError as e:
             self._log_to_conn(f"CAD入口：BOM 匹配失败 — {e}", "error")
-            QMessageBox.critical(self, "匹配失败", f"myPDM BOM 匹配失败：\n{e}")
             return
-
-        # Step 5: 显示结果
-        matched = sum(1 for r in match_results if r.match_status == "matched")
-        new_count = sum(1 for r in match_results if r.match_status == "new")
-        conflict = sum(1 for r in match_results if r.match_status == "conflict")
-
-        self._log_to_conn(
-            f"CAD入口：BOM 匹配完成 — 已匹配 {matched} / 可新建 {new_count} / 冲突 {conflict}",
-            "ok",
-        )
-
-        # 弹出结果对话框
-        dlg = QDialog(self)
-        dlg.setWindowTitle("CAD入口 — BOM 匹配结果")
-        dlg.resize(800, 500)
-        dlg_layout = QVBoxLayout(dlg)
-
-        summary = QLabel(f"✅ 已匹配 {matched}    🆕 可新建 {new_count}    ⚠ 冲突 {conflict}")
-        summary.setStyleSheet("font-size: 13px; font-weight: bold; padding: 4px;")
-        dlg_layout.addWidget(summary)
-
-        table = QTableWidget(len(rows), 6)
-        table.setHorizontalHeaderLabels(["层级", "件号", "用量", "匹配状态", "签出状态", "PDM 名称"])
-        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setAlternatingRowColors(True)
-        hdr = table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        hdr.resizeSection(0, 80)
-        hdr.resizeSection(2, 50)
-        hdr.resizeSection(3, 80)
-        hdr.resizeSection(4, 80)
-        hdr.resizeSection(5, 150)
 
         # 构建 code→match 映射
         match_map = {}
         for r in match_results:
             match_map[r.code] = r
 
+        matched = sum(1 for r in match_results if r.match_status == "matched")
+        new_count = sum(1 for r in match_results if r.match_status == "new")
+        conflict = sum(1 for r in match_results if r.match_status == "conflict")
+        checked_out = sum(1 for r in match_results if r.checkout_status == "checked_out")
+        self._log_to_conn(
+            f"CAD入口：BOM 匹配完成 — 已匹配 {matched} / 可新建 {new_count} / 冲突 {conflict} / 已签出 {checked_out}",
+            "ok",
+        )
+
+        # 存储数据
+        self._cad_rows = rows
+        self._cad_match_map = match_map
+        self._cad_client = client
+
+        # Step 5: 构建内联表格
+        self._build_cad_match_page()
+
+        self._content_stack.setCurrentIndex(1)
+
+    def _on_cad_back(self) -> None:
+        """从 CAD入口 返回同步视图。"""
+        self._content_stack.setCurrentIndex(0)
+
+    def _build_cad_match_page(self) -> None:
+        """构建 CAD入口 BOM 匹配内联页面。"""
+        # 清空旧内容
+        while self._cad_page_layout.count():
+            item = self._cad_page_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # ── 顶部统计栏 ─────────────────────────────────────────────────────────
+        summary_bar = QHBoxLayout()
+        summary_bar.setContentsMargins(8, 4, 8, 4)
+        summary_bar.setSpacing(12)
+
+        matched = sum(1 for r in self._cad_match_map.values() if r.match_status == "matched")
+        new_count = sum(1 for r in self._cad_match_map.values() if r.match_status == "new")
+        conflict = sum(1 for r in self._cad_match_map.values() if r.match_status == "conflict")
+        checked_out = sum(1 for r in self._cad_match_map.values() if r.checkout_status == "checked_out")
+
+        for text, color in [("已匹配", "#d4edda"), ("可新建", "#fff3cd"), ("冲突", "#f8d7da"), ("已签出", "#d1ecf1")]:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(f"background:{color}; border-radius:4px; padding:2px 8px; font-weight:bold;")
+            summary_bar.addWidget(lbl)
+
+        summary_bar.addStretch()
+        btn_refresh = QPushButton("🔄 重新匹配")
+        btn_refresh.clicked.connect(self._on_cad_refresh)
+        btn_checkin_all = QPushButton("✅ 全部签入")
+        btn_checkin_all.clicked.connect(self._on_cad_checkin_all)
+        btn_back = QPushButton("← 返回")
+        btn_back.clicked.connect(self._on_cad_back)
+        summary_bar.addWidget(btn_refresh)
+        summary_bar.addWidget(btn_checkin_all)
+        summary_bar.addWidget(btn_back)
+
+        self._cad_match_summary = QWidget()
+        self._cad_match_summary.setLayout(summary_bar)
+        self._cad_page_layout.addWidget(self._cad_match_summary)
+
+        # ── BOM 匹配表格 ────────────────────────────────────────────────────────
+        cols = ["层级", "件号", "用量", "版本", "定义", "术语", "描述", "PDM匹配", "匹配状态", "签出状态", "操作"]
+        self._cad_match_table = QTableWidget(len(self._cad_rows), len(cols))
+        self._cad_match_table.setHorizontalHeaderLabels(cols)
+        self._cad_match_table.setAlternatingRowColors(True)
+        self._cad_match_table.verticalHeader().setDefaultSectionSize(30)
+        self._cad_match_table.verticalHeader().setVisible(False)
+
+        hdr = self._cad_match_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # 层级
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 件号
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)   # 用量
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)   # 版本
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # 定义
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # 术语
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)   # 描述
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)  # PDM匹配
+        hdr.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)   # 匹配状态
+        hdr.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)   # 签出状态
+        hdr.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # 操作
+        for i, w in enumerate([60, 0, 50, 60, 80, 80, 80, 0, 70, 70, 160]):
+            if i in (1, 7):
+                continue  # stretch columns
+            hdr.resizeSection(i, w)
+
+        self._cad_page_layout.addWidget(self._cad_match_table, 1)
+        self._populate_cad_match_table()
+
+    def _populate_cad_match_table(self) -> None:
+        """填充 CAD BOM 匹配表格数据。"""
+        table = self._cad_match_table
+        rows = self._cad_rows
+        match_map = self._cad_match_map
+
         for i, row in enumerate(rows):
             pn = row.get("part_number", "")
+            builtin = row.get("builtin", {})
             match = match_map.get(pn)
-            status_text = match.match_status if match else "—"
-            co_text = match.checkout_status if match and match.checkout_status else "—"
-            name_text = match.name if match else ""
 
-            table.setItem(i, 0, QTableWidgetItem(row.get("path", "")))
-            table.setItem(i, 1, QTableWidgetItem(pn))
-            table.setItem(i, 2, QTableWidgetItem(str(row.get("quantity", 1))))
-            table.setItem(i, 3, QTableWidgetItem(status_text))
-            table.setItem(i, 4, QTableWidgetItem(co_text))
-            table.setItem(i, 5, QTableWidgetItem(name_text))
+            # 文本列
+            items_text = [
+                (0, row.get("path", "")),
+                (1, pn),
+                (2, str(row.get("quantity", 1))),
+                (3, builtin.get("Revision", "")),
+                (4, builtin.get("Definition", "")),
+                (5, builtin.get("Nomenclature", "")),
+                (6, builtin.get("Description", "")),
+                (7, match.name if match else "—"),
+                (8, match.match_status if match else "—"),
+                (9, match.checkout_status if match and match.checkout_status else "—"),
+            ]
+            for ci, text in items_text:
+                item = QTableWidgetItem(text)
+                # 属性列（3-6）可编辑
+                if ci in (3, 4, 5, 6):
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                else:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                table.setItem(i, ci, item)
 
             # 行颜色
             if match:
+                bg = None
                 if match.match_status == "new":
-                    for c in range(6):
-                        if item := table.item(i, c):
-                            item.setBackground(QColor("#fff3cd"))
+                    bg = QColor("#fff3cd")
                 elif match.checkout_status == "checked_out":
-                    for c in range(6):
+                    bg = QColor("#d1ecf1")
+                if bg:
+                    for c in range(11):
                         if item := table.item(i, c):
-                            item.setBackground(QColor("#d1ecf1"))
+                            item.setBackground(bg)
 
-        dlg_layout.addWidget(table)
+            # 操作按钮
+            btn_container = QWidget()
+            btn_layout = QHBoxLayout(btn_container)
+            btn_layout.setContentsMargins(2, 2, 2, 2)
+            btn_layout.setSpacing(2)
 
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        btns.rejected.connect(dlg.accept)
-        dlg_layout.addWidget(btns)
+            if match:
+                if match.match_status == "new":
+                    btn_create = QPushButton("创建零件")
+                    btn_create.setFixedWidth(70)
+                    btn_create.clicked.connect(lambda checked, r=row: self._on_cad_create_part(r))
+                    btn_layout.addWidget(btn_create)
+                elif match.match_status == "matched":
+                    if match.checkout_status in ("not_checked_out", None):
+                        btn_co = QPushButton("签出")
+                        btn_co.setFixedWidth(48)
+                        btn_co.clicked.connect(lambda checked, rid=match.revision_id, ri=i: self._on_cad_checkout(rid, ri))
+                        btn_layout.addWidget(btn_co)
+                        btn_pull = QPushButton("属性←")
+                        btn_pull.setFixedWidth(52)
+                        btn_pull.clicked.connect(lambda checked, r=row, m=match: self._on_cad_pull_attrs(r, m))
+                        btn_layout.addWidget(btn_pull)
+                    elif match.checkout_status == "checked_out":
+                        btn_ci = QPushButton("签入")
+                        btn_ci.setFixedWidth(48)
+                        btn_ci.clicked.connect(lambda checked, rid=match.revision_id, ri=i: self._on_cad_checkin(rid, ri))
+                        btn_layout.addWidget(btn_ci)
+                        btn_push = QPushButton("属性→")
+                        btn_push.setFixedWidth(52)
+                        btn_push.clicked.connect(lambda checked, r=row, m=match: self._on_cad_push_attrs(r, m))
+                        btn_layout.addWidget(btn_push)
+            btn_layout.addStretch()
+            table.setCellWidget(i, 10, btn_container)
 
-        dlg.exec()
+    def _on_cad_checkout(self, revision_id: str, row_idx: int) -> None:
+        """签出指定版本的零件。"""
+        if not revision_id:
+            QMessageBox.warning(self, "签出", "缺少 revision_id，无法签出。")
+            return
+        try:
+            self._cad_client.checkout(revision_id)
+            self._log_to_conn(f"CAD入口：签出成功", "ok")
+            # 更新本地状态
+            pn = self._cad_rows[row_idx].get("part_number", "")
+            if pn in self._cad_match_map:
+                m = self._cad_match_map[pn]
+                self._cad_match_map[pn] = type(m)(**{**m.__dict__, "checkout_status": "checked_out"})
+            self._populate_cad_match_table()
+        except Exception as e:
+            QMessageBox.critical(self, "签出失败", str(e))
+
+    def _on_cad_checkin(self, revision_id: str, row_idx: int) -> None:
+        """签入指定版本的零件。"""
+        if not revision_id:
+            return
+        try:
+            self._cad_client.checkin(revision_id)
+            self._log_to_conn(f"CAD入口：签入成功", "ok")
+            pn = self._cad_rows[row_idx].get("part_number", "")
+            if pn in self._cad_match_map:
+                m = self._cad_match_map[pn]
+                self._cad_match_map[pn] = type(m)(**{**m.__dict__, "checkout_status": "not_checked_out"})
+            self._populate_cad_match_table()
+        except Exception as e:
+            QMessageBox.critical(self, "签入失败", str(e))
+
+    def _on_cad_create_part(self, row: dict) -> None:
+        """在 myPDM 中创建零件。"""
+        pn = row.get("part_number", "").strip()
+        builtin = row.get("builtin", {})
+        name = builtin.get("Nomenclature", pn)
+        is_assembly = row.get("is_assembly", False)
+        ptype = "assembly" if is_assembly else "part"
+        try:
+            from catia_copilot.plm.my_pdm_schemas import PartCreateRequest
+            req = PartCreateRequest(code=pn, name=name, type=ptype)
+            result = self._cad_client.create_part(req)
+            self._log_to_conn(f"CAD入口：零件已创建 — {pn}", "ok")
+            # 更新本地匹配状态
+            if pn in self._cad_match_map:
+                m = self._cad_match_map[pn]
+                self._cad_match_map[pn] = type(m)(**{
+                    **m.__dict__,
+                    "match_status": "matched",
+                    "revision_id": result.id,
+                    "version": result.version,
+                    "checkout_status": "checked_out",
+                })
+            self._populate_cad_match_table()
+        except Exception as e:
+            QMessageBox.critical(self, "创建失败", str(e))
+
+    def _on_cad_push_attrs(self, row: dict, match) -> None:
+        """属性→：将 CATIA 属性推送到 PDM。"""
+        if not match.revision_id:
+            return
+        pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        try:
+            self._cad_client.update_part(match.revision_id, {
+                "code": pn,
+                "name": builtin.get("Nomenclature", pn),
+                "spec": row.get("user_properties", {}).get("规格型号", ""),
+            })
+            self._log_to_conn(f"CAD入口：属性已推送 — {pn}", "ok")
+        except Exception as e:
+            QMessageBox.critical(self, "推送失败", str(e))
+
+    def _on_cad_pull_attrs(self, row: dict, match) -> None:
+        """属性←：从 PDM 拉取属性到显示。"""
+        if not match.revision_id:
+            return
+        try:
+            part = self._cad_client.get_part(match.revision_id)
+            if part:
+                spec = part.get("spec", "")
+                QMessageBox.information(self, "属性←", f"PDM 规格型号: {spec}")
+                self._log_to_conn(f"CAD入口：属性已拉取 — 规格型号: {spec}", "ok")
+        except Exception as e:
+            QMessageBox.critical(self, "拉取失败", str(e))
+
+    def _on_cad_refresh(self) -> None:
+        """重新执行 CAD入口 流程。"""
+        self._on_cad_entry()
+
+    def _on_cad_checkin_all(self) -> None:
+        """批量签入所有已签出的零件。"""
+        count = 0
+        for pn, match in list(self._cad_match_map.items()):
+            if match.checkout_status == "checked_out" and match.revision_id:
+                try:
+                    self._cad_client.checkin(match.revision_id)
+                    self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "not_checked_out"})
+                    count += 1
+                except Exception as e:
+                    self._log_to_conn(f"CAD入口：签入失败 {pn} — {e}", "warn")
+        if count:
+            self._log_to_conn(f"CAD入口：全部签入完成 — {count} 个", "ok")
+            self._populate_cad_match_table()
+        else:
+            QMessageBox.information(self, "全部签入", "没有需要签入的零件。")
 
         # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
         s_after = QSettings(_S_ORG, _S_PLM_CFG)
