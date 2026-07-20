@@ -67,6 +67,7 @@ from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
 from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
 from catia_copilot.catia.assembly_reader import detect_catia_status, read_assembly_tree
 from catia_copilot.ui.flatten_tree import flatten_tree, flatten_tree_hierarchical
+import json as _json
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -99,6 +100,18 @@ _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
 
 _MAX_HISTORY = 20
+
+# ── 字段映射 ──────────────────────────────────────────────────────────────────
+
+def _load_field_mapping() -> dict:
+    """加载 CATIA-PDM 字段映射配置。"""
+    import os as _os
+    mapping_path = _os.path.join(_os.path.dirname(__file__), "..", "catia", "field_mapping.json")
+    try:
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {"builtin": {}, "properties": {}}
 
 # 差异状态计算：版本+迭代号相同时，比较本地 mtime 与 PLM checkInDate 的容差
 # 60 秒内视为相等，避免文件系统时间精度差异导致误判
@@ -1166,8 +1179,11 @@ class PlmWorkbench(QDialog):
             QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
             return
 
-        # Step 3: 层级树（同件号合并，保留父子关系，含根节点）
+        # Step 3: 层级树
         rows = flatten_tree_hierarchical(tree)
+
+        # 加载字段映射
+        self._cad_field_map = _load_field_mapping()
 
         # 将根装配体作为顶层节点
         root_row = {
@@ -1587,24 +1603,35 @@ class PlmWorkbench(QDialog):
     def _on_cad_push_all(self) -> None:
         """批量推送所有已签出零件的属性到 PDM。"""
         count = 0
+        field_map = getattr(self, "_cad_field_map", {})
+        bm = field_map.get("builtin", {})
+        pm = field_map.get("properties", {})
         for row in self._cad_rows:
             pn = row.get("part_number", "")
             match = self._cad_match_map.get(pn)
             if match and match.checkout_status == "checked_out" and match.revision_id:
                 builtin = row.get("builtin", {})
+                user_props = row.get("user_properties", {})
+                payload = {}
+                for catia_key, pdm_key in bm.items():
+                    val = builtin.get(catia_key, "")
+                    if val:
+                        payload[pdm_key] = val
+                for catia_key, pdm_key in pm.items():
+                    val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+                    if val:
+                        payload[pdm_key] = val
+                if not payload:
+                    continue
                 try:
-                    self._cad_client.update_part(match.revision_id, {
-                        "code": pn,
-                        "name": builtin.get("Nomenclature", pn),
-                        "spec": row.get("user_properties", {}).get("规格型号", ""),
-                    })
+                    self._cad_client.update_part(match.revision_id, payload)
                     count += 1
                 except Exception as e:
                     self._log_to_conn(f"CAD入口：推送失败 {pn} — {e}", "warn")
         if count:
             self._log_to_conn(f"CAD入口：批量推送完成 — {count} 个", "ok")
         else:
-            QMessageBox.information(self, "批量推送", "没有可推送的零件（需要已签出状态）。")
+            QMessageBox.information(self, "批量推送", "没有可推送的零件（需要已签出状态且有待推送属性）。")
 
     def _on_cad_upload_source(self, pn: str, row: dict) -> None:
         """上传 CATIA 源文件到 PDM CAD附件。"""
@@ -1719,31 +1746,61 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(self, "创建失败", str(e))
 
     def _on_cad_push_attrs(self, row: dict, match) -> None:
-        """属性→：将 CATIA 属性推送到 PDM。"""
-        if not match.revision_id:
+        """属性→：按字段映射将 CATIA 属性推送到 PDM。"""
+        if not match or not match.revision_id:
             return
         pn = row.get("part_number", "")
         builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+        field_map = getattr(self, "_cad_field_map", {})
+
+        # 按映射构建 payload
+        payload: dict = {}
+        bm = field_map.get("builtin", {})
+        pm = field_map.get("properties", {})
+
+        # 内置属性映射
+        for catia_key, pdm_key in bm.items():
+            val = builtin.get(catia_key, "")
+            if val:
+                payload[pdm_key] = val
+
+        # 用户属性映射
+        for catia_key, pdm_key in pm.items():
+            # 先查用户属性，再查内置属性
+            val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+            if val:
+                payload[pdm_key] = val
+
+        if not payload:
+            QMessageBox.information(self, "属性→", "未找到可推送的属性。")
+            return
         try:
-            self._cad_client.update_part(match.revision_id, {
-                "code": pn,
-                "name": builtin.get("Nomenclature", pn),
-                "spec": row.get("user_properties", {}).get("规格型号", ""),
-            })
-            self._log_to_conn(f"CAD入口：属性已推送 — {pn}", "ok")
+            self._cad_client.update_part(match.revision_id, payload)
+            self._log_to_conn(f"CAD入口：属性已推送 — {pn} ({list(payload.keys())})", "ok")
         except Exception as e:
             QMessageBox.critical(self, "推送失败", str(e))
 
     def _on_cad_pull_attrs(self, row: dict, match) -> None:
-        """属性←：从 PDM 拉取属性到显示。"""
+        """属性←：从 PDM 拉取属性。"""
         if not match.revision_id:
             return
         try:
             part = self._cad_client.get_part(match.revision_id)
             if part:
-                spec = part.get("spec", "")
-                QMessageBox.information(self, "属性←", f"PDM 规格型号: {spec}")
-                self._log_to_conn(f"CAD入口：属性已拉取 — 规格型号: {spec}", "ok")
+                field_map = getattr(self, "_cad_field_map", {})
+                pm = field_map.get("properties", {})
+                # 展示 PDM 侧的可拉取字段
+                info_lines = []
+                for catia_key, pdm_key in pm.items():
+                    v = part.get(pdm_key, "")
+                    if v:
+                        info_lines.append(f"  {catia_key} ← {v}")
+                if info_lines:
+                    QMessageBox.information(self, "属性←", "PDM 属性：\n" + "\n".join(info_lines))
+                else:
+                    QMessageBox.information(self, "属性←", "PDM 无自定义属性数据。")
+                self._log_to_conn(f"CAD入口：属性已拉取 — {match.code}", "ok")
         except Exception as e:
             QMessageBox.critical(self, "拉取失败", str(e))
 
