@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QMenu,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -64,7 +65,7 @@ from catia_copilot.constants import (
 from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
 from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
 from catia_copilot.catia.assembly_reader import detect_catia_status, read_assembly_tree
-from catia_copilot.ui.flatten_tree import flatten_tree
+from catia_copilot.ui.flatten_tree import flatten_tree, flatten_tree_hierarchical
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -1164,11 +1165,13 @@ class PlmWorkbench(QDialog):
             QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
             return
 
-        # Step 3: 扁平化
-        rows = flatten_tree(tree)
-        self._log_to_conn(f"CAD入口：装配树扁平化 — {len(rows)} 个零件节点", "ok")
+        # Step 3: 层级树（同件号合并，保留父子关系）
+        rows = flatten_tree_hierarchical(tree)
+        # 同时生成平铺列表用于 BOM 匹配
+        flat_rows = flatten_tree(tree)
+        self._log_to_conn(f"CAD入口：装配树 — {len(flat_rows)} 个零件节点", "ok")
 
-        # Step 4: BOM 匹配
+        # Step 4: BOM 匹配（用平铺列表去重）
         self._log_to_conn("CAD入口：正在进行 myPDM BOM 匹配……")
         client = MyPdmApiClient(base_url)
         try:
@@ -1179,7 +1182,7 @@ class PlmWorkbench(QDialog):
 
         seen = set()
         items = []
-        for row in rows:
+        for row in flat_rows:
             code = row.get("part_number", "").strip()
             if not code or code in seen:
                 continue
@@ -1193,7 +1196,6 @@ class PlmWorkbench(QDialog):
             self._log_to_conn(f"CAD入口：BOM 匹配失败 — {e}", "error")
             return
 
-        # 构建 code→match 映射
         match_map = {}
         for r in match_results:
             match_map[r.code] = r
@@ -1208,7 +1210,8 @@ class PlmWorkbench(QDialog):
         )
 
         # 存储数据
-        self._cad_rows = rows
+        self._cad_rows = flat_rows
+        self._cad_tree_rows = rows
         self._cad_match_map = match_map
         self._cad_client = client
 
@@ -1222,7 +1225,7 @@ class PlmWorkbench(QDialog):
         self._content_stack.setCurrentIndex(0)
 
     def _build_cad_match_page(self) -> None:
-        """构建 CAD入口 BOM 匹配内联页面。"""
+        """构建 CAD入口 BOM 匹配树形页面。"""
         # 清空旧内容
         while self._cad_page_layout.count():
             item = self._cad_page_layout.takeAt(0)
@@ -1239,9 +1242,15 @@ class PlmWorkbench(QDialog):
         conflict = sum(1 for r in self._cad_match_map.values() if r.match_status == "conflict")
         checked_out = sum(1 for r in self._cad_match_map.values() if r.checkout_status == "checked_out")
 
-        for text, color in [("已匹配", "#d4edda"), ("可新建", "#fff3cd"), ("冲突", "#f8d7da"), ("已签出", "#d1ecf1")]:
+        counts = [
+            (f"已匹配 {matched}", "#d4edda"),
+            (f"可新建 {new_count}", "#fff3cd"),
+            (f"冲突 {conflict}", "#f8d7da"),
+            (f"已签出 {checked_out}", "#d1ecf1"),
+        ]
+        for text, color in counts:
             lbl = QLabel(text)
-            lbl.setStyleSheet(f"background:{color}; border-radius:4px; padding:2px 8px; font-weight:bold;")
+            lbl.setStyleSheet(f"background:{color}; border-radius:3px; padding:2px 8px; font-weight:bold; font-size:11px;")
             summary_bar.addWidget(lbl)
 
         summary_bar.addStretch()
@@ -1251,74 +1260,68 @@ class PlmWorkbench(QDialog):
         btn_checkin_all.clicked.connect(self._on_cad_checkin_all)
         btn_back = QPushButton("← 返回")
         btn_back.clicked.connect(self._on_cad_back)
-        summary_bar.addWidget(btn_refresh)
-        summary_bar.addWidget(btn_checkin_all)
-        summary_bar.addWidget(btn_back)
+        for b in (btn_refresh, btn_checkin_all, btn_back):
+            b.setFixedHeight(26)
+            summary_bar.addWidget(b)
 
         self._cad_match_summary = QWidget()
         self._cad_match_summary.setLayout(summary_bar)
         self._cad_page_layout.addWidget(self._cad_match_summary)
 
-        # ── BOM 匹配表格 ────────────────────────────────────────────────────────
-        cols = ["层级", "件号", "用量", "版本", "定义", "术语", "描述", "PDM匹配", "匹配状态", "签出状态", "操作"]
-        self._cad_match_table = QTableWidget(len(self._cad_rows), len(cols))
-        self._cad_match_table.setHorizontalHeaderLabels(cols)
-        self._cad_match_table.setAlternatingRowColors(True)
-        self._cad_match_table.verticalHeader().setDefaultSectionSize(30)
-        self._cad_match_table.verticalHeader().setVisible(False)
+        # ── BOM 匹配树 ─────────────────────────────────────────────────────────
+        self._cad_tree = QTreeWidget()
+        self._cad_tree.setHeaderLabels([
+            "零件编号", "版本", "定义", "术语", "用量", "PDM匹配", "匹配状态", "签出状态",
+        ])
+        self._cad_tree.setAlternatingRowColors(True)
+        self._cad_tree.setAnimated(True)
+        self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
 
-        hdr = self._cad_match_table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)   # 层级
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 件号
-        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)   # 用量
-        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)   # 版本
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)   # 定义
-        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)   # 术语
-        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)   # 描述
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)  # PDM匹配
-        hdr.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)   # 匹配状态
-        hdr.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)   # 签出状态
-        hdr.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # 操作
-        for i, w in enumerate([60, 0, 50, 60, 80, 80, 80, 0, 70, 70, 160]):
-            if i in (1, 7):
-                continue  # stretch columns
+        hdr = self._cad_tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+        for i, w in enumerate([0, 60, 80, 80, 50, 0, 70, 70]):
+            if i == 0 or i == 5:
+                continue
             hdr.resizeSection(i, w)
 
-        self._cad_page_layout.addWidget(self._cad_match_table, 1)
-        self._populate_cad_match_table()
+        self._cad_page_layout.addWidget(self._cad_tree, 1)
 
-    def _populate_cad_match_table(self) -> None:
-        """填充 CAD BOM 匹配表格数据。"""
-        table = self._cad_match_table
-        rows = self._cad_rows
-        match_map = self._cad_match_map
+        # 填充树
+        self._populate_cad_tree(self._cad_tree, self._cad_tree_rows)
 
-        for i, row in enumerate(rows):
+        # 展开所有节点
+        self._cad_tree.expandAll()
+
+    def _populate_cad_tree(self, tree: QTreeWidget, rows: list[dict], parent=None) -> None:
+        """递归填充 BOM 树。"""
+        for row in rows:
             pn = row.get("part_number", "")
             builtin = row.get("builtin", {})
-            match = match_map.get(pn)
+            qty = str(row.get("quantity", 1))
+            match = self._cad_match_map.get(pn)
 
-            # 文本列
-            items_text = [
-                (0, row.get("path", "")),
-                (1, pn),
-                (2, str(row.get("quantity", 1))),
-                (3, builtin.get("Revision", "")),
-                (4, builtin.get("Definition", "")),
-                (5, builtin.get("Nomenclature", "")),
-                (6, builtin.get("Description", "")),
-                (7, match.name if match else "—"),
-                (8, match.match_status if match else "—"),
-                (9, match.checkout_status if match and match.checkout_status else "—"),
-            ]
-            for ci, text in items_text:
-                item = QTableWidgetItem(text)
-                # 属性列（3-6）可编辑
-                if ci in (3, 4, 5, 6):
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
-                else:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                table.setItem(i, ci, item)
+            label = f"{pn}"
+            if row.get("instance_name") and row["instance_name"] != pn:
+                label = f"{pn}  [{row['instance_name']}]"
+
+            node = QTreeWidgetItem(parent or tree)
+            node.setText(0, label)
+            node.setText(1, builtin.get("Revision", ""))
+            node.setText(2, builtin.get("Definition", ""))
+            node.setText(3, builtin.get("Nomenclature", ""))
+            node.setText(4, qty)
+            node.setText(5, match.name if match else "—")
+            node.setText(6, match.match_status if match else "—")
+            node.setText(7, match.checkout_status if match and match.checkout_status else "—")
 
             # 行颜色
             if match:
@@ -1328,43 +1331,87 @@ class PlmWorkbench(QDialog):
                 elif match.checkout_status == "checked_out":
                     bg = QColor("#d1ecf1")
                 if bg:
-                    for c in range(11):
-                        if item := table.item(i, c):
-                            item.setBackground(bg)
+                    for c in range(8):
+                        node.setBackground(c, bg)
 
-            # 操作按钮
-            btn_container = QWidget()
-            btn_layout = QHBoxLayout(btn_container)
-            btn_layout.setContentsMargins(2, 2, 2, 2)
-            btn_layout.setSpacing(2)
+            # 存储数据到 UserRole
+            node.setData(0, Qt.UserRole, row)
+            node.setData(0, Qt.UserRole + 1, match)
 
-            if match:
-                if match.match_status == "new":
-                    btn_create = QPushButton("创建零件")
-                    btn_create.setFixedWidth(70)
-                    btn_create.clicked.connect(lambda checked, r=row: self._on_cad_create_part(r))
-                    btn_layout.addWidget(btn_create)
-                elif match.match_status == "matched":
-                    if match.checkout_status in ("not_checked_out", None):
-                        btn_co = QPushButton("签出")
-                        btn_co.setFixedWidth(48)
-                        btn_co.clicked.connect(lambda checked, rid=match.revision_id, ri=i: self._on_cad_checkout(rid, ri))
-                        btn_layout.addWidget(btn_co)
-                        btn_pull = QPushButton("属性←")
-                        btn_pull.setFixedWidth(52)
-                        btn_pull.clicked.connect(lambda checked, r=row, m=match: self._on_cad_pull_attrs(r, m))
-                        btn_layout.addWidget(btn_pull)
-                    elif match.checkout_status == "checked_out":
-                        btn_ci = QPushButton("签入")
-                        btn_ci.setFixedWidth(48)
-                        btn_ci.clicked.connect(lambda checked, rid=match.revision_id, ri=i: self._on_cad_checkin(rid, ri))
-                        btn_layout.addWidget(btn_ci)
-                        btn_push = QPushButton("属性→")
-                        btn_push.setFixedWidth(52)
-                        btn_push.clicked.connect(lambda checked, r=row, m=match: self._on_cad_push_attrs(r, m))
-                        btn_layout.addWidget(btn_push)
-            btn_layout.addStretch()
-            table.setCellWidget(i, 10, btn_container)
+            # 右键菜单
+            node.setFlags(node.flags() | Qt.ItemIsEnabled)
+
+            # 递归子节点
+            children = row.get("children", [])
+            if children:
+                self._populate_cad_tree(tree, children, node)
+
+    def _on_cad_tree_context_menu(self, pos) -> None:
+        """树节点右键菜单。"""
+        node = self._cad_tree.itemAt(pos)
+        if not node:
+            return
+        row = node.data(0, Qt.UserRole)
+        match = node.data(0, Qt.UserRole + 1)
+        if not row:
+            return
+        pn = row.get("part_number", "")
+
+        menu = QMenu(self)
+        if match:
+            if match.match_status == "new":
+                act_create = menu.addAction("创建零件")
+                act_create.triggered.connect(lambda: self._on_cad_create_part(row))
+            elif match.match_status == "matched":
+                if match.checkout_status in ("not_checked_out", None):
+                    act_co = menu.addAction("签出")
+                    act_co.triggered.connect(lambda: self._on_cad_checkout_by_pn(pn))
+                    act_pull = menu.addAction("属性← 拉取")
+                    act_pull.triggered.connect(lambda: self._on_cad_pull(row, match))
+                elif match.checkout_status == "checked_out":
+                    act_ci = menu.addAction("签入")
+                    act_ci.triggered.connect(lambda: self._on_cad_checkin_by_pn(pn))
+                    act_push = menu.addAction("属性→ 推送")
+                    act_push.triggered.connect(lambda: self._on_cad_push(row, match))
+        menu.exec(self._cad_tree.viewport().mapToGlobal(pos))
+
+    def _on_cad_checkout_by_pn(self, pn: str) -> None:
+        match = self._cad_match_map.get(pn)
+        if match and match.revision_id:
+            try:
+                self._cad_client.checkout(match.revision_id)
+                self._log_to_conn(f"CAD入口：签出成功 — {pn}", "ok")
+                self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "checked_out"})
+                self._refresh_cad_tree()
+            except Exception as e:
+                QMessageBox.critical(self, "签出失败", str(e))
+
+    def _on_cad_checkin_by_pn(self, pn: str) -> None:
+        match = self._cad_match_map.get(pn)
+        if match and match.revision_id:
+            try:
+                self._cad_client.checkin(match.revision_id)
+                self._log_to_conn(f"CAD入口：签入成功 — {pn}", "ok")
+                self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "not_checked_out"})
+                self._refresh_cad_tree()
+            except Exception as e:
+                QMessageBox.critical(self, "签入失败", str(e))
+
+    def _on_cad_push(self, row: dict, match) -> None:
+        """属性→ PDM。"""
+        if not match.revision_id:
+            return
+        self._on_cad_push_attrs(row, match)
+
+    def _on_cad_pull(self, row: dict, match) -> None:
+        """属性← PDM。"""
+        self._on_cad_pull_attrs(row, match)
+
+    def _refresh_cad_tree(self) -> None:
+        """刷新 CAD 树显示（保持展开状态）。"""
+        self._cad_tree.clear()
+        self._populate_cad_tree(self._cad_tree, self._cad_tree_rows)
+        self._cad_tree.expandAll()
 
     def _on_cad_checkout(self, revision_id: str, row_idx: int) -> None:
         """签出指定版本的零件。"""
@@ -1420,7 +1467,7 @@ class PlmWorkbench(QDialog):
                     "version": result.version,
                     "checkout_status": "checked_out",
                 })
-            self._populate_cad_match_table()
+            self._refresh_cad_tree()
         except Exception as e:
             QMessageBox.critical(self, "创建失败", str(e))
 
