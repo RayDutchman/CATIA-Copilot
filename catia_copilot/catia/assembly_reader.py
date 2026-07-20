@@ -210,7 +210,8 @@ def _read_product_recursive(
 
     part_number = builtin.get("Part Number", instance_name)
 
-    path_str = "0" if not path_indices else ".".join(str(i) for i in path_indices)
+    path_parts = ["0"] + [str(i) for i in path_indices]
+    path_str = ".".join(path_parts)
 
     node = {
         "instance_name": instance_name,
