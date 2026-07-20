@@ -60,6 +60,7 @@ from catia_copilot.constants import (
     PRESET_USER_REF_PROPERTIES,
 )
 from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
+from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -81,6 +82,10 @@ _S_PLM_CFG   = "PlmConfigUnified"   # 独立配置，与 DocDoku 工作台隔离
 _S_TAG_RULES = "PlmTagRulesUnified"
 _S_HISTORY   = "PlmSyncHistoryUnified"
 _S_WB        = "PlmWorkbenchUnified"
+
+# 后端类型：plm-unified / mypdm。存于 PlmConfigUnified.backend
+_BACKEND_UNIFIED = "plm-unified"
+_BACKEND_MYPDM   = "mypdm"
 
 _DEFAULT_BASE_URL  = "http://127.0.0.1:8010"
 _DEFAULT_LOGIN     = "admin"
@@ -166,35 +171,59 @@ def _sync_row_color(source: str, update: str = "", checkin: str = "") -> QColor 
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _ConnectWorker(QThread):
-    """测试连接，拉取工作区信息与用户列表。"""
+    """测试连接，支持 plm-unified 和 myPDM 双后端。"""
     success = Signal(str, list, dict)
     failure = Signal(str)
 
-    def __init__(self, base_url: str, login: str, password: str, workspace: str) -> None:
+    def __init__(self, base_url: str, login: str, password: str, workspace: str, backend: str = _BACKEND_UNIFIED) -> None:
         super().__init__()
         self._base_url  = base_url
         self._login     = login
         self._password  = password
         self._workspace = workspace
+        self._backend   = backend
 
     def run(self):
         try:
-            c = PlmApiClient(self._base_url)
-            c.login(self._login, self._password)
-            try:
-                users = c.list_users(self._workspace) or []
-            except Exception:
-                users = []
-            # plm-unified 没有 /workspaces 端点，直接构造工作区信息
-            ws_info: dict = {
-                "id":   self._workspace,
-                "name": self._workspace,
-                "_current_user_role": "已登录（plm-unified）",
-            }
-            self.success.emit(self._login, users, ws_info)
+            if self._backend == _BACKEND_MYPDM:
+                self._run_mypdm()
+            else:
+                self._run_unified()
         except Exception as exc:
-            logger.exception("_ConnectWorker 运行异常")
             self.failure.emit(str(exc))
+
+    def _run_mypdm(self):
+        c = MyPdmApiClient(self._base_url)
+        c.login(self._login, self._password)
+        user = c.current_user
+        if user is None:
+            self.failure.emit("登录成功但获取用户信息失败")
+            return
+        user_info = {
+            "id": user.id,
+            "username": user.username,
+            "real_name": user.real_name,
+            "role": user.role,
+            "department": user.department or "",
+            "phone": user.phone or "",
+            "status": user.status,
+            "_current_user_role": f"已登录·{user.role}",
+        }
+        self.success.emit(self._login, [user_info], user_info)
+
+    def _run_unified(self):
+        c = PlmApiClient(self._base_url)
+        c.login(self._login, self._password)
+        try:
+            users = c.list_users(self._workspace) or []
+        except Exception:
+            users = []
+        ws_info: dict = {
+            "id":   self._workspace,
+            "name": self._workspace,
+            "_current_user_role": "已登录（plm-unified）",
+        }
+        self.success.emit(self._login, users, ws_info)
 
 
 
@@ -995,7 +1024,7 @@ class PlmWorkbench(QDialog):
         return QWidget()
 
     def _update_conn_status_bar(self) -> None:
-        base_url, login, _pw, workspace = self._read_conn()
+        base_url, login, _pw, workspace, _backend = self._read_conn()
         if base_url and login:
             self._lbl_conn_dot.setText("🟢")
             self._lbl_conn_dot.setStyleSheet("color: green;")
@@ -1009,13 +1038,17 @@ class PlmWorkbench(QDialog):
     # 通用工具
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _read_conn(self) -> tuple[str, str, str, str]:
+    def _read_conn(self) -> tuple[str, str, str, str, str]:
         s = QSettings(_S_ORG, _S_PLM_CFG)
+        backend = str(s.value("backend", _BACKEND_UNIFIED))
+        if backend not in (_BACKEND_UNIFIED, _BACKEND_MYPDM):
+            backend = _BACKEND_UNIFIED
         return (
             s.value("base_url",  _DEFAULT_BASE_URL),
             s.value("login",     _DEFAULT_LOGIN),
             s.value("password",  _DEFAULT_PASSWORD),
             s.value("workspace", _DEFAULT_WORKSPACE),
+            backend,
         )
 
     def _save_conn(self) -> None:
@@ -1025,6 +1058,17 @@ class PlmWorkbench(QDialog):
         s.setValue("password",  self._le_password.text())
         s.setValue("workspace", self._le_workspace.text().strip())
         s.setValue("work_dir",  self._le_work_dir.text().strip())
+        # 保存后端类型
+        backend = self._backend_combo.currentText() if hasattr(self, "_backend_combo") else _BACKEND_UNIFIED
+        backend_key = _BACKEND_MYPDM if backend == "myPDM" else _BACKEND_UNIFIED
+        s.setValue("backend", backend_key)
+
+    def _get_pdm_client(self) -> "MyPdmApiClient | PlmApiClient":
+        """根据配置的后端类型创建对应的 API 客户端。"""
+        _base_url, _login, _pw, _ws, backend = self._read_conn()
+        if backend == _BACKEND_MYPDM:
+            return MyPdmApiClient(_base_url)
+        return PlmApiClient(_base_url)
 
     def _start_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
@@ -1090,7 +1134,7 @@ class PlmWorkbench(QDialog):
 
     def _init_settings_controls(self) -> None:
         """初始化设置相关控件引用（供旧业务方法使用）。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, backend = self._read_conn()
         s_plm = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = s_plm.value("work_dir", "")
 
@@ -1110,6 +1154,13 @@ class PlmWorkbench(QDialog):
         self._tbl_rules     = QTableWidget(0, 3)
         self._le_rule_catia = QLineEdit()
         self._cmb_rule_tag  = QComboBox(); self._cmb_rule_tag.setEditable(True)
+        # 后端选择下拉框（仅在设置弹窗中可见）
+        self._backend_combo = QComboBox()
+        self._backend_combo.addItems(["plm-unified", "myPDM"])
+        if backend == _BACKEND_MYPDM:
+            self._backend_combo.setCurrentText("myPDM")
+        else:
+            self._backend_combo.setCurrentText("plm-unified")
 
         # RadioButton / CheckBox 由 _build_advanced_options 创建并赋值到同名属性
         # 这里不再重复创建，避免孤儿控件覆盖可见控件
@@ -1252,7 +1303,7 @@ class PlmWorkbench(QDialog):
         if getattr(self, "_plm_status_running", False):
             return
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", '请先在"设置"中配置 PLM 连接信息。')
             return
@@ -1394,7 +1445,7 @@ class PlmWorkbench(QDialog):
             # 他人签出也警告（Push 时阻止）
             if plm:
                 cout = str(plm.get("checkOutUser") or "")
-                _, current_login, _, _ = self._read_conn()
+                _, current_login, _, _, _ = self._read_conn()
                 if cout and cout != current_login:
                     warn = True
 
@@ -1689,7 +1740,7 @@ class PlmWorkbench(QDialog):
 
     def _on_show_attachments(self, pn: str, version: str, plm_data: dict) -> None:
         """弹出零件附件详情窗口。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
             return
@@ -1707,7 +1758,7 @@ class PlmWorkbench(QDialog):
 
     def _on_sync_start(self) -> None:
         """读取勾选行，执行 Push 到 PLM。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
             return
@@ -1903,7 +1954,7 @@ class PlmWorkbench(QDialog):
 
     def _on_pull(self) -> None:
         """弹出 Pull 对话框（BOM 树模式）。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
@@ -1916,7 +1967,7 @@ class PlmWorkbench(QDialog):
 
     def _on_pull_selected(self) -> None:
         """Pull 勾选行对应的 PLM 零件文件到工作目录。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
@@ -2041,7 +2092,7 @@ class PlmWorkbench(QDialog):
             return
         pn = pn.strip()
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息，以便查询该零件。")
             return
@@ -2183,15 +2234,12 @@ class PlmWorkbench(QDialog):
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
 
     def _on_test_conn(self):
-        base_url  = self._le_base_url.text().strip()
-        login     = self._le_login.text().strip()
-        password  = self._le_password.text()
-        workspace = self._le_workspace.text().strip()
+        base_url, login, password, workspace, backend = self._read_conn()
         if not base_url or not login:
             self._log_to_conn("请先填写服务端地址和用户名。", "warn")
             return
         self._log_to_conn("正在测试连接……")
-        w = _ConnectWorker(base_url, login, password, workspace)
+        w = _ConnectWorker(base_url, login, password, workspace, backend)
         w.success.connect(self._on_conn_ok)
         w.failure.connect(self._on_conn_fail)
         self._start_worker(w)
@@ -2428,7 +2476,7 @@ class PlmWorkbench(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         s_plm = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = s_plm.value("work_dir", "")
 
@@ -2917,7 +2965,7 @@ class PlmWorkbench(QDialog):
         self._update_sync_result(pn, source, update, checkin)
 
     def _on_refresh_tags(self) -> None:
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         w = _TagsWorker(base_url, login, password, workspace)
         w.success.connect(self._on_tags_loaded)
         w.failure.connect(lambda e: QMessageBox.warning(self, "标签获取失败", e))
@@ -2942,7 +2990,7 @@ class PlmWorkbench(QDialog):
         if not label:
             QMessageBox.warning(self, "输入为空", "请输入标签名称。")
             return
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         w = _CreateTagWorker(base_url, login, password, workspace, label)
         w.success.connect(self._on_tag_created)
         w.failure.connect(lambda e: QMessageBox.warning(self, "创建标签失败", e))
@@ -3103,6 +3151,7 @@ class PlmWorkbench(QDialog):
 class _SettingsDialog(QDialog):
     """PLM 工作台设置（连接配置 + 标签规则）。
 
+    支持 plm-unified 和 myPDM 双后端，通过下拉框切换。
     保存后通过 QSettings 持久化，调用方可读取最新配置。
     """
 
@@ -3110,8 +3159,8 @@ class _SettingsDialog(QDialog):
         super().__init__(workbench)
         self._wb = workbench
         self.setWindowTitle("PLM 设置")
-        self.setMinimumSize(640, 560)
-        self.resize(720, 640)
+        self.setMinimumSize(640, 580)
+        self.resize(720, 660)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -3127,13 +3176,24 @@ class _SettingsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # ── 后端选择 ────────────────────────────────────────────────────────────
+        grp_backend = QGroupBox("后端类型")
+        backend_row = QHBoxLayout(grp_backend)
+        self._cmb_backend = QComboBox()
+        self._cmb_backend.addItem("plm-unified (FastAPI)", _BACKEND_UNIFIED)
+        self._cmb_backend.addItem("myPDM (JWT)", _BACKEND_MYPDM)
+        self._cmb_backend.currentIndexChanged.connect(self._on_backend_changed)
+        backend_row.addWidget(QLabel("选择后端："))
+        backend_row.addWidget(self._cmb_backend, stretch=1)
+        layout.addWidget(grp_backend)
+
         # ── 连接配置 ──────────────────────────────────────────────────────────
         grp_cfg = QGroupBox("连接配置")
-        form = QFormLayout(grp_cfg)
-        form.setSpacing(6)
+        self._form_cfg = QFormLayout(grp_cfg)
+        self._form_cfg.setSpacing(6)
 
         # 初始值直接从 QSettings 读取，不依赖 workbench 上的控件引用
-        base_url, login, password, workspace = self._wb._read_conn()
+        base_url, login, password, workspace, backend = self._wb._read_conn()
         s_plm    = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = str(s_plm.value("work_dir", ""))
 
@@ -3151,11 +3211,18 @@ class _SettingsDialog(QDialog):
         work_dir_row.addWidget(self._le_work_dir)
         work_dir_row.addWidget(btn_browse)
 
+        # 后端选择字段标签
+        self._lbl_login      = QLabel("用户名：")
+        self._lbl_password   = QLabel("密码：")
+        self._lbl_workspace  = QLabel("工作区：")
+        self._lbl_work_dir   = QLabel("工作目录：")
+
+        form = self._form_cfg
         form.addRow("服务端地址：", self._le_base_url)
-        form.addRow("用户名：",     self._le_login)
-        form.addRow("密码：",       self._le_password)
-        form.addRow("工作区：",     self._le_workspace)
-        form.addRow("工作目录：",   work_dir_row)
+        form.addRow(self._lbl_login,    self._le_login)
+        form.addRow(self._lbl_password, self._le_password)
+        form.addRow(self._lbl_workspace, self._le_workspace)
+        form.addRow(self._lbl_work_dir,  work_dir_row)
 
         btn_row = QHBoxLayout()
         btn_save = QPushButton("保存配置")
@@ -3169,7 +3236,7 @@ class _SettingsDialog(QDialog):
         layout.addWidget(grp_cfg)
 
         # ── 工作区详情 ────────────────────────────────────────────────────────
-        grp_ws = QGroupBox("工作区详情")
+        grp_ws = QGroupBox("连接信息")
         v_ws = QVBoxLayout(grp_ws)
         self._lbl_ws = QLabel(self._wb._lbl_ws_detail.text())
         self._lbl_ws.setWordWrap(True)
@@ -3261,6 +3328,13 @@ class _SettingsDialog(QDialog):
         root.addLayout(close_row)
         root.setContentsMargins(0, 0, 8, 8)
 
+        # 初始化后端选择
+        backend = self._wb._read_conn()[4]
+        idx = self._cmb_backend.findData(backend)
+        if idx >= 0:
+            self._cmb_backend.setCurrentIndex(idx)
+        self._on_backend_changed()
+
     # ── 事件处理 ──────────────────────────────────────────────────────────────
 
     def _on_browse(self) -> None:
@@ -3268,6 +3342,22 @@ class _SettingsDialog(QDialog):
                                                  self._le_work_dir.text())
         if path:
             self._le_work_dir.setText(path)
+
+    def _on_backend_changed(self) -> None:
+        """后端切换时，显示/隐藏工作区和工作目录字段（myPDM 不需要）。"""
+        backend = self._cmb_backend.currentData()
+        show_ws = backend != _BACKEND_MYPDM
+        self._lbl_workspace.setVisible(show_ws)
+        self._le_workspace.setVisible(show_ws)
+        self._lbl_work_dir.setVisible(show_ws)
+        self._le_work_dir.setVisible(show_ws)
+        # 设置后端默认地址
+        if backend == _BACKEND_MYPDM and not self._le_base_url.text().strip():
+            self._le_base_url.setText("https://192.168.1.x:8443/api")
+            self._le_base_url.setPlaceholderText("https://192.168.1.x:8443/api")
+        elif backend == _BACKEND_UNIFIED and self._le_base_url.text() == "https://192.168.1.x:8443/api":
+            self._le_base_url.setText("http://127.0.0.1:8010")
+            self._le_base_url.setPlaceholderText("http://127.0.0.1:8010")
 
     def _on_save(self) -> None:
         """保存配置到 QSettings。"""
@@ -3277,7 +3367,12 @@ class _SettingsDialog(QDialog):
         s.setValue("password",  self._le_password.text())
         s.setValue("workspace", self._le_workspace.text().strip())
         s.setValue("work_dir",  self._le_work_dir.text().strip())
-        # 同步 workbench 的工作目录输入框（如果存在）
+        # 保存后端类型
+        backend_data = self._cmb_backend.currentData()
+        s.setValue("backend", backend_data if backend_data else _BACKEND_UNIFIED)
+        # 同步 workbench 的控件引用
+        if hasattr(self._wb, "_backend_combo") and self._wb._backend_combo:
+            self._wb._backend_combo.setCurrentText(self._cmb_backend.currentText())
         if hasattr(self._wb, "_le_work_dir") and self._wb._le_work_dir:
             self._wb._le_work_dir.setText(self._le_work_dir.text())
         self._log("配置已保存。", "ok")
@@ -3290,24 +3385,32 @@ class _SettingsDialog(QDialog):
         login     = self._le_login.text().strip()
         password  = self._le_password.text()
         workspace = self._le_workspace.text().strip()
+        backend   = self._cmb_backend.currentData() or _BACKEND_UNIFIED
         if not base_url or not login:
             self._log("请先填写服务端地址和用户名。", "warn")
             return
-        w = _ConnectWorker(base_url, login, password, workspace)
+        w = _ConnectWorker(base_url, login, password, workspace, backend)
         w.success.connect(lambda ln, users, ws_info: self._on_conn_ok(ln, users, ws_info))
         w.failure.connect(lambda err: self._log(f"连接失败：{err}", "error"))
-        # 借用 workbench 的 _start_worker 管理线程
         self._wb._start_worker(w)
 
     def _on_conn_ok(self, login_name: str, users: list, ws_info: dict) -> None:
-        info_parts = []
-        if ws_info.get("id"):
-            info_parts.append(f"工作区 ID：{ws_info['id']}")
-        if ws_info.get("description"):
-            info_parts.append(f"描述：{ws_info['description']}")
-        if isinstance(users, list):
-            info_parts.append(f"成员数：{len(users)}")
-        detail = "  |  ".join(info_parts) or "连接成功"
+        backend = self._cmb_backend.currentData()
+        if backend == _BACKEND_MYPDM:
+            real_name = ws_info.get("real_name", login_name)
+            role = ws_info.get("role", "?")
+            role_display = {"admin": "管理员", "engineer": "工程师",
+                            "production": "生产", "guest": "访客"}.get(role, role)
+            detail = f"用户：{real_name}（{role_display}）  |  部门：{ws_info.get('department', '—')}"
+        else:
+            info_parts = []
+            if ws_info.get("id"):
+                info_parts.append(f"工作区 ID：{ws_info['id']}")
+            if ws_info.get("description"):
+                info_parts.append(f"描述：{ws_info['description']}")
+            if isinstance(users, list):
+                info_parts.append(f"成员数：{len(users)}")
+            detail = "  |  ".join(info_parts) or "连接成功"
         self._lbl_ws.setText(detail)
         self._wb._lbl_ws_detail.setText(detail)
         self._log(f"连接成功 ({login_name})", "ok")
