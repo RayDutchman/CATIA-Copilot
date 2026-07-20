@@ -1322,6 +1322,7 @@ class PlmWorkbench(QDialog):
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
         self._cad_tree.setIndentation(20)
         self._cad_tree.setRootIsDecorated(True)
+        self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; }")
 
         hdr = self._cad_tree.header()
         hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
