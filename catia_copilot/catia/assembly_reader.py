@@ -66,23 +66,30 @@ def _read_builtin_properties(product) -> dict[str, str]:
 def _read_user_properties(product) -> dict[str, str]:
     """读取自定义属性：存货类别、规格型号、物料类型、重量。
     
-    先尝试 UserRefProperties（字符串类型），失败则读 Parameters（数值型）。
+    与 bom_collect._get_user_prop 逻辑一致：
+    优先用 ReferenceProduct 读取，逐个尝试 UserRefProperties 和 Parameters。
     """
+    import logging
+    _log = logging.getLogger(__name__)
+    
     props_to_read = ["存货类别", "规格型号", "物料类型", "重量"]
 
     result: dict[str, str] = {}
-    targets = [product]
+    
+    # 构建目标列表：ReferenceProduct 优先
+    targets = []
     try:
         ref = product.ReferenceProduct
         if ref is not None:
-            targets.insert(0, ref)
+            targets.append(ref)
     except Exception:
         pass
+    targets.append(product)
 
     for prop_name in props_to_read:
         value = None
         for target in targets:
-            # 方式1：UserRefProperties（字符串属性）
+            # 方式1：UserRefProperties.Item(name)
             try:
                 prop = target.UserRefProperties.Item(prop_name)
                 v = prop.Value
@@ -91,12 +98,22 @@ def _read_user_properties(product) -> dict[str, str]:
                     break
             except Exception:
                 pass
-            # 方式2：Parameters（数值参数）
+            # 方式2：getattr(user_ref_props, name) — 部分 CATIA 版本的访问方式
+            try:
+                props = target.UserRefProperties
+                v = getattr(props, prop_name, None)
+                if v is not None and hasattr(v, 'Value'):
+                    v = v.Value
+                if v is not None:
+                    value = str(v)
+                    break
+            except Exception:
+                pass
+            # 方式3：Parameters.Item(name)
             try:
                 param = target.Parameters.Item(prop_name)
                 v = param.Value
                 if v is not None:
-                    # 数值型保留 3 位小数
                     try:
                         value = f"{float(v):.3f}"
                     except (ValueError, TypeError):
@@ -104,9 +121,13 @@ def _read_user_properties(product) -> dict[str, str]:
                     break
             except Exception:
                 continue
-        if value is not None:
+        if value is not None and value:
             result[prop_name] = value
 
+    # 调试：记录读取到的属性数量
+    if result:
+        _log.debug(f"读取用户属性成功: {list(result.keys())} path={product.Name}")
+    
     return result
 
 
