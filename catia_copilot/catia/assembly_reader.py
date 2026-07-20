@@ -64,12 +64,9 @@ def _read_builtin_properties(product) -> dict[str, str]:
 
 
 def _read_user_properties(product) -> dict[str, str]:
-    """只读取预设的用户自定义属性（材料/重量/规格型号等）。
-    
-    逐个按预设属性名查询，避免遍历 UserRefProperties 读到 PLM 元数据等干扰字段。
-    """
-    from catia_copilot.constants import PRESET_USER_REF_PROPERTIES
-    
+    """读取自定义属性：存货类别、规格型号、物料类型、重量。"""
+    props_to_read = ["存货类别", "规格型号", "物料类型", "重量"]
+
     result: dict[str, str] = {}
     targets = [product]
     try:
@@ -79,12 +76,12 @@ def _read_user_properties(product) -> dict[str, str]:
     except Exception:
         pass
 
-    for prop_name in PRESET_USER_REF_PROPERTIES:
+    for prop_name in props_to_read:
         for target in targets:
             try:
                 prop = target.UserRefProperties.Item(prop_name)
                 value = prop.Value
-                if value is not None and str(value).strip():
+                if value is not None:
                     result[prop_name] = str(value)
                     break
             except Exception:

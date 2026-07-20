@@ -1300,8 +1300,14 @@ class PlmWorkbench(QDialog):
         self._cad_match_summary.setLayout(summary_bar)
         self._cad_page_layout.addWidget(self._cad_match_summary)
 
-        # ── 用户自定义属性列（仅预设列表，不扫描 CATIA 全部参数） ──────────────
-        self._cad_user_cols = list(PRESET_USER_REF_PROPERTIES)
+        # ── 用户自定义属性列 ──────────────────────────────────────────────────
+        self._cad_user_cols = ["存货类别", "规格型号", "物料类型", "重量(kg)"]
+        self._cad_user_catia_map = {
+            "存货类别": "存货类别",
+            "规格型号": "规格型号",
+            "物料类型": "物料类型",
+            "重量(kg)": "重量",
+        }
 
         # ── 列定义 ─────────────────────────────────────────────────────────────
         self._CAD_COL_LVL     = 0   # 层级
@@ -1381,8 +1387,9 @@ class PlmWorkbench(QDialog):
             node.setText(self._CAD_COL_DESC, builtin.get("Description", ""))
 
             # 用户自定义属性
-            for ui, key in enumerate(self._cad_user_cols):
-                node.setText(self._CAD_COL_USER_START + ui, user_props.get(key, ""))
+            for ui, col_key in enumerate(self._cad_user_cols):
+                catia_key = self._cad_user_catia_map.get(col_key, col_key)
+                node.setText(self._CAD_COL_USER_START + ui, user_props.get(catia_key, ""))
 
             # CAD附件（计数 + 上传源文件按钮）
             att_counts = self._cad_att_counts.get(pn, {"cad": 0, "production": 0})
