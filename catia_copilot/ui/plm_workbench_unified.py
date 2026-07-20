@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QInputDialog,
     QMenu,
     QPlainTextEdit,
     QProgressBar,
@@ -1373,9 +1374,7 @@ class PlmWorkbench(QDialog):
         self._cad_tree = QTreeWidget()
         self._cad_tree.setHeaderLabels(headers)
         self._cad_tree.setAnimated(True)
-        self._cad_tree.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
-        )
+        self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
         self._cad_tree.setIndentation(16)
@@ -1549,7 +1548,7 @@ class PlmWorkbench(QDialog):
                 self._populate_cad_tree(tree, children, node)
 
     def _on_cad_tree_context_menu(self, pos) -> None:
-        """树节点右键菜单。"""
+        """树节点右键菜单（含属性编辑、签出/签入、创建零件等）。"""
         node = self._cad_tree.itemAt(pos)
         if not node:
             return
@@ -1558,8 +1557,32 @@ class PlmWorkbench(QDialog):
         if not row:
             return
         pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
 
         menu = QMenu(self)
+
+        # ── 属性编辑子菜单 ──
+        edit_menu = menu.addMenu("编辑属性")
+        for col_key, catia_key in [
+            ("版本", "Revision"), ("定义", "Definition"),
+            ("术语", "Nomenclature"), ("描述", "Description"),
+        ]:
+            val = builtin.get(catia_key, "")
+            act = edit_menu.addAction(f"{col_key}: {val}")
+            act.triggered.connect(lambda checked, _k=col_key, _ck=catia_key:
+                self._on_cad_edit_property(pn, row, _k, _ck))
+
+        for col_key in self._cad_user_cols:
+            catia_key = self._cad_user_catia_map.get(col_key, col_key)
+            val = user_props.get(catia_key, "")
+            act = edit_menu.addAction(f"{col_key}: {val}")
+            act.triggered.connect(lambda checked, _k=col_key, _ck=catia_key:
+                self._on_cad_edit_property(pn, row, _k, _ck))
+
+        menu.addSeparator()
+
+        # ── 操作 ──
         if match:
             if match.match_status == "new":
                 act_create = menu.addAction("创建零件")
@@ -1587,6 +1610,38 @@ class PlmWorkbench(QDialog):
                 self._refresh_cad_tree()
             except Exception as e:
                 QMessageBox.critical(self, "签出失败", str(e))
+
+    def _on_cad_edit_property(self, pn: str, row: dict, col_name: str, catia_key: str) -> None:
+        """右键编辑 CATIA 属性并写回。"""
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+        is_builtin = catia_key in ("Revision", "Definition", "Nomenclature", "Description")
+        current = builtin.get(catia_key, "") if is_builtin else user_props.get(catia_key, "")
+
+        text, ok = QInputDialog.getText(
+            self, f"编辑 {col_name}", f"{pn} — {col_name}:",
+            text=str(current),
+        )
+        if not ok:
+            return
+
+        if is_builtin:
+            new_builtin = dict(builtin)
+            new_builtin[catia_key] = text
+            row["builtin"] = new_builtin
+            from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+            self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, text)
+            self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, text)
+        else:
+            new_user_props = dict(user_props)
+            new_user_props[catia_key] = text
+            row["user_properties"] = new_user_props
+            from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+            self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, text)
+            self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, text)
+
+        self._refresh_cad_tree()
+        self._log_to_conn(f"CAD入口：属性已编辑 — {pn}.{col_name} = {text}", "ok")
 
     def _on_cad_checkin_by_pn(self, pn: str) -> None:
         match = self._cad_match_map.get(pn)
