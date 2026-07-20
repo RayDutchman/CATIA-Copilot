@@ -1841,28 +1841,22 @@ class PlmWorkbench(QDialog):
 
     def _on_cad_push_attrs(self, row: dict, match) -> None:
         """属性→：按字段映射将 CATIA 属性推送到 PDM。"""
-        if not match or not match.master_id:
-            QMessageBox.warning(self, "属性→", "缺少 PDM 零件 ID，无法推送。")
+        if not match:
             return
         pn = row.get("part_number", "")
         builtin = row.get("builtin", {})
         user_props = row.get("user_properties", {})
         field_map = getattr(self, "_cad_field_map", {})
 
-        # 按映射构建 payload
         payload: dict = {}
         bm = field_map.get("builtin", {})
         pm = field_map.get("properties", {})
 
-        # 内置属性映射
         for catia_key, pdm_key in bm.items():
             val = builtin.get(catia_key, "")
             if val:
                 payload[pdm_key] = val
-
-        # 用户属性映射
         for catia_key, pdm_key in pm.items():
-            # 先查用户属性，再查内置属性
             val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
             if val:
                 payload[pdm_key] = val
@@ -1870,9 +1864,26 @@ class PlmWorkbench(QDialog):
         if not payload:
             QMessageBox.information(self, "属性→", "未找到可推送的属性。")
             return
+
+        # 优先用 master_id，否则用 revision_id
+        master_id = getattr(match, "master_id", None)
+        rev_id = getattr(match, "revision_id", None)
+        part_id = master_id or rev_id
+        if not part_id:
+            # 尝试直接从原始响应获取
+            raw = getattr(match, "__dict__", {})
+            all_ids = {k: v for k, v in raw.items() if v and "id" in k.lower()}
+            QMessageBox.warning(self, "属性→",
+                f"缺少 PDM 零件 ID（{pn}）。\n"
+                f"master_id={master_id}\nrevision_id={rev_id}\n"
+                f"可用ID字段: {all_ids}")
+            return
+
         try:
-            self._cad_client.update_part(match.revision_id, payload)
+            self._cad_client.update_part(part_id, payload)
             self._log_to_conn(f"CAD入口：属性已推送 — {pn} ({list(payload.keys())})", "ok")
+        except MyPdmApiError as e:
+            QMessageBox.critical(self, "推送失败", f"{pn} (id={part_id})：{e}")
         except Exception as e:
             QMessageBox.critical(self, "推送失败", str(e))
 
