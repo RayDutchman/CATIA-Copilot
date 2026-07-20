@@ -22,7 +22,8 @@ from typing import cast
 
 import pythoncom
 import shiboken6
-from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
+import tempfile
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -40,14 +42,18 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QInputDialog,
+    QMenu,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -59,7 +65,12 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
 )
+from catia_copilot.ui.bom_widgets import _RowHeightDelegate
 from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
+from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
+from catia_copilot.catia.assembly_reader import detect_catia_status, read_assembly_tree
+from catia_copilot.ui.flatten_tree import flatten_tree, flatten_tree_hierarchical
+import json as _json
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -82,12 +93,88 @@ _S_TAG_RULES = "PlmTagRulesUnified"
 _S_HISTORY   = "PlmSyncHistoryUnified"
 _S_WB        = "PlmWorkbenchUnified"
 
+# 后端类型：plm-unified / mypdm。存于 PlmConfigUnified.backend
+_BACKEND_UNIFIED = "plm-unified"
+_BACKEND_MYPDM   = "mypdm"
+
 _DEFAULT_BASE_URL  = "http://127.0.0.1:8010"
 _DEFAULT_LOGIN     = "admin"
 _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
 
 _MAX_HISTORY = 20
+
+# ── CAD入口树委托 ────────────────────────────────────────────────────────────
+
+class _CadTreeDelegate(_RowHeightDelegate):
+    """CAD入口树的委托：控制行高(36px) + 限制只允许属性列编辑。"""
+
+    def __init__(self, workbench):
+        super().__init__(workbench._cad_tree if hasattr(workbench, "_cad_tree") else None)
+        self._wb = workbench
+
+    def sizeHint(self, option, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        if hint.height() < 36:
+            hint.setHeight(36)
+        return hint
+
+    def createEditor(self, parent, option, index):
+        wb = self._wb
+        col = index.column()
+        # 只允许以下列编辑：件号、版本、定义、术语、描述、自定义属性
+        editable = False
+        if hasattr(wb, "_CAD_COL_PN") and col == wb._CAD_COL_PN:
+            editable = False  # 件号不可编辑
+        elif hasattr(wb, "_CAD_COL_REV") and col == wb._CAD_COL_REV:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_DEF") and col == wb._CAD_COL_DEF:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_NOM") and col == wb._CAD_COL_NOM:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_DESC") and col == wb._CAD_COL_DESC:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_USER_START") and col >= wb._CAD_COL_USER_START and col < wb._CAD_COL_CAD_ATT:
+            editable = True
+        if editable:
+            return super().createEditor(parent, option, index)
+        return None
+
+# ── 字段映射 ──────────────────────────────────────────────────────────────────
+
+def _load_field_mapping() -> dict:
+    """加载 CATIA-PDM 字段映射配置。"""
+    import os as _os
+    mapping_path = _os.path.join(_os.path.dirname(__file__), "..", "catia", "field_mapping.json")
+    try:
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {"builtin": {}, "properties": {}}
+
+
+def _load_cad_naming() -> dict:
+    """加载 CAD 附件命名前缀配置。"""
+    import os as _os
+    conf_path = _os.path.join(_os.path.dirname(__file__), "..", "catia", "cad_naming.conf")
+    result = {"pdf_part": "DR_", "pdf_assembly": "ASY_", "stp": "MD_"}
+    try:
+        with open(conf_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if k == "CAD_PDF_PART_PREFIX":
+                    result["pdf_part"] = v
+                elif k == "CAD_PDF_ASSEMBLY_PREFIX":
+                    result["pdf_assembly"] = v
+                elif k == "CAD_STP_PREFIX":
+                    result["stp"] = v
+    except Exception:
+        pass
+    return result
 
 # 差异状态计算：版本+迭代号相同时，比较本地 mtime 与 PLM checkInDate 的容差
 # 60 秒内视为相等，避免文件系统时间精度差异导致误判
@@ -166,35 +253,59 @@ def _sync_row_color(source: str, update: str = "", checkin: str = "") -> QColor 
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _ConnectWorker(QThread):
-    """测试连接，拉取工作区信息与用户列表。"""
+    """测试连接，支持 plm-unified 和 myPDM 双后端。"""
     success = Signal(str, list, dict)
     failure = Signal(str)
 
-    def __init__(self, base_url: str, login: str, password: str, workspace: str) -> None:
+    def __init__(self, base_url: str, login: str, password: str, workspace: str, backend: str = _BACKEND_UNIFIED) -> None:
         super().__init__()
         self._base_url  = base_url
         self._login     = login
         self._password  = password
         self._workspace = workspace
+        self._backend   = backend
 
     def run(self):
         try:
-            c = PlmApiClient(self._base_url)
-            c.login(self._login, self._password)
-            try:
-                users = c.list_users(self._workspace) or []
-            except Exception:
-                users = []
-            # plm-unified 没有 /workspaces 端点，直接构造工作区信息
-            ws_info: dict = {
-                "id":   self._workspace,
-                "name": self._workspace,
-                "_current_user_role": "已登录（plm-unified）",
-            }
-            self.success.emit(self._login, users, ws_info)
+            if self._backend == _BACKEND_MYPDM:
+                self._run_mypdm()
+            else:
+                self._run_unified()
         except Exception as exc:
-            logger.exception("_ConnectWorker 运行异常")
             self.failure.emit(str(exc))
+
+    def _run_mypdm(self):
+        c = MyPdmApiClient(self._base_url)
+        c.login(self._login, self._password)
+        user = c.current_user
+        if user is None:
+            self.failure.emit("登录成功但获取用户信息失败")
+            return
+        user_info = {
+            "id": user.id,
+            "username": user.username,
+            "real_name": user.real_name,
+            "role": user.role,
+            "department": user.department or "",
+            "phone": user.phone or "",
+            "status": user.status,
+            "_current_user_role": f"已登录·{user.role}",
+        }
+        self.success.emit(self._login, [user_info], user_info)
+
+    def _run_unified(self):
+        c = PlmApiClient(self._base_url)
+        c.login(self._login, self._password)
+        try:
+            users = c.list_users(self._workspace) or []
+        except Exception:
+            users = []
+        ws_info: dict = {
+            "id":   self._workspace,
+            "name": self._workspace,
+            "_current_user_role": "已登录（plm-unified）",
+        }
+        self.success.emit(self._login, users, ws_info)
 
 
 
@@ -706,6 +817,16 @@ class PlmWorkbench(QDialog):
         root.addWidget(self._adv_widget)
 
         root.addWidget(self._build_diff_table(), 1)
+        # 内容区：QStackedWidget 切换 diff 表 / CAD入口 表
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(self._build_diff_table())
+        # CAD入口页先放占位，点击时动态构建
+        self._cad_page = QWidget()
+        self._cad_page_layout = QVBoxLayout(self._cad_page)
+        self._cad_page_layout.setContentsMargins(0, 0, 0, 0)
+        self._cad_page_layout.setSpacing(0)
+        self._content_stack.addWidget(self._cad_page)
+        root.addWidget(self._content_stack, 1)
 
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine); sep2.setFrameShadow(QFrame.Sunken)
         root.addWidget(sep2)
@@ -866,6 +987,15 @@ class PlmWorkbench(QDialog):
         btn_cfg.clicked.connect(self._on_show_settings)
         h.addWidget(btn_cfg)
 
+        # CAD入口（仅 myPDM 后端可见）
+        self._btn_cad_entry = QPushButton("🔧 CAD入口")
+        self._btn_cad_entry.setFont(_ef); self._btn_cad_entry.setFlat(True)
+        self._btn_cad_entry.setObjectName("primaryBtn")
+        self._btn_cad_entry.setToolTip("读取 CATIA 装配结构，匹配 myPDM BOM")
+        self._btn_cad_entry.clicked.connect(self._on_cad_entry)
+        self._btn_cad_entry.setVisible(False)
+        h.addWidget(self._btn_cad_entry)
+
         self._update_conn_status_bar()
         return bar
 
@@ -994,27 +1124,34 @@ class PlmWorkbench(QDialog):
         return QWidget()
 
     def _update_conn_status_bar(self) -> None:
-        base_url, login, _pw, workspace = self._read_conn()
+        base_url, login, _pw, workspace, backend = self._read_conn()
         if base_url and login:
             self._lbl_conn_dot.setText("🟢")
             self._lbl_conn_dot.setStyleSheet("color: green;")
-            self._lbl_conn_info.setText(f"{login} @ {workspace}")
+            backend_label = "myPDM" if backend == _BACKEND_MYPDM else "plm-unified"
+            self._lbl_conn_info.setText(f"{login} @ {workspace or backend_label}")
         else:
             self._lbl_conn_dot.setText("🔴")
             self._lbl_conn_dot.setStyleSheet("color: red;")
             self._lbl_conn_info.setText("未配置")
+        # CAD入口按钮仅 myPDM 后端可见
+        self._btn_cad_entry.setVisible(backend == _BACKEND_MYPDM)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 通用工具
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _read_conn(self) -> tuple[str, str, str, str]:
+    def _read_conn(self) -> tuple[str, str, str, str, str]:
         s = QSettings(_S_ORG, _S_PLM_CFG)
+        backend = str(s.value("backend", _BACKEND_UNIFIED))
+        if backend not in (_BACKEND_UNIFIED, _BACKEND_MYPDM):
+            backend = _BACKEND_UNIFIED
         return (
             s.value("base_url",  _DEFAULT_BASE_URL),
             s.value("login",     _DEFAULT_LOGIN),
             s.value("password",  _DEFAULT_PASSWORD),
             s.value("workspace", _DEFAULT_WORKSPACE),
+            backend,
         )
 
     def _save_conn(self) -> None:
@@ -1024,6 +1161,22 @@ class PlmWorkbench(QDialog):
         s.setValue("password",  self._le_password.text())
         s.setValue("workspace", self._le_workspace.text().strip())
         s.setValue("work_dir",  self._le_work_dir.text().strip())
+        # 保存后端类型
+        backend = self._backend_combo.currentText() if hasattr(self, "_backend_combo") else _BACKEND_UNIFIED
+        backend_key = _BACKEND_MYPDM if backend == "myPDM" else _BACKEND_UNIFIED
+        s.setValue("backend", backend_key)
+
+    def _get_pdm_client(self) -> "MyPdmApiClient | PlmApiClient":
+        """根据配置的后端类型创建对应的 API 客户端。"""
+        _base_url, _login, _pw, _ws, backend = self._read_conn()
+        if backend == _BACKEND_MYPDM:
+            return MyPdmApiClient(_base_url)
+        return PlmApiClient(_base_url)
+
+    def _is_mypdm_backend(self) -> bool:
+        """当前是否为 myPDM 后端。"""
+        _, _, _, _, backend = self._read_conn()
+        return backend == _BACKEND_MYPDM
 
     def _start_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
@@ -1057,6 +1210,932 @@ class PlmWorkbench(QDialog):
         wd = self._get_work_dir()
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
 
+    def _on_cad_entry(self) -> None:
+        """CAD入口：CATIA 装配树 → myPDM BOM 匹配 → 内联编辑表格。"""
+        base_url, login, password, _ws, backend = self._read_conn()
+        if backend != _BACKEND_MYPDM:
+            return
+        if not login or not password:
+            QMessageBox.warning(self, "未登录", "请先在设置中配置 myPDM 并测试连接。")
+            return
+
+        # Step 1: 检测 CATIA
+        self._log_to_conn("CAD入口：检测 CATIA……")
+        status = detect_catia_status()
+        if not status.get("active"):
+            QMessageBox.warning(self, "CATIA 未运行", "请先启动 CATIA V5。")
+            return
+        if not status.get("has_document"):
+            QMessageBox.warning(self, "未打开文档", "请在 CATIA 中打开一个装配体 (.CATProduct)。")
+            return
+        self._log_to_conn(f"CAD入口：CATIA 已连接 — {status.get('doc_name', '?')}", "ok")
+
+        # Step 2: 读取装配结构
+        self._log_to_conn("CAD入口：正在读取装配结构……")
+        try:
+            tree = read_assembly_tree()
+        except Exception as e:
+            self._log_to_conn(f"CAD入口：读取失败 — {e}", "error")
+            return
+        if tree is None:
+            QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
+            return
+
+        # Step 3: 层级树
+        rows = flatten_tree_hierarchical(tree)
+
+        # 加载字段映射
+        self._cad_field_map = _load_field_mapping()
+
+        # 将根装配体作为顶层节点
+        root_row = {
+            "instance_name": tree.get("instance_name", ""),
+            "part_number": tree.get("part_number", ""),
+            "path": tree.get("path", "0"),
+            "level": 0,
+            "is_assembly": tree.get("is_assembly", True),
+            "quantity": 1,
+            "instances": [{"matrix": tree.get("matrix"), "label": tree.get("instance_name", "")}],
+            "doc_path": tree.get("doc_path", ""),
+            "builtin": dict(tree.get("builtin", {})),
+            "user_properties": dict(tree.get("user_properties", {})),
+            "children": rows,
+        }
+        rows = [root_row]
+        # 同时生成平铺列表用于 BOM 匹配
+        flat_rows = flatten_tree(tree)
+        self._log_to_conn(f"CAD入口：装配树 — {len(flat_rows)} 个零件节点", "ok")
+
+        # Step 4: BOM 匹配（从层级树递归收集所有件号）
+        self._log_to_conn("CAD入口：正在进行 myPDM BOM 匹配……")
+        client = MyPdmApiClient(base_url)
+        try:
+            client.login(login, password)
+        except MyPdmApiError as e:
+            self._log_to_conn(f"CAD入口：myPDM 登录失败 — {e}", "error")
+            return
+
+        # 递归收集层级树中所有去重的 (code, version) 对
+        seen = set()
+        items = []
+
+        def _collect_pns(tree_nodes):
+            for node in tree_nodes:
+                code = node.get("part_number", "").strip()
+                if code and code not in seen:
+                    seen.add(code)
+                    version = node.get("builtin", {}).get("Revision", "")
+                    items.append({"code": code, "version": version if version else None})
+                children = node.get("children", [])
+                if children:
+                    _collect_pns(children)
+
+        _collect_pns(rows)
+
+        try:
+            match_results = client.cad_bom_match(items)
+        except MyPdmApiError as e:
+            self._log_to_conn(f"CAD入口：BOM 匹配失败 — {e}", "error")
+            return
+
+        match_map = {}
+        for r in match_results:
+            match_map[r.code] = r
+
+        matched = sum(1 for r in match_results if r.match_status == "matched")
+        new_count = sum(1 for r in match_results if r.match_status == "new")
+        conflict = sum(1 for r in match_results if r.match_status == "conflict")
+        checked_out = sum(1 for r in match_results if r.checkout_status == "checked_out")
+        self._log_to_conn(
+            f"CAD入口：BOM 匹配完成 — 已匹配 {matched} / 可新建 {new_count} / 冲突 {conflict} / 已签出 {checked_out}",
+            "ok",
+        )
+
+        # 存储数据
+        self._cad_rows = flat_rows
+        self._cad_tree_rows = rows
+        self._cad_match_map = match_map
+        self._cad_client = client
+
+        # 查询附件计数
+        self._cad_att_counts: dict[str, dict] = {}
+        self._log_to_conn("CAD入口：查询附件计数……")
+        for _pn, m in match_map.items():
+            if m.match_status == "matched" and m.revision_id:
+                try:
+                    cad_atts = client.list_attachments(m.revision_id, "cad")
+                    prod_atts = client.list_attachments(m.revision_id, "production")
+                    self._cad_att_counts[_pn] = {"cad": len(cad_atts), "production": len(prod_atts)}
+                except Exception:
+                    self._cad_att_counts[_pn] = {"cad": 0, "production": 0}
+        self._log_to_conn("CAD入口：附件计数查询完成", "ok")
+
+        # Step 5: 构建树形页面
+        self._build_cad_match_page()
+
+        self._content_stack.setCurrentIndex(1)
+
+    def _on_cad_back(self) -> None:
+        """从 CAD入口 返回同步视图。"""
+        self._content_stack.setCurrentIndex(0)
+
+    def _build_cad_match_page(self) -> None:
+        """构建 CAD入口 BOM 匹配树形页面（照抄 myPDM 列定义）。"""
+        while self._cad_page_layout.count():
+            item = self._cad_page_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # ── 顶部统计栏 ─────────────────────────────────────────────────────────
+        summary_bar = QHBoxLayout()
+        summary_bar.setContentsMargins(8, 4, 8, 4)
+        summary_bar.setSpacing(12)
+
+        matched = sum(1 for r in self._cad_match_map.values() if r.match_status == "matched")
+        new_count = sum(1 for r in self._cad_match_map.values() if r.match_status == "new")
+        conflict = sum(1 for r in self._cad_match_map.values() if r.match_status == "conflict")
+        checked_out = sum(1 for r in self._cad_match_map.values() if r.checkout_status == "checked_out")
+
+        counts = [
+            (f"已匹配 {matched}", "#d4edda"),
+            (f"可新建 {new_count}", "#fff3cd"),
+            (f"冲突 {conflict}", "#f8d7da"),
+            (f"已签出 {checked_out}", "#d1ecf1"),
+        ]
+        for text, color in counts:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(f"background:{color}; border-radius:3px; padding:2px 8px; font-weight:bold; font-size:11px;")
+            summary_bar.addWidget(lbl)
+
+        summary_bar.addStretch()
+        for label, slot in [("🔄 重新匹配", self._on_cad_refresh), ("✅ 全部签入", self._on_cad_checkin_all), ("属性→ 批量推送", self._on_cad_push_all), ("← 返回", self._on_cad_back)]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(26)
+            btn.clicked.connect(slot)
+            summary_bar.addWidget(btn)
+
+        self._cad_match_summary = QWidget()
+        self._cad_match_summary.setLayout(summary_bar)
+        self._cad_page_layout.addWidget(self._cad_match_summary)
+
+        # ── 用户自定义属性列 ──────────────────────────────────────────────────
+        self._cad_user_cols = ["存货类别", "规格型号", "物料类型", "重量(kg)"]
+        self._cad_user_catia_map = {
+            "存货类别": "存货类别",
+            "规格型号": "规格型号",
+            "物料类型": "物料类型",
+            "重量(kg)": "重量",
+        }
+
+        # ── 列定义 ─────────────────────────────────────────────────────────────
+        self._CAD_COL_LVL     = 0   # 层级
+        self._CAD_COL_PN      = 1   # 件号
+        self._CAD_COL_QTY     = 2   # 用量
+        self._CAD_COL_REV     = 3   # 版本
+        self._CAD_COL_DEF     = 4   # 定义
+        self._CAD_COL_NOM     = 5   # 术语
+        self._CAD_COL_DESC    = 6   # 描述
+        self._CAD_COL_USER_START = 7
+        self._CAD_COL_CAD_ATT  = 7 + len(self._cad_user_cols)
+        self._CAD_COL_PROD_ATT = 8 + len(self._cad_user_cols)
+        self._CAD_COL_PDM      = 9 + len(self._cad_user_cols)
+        self._CAD_COL_MATCH    = 10 + len(self._cad_user_cols)
+        self._CAD_COL_CO       = 11 + len(self._cad_user_cols)
+        self._CAD_COL_OP       = 12 + len(self._cad_user_cols)
+
+        headers = ["层级", "件号", "用量", "版本", "定义", "术语", "描述"]
+        headers += self._cad_user_cols
+        headers += ["CAD附件", "生产附件", "PDM匹配", "匹配状态", "签出状态", "操作"]
+
+        self._cad_tree = QTreeWidget()
+        self._cad_tree.setHeaderLabels(headers)
+        self._cad_tree.setAnimated(True)
+        self._cad_tree.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
+        self._cad_tree.setIndentation(16)
+        self._cad_tree.setRootIsDecorated(True)
+        self._cad_tree.setAlternatingRowColors(False)
+        self._cad_tree.setStyleSheet("QTreeView::item { border-bottom: 1px solid #e0e0e0; }")
+        # 使用委托控制行高和可编辑列
+        self._cad_tree.setItemDelegate(_CadTreeDelegate(self))
+        self._cad_tree.setAlternatingRowColors(False)
+
+        hdr = self._cad_tree.header()
+        hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(self._CAD_COL_PN, 160)
+        hdr.setSectionResizeMode(self._CAD_COL_PDM, QHeaderView.ResizeMode.Stretch)
+        for ci, w in [
+            (self._CAD_COL_LVL, 60), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
+            (self._CAD_COL_DEF, 80), (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
+            (self._CAD_COL_CAD_ATT, 70), (self._CAD_COL_PROD_ATT, 70),
+            (self._CAD_COL_PDM, 120), (self._CAD_COL_MATCH, 70),
+            (self._CAD_COL_CO, 70), (self._CAD_COL_OP, 140),
+        ]:
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.Fixed)
+            hdr.resizeSection(ci, w)
+
+        self._cad_page_layout.addWidget(self._cad_tree, 1)
+        self._cad_tree.itemChanged.connect(self._on_cad_item_changed)
+        self._populate_cad_tree(self._cad_tree, self._cad_tree_rows)
+        self._cad_tree.expandAll()
+
+    def _populate_cad_tree(self, tree: QTreeWidget, rows: list[dict], parent=None) -> None:
+        """递归填充 BOM 树（照抄 myPDM 表格列内容）。"""
+        for row in rows:
+            pn = row.get("part_number", "")
+            builtin = row.get("builtin", {})
+            user_props = row.get("user_properties", {})
+            qty = str(row.get("quantity", 1))
+            match = self._cad_match_map.get(pn)
+
+            # 件号显示
+            node = QTreeWidgetItem(parent or tree)
+            # 层级（dash 前缀格式：0, -1, --2, ---3）
+            level = row.get("level", 0)
+            level_text = "-" * level + str(level) if level > 0 else "0"
+            node.setText(self._CAD_COL_LVL, level_text)
+            node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
+            node.setText(self._CAD_COL_PN, pn)
+            node.setText(self._CAD_COL_QTY, qty)
+            node.setTextAlignment(self._CAD_COL_QTY, Qt.AlignCenter)
+            node.setText(self._CAD_COL_REV, builtin.get("Revision", ""))
+            node.setText(self._CAD_COL_DEF, builtin.get("Definition", ""))
+            node.setText(self._CAD_COL_NOM, builtin.get("Nomenclature", ""))
+            node.setText(self._CAD_COL_DESC, builtin.get("Description", ""))
+
+            # 用户自定义属性
+            for ui, col_key in enumerate(self._cad_user_cols):
+                catia_key = self._cad_user_catia_map.get(col_key, col_key)
+                node.setText(self._CAD_COL_USER_START + ui, user_props.get(catia_key, ""))
+
+            # CAD附件（两行：数量 + 按钮）
+            att_counts = self._cad_att_counts.get(pn, {"cad": 0, "production": 0})
+            cad_count = att_counts.get("cad", 0)
+
+            cad_widget = QWidget()
+            cad_layout = QVBoxLayout(cad_widget)
+            cad_layout.setContentsMargins(2, 2, 2, 2)
+            cad_layout.setSpacing(1)
+            cad_lbl = QLabel(f"{cad_count}")
+            cad_lbl.setStyleSheet("font-weight:bold; color:#2980b9; font-size:11px;")
+            cad_lbl.setAlignment(Qt.AlignCenter)
+            cad_layout.addWidget(cad_lbl)
+            if match and match.match_status == "matched" and match.revision_id:
+                btn_upload = QPushButton("上传源文件")
+                btn_upload.setFixedHeight(20)
+                btn_upload.setStyleSheet("font-size:9px;")
+                btn_upload.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_upload_source(_pn, _r))
+                cad_layout.addWidget(btn_upload)
+            tree.setItemWidget(node, self._CAD_COL_CAD_ATT, cad_widget)
+
+            # 生产附件（两行：数量 + PDF/STP 按钮）
+            prod_count = att_counts.get("production", 0)
+            prod_widget = QWidget()
+            prod_layout = QVBoxLayout(prod_widget)
+            prod_layout.setContentsMargins(2, 2, 2, 2)
+            prod_layout.setSpacing(1)
+            prod_lbl = QLabel(f"{prod_count}")
+            prod_lbl.setStyleSheet("font-weight:bold; color:#e67e22; font-size:11px;")
+            prod_lbl.setAlignment(Qt.AlignCenter)
+            prod_layout.addWidget(prod_lbl)
+            if match and match.match_status == "matched" and match.revision_id:
+                btn_row = QHBoxLayout()
+                btn_row.setSpacing(2)
+                btn_pdf = QPushButton("PDF")
+                btn_pdf.setFixedSize(36, 20)
+                btn_pdf.setStyleSheet("font-size:9px;")
+                btn_pdf.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_export_pdf(_pn, _r))
+                btn_row.addWidget(btn_pdf)
+                btn_stp = QPushButton("STP")
+                btn_stp.setFixedSize(36, 20)
+                btn_stp.setStyleSheet("font-size:9px;")
+                btn_stp.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_export_stp(_pn, _r))
+                btn_row.addWidget(btn_stp)
+                btn_row.addStretch()
+                prod_layout.addLayout(btn_row)
+            tree.setItemWidget(node, self._CAD_COL_PROD_ATT, prod_widget)
+
+            # PDM匹配
+            pdm_text = "—"
+            if match and match.match_status == "matched":
+                pdm_text = f"{match.code}_{match.version}" if match.code else "—"
+            node.setText(self._CAD_COL_PDM, pdm_text)
+
+            # 匹配状态
+            ms = match.match_status if match else "—"
+            ms_display = {"matched": "已匹配", "new": "可新建", "conflict": "冲突", "unknown": "未知"}.get(ms, ms)
+            node.setText(self._CAD_COL_MATCH, ms_display)
+
+            # 签出状态
+            cs = match.checkout_status if match and match.checkout_status else "—"
+            cs_display = {"not_checked_out": "未签出", "checked_out": "已签出", "other_checked_out": "他人签出"}.get(cs, cs)
+            node.setText(self._CAD_COL_CO, cs_display)
+
+            # 操作按钮
+            op_widget = QWidget()
+            op_layout = QHBoxLayout(op_widget)
+            op_layout.setContentsMargins(2, 1, 2, 1)
+            op_layout.setSpacing(2)
+
+            if match:
+                if match.match_status == "new":
+                    btn = QPushButton("创建零件")
+                    btn.setFixedSize(68, 22)
+                    btn.setStyleSheet("font-size:10px;")
+                    btn.clicked.connect(lambda checked, r=row: self._on_cad_create_part(r))
+                    op_layout.addWidget(btn)
+                elif match.match_status == "matched":
+                    if match.checkout_status in ("not_checked_out", None):
+                        btn_co = QPushButton("签出")
+                        btn_co.setFixedSize(50, 22)
+                        btn_co.setStyleSheet("font-size:10px;")
+                        btn_co.clicked.connect(lambda checked, _pn=pn: self._on_cad_checkout_by_pn(_pn))
+                        op_layout.addWidget(btn_co)
+                        btn_pull = QPushButton("属性←")
+                        btn_pull.setFixedSize(52, 22)
+                        btn_pull.setStyleSheet("font-size:10px;")
+                        btn_pull.clicked.connect(lambda checked, _r=row, _m=match: self._on_cad_pull_attrs(_r, _m))
+                        op_layout.addWidget(btn_pull)
+                    elif match.checkout_status == "checked_out":
+                        btn_ci = QPushButton("签入")
+                        btn_ci.setFixedSize(50, 22)
+                        btn_ci.setStyleSheet("font-size:10px;")
+                        btn_ci.clicked.connect(lambda checked, _pn=pn: self._on_cad_checkin_by_pn(_pn))
+                        op_layout.addWidget(btn_ci)
+                        btn_push = QPushButton("属性→")
+                        btn_push.setFixedSize(52, 22)
+                        btn_push.setStyleSheet("font-size:10px;")
+                        btn_push.clicked.connect(lambda checked, _r=row, _m=match: self._on_cad_push_attrs(_r, _m))
+                        op_layout.addWidget(btn_push)
+                        btn_undo = QPushButton("撤销")
+                        btn_undo.setFixedSize(42, 22)
+                        btn_undo.setStyleSheet("font-size:10px; color:#e74c3c;")
+                        btn_undo.clicked.connect(lambda checked, _pn=pn: self._on_cad_undo(_pn))
+                        op_layout.addWidget(btn_undo)
+            op_layout.addStretch()
+            tree.setItemWidget(node, self._CAD_COL_OP, op_widget)
+
+            # 存储数据
+            node.setData(self._CAD_COL_PN, Qt.UserRole, row)
+            node.setData(self._CAD_COL_PN, Qt.UserRole + 1, match)
+            # 启用双击编辑
+            node.setFlags(node.flags() | Qt.ItemIsEditable)
+
+            # 递归子节点
+            children = row.get("children", [])
+            if children:
+                self._populate_cad_tree(tree, children, node)
+
+    def _on_cad_tree_context_menu(self, pos) -> None:
+        """树节点右键菜单（含属性编辑、签出/签入、创建零件等）。"""
+        node = self._cad_tree.itemAt(pos)
+        if not node:
+            return
+        row = node.data(self._CAD_COL_PN, Qt.UserRole)
+        match = node.data(self._CAD_COL_PN, Qt.UserRole + 1)
+        if not row:
+            return
+        pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+
+        menu = QMenu(self)
+
+        # ── 属性编辑子菜单 ──
+        edit_menu = menu.addMenu("编辑属性")
+        for col_key, catia_key in [
+            ("版本", "Revision"), ("定义", "Definition"),
+            ("术语", "Nomenclature"), ("描述", "Description"),
+        ]:
+            val = builtin.get(catia_key, "")
+            act = edit_menu.addAction(f"{col_key}: {val}")
+            act.triggered.connect(lambda checked, _k=col_key, _ck=catia_key:
+                self._on_cad_edit_property(pn, row, _k, _ck))
+
+        for col_key in self._cad_user_cols:
+            catia_key = self._cad_user_catia_map.get(col_key, col_key)
+            val = user_props.get(catia_key, "")
+            act = edit_menu.addAction(f"{col_key}: {val}")
+            act.triggered.connect(lambda checked, _k=col_key, _ck=catia_key:
+                self._on_cad_edit_property(pn, row, _k, _ck))
+
+        menu.addSeparator()
+
+        # ── 操作 ──
+        if match:
+            if match.match_status == "new":
+                act_create = menu.addAction("创建零件")
+                act_create.triggered.connect(lambda: self._on_cad_create_part(row))
+            elif match.match_status == "matched":
+                if match.checkout_status in ("not_checked_out", None):
+                    act_co = menu.addAction("签出")
+                    act_co.triggered.connect(lambda: self._on_cad_checkout_by_pn(pn))
+                    act_pull = menu.addAction("属性← 拉取")
+                    act_pull.triggered.connect(lambda: self._on_cad_pull(row, match))
+                elif match.checkout_status == "checked_out":
+                    act_ci = menu.addAction("签入")
+                    act_ci.triggered.connect(lambda: self._on_cad_checkin_by_pn(pn))
+                    act_push = menu.addAction("属性→ 推送")
+                    act_push.triggered.connect(lambda: self._on_cad_push(row, match))
+        menu.exec(self._cad_tree.viewport().mapToGlobal(pos))
+
+    def _on_cad_checkout_by_pn(self, pn: str) -> None:
+        match = self._cad_match_map.get(pn)
+        if match and match.revision_id:
+            try:
+                self._cad_client.checkout(match.revision_id)
+                self._log_to_conn(f"CAD入口：签出成功 — {pn}", "ok")
+                self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "checked_out"})
+                self._refresh_cad_tree()
+            except Exception as e:
+                QMessageBox.critical(self, "签出失败", str(e))
+
+    def _on_cad_edit_property(self, pn: str, row: dict, col_name: str, catia_key: str) -> None:
+        """右键编辑 CATIA 属性并写回。"""
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+        is_builtin = catia_key in ("Revision", "Definition", "Nomenclature", "Description")
+        current = builtin.get(catia_key, "") if is_builtin else user_props.get(catia_key, "")
+
+        text, ok = QInputDialog.getText(
+            self, f"编辑 {col_name}", f"{pn} — {col_name}:",
+            text=str(current),
+        )
+        if not ok:
+            return
+
+        if is_builtin:
+            new_builtin = dict(builtin)
+            new_builtin[catia_key] = text
+            row["builtin"] = new_builtin
+            from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+            self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, text)
+            self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, text)
+        else:
+            new_user_props = dict(user_props)
+            new_user_props[catia_key] = text
+            row["user_properties"] = new_user_props
+            from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+            self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, text)
+            self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, text)
+
+        self._refresh_cad_tree()
+        self._log_to_conn(f"CAD入口：属性已编辑 — {pn}.{col_name} = {text}", "ok")
+
+    def _on_cad_checkin_by_pn(self, pn: str) -> None:
+        match = self._cad_match_map.get(pn)
+        if match and match.revision_id:
+            try:
+                self._cad_client.checkin(match.revision_id)
+                self._log_to_conn(f"CAD入口：签入成功 — {pn}", "ok")
+                self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "not_checked_out"})
+                self._refresh_cad_tree()
+            except Exception as e:
+                QMessageBox.critical(self, "签入失败", str(e))
+
+    def _on_cad_push(self, row: dict, match) -> None:
+        """属性→ PDM。"""
+        if not match.revision_id:
+            return
+        self._on_cad_push_attrs(row, match)
+
+    def _on_cad_pull(self, row: dict, match) -> None:
+        """属性← PDM。"""
+        self._on_cad_pull_attrs(row, match)
+
+    def _on_cad_item_changed(self, item, col: int) -> None:
+        """双击编辑完成后的回调：写回 CATIA + 同步同件号实例。"""
+        row = item.data(self._CAD_COL_PN, Qt.UserRole)
+        if not row:
+            return
+        new_val = item.text(col).strip()
+        pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+
+        col_map = {
+            self._CAD_COL_REV:  ("Revision", True),
+            self._CAD_COL_DEF:  ("Definition", True),
+            self._CAD_COL_NOM:  ("Nomenclature", True),
+            self._CAD_COL_DESC: ("Description", True),
+        }
+        prop_info = col_map.get(col)
+        if not prop_info and col >= self._CAD_COL_USER_START and col < self._CAD_COL_CAD_ATT:
+            ui = col - self._CAD_COL_USER_START
+            if ui < len(self._cad_user_cols):
+                catia_key = self._cad_user_catia_map.get(self._cad_user_cols[ui], self._cad_user_cols[ui])
+                prop_info = (catia_key, False)
+
+        if not prop_info:
+            return
+
+        catia_key, is_builtin = prop_info
+        old_val = builtin.get(catia_key, "") if is_builtin else user_props.get(catia_key, "")
+        if new_val == old_val:
+            return
+
+        if is_builtin:
+            row["builtin"] = {**builtin, catia_key: new_val}
+        else:
+            row["user_properties"] = {**user_props, catia_key: new_val}
+
+        from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+        self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, new_val)
+        self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, new_val)
+
+        try:
+            from catia_copilot.catia.property_rw import write_property
+            from catia_copilot.catia.connection import get_catia_v5_application
+            app = get_catia_v5_application()
+            if app.ActiveDocument and app.ActiveDocument.Product:
+                path = row.get("path", "0")
+                write_property(path, app.ActiveDocument.Product, catia_key, new_val)
+        except Exception:
+            pass
+
+        self._log_to_conn(f"CAD入口：{pn}.{catia_key} = {new_val}", "ok")
+
+    def _refresh_cad_tree(self) -> None:
+        """刷新 CAD 树显示（保持展开状态）。"""
+        self._cad_tree.clear()
+        self._populate_cad_tree(self._cad_tree, self._cad_tree_rows)
+        self._cad_tree.expandAll()
+
+    def _on_cad_undo(self, pn: str) -> None:
+        """撤销签出。"""
+        match = self._cad_match_map.get(pn)
+        if match and match.revision_id:
+            try:
+                self._cad_client.undocheckout(match.revision_id)
+                self._log_to_conn(f"CAD入口：撤销签出成功 — {pn}", "ok")
+                self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "not_checked_out"})
+                self._refresh_cad_tree()
+            except Exception as e:
+                QMessageBox.critical(self, "撤销失败", str(e))
+
+    def _on_cad_push_all(self) -> None:
+        """批量推送所有已签出零件的属性到 PDM。"""
+        count = 0
+        field_map = getattr(self, "_cad_field_map", {})
+        bm = field_map.get("builtin", {})
+        pm = field_map.get("properties", {})
+        # 预加载自定义字段定义
+        try:
+            field_defs = self._cad_client.get_custom_field_definitions()
+        except Exception:
+            field_defs = []
+        key_to_id = {}
+        name_to_id = {}
+        for fd in field_defs:
+            fid = fd.get("id")
+            if fid:
+                key_to_id[fd.get("field_key", "")] = fid
+                name_to_id[fd.get("name", "")] = fid
+
+        for row in self._cad_rows:
+            pn = row.get("part_number", "")
+            match = self._cad_match_map.get(pn)
+            if not (match and match.checkout_status == "checked_out"):
+                continue
+            master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+            if not master_id:
+                continue
+            builtin = row.get("builtin", {})
+            user_props = row.get("user_properties", {})
+
+            # PartMaster update
+            payload = {}
+            for catia_key, pdm_key in bm.items():
+                val = builtin.get(catia_key, "")
+                if val:
+                    payload[pdm_key] = val
+            if "spec" in pm.values() or "规格型号" in pm:
+                spec_val = user_props.get("规格型号", "") or builtin.get("规格型号", "")
+                if spec_val:
+                    payload["spec"] = spec_val
+            if payload:
+                try:
+                    self._cad_client.update_part(master_id, payload)
+                except Exception:
+                    pass
+
+            # Custom field values
+            custom_values = []
+            for catia_key, pdm_key in pm.items():
+                if pdm_key == "spec":
+                    continue
+                val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+                if not val:
+                    continue
+                fid = key_to_id.get(pdm_key) or name_to_id.get(pdm_key) or key_to_id.get(catia_key) or name_to_id.get(catia_key)
+                if fid:
+                    custom_values.append({"field_id": fid, "value": val})
+            if custom_values:
+                try:
+                    self._cad_client.set_custom_field_values("part", master_id, custom_values)
+                except Exception:
+                    pass
+
+            count += 1
+
+        if count:
+            self._log_to_conn(f"CAD入口：批量推送完成 — {count} 个", "ok")
+        else:
+            QMessageBox.information(self, "批量推送", "没有需要推送的零件。")
+
+    def _on_cad_upload_source(self, pn: str, row: dict) -> None:
+        """上传 CATIA 源文件到 PDM CAD附件。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        doc_path = row.get("doc_path", "")
+        if not doc_path or not os.path.exists(doc_path):
+            QMessageBox.warning(self, "上传源文件", f"找不到源文件：{doc_path}")
+            return
+        try:
+            self._cad_client.upload_attachment(match.revision_id, doc_path, "cad", overwrite=True)
+            self._log_to_conn(f"CAD入口：源文件已上传 — {pn}", "ok")
+            self._cad_att_counts[pn]["cad"] = self._cad_att_counts.get(pn, {"cad":0}).get("cad", 0) + 1
+            self._refresh_cad_tree()
+        except Exception as e:
+            QMessageBox.critical(self, "上传失败", str(e))
+
+    def _on_cad_export_pdf(self, pn: str, row: dict) -> None:
+        """导出 CATDrawing → PDF → 上传到生产附件（按命名规则）。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        doc_path = row.get("doc_path", "")
+        if not doc_path:
+            QMessageBox.warning(self, "导出PDF", "找不到源文件路径。")
+            return
+        from catia_copilot.catia.dependencies import find_drawing_for_part
+        drawing_result = find_drawing_for_part(doc_path)
+        if not drawing_result:
+            QMessageBox.information(self, "导出PDF", f"未找到关联工程图：{doc_path}")
+            return
+        # find_drawing_for_part 可能返回列表或单个字符串
+        drawing_path = drawing_result[0] if isinstance(drawing_result, list) else drawing_result
+        try:
+            naming = _load_cad_naming()
+            is_asm = row.get("is_assembly", False)
+            prefix = naming["pdf_assembly"] if is_asm else naming["pdf_part"]
+            version = match.version or "A"
+            filename = f"{prefix}{pn}_{version}.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), filename)
+            from catia_copilot.catia.file_exporter import export_pdf
+            pdf_path = export_pdf(drawing_path, output_path)
+            if pdf_path:
+                self._cad_client.upload_attachment(match.revision_id, pdf_path, "production", overwrite=True)
+                self._log_to_conn(f"CAD入口：PDF已上传 — {filename}", "ok")
+                self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
+                self._refresh_cad_tree()
+                try:
+                    os.remove(pdf_path)
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "导出PDF", "PDF 导出失败。")
+        except Exception as e:
+            QMessageBox.critical(self, "导出PDF失败", str(e))
+
+    def _on_cad_export_stp(self, pn: str, row: dict) -> None:
+        """导出 STP → 上传到生产附件（按命名规则）。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        try:
+            naming = _load_cad_naming()
+            prefix = naming["stp"]
+            version = match.version or "A"
+            filename = f"{prefix}{pn}_{version}.stp"
+            output_path = os.path.join(tempfile.gettempdir(), filename)
+            from catia_copilot.catia.file_exporter import export_stp
+            stp_path = export_stp(row.get("path", "0"), output_path=output_path)
+            if stp_path:
+                self._cad_client.upload_attachment(match.revision_id, stp_path, "production", overwrite=True)
+                self._log_to_conn(f"CAD入口：STP已上传 — {filename}", "ok")
+                self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
+                self._refresh_cad_tree()
+                try:
+                    os.remove(stp_path)
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "导出STP", "STP 导出失败。")
+        except Exception as e:
+            QMessageBox.critical(self, "导出STP失败", str(e))
+
+    # 旧方法保留兼容
+        """签入指定版本的零件。"""
+        if not revision_id:
+            return
+        try:
+            self._cad_client.checkin(revision_id)
+            self._log_to_conn(f"CAD入口：签入成功", "ok")
+            pn = self._cad_rows[row_idx].get("part_number", "")
+            if pn in self._cad_match_map:
+                m = self._cad_match_map[pn]
+                self._cad_match_map[pn] = type(m)(**{**m.__dict__, "checkout_status": "not_checked_out"})
+            self._refresh_cad_tree()
+        except Exception as e:
+            QMessageBox.critical(self, "签入失败", str(e))
+
+    def _on_cad_create_part(self, row: dict) -> None:
+        """在 myPDM 中创建零件。"""
+        pn = row.get("part_number", "").strip()
+        builtin = row.get("builtin", {})
+        name = builtin.get("Nomenclature", pn)
+        is_assembly = row.get("is_assembly", False)
+        ptype = "assembly" if is_assembly else "part"
+        try:
+            from catia_copilot.plm.my_pdm_schemas import PartCreateRequest
+            req = PartCreateRequest(code=pn, name=name, type=ptype)
+            result = self._cad_client.create_part(req)
+            self._log_to_conn(f"CAD入口：零件已创建 — {pn}", "ok")
+            # 更新本地匹配状态
+            if pn in self._cad_match_map:
+                m = self._cad_match_map[pn]
+                self._cad_match_map[pn] = type(m)(**{
+                    **m.__dict__,
+                    "match_status": "matched",
+                    "revision_id": result.id,
+                    "version": result.version,
+                    "checkout_status": "checked_out",
+                })
+            self._refresh_cad_tree()
+        except Exception as e:
+            QMessageBox.critical(self, "创建失败", str(e))
+
+    def _on_cad_push_attrs(self, row: dict, match) -> None:
+        """属性→：按字段映射将 CATIA 属性推送到 PDM。
+        
+        builtin 字段 → PUT /parts/{master_id}
+        自定义属性 → PUT /custom-fields/values/part/{master_id}
+        """
+        if not match:
+            return
+        pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+        field_map = getattr(self, "_cad_field_map", {})
+
+        master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+        if not master_id:
+            QMessageBox.warning(self, "属性→", f"缺少 PDM 零件 ID（{pn}）。")
+            return
+
+        bm = field_map.get("builtin", {})
+        pm = field_map.get("properties", {})
+
+        # ── PartMaster 更新（code, name, spec） ──
+        payload = {}
+        for catia_key, pdm_key in bm.items():
+            val = builtin.get(catia_key, "")
+            if val:
+                payload[pdm_key] = val
+        # spec 从属性映射中取
+        if "spec" in pm.values() or "规格型号" in pm:
+            spec_val = user_props.get("规格型号", "") or builtin.get("规格型号", "")
+            if spec_val:
+                payload["spec"] = spec_val
+
+        push_log = []
+        if payload:
+            try:
+                self._cad_client.update_part(master_id, payload)
+                push_log.append("基础字段")
+            except MyPdmApiError as e:
+                QMessageBox.critical(self, "推送失败", f"{pn}：{e}")
+                return
+
+        # ── 自定义字段 ──
+        custom_values = []
+        try:
+            field_defs = self._cad_client.get_custom_field_definitions()
+            # 构建 field_key → field_id 映射
+            key_to_id = {}
+            name_to_id = {}
+            for fd in field_defs:
+                fid = fd.get("id")
+                if fid:
+                    key_to_id[fd.get("field_key", "")] = fid
+                    name_to_id[fd.get("name", "")] = fid
+        except Exception:
+            field_defs = []
+            key_to_id = {}
+            name_to_id = {}
+
+        for catia_key, pdm_key in pm.items():
+            if pdm_key == "spec":
+                continue  # spec 已在上面处理
+            val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+            if not val:
+                continue
+            # 优先按 field_key 匹配，其次按 name 匹配
+            fid = key_to_id.get(pdm_key) or name_to_id.get(pdm_key) or key_to_id.get(catia_key) or name_to_id.get(catia_key)
+            if fid:
+                custom_values.append({"field_id": fid, "value": val})
+
+        if custom_values:
+            try:
+                self._cad_client.set_custom_field_values("part", master_id, custom_values)
+                push_log.append(f"自定义字段({len(custom_values)}个)")
+            except MyPdmApiError as e:
+                self._log_to_conn(f"CAD入口：自定义字段推送失败 {pn} — {e}", "warn")
+
+        # ── BOM 结构同步（装配体） ──
+        rev_id = getattr(match, "revision_id", None)
+        if row.get("is_assembly") and row.get("children") and rev_id:
+            children_data = []
+            for child in row["children"]:
+                child_pn = child.get("part_number", "")
+                child_builtin = child.get("builtin", {})
+                child_name = child_builtin.get("Nomenclature", child_pn)
+                child_spec = child.get("user_properties", {}).get("规格型号", "")
+                child_qty = child.get("quantity", 1)
+                # 转换矩阵：CATIA 列主序 12元素 → 行主序 4×4
+                child_instances = []
+                for inst in child.get("instances", []):
+                    m = inst.get("matrix")
+                    if m and len(m) == 12:
+                        m = [
+                            m[0], m[3], m[6], m[9],
+                            m[1], m[4], m[7], m[10],
+                            m[2], m[5], m[8], m[11],
+                            0.0, 0.0, 0.0, 1.0,
+                        ]
+                    child_instances.append({
+                        "matrix": m,
+                        "label": inst.get("label", ""),
+                    })
+                children_data.append({
+                    "code": child_pn,
+                    "name": child_name,
+                    "spec": child_spec or None,
+                    "quantity": child_qty,
+                    "instances": child_instances if child_instances else [],
+                })
+            if children_data:
+                try:
+                    result = self._cad_client.cad_bom_sync(rev_id, children_data)
+                    push_log.append(f"BOM({result.created}+{result.updated})")
+                except MyPdmApiError as e:
+                    self._log_to_conn(f"CAD入口：BOM同步失败 {pn} — {e}", "warn")
+
+        if push_log:
+            self._log_to_conn(f"CAD入口：属性已推送 — {pn}（{', '.join(push_log)}）", "ok")
+        else:
+            QMessageBox.information(self, "属性→", "未找到可推送的属性。")
+
+    def _on_cad_pull_attrs(self, row: dict, match) -> None:
+        """属性←：从 PDM 拉取属性。"""
+        master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+        if not master_id:
+            return
+        try:
+            part = self._cad_client.get_part(master_id)
+            if part:
+                field_map = getattr(self, "_cad_field_map", {})
+                pm = field_map.get("properties", {})
+                # 展示 PDM 侧的可拉取字段
+                info_lines = []
+                for catia_key, pdm_key in pm.items():
+                    v = part.get(pdm_key, "")
+                    if v:
+                        info_lines.append(f"  {catia_key} ← {v}")
+                if info_lines:
+                    QMessageBox.information(self, "属性←", "PDM 属性：\n" + "\n".join(info_lines))
+                else:
+                    QMessageBox.information(self, "属性←", "PDM 无自定义属性数据。")
+                self._log_to_conn(f"CAD入口：属性已拉取 — {match.code}", "ok")
+        except Exception as e:
+            QMessageBox.critical(self, "拉取失败", str(e))
+
+    def _on_cad_refresh(self) -> None:
+        """重新执行 CAD入口 流程。"""
+        self._on_cad_entry()
+
+    def _on_cad_checkin_all(self) -> None:
+        """批量签入所有已签出的零件。"""
+        count = 0
+        for pn, match in list(self._cad_match_map.items()):
+            if match.checkout_status == "checked_out" and match.revision_id:
+                try:
+                    self._cad_client.checkin(match.revision_id)
+                    self._cad_match_map[pn] = type(match)(**{**match.__dict__, "checkout_status": "not_checked_out"})
+                    count += 1
+                except Exception as e:
+                    self._log_to_conn(f"CAD入口：签入失败 {pn} — {e}", "warn")
+        if count:
+            self._log_to_conn(f"CAD入口：全部签入完成 — {count} 个", "ok")
+            self._refresh_cad_tree()
+        else:
+            QMessageBox.information(self, "全部签入", "没有需要签入的零件。")
+
         # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
         s_after = QSettings(_S_ORG, _S_PLM_CFG)
         _after = (
@@ -1088,7 +2167,7 @@ class PlmWorkbench(QDialog):
 
     def _init_settings_controls(self) -> None:
         """初始化设置相关控件引用（供旧业务方法使用）。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, backend = self._read_conn()
         s_plm = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = s_plm.value("work_dir", "")
 
@@ -1108,6 +2187,13 @@ class PlmWorkbench(QDialog):
         self._tbl_rules     = QTableWidget(0, 3)
         self._le_rule_catia = QLineEdit()
         self._cmb_rule_tag  = QComboBox(); self._cmb_rule_tag.setEditable(True)
+        # 后端选择下拉框（仅在设置弹窗中可见）
+        self._backend_combo = QComboBox()
+        self._backend_combo.addItems(["plm-unified", "myPDM"])
+        if backend == _BACKEND_MYPDM:
+            self._backend_combo.setCurrentText("myPDM")
+        else:
+            self._backend_combo.setCurrentText("plm-unified")
 
         # RadioButton / CheckBox 由 _build_advanced_options 创建并赋值到同名属性
         # 这里不再重复创建，避免孤儿控件覆盖可见控件
@@ -1154,6 +2240,9 @@ class PlmWorkbench(QDialog):
 
     def _on_load_workspace(self) -> None:
         """扫描工作目录，通过 CATIA COM 读取每个文件的属性，填充差异表。"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。")
+            return
         # 检查 CATIA 文档查找顺序设置（每次启动后仅提醒一次，设置正确则静默通过）
         if not self._catia_search_order_warned:
             self._catia_search_order_warned = True
@@ -1247,11 +2336,13 @@ class PlmWorkbench(QDialog):
 
     def _on_refresh_plm_status(self) -> None:
         """按本地文件零件号列表查询 PLM，更新缓存和差异列。"""
+        if self._is_mypdm_backend():
+            return
         # 互斥：已有 PLM 状态刷新 worker 在运行时，直接返回（避免并发写 _plm_cache）
         if getattr(self, "_plm_status_running", False):
             return
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", '请先在"设置"中配置 PLM 连接信息。')
             return
@@ -1392,7 +2483,7 @@ class PlmWorkbench(QDialog):
             # 他人签出也警告（Push 时阻止）
             if plm:
                 cout = str(plm.get("checkOutUser") or "")
-                _, current_login, _, _ = self._read_conn()
+                _, current_login, _, _, _ = self._read_conn()
                 if cout and cout != current_login:
                     warn = True
 
@@ -1687,7 +2778,7 @@ class PlmWorkbench(QDialog):
 
     def _on_show_attachments(self, pn: str, version: str, plm_data: dict) -> None:
         """弹出零件附件详情窗口。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
             return
@@ -1705,7 +2796,10 @@ class PlmWorkbench(QDialog):
 
     def _on_sync_start(self) -> None:
         """读取勾选行，执行 Push 到 PLM。"""
-        base_url, login, password, workspace = self._read_conn()
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。Push 功能后续版本支持。")
+            return
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
             return
@@ -1907,7 +3001,7 @@ class PlmWorkbench(QDialog):
 
     def _on_pull(self) -> None:
         """弹出 Pull 对话框（BOM 树模式）。"""
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
@@ -1920,7 +3014,10 @@ class PlmWorkbench(QDialog):
 
     def _on_pull_selected(self) -> None:
         """Pull 勾选行对应的 PLM 零件文件到工作目录。"""
-        base_url, login, password, workspace = self._read_conn()
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。Pull 功能后续版本支持。")
+            return
+        base_url, login, password, workspace, _be = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
@@ -2042,16 +3139,17 @@ class PlmWorkbench(QDialog):
         """弹窗手动输入零件号，查询 PLM 并递归展开子孙，批量加入本地缓存。
 
         行为：
-        - PLM 中存在该零件 → 递归获取其完整 BOM 子树，把所有节点都加入缓存
-        - PLM 中不存在    → 明确提示，不创建占位条目
-        """
+        - PLM 中存在该零件 → 递归获取其完整 BOM 子树，把所有节点都加入缓存"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端暂不支持此操作，请使用 '🔧 CAD入口' 功能。")
+            return
         from PySide6.QtWidgets import QInputDialog
         pn, ok = QInputDialog.getText(self, "新增 PLM Part", "输入零件号（Part Number）：")
         if not ok or not pn.strip():
             return
         pn = pn.strip()
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息，以便查询该零件。")
             return
@@ -2191,15 +3289,12 @@ class PlmWorkbench(QDialog):
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
 
     def _on_test_conn(self):
-        base_url  = self._le_base_url.text().strip()
-        login     = self._le_login.text().strip()
-        password  = self._le_password.text()
-        workspace = self._le_workspace.text().strip()
+        base_url, login, password, workspace, backend = self._read_conn()
         if not base_url or not login:
             self._log_to_conn("请先填写服务端地址和用户名。", "warn")
             return
         self._log_to_conn("正在测试连接……")
-        w = _ConnectWorker(base_url, login, password, workspace)
+        w = _ConnectWorker(base_url, login, password, workspace, backend)
         w.success.connect(self._on_conn_ok)
         w.failure.connect(self._on_conn_fail)
         self._start_worker(w)
@@ -2436,7 +3531,7 @@ class PlmWorkbench(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         s_plm = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = s_plm.value("work_dir", "")
 
@@ -2925,7 +4020,7 @@ class PlmWorkbench(QDialog):
         self._update_sync_result(pn, source, update, checkin)
 
     def _on_refresh_tags(self) -> None:
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         w = _TagsWorker(base_url, login, password, workspace)
         w.success.connect(self._on_tags_loaded)
         w.failure.connect(lambda e: QMessageBox.warning(self, "标签获取失败", e))
@@ -2950,7 +4045,7 @@ class PlmWorkbench(QDialog):
         if not label:
             QMessageBox.warning(self, "输入为空", "请输入标签名称。")
             return
-        base_url, login, password, workspace = self._read_conn()
+        base_url, login, password, workspace, _be = self._read_conn()
         w = _CreateTagWorker(base_url, login, password, workspace, label)
         w.success.connect(self._on_tag_created)
         w.failure.connect(lambda e: QMessageBox.warning(self, "创建标签失败", e))
@@ -3111,6 +4206,7 @@ class PlmWorkbench(QDialog):
 class _SettingsDialog(QDialog):
     """PLM 工作台设置（连接配置 + 标签规则）。
 
+    支持 plm-unified 和 myPDM 双后端，通过下拉框切换。
     保存后通过 QSettings 持久化，调用方可读取最新配置。
     """
 
@@ -3118,8 +4214,8 @@ class _SettingsDialog(QDialog):
         super().__init__(workbench)
         self._wb = workbench
         self.setWindowTitle("PLM 设置")
-        self.setMinimumSize(640, 560)
-        self.resize(720, 640)
+        self.setMinimumSize(640, 580)
+        self.resize(720, 660)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -3135,13 +4231,24 @@ class _SettingsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # ── 后端选择 ────────────────────────────────────────────────────────────
+        grp_backend = QGroupBox("后端类型")
+        backend_row = QHBoxLayout(grp_backend)
+        self._cmb_backend = QComboBox()
+        self._cmb_backend.addItem("plm-unified (FastAPI)", _BACKEND_UNIFIED)
+        self._cmb_backend.addItem("myPDM (JWT)", _BACKEND_MYPDM)
+        self._cmb_backend.currentIndexChanged.connect(self._on_backend_changed)
+        backend_row.addWidget(QLabel("选择后端："))
+        backend_row.addWidget(self._cmb_backend, stretch=1)
+        layout.addWidget(grp_backend)
+
         # ── 连接配置 ──────────────────────────────────────────────────────────
         grp_cfg = QGroupBox("连接配置")
-        form = QFormLayout(grp_cfg)
-        form.setSpacing(6)
+        self._form_cfg = QFormLayout(grp_cfg)
+        self._form_cfg.setSpacing(6)
 
         # 初始值直接从 QSettings 读取，不依赖 workbench 上的控件引用
-        base_url, login, password, workspace = self._wb._read_conn()
+        base_url, login, password, workspace, backend = self._wb._read_conn()
         s_plm    = QSettings(_S_ORG, _S_PLM_CFG)
         work_dir = str(s_plm.value("work_dir", ""))
 
@@ -3159,11 +4266,18 @@ class _SettingsDialog(QDialog):
         work_dir_row.addWidget(self._le_work_dir)
         work_dir_row.addWidget(btn_browse)
 
+        # 后端选择字段标签
+        self._lbl_login      = QLabel("用户名：")
+        self._lbl_password   = QLabel("密码：")
+        self._lbl_workspace  = QLabel("工作区：")
+        self._lbl_work_dir   = QLabel("工作目录：")
+
+        form = self._form_cfg
         form.addRow("服务端地址：", self._le_base_url)
-        form.addRow("用户名：",     self._le_login)
-        form.addRow("密码：",       self._le_password)
-        form.addRow("工作区：",     self._le_workspace)
-        form.addRow("工作目录：",   work_dir_row)
+        form.addRow(self._lbl_login,    self._le_login)
+        form.addRow(self._lbl_password, self._le_password)
+        form.addRow(self._lbl_workspace, self._le_workspace)
+        form.addRow(self._lbl_work_dir,  work_dir_row)
 
         btn_row = QHBoxLayout()
         btn_save = QPushButton("保存配置")
@@ -3177,7 +4291,7 @@ class _SettingsDialog(QDialog):
         layout.addWidget(grp_cfg)
 
         # ── 工作区详情 ────────────────────────────────────────────────────────
-        grp_ws = QGroupBox("工作区详情")
+        grp_ws = QGroupBox("连接信息")
         v_ws = QVBoxLayout(grp_ws)
         self._lbl_ws = QLabel(self._wb._lbl_ws_detail.text())
         self._lbl_ws.setWordWrap(True)
@@ -3269,6 +4383,13 @@ class _SettingsDialog(QDialog):
         root.addLayout(close_row)
         root.setContentsMargins(0, 0, 8, 8)
 
+        # 初始化后端选择
+        backend = self._wb._read_conn()[4]
+        idx = self._cmb_backend.findData(backend)
+        if idx >= 0:
+            self._cmb_backend.setCurrentIndex(idx)
+        self._on_backend_changed()
+
     # ── 事件处理 ──────────────────────────────────────────────────────────────
 
     def _on_browse(self) -> None:
@@ -3276,6 +4397,22 @@ class _SettingsDialog(QDialog):
                                                  self._le_work_dir.text())
         if path:
             self._le_work_dir.setText(path)
+
+    def _on_backend_changed(self) -> None:
+        """后端切换时，显示/隐藏工作区和工作目录字段（myPDM 不需要）。"""
+        backend = self._cmb_backend.currentData()
+        show_ws = backend != _BACKEND_MYPDM
+        self._lbl_workspace.setVisible(show_ws)
+        self._le_workspace.setVisible(show_ws)
+        self._lbl_work_dir.setVisible(show_ws)
+        self._le_work_dir.setVisible(show_ws)
+        # 设置后端默认地址
+        if backend == _BACKEND_MYPDM and not self._le_base_url.text().strip():
+            self._le_base_url.setText("https://192.168.1.x:8443/api")
+            self._le_base_url.setPlaceholderText("https://192.168.1.x:8443/api")
+        elif backend == _BACKEND_UNIFIED and self._le_base_url.text() == "https://192.168.1.x:8443/api":
+            self._le_base_url.setText("http://127.0.0.1:8010")
+            self._le_base_url.setPlaceholderText("http://127.0.0.1:8010")
 
     def _on_save(self) -> None:
         """保存配置到 QSettings。"""
@@ -3285,7 +4422,12 @@ class _SettingsDialog(QDialog):
         s.setValue("password",  self._le_password.text())
         s.setValue("workspace", self._le_workspace.text().strip())
         s.setValue("work_dir",  self._le_work_dir.text().strip())
-        # 同步 workbench 的工作目录输入框（如果存在）
+        # 保存后端类型
+        backend_data = self._cmb_backend.currentData()
+        s.setValue("backend", backend_data if backend_data else _BACKEND_UNIFIED)
+        # 同步 workbench 的控件引用
+        if hasattr(self._wb, "_backend_combo") and self._wb._backend_combo:
+            self._wb._backend_combo.setCurrentText(self._cmb_backend.currentText())
         if hasattr(self._wb, "_le_work_dir") and self._wb._le_work_dir:
             self._wb._le_work_dir.setText(self._le_work_dir.text())
         self._log("配置已保存。", "ok")
@@ -3298,24 +4440,32 @@ class _SettingsDialog(QDialog):
         login     = self._le_login.text().strip()
         password  = self._le_password.text()
         workspace = self._le_workspace.text().strip()
+        backend   = self._cmb_backend.currentData() or _BACKEND_UNIFIED
         if not base_url or not login:
             self._log("请先填写服务端地址和用户名。", "warn")
             return
-        w = _ConnectWorker(base_url, login, password, workspace)
+        w = _ConnectWorker(base_url, login, password, workspace, backend)
         w.success.connect(lambda ln, users, ws_info: self._on_conn_ok(ln, users, ws_info))
         w.failure.connect(lambda err: self._log(f"连接失败：{err}", "error"))
-        # 借用 workbench 的 _start_worker 管理线程
         self._wb._start_worker(w)
 
     def _on_conn_ok(self, login_name: str, users: list, ws_info: dict) -> None:
-        info_parts = []
-        if ws_info.get("id"):
-            info_parts.append(f"工作区 ID：{ws_info['id']}")
-        if ws_info.get("description"):
-            info_parts.append(f"描述：{ws_info['description']}")
-        if isinstance(users, list):
-            info_parts.append(f"成员数：{len(users)}")
-        detail = "  |  ".join(info_parts) or "连接成功"
+        backend = self._cmb_backend.currentData()
+        if backend == _BACKEND_MYPDM:
+            real_name = ws_info.get("real_name", login_name)
+            role = ws_info.get("role", "?")
+            role_display = {"admin": "管理员", "engineer": "工程师",
+                            "production": "生产", "guest": "访客"}.get(role, role)
+            detail = f"用户：{real_name}（{role_display}）  |  部门：{ws_info.get('department', '—')}"
+        else:
+            info_parts = []
+            if ws_info.get("id"):
+                info_parts.append(f"工作区 ID：{ws_info['id']}")
+            if ws_info.get("description"):
+                info_parts.append(f"描述：{ws_info['description']}")
+            if isinstance(users, list):
+                info_parts.append(f"成员数：{len(users)}")
+            detail = "  |  ".join(info_parts) or "连接成功"
         self._lbl_ws.setText(detail)
         self._wb._lbl_ws_detail.setText(detail)
         self._log(f"连接成功 ({login_name})", "ok")

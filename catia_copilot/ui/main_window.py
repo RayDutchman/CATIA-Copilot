@@ -116,7 +116,7 @@ class MainWindow(QMainWindow):
         "bom_export":      "从产品导出 BOM",
         "mass_props":      "质量特性工作台",
         "plm_workbench":   "PLM 工作台 (DocDoku)",
-        "plm_workbench_unified": "PLM 工作台 (plm-unified)",
+        "plm_workbench_unified": "myPDM 工作台",
         "export_pdf":      "从图纸导出 PDF",
         "export_stp":      "从产品/零件导出 STP",
         "drawing_new":     "新建图纸 (Python)",
@@ -583,7 +583,7 @@ class MainWindow(QMainWindow):
 
         btn_plm_workbench_unified = QPushButton(self._ACTION_LABELS["plm_workbench_unified"])
         btn_plm_workbench_unified.setToolTip(
-            "打开 PLM 工作台（plm-unified 后端）"
+            "打开 myPDM 工作台"
         )
         btn_plm_workbench_unified.clicked.connect(self._open_plm_workbench_unified)
 

@@ -1,0 +1,12 @@
+{
+  "builtin": {
+    "PartNumber": "code",
+    "Nomenclature": "name"
+  },
+  "properties": {
+    "规格型号": "spec",
+    "重量(kg)": "重量(kg)",
+    "存货类别": "存货类别",
+    "物料类型": "物料类型"
+  }
+}
