@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 from catia_copilot.catia.document import get_bom_node_type
 from catia_copilot.constants import (
     PRODUCT_ATTR_READ_MAP,
@@ -24,29 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 def _read_product_position(product) -> list[float] | None:
+    """读取产品实例的变换矩阵（12 元素列主序）。
+    
+    GetComponents 使用 SAFEARRAY ByRef，win32com 无法直接调用，
+    需通过 pycatia wrap_product 绕过。与 mass_props_collect 一致。
+    """
     try:
-        pos = product.Position
-        if pos is None:
-            return None
-        raw = pos.GetComponents()
-        if raw is not None and len(raw) == 12:
-            return [float(v) for v in raw]
+        wrapped = wrap_product(product)
+        arr = wrapped.position.get_components()
     except Exception:
-        pass
-    try:
-        coords = []
-        for axis in range(3):
-            for el in range(4):
-                try:
-                    coord = pos.GetComponent(axis * 4 + el)
-                    coords.append(float(coord))
-                except Exception:
-                    coords.append(0.0)
-        if coords:
-            return coords
-    except Exception as e:
-        logger.debug(f"读取变换矩阵失败: {e}")
-    return None
+        try:
+            pos = product.Position
+            raw = pos.GetComponents()
+            if raw is not None and len(raw) == 12:
+                return [float(v) for v in raw]
+        except Exception:
+            pass
+        return None
+
+    if arr is None or len(arr) < 12:
+        return None
+    return [float(v) for v in arr[:12]]
 
 
 def _read_builtin_properties(product) -> dict[str, str]:
