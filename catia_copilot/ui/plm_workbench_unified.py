@@ -1216,7 +1216,20 @@ class PlmWorkbench(QDialog):
         self._cad_match_map = match_map
         self._cad_client = client
 
-        # Step 5: 构建内联表格
+        # 查询附件计数
+        self._cad_att_counts: dict[str, dict] = {}
+        self._log_to_conn("CAD入口：查询附件计数……")
+        for _pn, m in match_map.items():
+            if m.match_status == "matched" and m.revision_id:
+                try:
+                    cad_atts = client.list_attachments(m.revision_id, "cad")
+                    prod_atts = client.list_attachments(m.revision_id, "production")
+                    self._cad_att_counts[_pn] = {"cad": len(cad_atts), "production": len(prod_atts)}
+                except Exception:
+                    self._cad_att_counts[_pn] = {"cad": 0, "production": 0}
+        self._log_to_conn("CAD入口：附件计数查询完成", "ok")
+
+        # Step 5: 构建树形页面
         self._build_cad_match_page()
 
         self._content_stack.setCurrentIndex(1)
@@ -1345,9 +1358,48 @@ class PlmWorkbench(QDialog):
             for ui, key in enumerate(self._cad_user_cols):
                 node.setText(self._CAD_COL_USER_START + ui, user_props.get(key, ""))
 
-            # CAD附件（占位，后续实现上传）
-            node.setText(self._CAD_COL_CAD_ATT, "—")
-            node.setText(self._CAD_COL_PROD_ATT, "—")
+            # CAD附件（计数 + 上传源文件按钮）
+            att_counts = self._cad_att_counts.get(pn, {"cad": 0, "production": 0})
+            cad_count = att_counts.get("cad", 0)
+
+            cad_widget = QWidget()
+            cad_layout = QHBoxLayout(cad_widget)
+            cad_layout.setContentsMargins(2, 1, 2, 1)
+            cad_layout.setSpacing(2)
+            cad_lbl = QLabel(str(cad_count))
+            cad_lbl.setStyleSheet("font-weight:bold; color:#2980b9;")
+            cad_layout.addWidget(cad_lbl)
+            if match and match.match_status == "matched" and match.revision_id:
+                btn_upload = QPushButton("上传源文件")
+                btn_upload.setFixedSize(72, 20)
+                btn_upload.setStyleSheet("font-size:9px;")
+                btn_upload.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_upload_source(_pn, _r))
+                cad_layout.addWidget(btn_upload)
+            cad_layout.addStretch()
+            tree.setItemWidget(node, self._CAD_COL_CAD_ATT, cad_widget)
+
+            # 生产附件（计数 + PDF/STP 按钮）
+            prod_count = att_counts.get("production", 0)
+            prod_widget = QWidget()
+            prod_layout = QHBoxLayout(prod_widget)
+            prod_layout.setContentsMargins(2, 1, 2, 1)
+            prod_layout.setSpacing(2)
+            prod_lbl = QLabel(str(prod_count))
+            prod_lbl.setStyleSheet("font-weight:bold; color:#e67e22;")
+            prod_layout.addWidget(prod_lbl)
+            if match and match.match_status == "matched" and match.revision_id:
+                btn_pdf = QPushButton("PDF")
+                btn_pdf.setFixedSize(36, 20)
+                btn_pdf.setStyleSheet("font-size:9px;")
+                btn_pdf.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_export_pdf(_pn, _r))
+                prod_layout.addWidget(btn_pdf)
+                btn_stp = QPushButton("STP")
+                btn_stp.setFixedSize(36, 20)
+                btn_stp.setStyleSheet("font-size:9px;")
+                btn_stp.clicked.connect(lambda checked, _pn=pn, _r=row: self._on_cad_export_stp(_pn, _r))
+                prod_layout.addWidget(btn_stp)
+            prod_layout.addStretch()
+            tree.setItemWidget(node, self._CAD_COL_PROD_ATT, prod_widget)
 
             # PDM匹配
             pdm_text = "—"
@@ -1573,6 +1625,77 @@ class PlmWorkbench(QDialog):
             self._log_to_conn(f"CAD入口：批量推送完成 — {count} 个", "ok")
         else:
             QMessageBox.information(self, "批量推送", "没有可推送的零件（需要已签出状态）。")
+
+    def _on_cad_upload_source(self, pn: str, row: dict) -> None:
+        """上传 CATIA 源文件到 PDM CAD附件。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        doc_path = row.get("doc_path", "")
+        if not doc_path or not os.path.exists(doc_path):
+            QMessageBox.warning(self, "上传源文件", f"找不到源文件：{doc_path}")
+            return
+        try:
+            self._cad_client.upload_attachment(match.revision_id, doc_path, "cad", overwrite=True)
+            self._log_to_conn(f"CAD入口：源文件已上传 — {pn}", "ok")
+            self._cad_att_counts[pn]["cad"] = self._cad_att_counts.get(pn, {"cad":0}).get("cad", 0) + 1
+            self._refresh_cad_tree()
+        except Exception as e:
+            QMessageBox.critical(self, "上传失败", str(e))
+
+    def _on_cad_export_pdf(self, pn: str, row: dict) -> None:
+        """导出 CATDrawing → PDF → 上传到生产附件。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        doc_path = row.get("doc_path", "")
+        if not doc_path:
+            QMessageBox.warning(self, "导出PDF", "找不到源文件路径。")
+            return
+        # 查找关联的 CATDrawing
+        from catia_copilot.catia.dependencies import find_drawing_for_part
+        drawing_path = find_drawing_for_part(doc_path)
+        if not drawing_path:
+            QMessageBox.information(self, "导出PDF", f"未找到关联工程图：{doc_path}")
+            return
+        try:
+            from catia_copilot.catia.file_exporter import export_pdf
+            pdf_path = export_pdf(drawing_path)
+            if pdf_path:
+                self._cad_client.upload_attachment(match.revision_id, pdf_path, "production", overwrite=True)
+                self._log_to_conn(f"CAD入口：PDF已上传 — {pn}", "ok")
+                self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
+                self._refresh_cad_tree()
+                try:
+                    os.remove(pdf_path)
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "导出PDF", "PDF 导出失败。")
+        except Exception as e:
+            QMessageBox.critical(self, "导出PDF失败", str(e))
+
+    def _on_cad_export_stp(self, pn: str, row: dict) -> None:
+        """导出 STP → 上传到生产附件。"""
+        match = self._cad_match_map.get(pn)
+        if not match or not match.revision_id:
+            return
+        try:
+            from catia_copilot.catia.file_exporter import export_stp
+            stp_path = export_stp(row.get("path", "0"))
+            if stp_path:
+                self._cad_client.upload_attachment(match.revision_id, stp_path, "production", overwrite=True)
+                self._log_to_conn(f"CAD入口：STP已上传 — {pn}", "ok")
+                self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
+                self._refresh_cad_tree()
+                try:
+                    os.remove(stp_path)
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "导出STP", "STP 导出失败。")
+        except Exception as e:
+            QMessageBox.critical(self, "导出STP失败", str(e))
 
     # 旧方法保留兼容
         """签入指定版本的零件。"""
