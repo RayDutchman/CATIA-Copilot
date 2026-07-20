@@ -1330,7 +1330,7 @@ class PlmWorkbench(QDialog):
         self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
-        self._cad_tree.setIndentation(20)
+        self._cad_tree.setIndentation(24)
         self._cad_tree.setRootIsDecorated(True)
         self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; }")
 
@@ -1368,9 +1368,9 @@ class PlmWorkbench(QDialog):
                 label = f"{pn}  [{inst_name}]"
 
             node = QTreeWidgetItem(parent or tree)
-            # 层级（深度数字）
-            level = row.get("level", 0)
-            node.setText(self._CAD_COL_LVL, str(level))
+            # 层级（myPDM 风格：装配树路径编号）
+            path = row.get("path", "0")
+            node.setText(self._CAD_COL_LVL, path)
             node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
             node.setText(self._CAD_COL_PN, label)
             node.setText(self._CAD_COL_QTY, qty)
