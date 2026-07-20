@@ -61,6 +61,8 @@ from catia_copilot.constants import (
 )
 from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
 from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
+from catia_copilot.catia.assembly_reader import detect_catia_status, read_assembly_tree
+from catia_copilot.ui.flatten_tree import flatten_tree
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
     CheckedOutByOtherPolicy,
@@ -896,6 +898,15 @@ class PlmWorkbench(QDialog):
         btn_cfg.clicked.connect(self._on_show_settings)
         h.addWidget(btn_cfg)
 
+        # CAD入口（仅 myPDM 后端可见）
+        self._btn_cad_entry = QPushButton("🔧 CAD入口")
+        self._btn_cad_entry.setFont(_ef); self._btn_cad_entry.setFlat(True)
+        self._btn_cad_entry.setObjectName("primaryBtn")
+        self._btn_cad_entry.setToolTip("读取 CATIA 装配结构，匹配 myPDM BOM")
+        self._btn_cad_entry.clicked.connect(self._on_cad_entry)
+        self._btn_cad_entry.setVisible(False)
+        h.addWidget(self._btn_cad_entry)
+
         self._update_conn_status_bar()
         return bar
 
@@ -1024,15 +1035,18 @@ class PlmWorkbench(QDialog):
         return QWidget()
 
     def _update_conn_status_bar(self) -> None:
-        base_url, login, _pw, workspace, _backend = self._read_conn()
+        base_url, login, _pw, workspace, backend = self._read_conn()
         if base_url and login:
             self._lbl_conn_dot.setText("🟢")
             self._lbl_conn_dot.setStyleSheet("color: green;")
-            self._lbl_conn_info.setText(f"{login} @ {workspace}")
+            backend_label = "myPDM" if backend == _BACKEND_MYPDM else "plm-unified"
+            self._lbl_conn_info.setText(f"{login} @ {workspace or backend_label}")
         else:
             self._lbl_conn_dot.setText("🔴")
             self._lbl_conn_dot.setStyleSheet("color: red;")
             self._lbl_conn_info.setText("未配置")
+        # CAD入口按钮仅 myPDM 后端可见
+        self._btn_cad_entry.setVisible(backend == _BACKEND_MYPDM)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 通用工具
@@ -1070,6 +1084,11 @@ class PlmWorkbench(QDialog):
             return MyPdmApiClient(_base_url)
         return PlmApiClient(_base_url)
 
+    def _is_mypdm_backend(self) -> bool:
+        """当前是否为 myPDM 后端。"""
+        _, _, _, _, backend = self._read_conn()
+        return backend == _BACKEND_MYPDM
+
     def _start_worker(self, worker: QThread) -> None:
         self._workers = [w for w in self._workers if w.isRunning()]
         self._workers.append(worker)
@@ -1101,6 +1120,147 @@ class PlmWorkbench(QDialog):
         # 更新工作区路径显示
         wd = self._get_work_dir()
         self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
+
+    def _on_cad_entry(self) -> None:
+        """CAD入口：CATIA 装配树 → myPDM BOM 匹配。"""
+        base_url, login, password, _ws, backend = self._read_conn()
+        if backend != _BACKEND_MYPDM:
+            QMessageBox.information(self, "CAD入口", "CAD入口仅支持 myPDM 后端。")
+            return
+        if not login or not password:
+            QMessageBox.warning(self, "未登录", "请先在设置中配置 myPDM 并测试连接。")
+            return
+
+        # Step 1: 检测 CATIA
+        self._log_to_conn("CAD入口：检测 CATIA……")
+        status = detect_catia_status()
+        if not status.get("active"):
+            QMessageBox.warning(self, "CATIA 未运行", "请先启动 CATIA V5。")
+            self._log_to_conn("CAD入口：CATIA 未运行", "warn")
+            return
+        if not status.get("has_document"):
+            QMessageBox.warning(self, "未打开文档", "请在 CATIA 中打开一个装配体 (.CATProduct)。")
+            self._log_to_conn("CAD入口：CATIA 中未打开文档", "warn")
+            return
+
+        doc_name = status.get("doc_name", "?")
+        doc_type = status.get("doc_type", "?")
+        self._log_to_conn(f"CAD入口：CATIA 已连接 — {doc_name} ({doc_type})", "ok")
+
+        # Step 2: 读取装配结构
+        self._log_to_conn("CAD入口：正在读取装配结构……")
+        try:
+            tree = read_assembly_tree()
+        except Exception as e:
+            self._log_to_conn(f"CAD入口：读取装配结构失败 — {e}", "error")
+            QMessageBox.critical(self, "读取失败", f"读取 CATIA 装配结构失败：\n{e}")
+            return
+        if tree is None:
+            QMessageBox.warning(self, "读取失败", "无法读取装配结构，请确认当前文档为装配体。")
+            return
+
+        # Step 3: 扁平化
+        rows = flatten_tree(tree)
+        self._log_to_conn(f"CAD入口：装配树扁平化完成 — {len(rows)} 个零件节点", "ok")
+
+        # Step 4: BOM 匹配 myPDM
+        self._log_to_conn("CAD入口：正在与 myPDM 进行 BOM 匹配……")
+        client = MyPdmApiClient(base_url)
+        try:
+            client.login(login, password)
+        except MyPdmApiError as e:
+            self._log_to_conn(f"CAD入口：myPDM 登录失败 — {e}", "error")
+            QMessageBox.critical(self, "登录失败", f"myPDM 登录失败：\n{e}")
+            return
+
+        # 收集去重的 (code, version) 对
+        seen = set()
+        items = []
+        for row in rows:
+            code = row.get("part_number", "").strip()
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            version = row.get("builtin", {}).get("Revision", "")
+            items.append({"code": code, "version": version if version else None})
+
+        try:
+            match_results = client.cad_bom_match(items)
+        except MyPdmApiError as e:
+            self._log_to_conn(f"CAD入口：BOM 匹配失败 — {e}", "error")
+            QMessageBox.critical(self, "匹配失败", f"myPDM BOM 匹配失败：\n{e}")
+            return
+
+        # Step 5: 显示结果
+        matched = sum(1 for r in match_results if r.match_status == "matched")
+        new_count = sum(1 for r in match_results if r.match_status == "new")
+        conflict = sum(1 for r in match_results if r.match_status == "conflict")
+
+        self._log_to_conn(
+            f"CAD入口：BOM 匹配完成 — 已匹配 {matched} / 可新建 {new_count} / 冲突 {conflict}",
+            "ok",
+        )
+
+        # 弹出结果对话框
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle("CAD入口 — BOM 匹配结果")
+        dlg.resize(800, 500)
+        dlg_layout = QVBoxLayout(dlg)
+
+        summary = QLabel(f"✅ 已匹配 {matched}    🆕 可新建 {new_count}    ⚠ 冲突 {conflict}")
+        summary.setStyleSheet("font-size: 13px; font-weight: bold; padding: 4px;")
+        dlg_layout.addWidget(summary)
+
+        table = QTableWidget(len(rows), 6)
+        table.setHorizontalHeaderLabels(["层级", "件号", "用量", "匹配状态", "签出状态", "PDM 名称"])
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        hdr = table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.Resize(80))
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.Resize(50))
+        hdr.setSectionResizeMode(3, QHeaderView.Resize(80))
+        hdr.setSectionResizeMode(4, QHeaderView.Resize(80))
+        hdr.setSectionResizeMode(5, QHeaderView.Resize(150))
+
+        # 构建 code→match 映射
+        match_map = {}
+        for r in match_results:
+            match_map[r.code] = r
+
+        for i, row in enumerate(rows):
+            pn = row.get("part_number", "")
+            match = match_map.get(pn)
+            status_text = match.match_status if match else "—"
+            co_text = match.checkout_status if match and match.checkout_status else "—"
+            name_text = match.name if match else ""
+
+            table.setItem(i, 0, QTableWidgetItem(row.get("path", "")))
+            table.setItem(i, 1, QTableWidgetItem(pn))
+            table.setItem(i, 2, QTableWidgetItem(str(row.get("quantity", 1))))
+            table.setItem(i, 3, QTableWidgetItem(status_text))
+            table.setItem(i, 4, QTableWidgetItem(co_text))
+            table.setItem(i, 5, QTableWidgetItem(name_text))
+
+            # 行颜色
+            if match:
+                if match.match_status == "new":
+                    for c in range(6):
+                        if item := table.item(i, c):
+                            item.setBackground(QColor("#fff3cd"))
+                elif match.checkout_status == "checked_out":
+                    for c in range(6):
+                        if item := table.item(i, c):
+                            item.setBackground(QColor("#d1ecf1"))
+
+        dlg_layout.addWidget(table)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btns.rejected.connect(dlg.accept)
+        dlg_layout.addWidget(btns)
+
+        dlg.exec()
 
         # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
         s_after = QSettings(_S_ORG, _S_PLM_CFG)
@@ -1207,6 +1367,9 @@ class PlmWorkbench(QDialog):
 
     def _on_load_workspace(self) -> None:
         """扫描工作目录，通过 CATIA COM 读取每个文件的属性，填充差异表。"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。")
+            return
         # 检查 CATIA 文档查找顺序设置（每次启动后仅提醒一次，设置正确则静默通过）
         if not self._catia_search_order_warned:
             self._catia_search_order_warned = True
@@ -1299,6 +1462,8 @@ class PlmWorkbench(QDialog):
 
     def _on_refresh_plm_status(self) -> None:
         """按本地文件零件号列表查询 PLM，更新缓存和差异列。"""
+        if self._is_mypdm_backend():
+            return
         # 互斥：已有 PLM 状态刷新 worker 在运行时，直接返回（避免并发写 _plm_cache）
         if getattr(self, "_plm_status_running", False):
             return
@@ -1758,6 +1923,9 @@ class PlmWorkbench(QDialog):
 
     def _on_sync_start(self) -> None:
         """读取勾选行，执行 Push 到 PLM。"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。Push 功能后续版本支持。")
+            return
         base_url, login, password, workspace, _be = self._read_conn()
         if not base_url or not login:
             QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
@@ -1967,6 +2135,9 @@ class PlmWorkbench(QDialog):
 
     def _on_pull_selected(self) -> None:
         """Pull 勾选行对应的 PLM 零件文件到工作目录。"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端请使用 '🔧 CAD入口' 功能。Pull 功能后续版本支持。")
+            return
         base_url, login, password, workspace, _be = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
@@ -2083,9 +2254,10 @@ class PlmWorkbench(QDialog):
         """弹窗手动输入零件号，查询 PLM 并递归展开子孙，批量加入本地缓存。
 
         行为：
-        - PLM 中存在该零件 → 递归获取其完整 BOM 子树，把所有节点都加入缓存
-        - PLM 中不存在    → 明确提示，不创建占位条目
-        """
+        - PLM 中存在该零件 → 递归获取其完整 BOM 子树，把所有节点都加入缓存"""
+        if self._is_mypdm_backend():
+            QMessageBox.information(self, "myPDM", "myPDM 后端暂不支持此操作，请使用 '🔧 CAD入口' 功能。")
+            return
         from PySide6.QtWidgets import QInputDialog
         pn, ok = QInputDialog.getText(self, "新增 PLM Part", "输入零件号（Part Number）：")
         if not ok or not pn.strip():
