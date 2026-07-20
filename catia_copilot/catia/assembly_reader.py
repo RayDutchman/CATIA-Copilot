@@ -64,7 +64,10 @@ def _read_builtin_properties(product) -> dict[str, str]:
 
 
 def _read_user_properties(product) -> dict[str, str]:
-    """读取自定义属性：存货类别、规格型号、物料类型、重量。"""
+    """读取自定义属性：存货类别、规格型号、物料类型、重量。
+    
+    先尝试 UserRefProperties（字符串类型），失败则读 Parameters（数值型）。
+    """
     props_to_read = ["存货类别", "规格型号", "物料类型", "重量"]
 
     result: dict[str, str] = {}
@@ -77,15 +80,32 @@ def _read_user_properties(product) -> dict[str, str]:
         pass
 
     for prop_name in props_to_read:
+        value = None
         for target in targets:
+            # 方式1：UserRefProperties（字符串属性）
             try:
                 prop = target.UserRefProperties.Item(prop_name)
-                value = prop.Value
-                if value is not None:
-                    result[prop_name] = str(value)
+                v = prop.Value
+                if v is not None:
+                    value = str(v)
+                    break
+            except Exception:
+                pass
+            # 方式2：Parameters（数值参数）
+            try:
+                param = target.Parameters.Item(prop_name)
+                v = param.Value
+                if v is not None:
+                    # 数值型保留 3 位小数
+                    try:
+                        value = f"{float(v):.3f}"
+                    except (ValueError, TypeError):
+                        value = str(v)
                     break
             except Exception:
                 continue
+        if value is not None:
+            result[prop_name] = value
 
     return result
 
