@@ -1336,7 +1336,7 @@ class PlmWorkbench(QDialog):
         self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
-        self._cad_tree.setIndentation(0)
+        self._cad_tree.setIndentation(16)
         self._cad_tree.setRootIsDecorated(True)
         self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; }")
 
