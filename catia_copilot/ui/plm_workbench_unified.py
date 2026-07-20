@@ -1284,40 +1284,44 @@ class PlmWorkbench(QDialog):
         self._cad_match_summary.setLayout(summary_bar)
         self._cad_page_layout.addWidget(self._cad_match_summary)
 
-        # ── 收集用户自定义属性列（预设 + CATIA 动态提取） ──────────────────────
+        # ── 收集用户自定义属性列（只取实际有值的） ──────────────────────────────
         user_prop_keys: list[str] = []
         seen_props = set()
-        # 预设常用属性（确保这些列始终显示）
+        # 从 CATIA 读取的属性中扫描，只保留至少有一个非空值的
+        prop_has_value: dict[str, bool] = {}
+        for row in self._cad_rows:
+            for key, val in row.get("user_properties", {}).items():
+                if key.strip() and val.strip():
+                    prop_has_value[key] = True
+        # 预设常用属性也加入（即使当前无值）
         for key in PRESET_USER_REF_PROPERTIES:
             if key not in seen_props:
                 seen_props.add(key)
                 user_prop_keys.append(key)
-        # 从 CATIA 读取的属性中扫描
-        for row in self._cad_rows:
-            for key in row.get("user_properties", {}):
-                if key not in seen_props and key.strip():
-                    seen_props.add(key)
-                    user_prop_keys.append(key)
+        # 实际有值的属性（去重）
+        for key in sorted(prop_has_value):
+            if key not in seen_props:
+                seen_props.add(key)
+                user_prop_keys.append(key)
 
         # ── 列定义 ─────────────────────────────────────────────────────────────
-        self._CAD_COL_LVL     = 0   # 层级
-        self._CAD_COL_PN      = 1   # 件号
-        self._CAD_COL_QTY     = 2   # 用量
-        self._CAD_COL_REV     = 3   # 版本
-        self._CAD_COL_DEF     = 4   # 定义
-        self._CAD_COL_NOM     = 5   # 术语
-        self._CAD_COL_DESC    = 6   # 描述
-        # 用户属性动态列 7 ~ 6+N
-        self._CAD_COL_USER_START = 7
+        self._CAD_COL_PN      = 0   # 件号
+        self._CAD_COL_QTY     = 1   # 用量
+        self._CAD_COL_REV     = 2   # 版本
+        self._CAD_COL_DEF     = 3   # 定义
+        self._CAD_COL_NOM     = 4   # 术语
+        self._CAD_COL_DESC    = 5   # 描述
+        # 用户属性动态列 6 ~ 5+N
+        self._CAD_COL_USER_START = 6
         self._cad_user_cols = user_prop_keys
-        self._CAD_COL_CAD_ATT  = 7 + len(user_prop_keys)   # CAD附件
-        self._CAD_COL_PROD_ATT = 8 + len(user_prop_keys)   # 生产附件
-        self._CAD_COL_PDM      = 9 + len(user_prop_keys)   # PDM匹配
-        self._CAD_COL_MATCH    = 10 + len(user_prop_keys)  # 匹配状态
-        self._CAD_COL_CO       = 11 + len(user_prop_keys)  # 签出状态
-        self._CAD_COL_OP       = 12 + len(user_prop_keys)  # 操作
+        self._CAD_COL_CAD_ATT  = 6 + len(user_prop_keys)   # CAD附件
+        self._CAD_COL_PROD_ATT = 7 + len(user_prop_keys)   # 生产附件
+        self._CAD_COL_PDM      = 8 + len(user_prop_keys)   # PDM匹配
+        self._CAD_COL_MATCH    = 9 + len(user_prop_keys)   # 匹配状态
+        self._CAD_COL_CO       = 10 + len(user_prop_keys)  # 签出状态
+        self._CAD_COL_OP       = 11 + len(user_prop_keys)  # 操作
 
-        headers = ["层级", "件号", "用量", "版本", "定义", "术语", "描述"]
+        headers = ["件号", "用量", "版本", "定义", "术语", "描述"]
         headers += user_prop_keys
         headers += ["CAD附件", "生产附件", "PDM匹配", "匹配状态", "签出状态", "操作"]
 
@@ -1337,8 +1341,8 @@ class PlmWorkbench(QDialog):
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Stretch)
         for ci, w in [
-            (self._CAD_COL_LVL, 50), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
-            (self._CAD_COL_DEF, 80), (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
+            (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60), (self._CAD_COL_DEF, 80),
+            (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
             (self._CAD_COL_CAD_ATT, 70), (self._CAD_COL_PROD_ATT, 70),
             (self._CAD_COL_PDM, 120), (self._CAD_COL_MATCH, 70),
             (self._CAD_COL_CO, 70), (self._CAD_COL_OP, 140),
@@ -1366,10 +1370,6 @@ class PlmWorkbench(QDialog):
                 label = f"{pn}  [{inst_name}]"
 
             node = QTreeWidgetItem(parent or tree)
-            # 层级：显示深度数字
-            level = row.get("level", 0)
-            node.setText(self._CAD_COL_LVL, str(level))
-            node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
             node.setText(self._CAD_COL_PN, label)
             node.setText(self._CAD_COL_QTY, qty)
             node.setTextAlignment(self._CAD_COL_QTY, Qt.AlignCenter)
@@ -1433,7 +1433,8 @@ class PlmWorkbench(QDialog):
 
             # 匹配状态
             ms = match.match_status if match else "—"
-            node.setText(self._CAD_COL_MATCH, ms)
+            ms_display = {"matched": "已匹配", "new": "可新建", "conflict": "冲突", "unknown": "未知"}.get(ms, ms)
+            node.setText(self._CAD_COL_MATCH, ms_display)
 
             # 签出状态
             cs = match.checkout_status if match and match.checkout_status else "—"
