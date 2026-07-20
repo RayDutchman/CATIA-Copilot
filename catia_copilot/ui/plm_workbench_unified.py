@@ -1343,9 +1343,11 @@ class PlmWorkbench(QDialog):
         hdr = self._cad_tree.header()
         hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         hdr.setStretchLastSection(False)
-        hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(self._CAD_COL_PN, 160)
+        hdr.setSectionResizeMode(self._CAD_COL_PDM, QHeaderView.ResizeMode.Stretch)
         for ci, w in [
-            (self._CAD_COL_LVL, 50), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
+            (self._CAD_COL_LVL, 60), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
             (self._CAD_COL_DEF, 80), (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
             (self._CAD_COL_CAD_ATT, 70), (self._CAD_COL_PROD_ATT, 70),
             (self._CAD_COL_PDM, 120), (self._CAD_COL_MATCH, 70),
@@ -1368,18 +1370,13 @@ class PlmWorkbench(QDialog):
             match = self._cad_match_map.get(pn)
 
             # 件号显示
-            label = pn
-            inst_name = row.get("instance_name", "")
-            if inst_name and inst_name != pn:
-                label = f"{pn}  [{inst_name}]"
-
             node = QTreeWidgetItem(parent or tree)
             # 层级（dash 前缀格式：0, -1, --2, ---3）
             level = row.get("level", 0)
             level_text = "-" * level + str(level) if level > 0 else "0"
             node.setText(self._CAD_COL_LVL, level_text)
             node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
-            node.setText(self._CAD_COL_PN, label)
+            node.setText(self._CAD_COL_PN, pn)
             node.setText(self._CAD_COL_QTY, qty)
             node.setTextAlignment(self._CAD_COL_QTY, Qt.AlignCenter)
             node.setText(self._CAD_COL_REV, builtin.get("Revision", ""))
