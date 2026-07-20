@@ -1706,7 +1706,7 @@ class PlmWorkbench(QDialog):
                 if not payload:
                     continue
                 try:
-                    self._cad_client.update_part(match.revision_id, payload)
+                    self._cad_client.update_part(match.master_id, payload)
                     count += 1
                 except Exception as e:
                     self._log_to_conn(f"CAD入口：推送失败 {pn} — {e}", "warn")
@@ -1841,7 +1841,8 @@ class PlmWorkbench(QDialog):
 
     def _on_cad_push_attrs(self, row: dict, match) -> None:
         """属性→：按字段映射将 CATIA 属性推送到 PDM。"""
-        if not match or not match.revision_id:
+        if not match or not match.master_id:
+            QMessageBox.warning(self, "属性→", "缺少 PDM 零件 ID，无法推送。")
             return
         pn = row.get("part_number", "")
         builtin = row.get("builtin", {})
@@ -1880,7 +1881,7 @@ class PlmWorkbench(QDialog):
         if not match.revision_id:
             return
         try:
-            part = self._cad_client.get_part(match.revision_id)
+            part = self._cad_client.get_part(match.master_id)
             if part:
                 field_map = getattr(self, "_cad_field_map", {})
                 pm = field_map.get("properties", {})
