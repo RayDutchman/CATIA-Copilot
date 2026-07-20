@@ -422,14 +422,46 @@ class UnifiedPlmClient:
         iteration: int,
         file_path: str,
     ) -> None:
-        """上传附件（暂不实现，静默跳过，不阻断主流程）。
+        """上传附件（CATPart/CATProduct 等原始文件）。
 
-        未来实现路径：POST /api/attachments/upload（multipart）
+        通过 POST /api/attachments/upload（multipart）上传到零件附件管理系统。
         """
-        logger.warning(
-            "upload_attached_file: plm-unified 附件上传暂未实现，已跳过 %s",
-            file_path,
+        # 获取零件详情以查找 iteration UUID
+        ws_id = self._get_workspace_id(workspace)
+        detail = self._get(
+            f"/api/parts/{part_number}",
+            params={"workspace_id": ws_id},
         )
+        iter_id = None
+        for rev in detail.get("revisions", []):
+            if rev.get("version") == version:
+                for it in rev.get("iterations", []):
+                    if it.get("iteration") == iteration:
+                        iter_id = it["id"]
+                        break
+                break
+
+        if not iter_id:
+            logger.warning("upload_attached_file: 找不到迭代 UUID，已跳过 %s", file_path)
+            return
+
+        filename = file_path.replace("\\", "/").split("/")[-1]
+        with open(file_path, "rb") as f:
+            resp = self._session.post(
+                f"{self._base}/api/attachments/upload",
+                data={
+                    "entity_type": "part",
+                    "entity_id": detail["id"],
+                    "category": "cad",
+                    "iteration_id": iter_id,
+                },
+                files={"file": (filename, f)},
+                timeout=120,
+            )
+        if resp.status_code >= 400:
+            logger.warning("upload_attached_file: 上传失败 %d %s", resp.status_code, resp.text)
+        else:
+            logger.info("upload_attached_file: 已上传 %s → %s", filename, resp.json().get("id"))
 
     # ── 转换状态 ──────────────────────────────────────────────────────────────
 

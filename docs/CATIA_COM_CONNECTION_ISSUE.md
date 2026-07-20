@@ -243,4 +243,89 @@ dispatch = win32com.client.dynamic.Dispatch(idisp)
 | `build.spec` | `uac_admin=True` → `False` |
 | `crack/R28/`、`crack/R33/` | 新建版本专属 crack 子目录（各含 `.gitkeep`） |
 
+---
+
+## CATIA V5 多进程 COM 可访问性验证（2026-07-03）
+
+### 背景
+
+开发多实例连接功能时，需要确认：当用户同时运行两个独立的 CATIA V5 进程时，是否能通过 COM 分别访问每一个实例。
+
+### 测试环境
+
+- CATIA V5 R33（`B33`），两个独立进程同时运行
+- 两个进程均由同一用户以普通用户权限启动
+- Python 3.13 + pywin32
+
+### 验证方法
+
+#### 步骤 1：确认两个进程确实独立
+
+用 `EnumWindows` + `win32process.GetWindowThreadProcessId` 枚举所有标题以 `"CATIA V5"` 开头的顶层窗口，再用 `psutil.Process(pid)` 读取每个 PID 对应的进程信息：
+
+```
+HWND=133934  PID=29804  CATIA V5 - [Assem1.CATProduct]
+  exe:  C:\Program Files\Dassault Systemes\B33\win_b64\code\bin\CNEXT.exe
+  ppid: 27568
+
+HWND=593842  PID=27752  CATIA V5 - [Template_Composite_A.CATPart]
+  exe:  C:\Program Files\Dassault Systemes\B33\win_b64\code\bin\CNEXT.exe
+  ppid: 37704
+```
+
+两个窗口 PID 不同、父进程 PID 不同，确认是两个独立启动的 CNEXT.exe 进程。
+
+#### 步骤 2：枚举 ROT 中的 CATIA Application 条目
+
+用 `pythoncom.GetRunningObjectTable()` + `EnumRunning()` 遍历所有 ROT 条目，找到所有能通过 `QueryInterface(IID_IDispatch)` + `Documents` 深层测试的 CATIA dispatch：
+
+```
+ROT [1]  D:\...\Test_Faraway_Part.CATPart         -> QI 失败（文件 moniker，非 Application）
+ROT [6]  D:\...\Template_Composite_A.CATPart      -> QI 失败（文件 moniker，非 Application）
+ROT [9]  !{87FD6F40-E252-11D5-8040-0010B5FA1031} -> dispatch OK: Left=1578 Top=348 ActiveDoc=Assem1.CATProduct
+ROT [10] !{87FD6F40-E252-11D5-8040-0010B5FA1031} -> dispatch OK: Left=1578 Top=348 ActiveDoc=Assem1.CATProduct
+ROT [11] D:\...\Assem1.CATProduct                 -> QI 失败（文件 moniker，非 Application）
+```
+
+通过深层测试的 CATIA dispatch 共 2 个，但两个的 `Left`、`Top`、`ActiveDocument.Name`、`Documents.Count` 完全一致。
+
+#### 步骤 3：比较两个 dispatch 是否为同一对象
+
+```
+Dispatch #0: Left=1578.0  Top=348.0  ActiveDoc=Assem1.CATProduct  Documents.Count=23
+Dispatch #1: Left=1578.0  Top=348.0  ActiveDoc=Assem1.CATProduct  Documents.Count=23
+```
+
+所有可读属性完全相同 → **两个 ROT 条目指向同一个 COM Application 对象**，是 PID 29804 的实例把自己注册了两次，并非两个进程各自注册。
+
+#### 步骤 4：用各 ProgID / CLSID 直连，观察连接到哪个实例
+
+```
+CATIA.Application                        -> Left=1578  ActiveDoc=Assem1.CATProduct（PID 29804）
+{87FD6F40-E252-11D5-8040-0010B5FA1031}  -> Left=1578  ActiveDoc=Assem1.CATProduct（PID 29804）
+CNEXT.Application                        -> 失败（CO_E_CLASSSTRING）
+{87FD6F40-E252-11D5-8040-0001B5FA1031}  -> 失败（MK_E_UNAVAILABLE，R28 CLSID 不适用）
+```
+
+所有可用的连接方式均只连接到 PID 29804，PID 27752 完全无法通过任何 COM 手段访问。
+
+### 结论
+
+**CATIA V5 多进程时，只有第一个启动的实例会把 Application 对象注册到 ROT；后续启动的实例不注册，无法通过 `GetActiveObject`、CLSID 直连或 ROT 枚举任何方式访问其 COM Application 对象。**
+
+| 实例 | PID | 窗口标题 | ROT 注册 | COM 可达 |
+|------|-----|----------|---------|----------|
+| 先启动 | 29804 | `CATIA V5 - [Assem1.CATProduct]` | ✅ 注册（且注册两次） | ✅ |
+| 后启动 | 27752 | `CATIA V5 - [Template_Composite_A.CATPart]` | ❌ 未注册 | ❌ |
+
+### 对多实例选择功能的影响
+
+基于以上结论，**在当前 CATIA V5 COM 架构下，「选择连接哪个 CATIA 实例」功能没有实际意义**——程序永远只能访问先启动的那个实例，后启动的实例在 COM 层面不可见。
+
+此功能已在开发后回退。唯一保留的改动为 `plm/sync.py` 中将直接 `GetActiveObject("CATIA.Application")` 替换为统一入口 `get_catia_v5_com_dispatch()`，以兼容 ProgID 不存在的场景（见本文档「修复方案」一节）。
+
+### 附：CATIA 文件 moniker 说明
+
+ROT 中除 Application 对象外，CATIA 还会将每个**已打开文档的文件路径**注册为文件 moniker（如 `D:\...\Assem1.CATProduct`）。这些条目无法 `QueryInterface` 到 `IDispatch`（报 `E_NOINTERFACE`），不代表 Application 对象，可以忽略。
+
 

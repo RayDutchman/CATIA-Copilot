@@ -55,7 +55,7 @@ ai_config.example.json           # 可提交的配置模板
 | `BREP_NAMING_REFERENCE.md` | CATIA B-Rep 面/边命名格式实测参考（COM 探查知识库） |
 | `CATIA_COPILOT_MODULES_API.md` | 项目各核心模块的公开接口文档（bom_collect、conversion、plm 等） |
 | `CATIA_PART_DOCUMENT_API.md` | win32com 访问 CATIA V5 PartDocument 各类 COM 对象的实测 API |
-| `CATIA_COM_CONNECTION_ISSUE.md` | Python/win32com 连接 CATIA V5 失败的根因与修复方案 |
+| `CATIA_COM_CONNECTION_ISSUE.md` | Python/win32com 连接 CATIA V5 失败的根因与修复方案；含多进程 COM 可访问性验证结论（多进程时只有先启动的实例在 ROT 注册） |
 | `CATIA_DRAWING_PART_LINKAGE.md` | CATPart 与 CATDrawing 反向关联的 CATIA 原生查找方案 |
 | `CATIA_EMBED_PANEL_DESIGN.md` | 嵌入 CATIA 3D 视图窗口的面板实现方案 |
 | `BOM_DATA_MODEL_V3_PLAN.md` | BOM 数据模型 V3 设计（解决多实例属性同步问题） |
