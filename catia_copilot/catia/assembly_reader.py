@@ -68,19 +68,22 @@ def _read_user_properties(product) -> dict[str, str]:
     known_com_names = set(PRODUCT_ATTR_READ_MAP.values())
     try:
         user_props = product.UserRefProperties
-        if user_props is None:
-            return result
+    except Exception:
+        return result
+    if user_props is None:
+        return result
+    try:
         count = user_props.Count
-        for i in range(1, count + 1):
-            try:
-                name = str(user_props.Item(i).Name)
-                value = str(user_props.Item(i).Value)
-                if name and name not in known_com_names:
-                    result[name] = value
-            except Exception:
-                continue
-    except Exception as e:
-        logger.debug(f"读取用户属性失败: {e}")
+    except Exception:
+        return result
+    for i in range(1, count + 1):
+        try:
+            name = str(user_props.Item(i).Name)
+            value = str(user_props.Item(i).Value)
+            if name and name not in known_com_names:
+                result[name] = value
+        except Exception:
+            continue
     return result
 
 

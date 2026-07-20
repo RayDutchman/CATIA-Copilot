@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -1202,7 +1203,6 @@ class PlmWorkbench(QDialog):
         )
 
         # 弹出结果对话框
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QDialogButtonBox
         dlg = QDialog(self)
         dlg.setWindowTitle("CAD入口 — BOM 匹配结果")
         dlg.resize(800, 500)
@@ -1217,12 +1217,17 @@ class PlmWorkbench(QDialog):
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setAlternatingRowColors(True)
         hdr = table.horizontalHeader()
-        hdr.setSectionResizeMode(0, QHeaderView.Resize(80))
-        hdr.setSectionResizeMode(1, QHeaderView.Stretch)
-        hdr.setSectionResizeMode(2, QHeaderView.Resize(50))
-        hdr.setSectionResizeMode(3, QHeaderView.Resize(80))
-        hdr.setSectionResizeMode(4, QHeaderView.Resize(80))
-        hdr.setSectionResizeMode(5, QHeaderView.Resize(150))
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        hdr.resizeSection(0, 80)
+        hdr.resizeSection(2, 50)
+        hdr.resizeSection(3, 80)
+        hdr.resizeSection(4, 80)
+        hdr.resizeSection(5, 150)
 
         # 构建 code→match 映射
         match_map = {}

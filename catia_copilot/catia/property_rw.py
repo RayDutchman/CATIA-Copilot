@@ -86,19 +86,22 @@ def read_properties(path: str, product_doc=None) -> dict[str, str] | None:
 
     try:
         user_props = prod.UserRefProperties
-        if user_props is not None:
+    except Exception:
+        return result
+    if user_props is not None:
+        try:
             count = user_props.Count
-            known_com_names = set(PRODUCT_ATTR_READ_MAP.values())
-            for i in range(1, count + 1):
-                try:
-                    name = str(user_props.Item(i).Name)
-                    value = str(user_props.Item(i).Value)
-                    if name and name not in known_com_names:
-                        result[name] = value
-                except Exception:
-                    continue
-    except Exception as e:
-        logger.debug(f"读取用户属性失败: {e}")
+        except Exception:
+            return result
+        known_com_names = set(PRODUCT_ATTR_READ_MAP.values())
+        for i in range(1, count + 1):
+            try:
+                name = str(user_props.Item(i).Name)
+                value = str(user_props.Item(i).Value)
+                if name and name not in known_com_names:
+                    result[name] = value
+            except Exception:
+                continue
 
     return result
 
@@ -128,14 +131,14 @@ def write_property(path: str, product_doc, prop_name: str, value: Any) -> bool:
 
     try:
         user_props = prod.UserRefProperties
-        if user_props is not None:
-            try:
-                prop = user_props.Item(prop_name)
-                prop.Value = str(value)
-            except Exception:
-                user_props.Add(prop_name, str(value))
-            logger.debug(f"写入用户属性: {path}.{prop_name} = {value}")
-            return True
-    except Exception as e:
-        logger.warning(f"写入用户属性失败 {path}.{prop_name}: {e}")
-        return False
+    except Exception:
+        user_props = None
+    if user_props is not None:
+        try:
+            prop = user_props.Item(prop_name)
+            prop.Value = str(value)
+        except Exception:
+            user_props.Add(prop_name, str(value))
+        logger.debug(f"写入用户属性: {path}.{prop_name} = {value}")
+        return True
+    return False
