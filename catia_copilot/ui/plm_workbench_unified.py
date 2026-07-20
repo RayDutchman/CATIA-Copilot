@@ -1685,10 +1685,12 @@ class PlmWorkbench(QDialog):
             QMessageBox.warning(self, "导出PDF", "找不到源文件路径。")
             return
         from catia_copilot.catia.dependencies import find_drawing_for_part
-        drawing_path = find_drawing_for_part(doc_path)
-        if not drawing_path:
+        drawing_result = find_drawing_for_part(doc_path)
+        if not drawing_result:
             QMessageBox.information(self, "导出PDF", f"未找到关联工程图：{doc_path}")
             return
+        # find_drawing_for_part 可能返回列表或单个字符串
+        drawing_path = drawing_result[0] if isinstance(drawing_result, list) else drawing_result
         try:
             naming = _load_cad_naming()
             is_asm = row.get("is_assembly", False)
