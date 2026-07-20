@@ -23,7 +23,7 @@ from typing import cast
 import pythoncom
 import shiboken6
 import tempfile
-from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -65,6 +65,7 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
 )
+from catia_copilot.ui.bom_widgets import _RowHeightDelegate
 from catia_copilot.plm.unified_client import UnifiedPlmClient as PlmApiClient
 from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
 from catia_copilot.catia.assembly_reader import detect_catia_status, read_assembly_tree
@@ -102,6 +103,42 @@ _DEFAULT_PASSWORD  = "password"
 _DEFAULT_WORKSPACE = "Workspace_0"
 
 _MAX_HISTORY = 20
+
+# ── CAD入口树委托 ────────────────────────────────────────────────────────────
+
+class _CadTreeDelegate(_RowHeightDelegate):
+    """CAD入口树的委托：控制行高(36px) + 限制只允许属性列编辑。"""
+
+    def __init__(self, workbench):
+        super().__init__(workbench._cad_tree if hasattr(workbench, "_cad_tree") else None)
+        self._wb = workbench
+
+    def sizeHint(self, option, index) -> QSize:
+        hint = super().sizeHint(option, index)
+        if hint.height() < 36:
+            hint.setHeight(36)
+        return hint
+
+    def createEditor(self, parent, option, index):
+        wb = self._wb
+        col = index.column()
+        # 只允许以下列编辑：件号、版本、定义、术语、描述、自定义属性
+        editable = False
+        if hasattr(wb, "_CAD_COL_PN") and col == wb._CAD_COL_PN:
+            editable = False  # 件号不可编辑
+        elif hasattr(wb, "_CAD_COL_REV") and col == wb._CAD_COL_REV:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_DEF") and col == wb._CAD_COL_DEF:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_NOM") and col == wb._CAD_COL_NOM:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_DESC") and col == wb._CAD_COL_DESC:
+            editable = True
+        elif hasattr(wb, "_CAD_COL_USER_START") and col >= wb._CAD_COL_USER_START and col < wb._CAD_COL_CAD_ATT:
+            editable = True
+        if editable:
+            return super().createEditor(parent, option, index)
+        return None
 
 # ── 字段映射 ──────────────────────────────────────────────────────────────────
 
@@ -1374,12 +1411,15 @@ class PlmWorkbench(QDialog):
         self._cad_tree = QTreeWidget()
         self._cad_tree.setHeaderLabels(headers)
         self._cad_tree.setAnimated(True)
-        self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._cad_tree.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
         self._cad_tree.setIndentation(16)
         self._cad_tree.setRootIsDecorated(True)
-        self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; border-bottom: 1px solid #e0e0e0; }")
+        self._cad_tree.setAlternatingRowColors(False)
+        self._cad_tree.setStyleSheet("QTreeView::item { border-bottom: 1px solid #e0e0e0; }")
+        # 使用委托控制行高和可编辑列
+        self._cad_tree.setItemDelegate(_CadTreeDelegate(self))
         self._cad_tree.setAlternatingRowColors(False)
 
         hdr = self._cad_tree.header()
@@ -1399,6 +1439,7 @@ class PlmWorkbench(QDialog):
             hdr.resizeSection(ci, w)
 
         self._cad_page_layout.addWidget(self._cad_tree, 1)
+        self._cad_tree.itemChanged.connect(self._on_cad_item_changed)
         self._populate_cad_tree(self._cad_tree, self._cad_tree_rows)
         self._cad_tree.expandAll()
 
@@ -1541,6 +1582,8 @@ class PlmWorkbench(QDialog):
             # 存储数据
             node.setData(self._CAD_COL_PN, Qt.UserRole, row)
             node.setData(self._CAD_COL_PN, Qt.UserRole + 1, match)
+            # 启用双击编辑
+            node.setFlags(node.flags() | Qt.ItemIsEditable)
 
             # 递归子节点
             children = row.get("children", [])
@@ -1663,6 +1706,58 @@ class PlmWorkbench(QDialog):
     def _on_cad_pull(self, row: dict, match) -> None:
         """属性← PDM。"""
         self._on_cad_pull_attrs(row, match)
+
+    def _on_cad_item_changed(self, item, col: int) -> None:
+        """双击编辑完成后的回调：写回 CATIA + 同步同件号实例。"""
+        row = item.data(self._CAD_COL_PN, Qt.UserRole)
+        if not row:
+            return
+        new_val = item.text(col).strip()
+        pn = row.get("part_number", "")
+        builtin = row.get("builtin", {})
+        user_props = row.get("user_properties", {})
+
+        col_map = {
+            self._CAD_COL_REV:  ("Revision", True),
+            self._CAD_COL_DEF:  ("Definition", True),
+            self._CAD_COL_NOM:  ("Nomenclature", True),
+            self._CAD_COL_DESC: ("Description", True),
+        }
+        prop_info = col_map.get(col)
+        if not prop_info and col >= self._CAD_COL_USER_START and col < self._CAD_COL_CAD_ATT:
+            ui = col - self._CAD_COL_USER_START
+            if ui < len(self._cad_user_cols):
+                catia_key = self._cad_user_catia_map.get(self._cad_user_cols[ui], self._cad_user_cols[ui])
+                prop_info = (catia_key, False)
+
+        if not prop_info:
+            return
+
+        catia_key, is_builtin = prop_info
+        old_val = builtin.get(catia_key, "") if is_builtin else user_props.get(catia_key, "")
+        if new_val == old_val:
+            return
+
+        if is_builtin:
+            row["builtin"] = {**builtin, catia_key: new_val}
+        else:
+            row["user_properties"] = {**user_props, catia_key: new_val}
+
+        from catia_copilot.ui.sync_rows import sync_rows_by_part_number
+        self._cad_rows = sync_rows_by_part_number(self._cad_rows, row, catia_key, new_val)
+        self._cad_tree_rows = sync_rows_by_part_number(self._cad_tree_rows, row, catia_key, new_val)
+
+        try:
+            from catia_copilot.catia.property_rw import write_property
+            from catia_copilot.catia.connection import get_catia_v5_application
+            app = get_catia_v5_application()
+            if app.ActiveDocument and app.ActiveDocument.Product:
+                path = row.get("path", "0")
+                write_property(path, app.ActiveDocument.Product, catia_key, new_val)
+        except Exception:
+            pass
+
+        self._log_to_conn(f"CAD入口：{pn}.{catia_key} = {new_val}", "ok")
 
     def _refresh_cad_tree(self) -> None:
         """刷新 CAD 树显示（保持展开状态）。"""
