@@ -1277,9 +1277,15 @@ class PlmWorkbench(QDialog):
         self._cad_match_summary.setLayout(summary_bar)
         self._cad_page_layout.addWidget(self._cad_match_summary)
 
-        # ── 收集用户自定义属性列 ──────────────────────────────────────────────
+        # ── 收集用户自定义属性列（预设 + CATIA 动态提取） ──────────────────────
         user_prop_keys: list[str] = []
         seen_props = set()
+        # 预设常用属性（确保这些列始终显示）
+        for key in PRESET_USER_REF_PROPERTIES:
+            if key not in seen_props:
+                seen_props.add(key)
+                user_prop_keys.append(key)
+        # 从 CATIA 读取的属性中扫描
         for row in self._cad_rows:
             for key in row.get("user_properties", {}):
                 if key not in seen_props and key.strip():
@@ -1314,8 +1320,12 @@ class PlmWorkbench(QDialog):
         self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
+        self._cad_tree.setIndentation(20)
+        self._cad_tree.setRootIsDecorated(True)
 
         hdr = self._cad_tree.header()
+        hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Stretch)
         for ci, w in [
             (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60), (self._CAD_COL_DEF, 80),
@@ -1480,58 +1490,13 @@ class PlmWorkbench(QDialog):
             if children:
                 self._populate_cad_tree(tree, children, node)
 
-    def _populate_cad_tree(self, tree: QTreeWidget, rows: list[dict], parent=None) -> None:
-        """递归填充 BOM 树。"""
-        for row in rows:
-            pn = row.get("part_number", "")
-            builtin = row.get("builtin", {})
-            qty = str(row.get("quantity", 1))
-            match = self._cad_match_map.get(pn)
-
-            label = f"{pn}"
-            if row.get("instance_name") and row["instance_name"] != pn:
-                label = f"{pn}  [{row['instance_name']}]"
-
-            node = QTreeWidgetItem(parent or tree)
-            node.setText(0, label)
-            node.setText(1, builtin.get("Revision", ""))
-            node.setText(2, builtin.get("Definition", ""))
-            node.setText(3, builtin.get("Nomenclature", ""))
-            node.setText(4, qty)
-            node.setText(5, match.name if match else "—")
-            node.setText(6, match.match_status if match else "—")
-            node.setText(7, match.checkout_status if match and match.checkout_status else "—")
-
-            # 行颜色
-            if match:
-                bg = None
-                if match.match_status == "new":
-                    bg = QColor("#fff3cd")
-                elif match.checkout_status == "checked_out":
-                    bg = QColor("#d1ecf1")
-                if bg:
-                    for c in range(8):
-                        node.setBackground(c, bg)
-
-            # 存储数据到 UserRole
-            node.setData(0, Qt.UserRole, row)
-            node.setData(0, Qt.UserRole + 1, match)
-
-            # 右键菜单
-            node.setFlags(node.flags() | Qt.ItemIsEnabled)
-
-            # 递归子节点
-            children = row.get("children", [])
-            if children:
-                self._populate_cad_tree(tree, children, node)
-
     def _on_cad_tree_context_menu(self, pos) -> None:
         """树节点右键菜单。"""
         node = self._cad_tree.itemAt(pos)
         if not node:
             return
-        row = node.data(0, Qt.UserRole)
-        match = node.data(0, Qt.UserRole + 1)
+        row = node.data(self._CAD_COL_PN, Qt.UserRole)
+        match = node.data(self._CAD_COL_PN, Qt.UserRole + 1)
         if not row:
             return
         pn = row.get("part_number", "")
