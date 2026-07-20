@@ -1963,7 +1963,16 @@ class PlmWorkbench(QDialog):
                 child_name = child_builtin.get("Nomenclature", child_pn)
                 child_spec = child.get("user_properties", {}).get("规格型号", "")
                 child_qty = child.get("quantity", 1)
-                child_instances = child.get("instances", [])
+                # 转换矩阵：CATIA 3x4(12) → 4x4(16)
+                child_instances = []
+                for inst in child.get("instances", []):
+                    m = inst.get("matrix")
+                    if m and len(m) == 12:
+                        m = list(m) + [0.0, 0.0, 0.0, 1.0]
+                    child_instances.append({
+                        "matrix": m,
+                        "label": inst.get("label", ""),
+                    })
                 children_data.append({
                     "code": child_pn,
                     "name": child_name,
