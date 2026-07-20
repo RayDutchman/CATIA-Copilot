@@ -22,6 +22,7 @@ from typing import cast
 
 import pythoncom
 import shiboken6
+import tempfile
 from PySide6.QtCore import QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
@@ -112,6 +113,30 @@ def _load_field_mapping() -> dict:
             return _json.load(f)
     except Exception:
         return {"builtin": {}, "properties": {}}
+
+
+def _load_cad_naming() -> dict:
+    """加载 CAD 附件命名前缀配置。"""
+    import os as _os
+    conf_path = _os.path.join(_os.path.dirname(__file__), "..", "catia", "cad_naming.conf")
+    result = {"pdf_part": "DR_", "pdf_assembly": "ASY_", "stp": "MD_"}
+    try:
+        with open(conf_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip()
+                if k == "CAD_PDF_PART_PREFIX":
+                    result["pdf_part"] = v
+                elif k == "CAD_PDF_ASSEMBLY_PREFIX":
+                    result["pdf_assembly"] = v
+                elif k == "CAD_STP_PREFIX":
+                    result["stp"] = v
+    except Exception:
+        pass
+    return result
 
 # 差异状态计算：版本+迭代号相同时，比较本地 mtime 与 PLM checkInDate 的容差
 # 60 秒内视为相等，避免文件系统时间精度差异导致误判
@@ -1651,7 +1676,7 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(self, "上传失败", str(e))
 
     def _on_cad_export_pdf(self, pn: str, row: dict) -> None:
-        """导出 CATDrawing → PDF → 上传到生产附件。"""
+        """导出 CATDrawing → PDF → 上传到生产附件（按命名规则）。"""
         match = self._cad_match_map.get(pn)
         if not match or not match.revision_id:
             return
@@ -1659,18 +1684,23 @@ class PlmWorkbench(QDialog):
         if not doc_path:
             QMessageBox.warning(self, "导出PDF", "找不到源文件路径。")
             return
-        # 查找关联的 CATDrawing
         from catia_copilot.catia.dependencies import find_drawing_for_part
         drawing_path = find_drawing_for_part(doc_path)
         if not drawing_path:
             QMessageBox.information(self, "导出PDF", f"未找到关联工程图：{doc_path}")
             return
         try:
+            naming = _load_cad_naming()
+            is_asm = row.get("is_assembly", False)
+            prefix = naming["pdf_assembly"] if is_asm else naming["pdf_part"]
+            version = match.version or "A"
+            filename = f"{prefix}{pn}_{version}.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), filename)
             from catia_copilot.catia.file_exporter import export_pdf
-            pdf_path = export_pdf(drawing_path)
+            pdf_path = export_pdf(drawing_path, output_path)
             if pdf_path:
                 self._cad_client.upload_attachment(match.revision_id, pdf_path, "production", overwrite=True)
-                self._log_to_conn(f"CAD入口：PDF已上传 — {pn}", "ok")
+                self._log_to_conn(f"CAD入口：PDF已上传 — {filename}", "ok")
                 self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
                 self._refresh_cad_tree()
                 try:
@@ -1683,16 +1713,21 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(self, "导出PDF失败", str(e))
 
     def _on_cad_export_stp(self, pn: str, row: dict) -> None:
-        """导出 STP → 上传到生产附件。"""
+        """导出 STP → 上传到生产附件（按命名规则）。"""
         match = self._cad_match_map.get(pn)
         if not match or not match.revision_id:
             return
         try:
+            naming = _load_cad_naming()
+            prefix = naming["stp"]
+            version = match.version or "A"
+            filename = f"{prefix}{pn}_{version}.stp"
+            output_path = os.path.join(tempfile.gettempdir(), filename)
             from catia_copilot.catia.file_exporter import export_stp
-            stp_path = export_stp(row.get("path", "0"))
+            stp_path = export_stp(row.get("path", "0"), output_path=output_path)
             if stp_path:
                 self._cad_client.upload_attachment(match.revision_id, stp_path, "production", overwrite=True)
-                self._log_to_conn(f"CAD入口：STP已上传 — {pn}", "ok")
+                self._log_to_conn(f"CAD入口：STP已上传 — {filename}", "ok")
                 self._cad_att_counts[pn]["production"] = self._cad_att_counts.get(pn, {"production":0}).get("production", 0) + 1
                 self._refresh_cad_tree()
                 try:
