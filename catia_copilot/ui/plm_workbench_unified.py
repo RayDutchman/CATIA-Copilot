@@ -1373,7 +1373,9 @@ class PlmWorkbench(QDialog):
         self._cad_tree = QTreeWidget()
         self._cad_tree.setHeaderLabels(headers)
         self._cad_tree.setAnimated(True)
-        self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._cad_tree.setEditTriggers(
+            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+        )
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
         self._cad_tree.setIndentation(16)
