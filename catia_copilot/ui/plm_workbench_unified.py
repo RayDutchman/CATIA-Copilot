@@ -1331,14 +1331,14 @@ class PlmWorkbench(QDialog):
 
         self._cad_tree = QTreeWidget()
         self._cad_tree.setHeaderLabels(headers)
-        self._cad_tree.setAlternatingRowColors(True)
         self._cad_tree.setAnimated(True)
         self._cad_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._cad_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._cad_tree.customContextMenuRequested.connect(self._on_cad_tree_context_menu)
         self._cad_tree.setIndentation(16)
         self._cad_tree.setRootIsDecorated(True)
-        self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; }")
+        self._cad_tree.setStyleSheet("QTreeView::item { min-height: 44px; padding: 4px 0; border-bottom: 1px solid #e0e0e0; }")
+        self._cad_tree.setAlternatingRowColors(False)
 
         hdr = self._cad_tree.header()
         hdr.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -1451,17 +1451,6 @@ class PlmWorkbench(QDialog):
             cs = match.checkout_status if match and match.checkout_status else "—"
             cs_display = {"not_checked_out": "未签出", "checked_out": "已签出", "other_checked_out": "他人签出"}.get(cs, cs)
             node.setText(self._CAD_COL_CO, cs_display)
-
-            # 行颜色
-            if match:
-                bg = None
-                if match.match_status == "new":
-                    bg = QColor("#fff3cd")
-                elif match.checkout_status == "checked_out":
-                    bg = QColor("#d1ecf1")
-                if bg:
-                    for c in range(tree.columnCount()):
-                        node.setBackground(c, bg)
 
             # 操作按钮
             op_widget = QWidget()
