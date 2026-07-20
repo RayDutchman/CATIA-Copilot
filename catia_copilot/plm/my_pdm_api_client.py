@@ -356,8 +356,8 @@ class MyPdmApiClient:
         rid = urllib.parse.quote(str(revision_id))
         result = self._request("POST", f"/parts/revisions/{rid}/cad/bom-sync", {"children": children}) or {}
         return BomSyncResponse(
-            created=int(result.get("created", 0)),
-            updated=int(result.get("updated", 0)),
+            created=int(result.get("created_items", result.get("created", 0))),
+            updated=int(result.get("updated_items", result.get("updated", 0))),
             skipped=int(result.get("skipped", 0)),
             details=result.get("details", []),
         )
@@ -455,6 +455,30 @@ class MyPdmApiClient:
             pdfPartPrefix=str(result.get("pdfPartPrefix", "")),
             pdfAssemblyPrefix=str(result.get("pdfAssemblyPrefix", "")),
             stpPrefix=str(result.get("stpPrefix", "")),
+        )
+
+    # ── 自定义字段 ────────────────────────────────────────────────────
+
+    def get_custom_field_definitions(self) -> list[dict]:
+        """获取自定义字段定义列表。返回 [{id, field_key, name, field_type, ...}]。"""
+        return self._request("GET", "/custom-fields/definitions") or []
+
+    def set_custom_field_values(
+        self, entity_type: str, entity_id: str, values: list[dict]
+    ) -> None:
+        """设置实体的自定义字段值。
+
+        参数：
+            entity_type: "part" | "component" | "document" | "configuration_item"
+            entity_id: master_id (UUID)
+            values: [{"field_id": "uuid", "value": "..."}, ...]
+        """
+        eid = urllib.parse.quote(str(entity_id))
+        self._request(
+            "PUT",
+            f"/custom-fields/values/{entity_type}/{eid}",
+            {"values": values},
+            expect_json=False,
         )
 
     # ── 权限检查 ──────────────────────────────────────────────────────

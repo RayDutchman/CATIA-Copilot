@@ -1,7 +1,6 @@
 {
   "builtin": {
     "PartNumber": "code",
-    "Revision": "version",
     "Nomenclature": "name"
   },
   "properties": {

@@ -1688,32 +1688,69 @@ class PlmWorkbench(QDialog):
         field_map = getattr(self, "_cad_field_map", {})
         bm = field_map.get("builtin", {})
         pm = field_map.get("properties", {})
+        # 预加载自定义字段定义
+        try:
+            field_defs = self._cad_client.get_custom_field_definitions()
+        except Exception:
+            field_defs = []
+        key_to_id = {}
+        name_to_id = {}
+        for fd in field_defs:
+            fid = fd.get("id")
+            if fid:
+                key_to_id[fd.get("field_key", "")] = fid
+                name_to_id[fd.get("name", "")] = fid
+
         for row in self._cad_rows:
             pn = row.get("part_number", "")
             match = self._cad_match_map.get(pn)
-            if match and match.checkout_status == "checked_out" and match.revision_id:
-                builtin = row.get("builtin", {})
-                user_props = row.get("user_properties", {})
-                payload = {}
-                for catia_key, pdm_key in bm.items():
-                    val = builtin.get(catia_key, "")
-                    if val:
-                        payload[pdm_key] = val
-                for catia_key, pdm_key in pm.items():
-                    val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
-                    if val:
-                        payload[pdm_key] = val
-                if not payload:
-                    continue
+            if not (match and match.checkout_status == "checked_out"):
+                continue
+            master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+            if not master_id:
+                continue
+            builtin = row.get("builtin", {})
+            user_props = row.get("user_properties", {})
+
+            # PartMaster update
+            payload = {}
+            for catia_key, pdm_key in bm.items():
+                val = builtin.get(catia_key, "")
+                if val:
+                    payload[pdm_key] = val
+            if "spec" in pm.values() or "规格型号" in pm:
+                spec_val = user_props.get("规格型号", "") or builtin.get("规格型号", "")
+                if spec_val:
+                    payload["spec"] = spec_val
+            if payload:
                 try:
-                    self._cad_client.update_part(match.master_id, payload)
-                    count += 1
-                except Exception as e:
-                    self._log_to_conn(f"CAD入口：推送失败 {pn} — {e}", "warn")
+                    self._cad_client.update_part(master_id, payload)
+                except Exception:
+                    pass
+
+            # Custom field values
+            custom_values = []
+            for catia_key, pdm_key in pm.items():
+                if pdm_key == "spec":
+                    continue
+                val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+                if not val:
+                    continue
+                fid = key_to_id.get(pdm_key) or name_to_id.get(pdm_key) or key_to_id.get(catia_key) or name_to_id.get(catia_key)
+                if fid:
+                    custom_values.append({"field_id": fid, "value": val})
+            if custom_values:
+                try:
+                    self._cad_client.set_custom_field_values("part", master_id, custom_values)
+                except Exception:
+                    pass
+
+            count += 1
+
         if count:
             self._log_to_conn(f"CAD入口：批量推送完成 — {count} 个", "ok")
         else:
-            QMessageBox.information(self, "批量推送", "没有可推送的零件（需要已签出状态且有待推送属性）。")
+            QMessageBox.information(self, "批量推送", "没有需要推送的零件。")
 
     def _on_cad_upload_source(self, pn: str, row: dict) -> None:
         """上传 CATIA 源文件到 PDM CAD附件。"""
@@ -1840,7 +1877,11 @@ class PlmWorkbench(QDialog):
             QMessageBox.critical(self, "创建失败", str(e))
 
     def _on_cad_push_attrs(self, row: dict, match) -> None:
-        """属性→：按字段映射将 CATIA 属性推送到 PDM。"""
+        """属性→：按字段映射将 CATIA 属性推送到 PDM。
+        
+        builtin 字段 → PUT /parts/{master_id}
+        自定义属性 → PUT /custom-fields/values/part/{master_id}
+        """
         if not match:
             return
         pn = row.get("part_number", "")
@@ -1848,51 +1889,107 @@ class PlmWorkbench(QDialog):
         user_props = row.get("user_properties", {})
         field_map = getattr(self, "_cad_field_map", {})
 
-        payload: dict = {}
+        master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+        if not master_id:
+            QMessageBox.warning(self, "属性→", f"缺少 PDM 零件 ID（{pn}）。")
+            return
+
         bm = field_map.get("builtin", {})
         pm = field_map.get("properties", {})
 
+        # ── PartMaster 更新（code, name, spec） ──
+        payload = {}
         for catia_key, pdm_key in bm.items():
             val = builtin.get(catia_key, "")
             if val:
                 payload[pdm_key] = val
-        for catia_key, pdm_key in pm.items():
-            val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
-            if val:
-                payload[pdm_key] = val
+        # spec 从属性映射中取
+        if "spec" in pm.values() or "规格型号" in pm:
+            spec_val = user_props.get("规格型号", "") or builtin.get("规格型号", "")
+            if spec_val:
+                payload["spec"] = spec_val
 
-        if not payload:
-            QMessageBox.information(self, "属性→", "未找到可推送的属性。")
-            return
+        push_log = []
+        if payload:
+            try:
+                self._cad_client.update_part(master_id, payload)
+                push_log.append("基础字段")
+            except MyPdmApiError as e:
+                QMessageBox.critical(self, "推送失败", f"{pn}：{e}")
+                return
 
-        # 优先用 master_id，否则用 revision_id
-        master_id = getattr(match, "master_id", None)
-        rev_id = getattr(match, "revision_id", None)
-        part_id = master_id or rev_id
-        if not part_id:
-            # 尝试直接从原始响应获取
-            raw = getattr(match, "__dict__", {})
-            all_ids = {k: v for k, v in raw.items() if v and "id" in k.lower()}
-            QMessageBox.warning(self, "属性→",
-                f"缺少 PDM 零件 ID（{pn}）。\n"
-                f"master_id={master_id}\nrevision_id={rev_id}\n"
-                f"可用ID字段: {all_ids}")
-            return
-
+        # ── 自定义字段 ──
+        custom_values = []
         try:
-            self._cad_client.update_part(part_id, payload)
-            self._log_to_conn(f"CAD入口：属性已推送 — {pn} ({list(payload.keys())})", "ok")
-        except MyPdmApiError as e:
-            QMessageBox.critical(self, "推送失败", f"{pn} (id={part_id})：{e}")
-        except Exception as e:
-            QMessageBox.critical(self, "推送失败", str(e))
+            field_defs = self._cad_client.get_custom_field_definitions()
+            # 构建 field_key → field_id 映射
+            key_to_id = {}
+            name_to_id = {}
+            for fd in field_defs:
+                fid = fd.get("id")
+                if fid:
+                    key_to_id[fd.get("field_key", "")] = fid
+                    name_to_id[fd.get("name", "")] = fid
+        except Exception:
+            field_defs = []
+            key_to_id = {}
+            name_to_id = {}
+
+        for catia_key, pdm_key in pm.items():
+            if pdm_key == "spec":
+                continue  # spec 已在上面处理
+            val = user_props.get(catia_key, "") or builtin.get(catia_key, "")
+            if not val:
+                continue
+            # 优先按 field_key 匹配，其次按 name 匹配
+            fid = key_to_id.get(pdm_key) or name_to_id.get(pdm_key) or key_to_id.get(catia_key) or name_to_id.get(catia_key)
+            if fid:
+                custom_values.append({"field_id": fid, "value": val})
+
+        if custom_values:
+            try:
+                self._cad_client.set_custom_field_values("part", master_id, custom_values)
+                push_log.append(f"自定义字段({len(custom_values)}个)")
+            except MyPdmApiError as e:
+                self._log_to_conn(f"CAD入口：自定义字段推送失败 {pn} — {e}", "warn")
+
+        # ── BOM 结构同步（装配体） ──
+        rev_id = getattr(match, "revision_id", None)
+        if row.get("is_assembly") and row.get("children") and rev_id:
+            children_data = []
+            for child in row["children"]:
+                child_pn = child.get("part_number", "")
+                child_builtin = child.get("builtin", {})
+                child_name = child_builtin.get("Nomenclature", child_pn)
+                child_spec = child.get("user_properties", {}).get("规格型号", "")
+                child_qty = child.get("quantity", 1)
+                child_instances = child.get("instances", [])
+                children_data.append({
+                    "code": child_pn,
+                    "name": child_name,
+                    "spec": child_spec or None,
+                    "quantity": child_qty,
+                    "instances": child_instances if child_instances else [],
+                })
+            if children_data:
+                try:
+                    result = self._cad_client.cad_bom_sync(rev_id, children_data)
+                    push_log.append(f"BOM({result.created}+{result.updated})")
+                except MyPdmApiError as e:
+                    self._log_to_conn(f"CAD入口：BOM同步失败 {pn} — {e}", "warn")
+
+        if push_log:
+            self._log_to_conn(f"CAD入口：属性已推送 — {pn}（{', '.join(push_log)}）", "ok")
+        else:
+            QMessageBox.information(self, "属性→", "未找到可推送的属性。")
 
     def _on_cad_pull_attrs(self, row: dict, match) -> None:
         """属性←：从 PDM 拉取属性。"""
-        if not match.revision_id:
+        master_id = getattr(match, "master_id", None) or getattr(match, "revision_id", None)
+        if not master_id:
             return
         try:
-            part = self._cad_client.get_part(match.master_id)
+            part = self._cad_client.get_part(master_id)
             if part:
                 field_map = getattr(self, "_cad_field_map", {})
                 pm = field_map.get("properties", {})
