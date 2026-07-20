@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os as _os
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -65,6 +66,12 @@ class MyPdmApiClient:
         self._refresh_token: str | None = None
         self._user: UserResponse | None = None
         self._reauth_callback: Callable[[], None] | None = None
+
+        # 自签名证书：跳过 SSL 验证
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        self._ssl_context = ssl_ctx
 
         # 从 QSettings 恢复 refresh_token
         s = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
@@ -119,7 +126,7 @@ class MyPdmApiClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         logger.debug(f"myPDM {method} {url}")
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30, context=self._ssl_context) as resp:
                 raw = resp.read()
                 return json.loads(raw) if (expect_json and raw) else None
         except urllib.error.HTTPError as exc:
@@ -168,7 +175,7 @@ class MyPdmApiClient:
                 "Accept": "application/json",
             }
             req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=self._ssl_context) as resp:
                 raw = resp.read()
                 result = json.loads(raw) if raw else {}
                 token_resp = TokenResponse(
@@ -203,7 +210,7 @@ class MyPdmApiClient:
         }
         req = urllib.request.Request(url, data=form_data, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=self._ssl_context) as resp:
                 raw = resp.read()
                 result = json.loads(raw) if raw else {}
                 self._access_token = result.get("access_token", "")
@@ -261,7 +268,7 @@ class MyPdmApiClient:
         try:
             url = self._base.replace("/api", "/health") if "/api" in self._base else self._base + "/health"
             req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=self._ssl_context) as resp:
                 return resp.status == 200
         except Exception:
             return False
@@ -413,7 +420,7 @@ class MyPdmApiClient:
         logger.debug(f"myPDM 附件上传：{filename} → revision={revision_id} category={category}")
 
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=120, context=self._ssl_context) as resp:
                 raw = resp.read()
                 result = json.loads(raw) if raw else {}
                 return AttachmentResponse(
