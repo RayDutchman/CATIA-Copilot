@@ -1284,25 +1284,8 @@ class PlmWorkbench(QDialog):
         self._cad_match_summary.setLayout(summary_bar)
         self._cad_page_layout.addWidget(self._cad_match_summary)
 
-        # ── 收集用户自定义属性列（只取实际有值的） ──────────────────────────────
-        user_prop_keys: list[str] = []
-        seen_props = set()
-        # 从 CATIA 读取的属性中扫描，只保留至少有一个非空值的
-        prop_has_value: dict[str, bool] = {}
-        for row in self._cad_rows:
-            for key, val in row.get("user_properties", {}).items():
-                if key.strip() and val.strip():
-                    prop_has_value[key] = True
-        # 预设常用属性也加入（即使当前无值）
-        for key in PRESET_USER_REF_PROPERTIES:
-            if key not in seen_props:
-                seen_props.add(key)
-                user_prop_keys.append(key)
-        # 实际有值的属性（去重）
-        for key in sorted(prop_has_value):
-            if key not in seen_props:
-                seen_props.add(key)
-                user_prop_keys.append(key)
+        # ── 用户自定义属性列（仅预设列表，不扫描 CATIA 全部参数） ──────────────
+        self._cad_user_cols = list(PRESET_USER_REF_PROPERTIES)
 
         # ── 列定义 ─────────────────────────────────────────────────────────────
         self._CAD_COL_PN      = 0   # 件号
@@ -1313,16 +1296,15 @@ class PlmWorkbench(QDialog):
         self._CAD_COL_DESC    = 5   # 描述
         # 用户属性动态列 6 ~ 5+N
         self._CAD_COL_USER_START = 6
-        self._cad_user_cols = user_prop_keys
-        self._CAD_COL_CAD_ATT  = 6 + len(user_prop_keys)   # CAD附件
-        self._CAD_COL_PROD_ATT = 7 + len(user_prop_keys)   # 生产附件
-        self._CAD_COL_PDM      = 8 + len(user_prop_keys)   # PDM匹配
-        self._CAD_COL_MATCH    = 9 + len(user_prop_keys)   # 匹配状态
-        self._CAD_COL_CO       = 10 + len(user_prop_keys)  # 签出状态
-        self._CAD_COL_OP       = 11 + len(user_prop_keys)  # 操作
+        self._CAD_COL_CAD_ATT  = 6 + len(self._cad_user_cols)   # CAD附件
+        self._CAD_COL_PROD_ATT = 7 + len(self._cad_user_cols)   # 生产附件
+        self._CAD_COL_PDM      = 8 + len(self._cad_user_cols)   # PDM匹配
+        self._CAD_COL_MATCH    = 9 + len(self._cad_user_cols)   # 匹配状态
+        self._CAD_COL_CO       = 10 + len(self._cad_user_cols)  # 签出状态
+        self._CAD_COL_OP       = 11 + len(self._cad_user_cols)  # 操作
 
         headers = ["件号", "用量", "版本", "定义", "术语", "描述"]
-        headers += user_prop_keys
+        headers += self._cad_user_cols
         headers += ["CAD附件", "生产附件", "PDM匹配", "匹配状态", "签出状态", "操作"]
 
         self._cad_tree = QTreeWidget()

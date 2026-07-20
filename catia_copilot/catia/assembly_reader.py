@@ -64,15 +64,13 @@ def _read_builtin_properties(product) -> dict[str, str]:
 
 
 def _read_user_properties(product) -> dict[str, str]:
-    """读取 CATIA 用户自定义属性。
-
-    优先尝试 UserRefProperties 集合遍历；失败则按已知属性名逐个查询。
-    对 product 和 product.ReferenceProduct 都尝试（与 bom_collect 一致）。
+    """只读取预设的用户自定义属性（材料/重量/规格型号等）。
+    
+    逐个按预设属性名查询，避免遍历 UserRefProperties 读到 PLM 元数据等干扰字段。
     """
+    from catia_copilot.constants import PRESET_USER_REF_PROPERTIES
+    
     result: dict[str, str] = {}
-    known_com_names = set(PRODUCT_ATTR_READ_MAP.values())
-
-    # 备选目标列表
     targets = [product]
     try:
         ref = product.ReferenceProduct
@@ -81,24 +79,14 @@ def _read_user_properties(product) -> dict[str, str]:
     except Exception:
         pass
 
-    # 方式1：遍历 UserRefProperties 集合
-    for target in targets:
-        try:
-            user_props = target.UserRefProperties
-        except Exception:
-            continue
-        if user_props is None:
-            continue
-        try:
-            count = user_props.Count
-        except Exception:
-            continue
-        for i in range(1, count + 1):
+    for prop_name in PRESET_USER_REF_PROPERTIES:
+        for target in targets:
             try:
-                name = str(user_props.Item(i).Name)
-                value = str(user_props.Item(i).Value)
-                if name and name not in known_com_names:
-                    result[name] = value
+                prop = target.UserRefProperties.Item(prop_name)
+                value = prop.Value
+                if value is not None and str(value).strip():
+                    result[prop_name] = str(value)
+                    break
             except Exception:
                 continue
 
