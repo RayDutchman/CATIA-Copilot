@@ -72,6 +72,7 @@ from catia_copilot.constants import (
     BomNodeType,
 )
 from catia_copilot.plm.api_client import PlmApiClient
+from catia_copilot.plm.my_pdm_api_client import MyPdmApiClient, MyPdmApiError
 from catia_copilot.plm.sync import (
     _rows_to_bom_tree as rows_to_bom_tree,
     sync_bom_to_plm,
@@ -91,10 +92,10 @@ _S_TAG_RULES = "PlmTagRules"
 _S_HISTORY   = "PlmSyncHistory"
 _S_WB        = "PlmWorkbench"        # 工作台专用（列可见性等）
 
-_DEFAULT_BASE_URL  = "http://127.0.0.1:8001/docdoku-plm-server-rest/api"
-_DEFAULT_LOGIN     = "admin"
-_DEFAULT_PASSWORD  = "password"
-_DEFAULT_WORKSPACE = "Workspace_0"
+_DEFAULT_BASE_URL  = "https://192.168.1.x:8443/api"
+_DEFAULT_LOGIN     = ""
+_DEFAULT_PASSWORD  = ""
+_DEFAULT_WORKSPACE = ""
 
 _MAX_HISTORY = 20
 
@@ -167,44 +168,39 @@ def _sync_row_color(source: str, update: str = "", checkin: str = ""):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _ConnectWorker(QThread):
-    """测试连接，拉取工作区信息与用户列表。"""
-    # users: list[dict]，每项含 login/name；ws_info: dict（id/description/admin）
+    """测试 myPDM 连接并获取用户信息。"""
     success = Signal(str, list, dict)
     failure = Signal(str)
 
-    def __init__(self, base_url, login, password, workspace):
+    def __init__(self, base_url, login, password):
         super().__init__()
-        self._base_url  = base_url
-        self._login     = login
-        self._password  = password
-        self._workspace = workspace
+        self._base_url = base_url
+        self._login = login
+        self._password = password
 
     def run(self):
         try:
-            c = PlmApiClient(self._base_url)
+            c = MyPdmApiClient(self._base_url)
             c.login(self._login, self._password)
-            users = c.list_users(self._workspace) or []
-
-            ws_info: dict = {}
-
-            # GET /workspaces → 包含 description/enabled/folderLocked；
-            # administratedWorkspaces 中存在目标工作区 → 当前用户是管理员
-            # 注意：该端点不返回 admin 账号字段，无法获取工作区创建者
-            try:
-                all_ws = c._request("GET", "/workspaces") or {}
-                admin_ids = {w.get("id") for w in (all_ws.get("administratedWorkspaces") or [])}
-                # allWorkspaces 包含所有有权访问的工作区（含管理员的）
-                for w in (all_ws.get("allWorkspaces") or []) + (all_ws.get("administratedWorkspaces") or []):
-                    if w.get("id") == self._workspace:
-                        ws_info.update(w)
-                        break
-                ws_info["_current_user_role"] = "管理员" if self._workspace in admin_ids else "普通成员"
-            except Exception as e:
-                ws_info["_current_user_role"] = f"未知（{e}）"
-
-            self.success.emit(self._login, users, ws_info)
-        except Exception as exc:
+            user = c.current_user
+            if user is None:
+                self.failure.emit("登录成功但获取用户信息失败")
+                return
+            user_info = {
+                "id": user.id,
+                "username": user.username,
+                "real_name": user.real_name,
+                "role": user.role,
+                "department": user.department or "",
+                "phone": user.phone or "",
+                "status": user.status,
+            }
+            users = [user_info]
+            self.success.emit(self._login, users, user_info)
+        except MyPdmApiError as exc:
             self.failure.emit(str(exc))
+        except Exception as exc:
+            self.failure.emit(f"连接失败：{exc}")
 
 
 class _BomPreviewWorker(QThread):
@@ -368,6 +364,7 @@ class PlmWorkbench(QDialog):
 
         # 已加载的 BOM 行（预览后缓存，同步时复用）
         self._bom_rows: list[dict] = []
+        self._pdm_client: MyPdmApiClient | None = None
 
         # 同步结果映射：Part Number → (操作, 状态)，同步进行中实时更新
         self._sync_result_map: dict[str, tuple[str, str, str]] = {}  # pn → (source, update, checkin)
@@ -437,7 +434,7 @@ class PlmWorkbench(QDialog):
         top_row.setContentsMargins(0, 0, 0, 0)
 
         # 左：配置表单
-        grp_cfg = QGroupBox("PLM 连接配置")
+        grp_cfg = QGroupBox("myPDM 连接配置")
         grp_cfg.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         form = QFormLayout(grp_cfg)
         form.setSpacing(6)
@@ -452,11 +449,13 @@ class PlmWorkbench(QDialog):
         form.addRow("服务端地址：", self._le_base_url)
         form.addRow("用户名：",     self._le_login)
         form.addRow("密码：",       self._le_password)
-        form.addRow("工作区：",     self._le_workspace)
+        self._le_workspace.hide()  # myPDM 不需要 workspace 字段
+        # form.addRow("工作区：",     self._le_workspace)
 
         btn_row = QHBoxLayout()
         btn_save = QPushButton("保存配置")
         btn_test = QPushButton("测试连接")
+        btn_login = QPushButton("登录")
         self._btn_goto_sync = QPushButton("→ 前往同步")
         self._btn_goto_sync.setToolTip("保存配置并切换到同步 Tab")
         _arrow_font = QFont("Segoe UI Emoji")
@@ -464,9 +463,11 @@ class PlmWorkbench(QDialog):
         self._btn_goto_sync.setFont(_arrow_font)
         btn_save.clicked.connect(self._on_save_conn)
         btn_test.clicked.connect(self._on_test_conn)
+        btn_login.clicked.connect(self._on_login_conn)
         self._btn_goto_sync.clicked.connect(self._on_goto_sync)
         btn_row.addWidget(btn_save)
         btn_row.addWidget(btn_test)
+        btn_row.addWidget(btn_login)
         btn_row.addStretch()
         btn_row.addWidget(self._btn_goto_sync)
         form.addRow("", btn_row)
@@ -493,36 +494,26 @@ class PlmWorkbench(QDialog):
         top_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         layout.addWidget(top_widget)
 
-        # ── 下半：工作区详情（填满剩余高度） ─────────────────────────────────
-        grp_ws = QGroupBox("工作区详情")
-        v_ws = QVBoxLayout(grp_ws)
-        v_ws.setSpacing(4)
+        # ── 下半：用户信息 ──────────────────────────────────────────────
+        grp_user = QGroupBox("用户信息")
+        grp_user.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        v_user = QVBoxLayout(grp_user)
+        v_user.setSpacing(4)
+        self._lbl_user_info = QLabel("— 尚未登录 —")
+        self._lbl_user_info.setWordWrap(True)
+        v_user.addWidget(self._lbl_user_info)
+        layout.addWidget(grp_user)
 
-        self._lbl_ws_detail = QLabel("— 未获取 —")
-        self._lbl_ws_detail.setWordWrap(True)
-        v_ws.addWidget(self._lbl_ws_detail)
-
-        # 成员列表：列定义来自 PLM_MEMBER_TABLE_COLUMNS
-        n_cols = len(PLM_MEMBER_TABLE_COLUMNS)
-        self._tbl_users = QTableWidget(0, n_cols)
-        self._tbl_users.setHorizontalHeaderLabels(
-            [col[1] for col in PLM_MEMBER_TABLE_COLUMNS]
-        )
-        hdr = self._tbl_users.horizontalHeader()
-        hdr.setStretchLastSection(True)
-        for i, (_key, _label, mode) in enumerate(PLM_MEMBER_TABLE_COLUMNS):
-            hdr.setSectionResizeMode(i, QHeaderView.Interactive)
-            if mode == "contents":
-                hdr.resizeSection(i, 80)
-            elif mode.startswith("fixed:"):
-                hdr.resizeSection(i, int(mode.split(":")[1]))
-            else:
-                hdr.resizeSection(i, 120)
-        self._tbl_users.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._tbl_users.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._tbl_users.setMinimumHeight(100)
-        v_ws.addWidget(self._tbl_users)
-        layout.addWidget(grp_ws, stretch=1)
+        # ── 下半：连接日志（填满剩余高度） ─────────────────────────────────
+        grp_log = QGroupBox("连接日志")
+        v_log = QVBoxLayout(grp_log)
+        v_log.setSpacing(4)
+        self._txt_conn_log = QPlainTextEdit()
+        self._txt_conn_log.setReadOnly(True)
+        self._txt_conn_log.setObjectName("logView")
+        self._txt_conn_log.setPlaceholderText('— 点击"登录"连接到 myPDM 后端 —')
+        v_log.addWidget(self._txt_conn_log)
+        layout.addWidget(grp_log, stretch=1)
 
         return page
 
@@ -534,40 +525,88 @@ class PlmWorkbench(QDialog):
         self._save_conn()
         self._tabs.setCurrentIndex(1)
 
-    def _on_test_conn(self):
+    def _on_test_conn(self) -> None:
+        """测试连接（仅检查后端是否可达）。"""
+        base_url = self._le_base_url.text().strip()
+        if not base_url:
+            QMessageBox.warning(self, "配置不完整", "请输入服务端地址。")
+            return
+        self._log_to_conn(f"正在测试连接: {base_url} ...")
+        try:
+            client = MyPdmApiClient(base_url)
+            if client.health():
+                self._log_to_conn("连接测试成功：后端可达", "ok")
+            else:
+                self._log_to_conn("连接测试失败：后端无响应", "error")
+        except Exception as exc:
+            self._log_to_conn(f"连接测试异常：{exc}", "error")
+
+    def _on_login_conn(self) -> None:
+        """执行 myPDM 登录。"""
+        base_url = self._le_base_url.text().strip()
+        login = self._le_login.text().strip()
+        password = self._le_password.text()
+
+        if not base_url or not login or not password:
+            QMessageBox.warning(self, "配置不完整", "请填写服务端地址、用户名和密码。")
+            return
+
+        self._log_to_conn(f"正在连接到 myPDM: {base_url} ...")
         self._save_conn()
-        base_url, login, password, workspace = self._read_conn()
-        self._log_to_conn(f"正在连接 {base_url} …", "info")
-        self._tbl_users.setRowCount(0)
-        self._lbl_ws_detail.setText("— 获取中 —")
-        w = _ConnectWorker(base_url, login, password, workspace)
-        w.success.connect(self._on_conn_ok)
-        w.failure.connect(self._on_conn_fail)
-        self._start_worker(w)
 
-    def _on_conn_ok(self, login_name: str, users: list, ws_info: dict):
-        _, _, _, ws = self._read_conn()
+        self._pdm_client = MyPdmApiClient(base_url)
+        self._pdm_client.set_reauth_callback(self._on_reauth_required)
+
+        worker = _ConnectWorker(base_url, login, password)
+        worker.success.connect(self._on_conn_login_success)
+        worker.failure.connect(self._on_conn_login_failure)
+        self._start_worker(worker)
+
+    def _on_conn_login_success(self, login: str, users: list, user_info: dict) -> None:
+        """登录成功回调。"""
+        real_name = user_info.get("real_name", login)
+        role = user_info.get("role", "?")
+        dept = user_info.get("department", "")
+
+        role_display = {
+            "admin": "管理员",
+            "engineer": "工程师",
+            "production": "生产",
+            "guest": "访客",
+        }.get(role, role)
+
+        info_text = (
+            f"姓名：{real_name}\n"
+            f"用户名：{user_info.get('username', login)}\n"
+            f"角色：{role_display}\n"
+            f"部门：{dept}\n"
+        )
+
+        key_perms = ["parts:create", "parts:checkout", "parts:checkin", "attachments:upload"]
+        perms_text = "\n权限摘要：\n"
+        if self._pdm_client:
+            for perm in key_perms:
+                if self._pdm_client.can(perm):
+                    perms_text += f"  ✓ {perm}\n"
+                else:
+                    perms_text += f"  ✗ {perm}\n"
+
+        self._lbl_user_info.setText(info_text + perms_text)
+        self._btn_goto_sync.setEnabled(True)
         self._log_to_conn(
-            f"连接成功  用户：{login_name}  工作区：{ws}  成员数：{len(users)}", "ok"
+            f"登录成功：{real_name}（{role_display}）", "ok"
         )
-        # 工作区详情：API 字段 id/admin/description（无 creationDate/lastModification）
-        desc  = ws_info.get("description") or "—"
-        role  = ws_info.get("_current_user_role") or "—"
-        enabled = "是" if ws_info.get("enabled", True) else "否"
-        self._lbl_ws_detail.setText(
-            f"工作区：{ws}    描述：{desc}    我的身份：{role}    已启用：{enabled}"
-        )
-        # 填充成员表格，列定义来自 PLM_MEMBER_TABLE_COLUMNS
-        self._tbl_users.setRowCount(0)
-        for u in users:
-            row = self._tbl_users.rowCount()
-            self._tbl_users.insertRow(row)
-            for col_i, (key, _label, _mode) in enumerate(PLM_MEMBER_TABLE_COLUMNS):
-                self._tbl_users.setItem(row, col_i, QTableWidgetItem(str(u.get(key) or "")))
 
-    def _on_conn_fail(self, err: str):
-        self._log_to_conn(f"连接失败：{err}", "error")
-        self._lbl_ws_detail.setText("— 连接失败 —")
+    def _on_conn_login_failure(self, error_msg: str) -> None:
+        """登录失败回调。"""
+        self._log_to_conn(f"登录失败：{error_msg}", "error")
+        self._btn_goto_sync.setEnabled(False)
+
+    def _on_reauth_required(self) -> None:
+        """JWT 过期回调，提示用户重新登录。"""
+        self._log_to_conn("认证已过期，请重新登录", "warn")
+        self._btn_goto_sync.setEnabled(False)
+        self._lbl_user_info.setText("— 认证已过期，请重新登录 —")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tab 2 — 同步
