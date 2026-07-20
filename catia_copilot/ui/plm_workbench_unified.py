@@ -1172,7 +1172,7 @@ class PlmWorkbench(QDialog):
         flat_rows = flatten_tree(tree)
         self._log_to_conn(f"CAD入口：装配树 — {len(flat_rows)} 个零件节点", "ok")
 
-        # Step 4: BOM 匹配（用平铺列表去重）
+        # Step 4: BOM 匹配（从层级树递归收集所有件号）
         self._log_to_conn("CAD入口：正在进行 myPDM BOM 匹配……")
         client = MyPdmApiClient(base_url)
         try:
@@ -1181,15 +1181,22 @@ class PlmWorkbench(QDialog):
             self._log_to_conn(f"CAD入口：myPDM 登录失败 — {e}", "error")
             return
 
+        # 递归收集层级树中所有去重的 (code, version) 对
         seen = set()
         items = []
-        for row in flat_rows:
-            code = row.get("part_number", "").strip()
-            if not code or code in seen:
-                continue
-            seen.add(code)
-            version = row.get("builtin", {}).get("Revision", "")
-            items.append({"code": code, "version": version if version else None})
+
+        def _collect_pns(tree_nodes):
+            for node in tree_nodes:
+                code = node.get("part_number", "").strip()
+                if code and code not in seen:
+                    seen.add(code)
+                    version = node.get("builtin", {}).get("Revision", "")
+                    items.append({"code": code, "version": version if version else None})
+                children = node.get("children", [])
+                if children:
+                    _collect_pns(children)
+
+        _collect_pns(rows)
 
         try:
             match_results = client.cad_bom_match(items)
@@ -1293,23 +1300,24 @@ class PlmWorkbench(QDialog):
                     user_prop_keys.append(key)
 
         # ── 列定义 ─────────────────────────────────────────────────────────────
-        self._CAD_COL_PN      = 0   # 件号
-        self._CAD_COL_QTY     = 1   # 用量
-        self._CAD_COL_REV     = 2   # 版本
-        self._CAD_COL_DEF     = 3   # 定义
-        self._CAD_COL_NOM     = 4   # 术语
-        self._CAD_COL_DESC    = 5   # 描述
-        # 用户属性动态列 6 ~ 5+N
-        self._CAD_COL_USER_START = 6
+        self._CAD_COL_LVL     = 0   # 层级
+        self._CAD_COL_PN      = 1   # 件号
+        self._CAD_COL_QTY     = 2   # 用量
+        self._CAD_COL_REV     = 3   # 版本
+        self._CAD_COL_DEF     = 4   # 定义
+        self._CAD_COL_NOM     = 5   # 术语
+        self._CAD_COL_DESC    = 6   # 描述
+        # 用户属性动态列 7 ~ 6+N
+        self._CAD_COL_USER_START = 7
         self._cad_user_cols = user_prop_keys
-        self._CAD_COL_CAD_ATT  = 6 + len(user_prop_keys)   # CAD附件
-        self._CAD_COL_PROD_ATT = 7 + len(user_prop_keys)   # 生产附件
-        self._CAD_COL_PDM      = 8 + len(user_prop_keys)   # PDM匹配
-        self._CAD_COL_MATCH    = 9 + len(user_prop_keys)   # 匹配状态
-        self._CAD_COL_CO       = 10 + len(user_prop_keys)  # 签出状态
-        self._CAD_COL_OP       = 11 + len(user_prop_keys)  # 操作
+        self._CAD_COL_CAD_ATT  = 7 + len(user_prop_keys)   # CAD附件
+        self._CAD_COL_PROD_ATT = 8 + len(user_prop_keys)   # 生产附件
+        self._CAD_COL_PDM      = 9 + len(user_prop_keys)   # PDM匹配
+        self._CAD_COL_MATCH    = 10 + len(user_prop_keys)  # 匹配状态
+        self._CAD_COL_CO       = 11 + len(user_prop_keys)  # 签出状态
+        self._CAD_COL_OP       = 12 + len(user_prop_keys)  # 操作
 
-        headers = ["件号", "用量", "版本", "定义", "术语", "描述"]
+        headers = ["层级", "件号", "用量", "版本", "定义", "术语", "描述"]
         headers += user_prop_keys
         headers += ["CAD附件", "生产附件", "PDM匹配", "匹配状态", "签出状态", "操作"]
 
@@ -1329,8 +1337,8 @@ class PlmWorkbench(QDialog):
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(self._CAD_COL_PN, QHeaderView.ResizeMode.Stretch)
         for ci, w in [
-            (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60), (self._CAD_COL_DEF, 80),
-            (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
+            (self._CAD_COL_LVL, 50), (self._CAD_COL_QTY, 50), (self._CAD_COL_REV, 60),
+            (self._CAD_COL_DEF, 80), (self._CAD_COL_NOM, 80), (self._CAD_COL_DESC, 80),
             (self._CAD_COL_CAD_ATT, 70), (self._CAD_COL_PROD_ATT, 70),
             (self._CAD_COL_PDM, 120), (self._CAD_COL_MATCH, 70),
             (self._CAD_COL_CO, 70), (self._CAD_COL_OP, 140),
@@ -1358,8 +1366,13 @@ class PlmWorkbench(QDialog):
                 label = f"{pn}  [{inst_name}]"
 
             node = QTreeWidgetItem(parent or tree)
+            # 层级：显示深度数字
+            level = row.get("level", 0)
+            node.setText(self._CAD_COL_LVL, str(level))
+            node.setTextAlignment(self._CAD_COL_LVL, Qt.AlignCenter)
             node.setText(self._CAD_COL_PN, label)
             node.setText(self._CAD_COL_QTY, qty)
+            node.setTextAlignment(self._CAD_COL_QTY, Qt.AlignCenter)
             node.setText(self._CAD_COL_REV, builtin.get("Revision", ""))
             node.setText(self._CAD_COL_DEF, builtin.get("Definition", ""))
             node.setText(self._CAD_COL_NOM, builtin.get("Nomenclature", ""))

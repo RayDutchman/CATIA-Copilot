@@ -64,26 +64,44 @@ def _read_builtin_properties(product) -> dict[str, str]:
 
 
 def _read_user_properties(product) -> dict[str, str]:
+    """读取 CATIA 用户自定义属性。
+
+    优先尝试 UserRefProperties 集合遍历；失败则按已知属性名逐个查询。
+    对 product 和 product.ReferenceProduct 都尝试（与 bom_collect 一致）。
+    """
     result: dict[str, str] = {}
     known_com_names = set(PRODUCT_ATTR_READ_MAP.values())
+
+    # 备选目标列表
+    targets = [product]
     try:
-        user_props = product.UserRefProperties
+        ref = product.ReferenceProduct
+        if ref is not None:
+            targets.insert(0, ref)
     except Exception:
-        return result
-    if user_props is None:
-        return result
-    try:
-        count = user_props.Count
-    except Exception:
-        return result
-    for i in range(1, count + 1):
+        pass
+
+    # 方式1：遍历 UserRefProperties 集合
+    for target in targets:
         try:
-            name = str(user_props.Item(i).Name)
-            value = str(user_props.Item(i).Value)
-            if name and name not in known_com_names:
-                result[name] = value
+            user_props = target.UserRefProperties
         except Exception:
             continue
+        if user_props is None:
+            continue
+        try:
+            count = user_props.Count
+        except Exception:
+            continue
+        for i in range(1, count + 1):
+            try:
+                name = str(user_props.Item(i).Name)
+                value = str(user_props.Item(i).Value)
+                if name and name not in known_com_names:
+                    result[name] = value
+            except Exception:
+                continue
+
     return result
 
 
