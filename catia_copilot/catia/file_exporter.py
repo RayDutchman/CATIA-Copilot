@@ -1,9 +1,10 @@
 """
 CATIA 文件导出模块。
 
-对标 myPDM cad_bridge 的 STP 导出和 PDF 转换功能：
-- export_stp(): 将零部件导出为 STEP (.stp) 格式
-- export_pdf(): 将 CATDrawing 转换为 PDF
+按装配树路径定位实例并导出 STEP (.stp)。
+
+PDF 转换直接复用 catia_copilot.catia.conversion.convert_drawing_to_pdf，
+不在此处重复实现。
 
 所有导出文件保存到本地临时目录，由调用方负责上传到 myPDM 后端。
 """
@@ -12,7 +13,6 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from pathlib import Path
 
 from catia_copilot.catia.connection import get_catia_v5_application
 
@@ -71,42 +71,3 @@ def export_stp(path: str, product_doc=None, output_path: str | None = None) -> s
             except Exception:
                 pass
         return None
-
-
-def export_pdf(drawing_path: str, output_path: str | None = None) -> str | None:
-    """将 CATDrawing 转换为 PDF。
-
-    参数：
-        drawing_path: CATDrawing 文件的完整路径
-        output_path: 输出路径（可选，不传则自动创建临时文件）
-
-    返回：生成的 .pdf 文件路径，失败返回 None。
-    """
-    if output_path is None:
-        fd, output_path = tempfile.mkstemp(suffix=".pdf")
-        os.close(fd)
-
-    output_dir = os.path.dirname(output_path) or "."
-    input_stem = Path(drawing_path).stem
-    expected_file = os.path.join(output_dir, f"{input_stem}.pdf")
-
-    from catia_copilot.catia.conversion import convert_drawing_to_pdf
-
-    try:
-        count = convert_drawing_to_pdf(
-            [drawing_path],
-            output_folder=output_dir,
-            prefix="",
-            suffix="",
-        )
-        if count > 0 and os.path.exists(expected_file):
-            if expected_file != output_path:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-                os.rename(expected_file, output_path)
-            logger.info(f"PDF 导出成功: {output_path}")
-            return output_path
-    except Exception as e:
-        logger.warning(f"PDF 导出失败 {drawing_path}: {e}")
-
-    return None

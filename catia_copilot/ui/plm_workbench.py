@@ -690,7 +690,6 @@ class PlmWorkbench(QDialog):
         # 进度辅助（兼容旧逻辑）
         self._bom_rows: list[dict] = []
         self._visible_bom_rows: list[dict] = []
-        self._plm_parts_cache: dict[str, dict] = {}
         self._sync_result_map: dict[str, tuple[str, str, str]] = {}
 
         # ── 整体布局（垂直三段） ─────────────────────────────────────────────
@@ -1073,7 +1072,6 @@ class PlmWorkbench(QDialog):
             self._diff_rows = []
             self._local_parts = []
             self._plm_cache = {}
-            self._plm_parts_cache = {}
             self._sync_just_pushed.clear()
             changed_fields = []
             if _after[0] != _before[0]:
@@ -1222,8 +1220,9 @@ class PlmWorkbench(QDialog):
             logging.getLogger(__name__).warning(f"读取 PLM 缓存失败：{exc}")
             self._plm_cache = {}
 
-        # 同步到旧兼容缓存
-        self._plm_parts_cache = {pn: d for pn, d in self._plm_cache.items() if d}
+        # 只用本地存在的 PN 过滤缓存，剔除已删除/已改名的文件对应的过期 key
+        valid_pns = {info.part_number for info in local_parts if info.part_number}
+        self._plm_cache = {pn: self._plm_cache[pn] for pn in self._plm_cache if pn in valid_pns}
 
         self._populate_diff_table()
         n_local = len(local_parts)
@@ -1302,7 +1301,6 @@ class PlmWorkbench(QDialog):
         else:
             self._plm_cache.update(result)
 
-        self._plm_parts_cache = {pn: d for pn, d in self._plm_cache.items() if d}
 
         # 更新本地已推送零件的本地版本/迭代信息（CATIA 文件已由 _write_plm_attrs_to_catia 更新）
         if self._sync_just_pushed:
@@ -1756,8 +1754,14 @@ class PlmWorkbench(QDialog):
                     )
                     has_recheck = True
             if has_recheck:
-                self._plm_cache.update({pn: fresh_data[pn]
-                                        for pn in fresh_data if fresh_data[pn]})
+                fresh_subset = {pn: fresh_data[pn] for pn in fresh_data if fresh_data[pn]}
+                self._plm_cache.update(fresh_subset)
+                # 持久化到磁盘，下次加载工作区时无需重查 PLM
+                try:
+                    from catia_copilot.plm.workspace_scanner import merge_plm_cache
+                    merge_plm_cache(self._get_work_dir(), fresh_subset)
+                except Exception:
+                    pass
         except Exception:
             pass  # 实时查询失败则使用缓存数据，不阻断 Push
 
@@ -1968,8 +1972,14 @@ class PlmWorkbench(QDialog):
                     itr = str(fresh.get("lastIterationNumber") or itr)
                 updated_checked.append((pn, ver, itr))
             checked = updated_checked
-            self._plm_cache.update({pn: fresh_data[pn]
-                                    for pn in fresh_data if fresh_data[pn]})
+            fresh_subset = {pn: fresh_data[pn] for pn in fresh_data if fresh_data[pn]}
+            self._plm_cache.update(fresh_subset)
+            # 持久化到磁盘
+            try:
+                from catia_copilot.plm.workspace_scanner import merge_plm_cache
+                merge_plm_cache(self._get_work_dir(), fresh_subset)
+            except Exception:
+                pass
         except Exception:
             pass  # 实时查询失败则使用缓存数据
 
@@ -2129,8 +2139,6 @@ class PlmWorkbench(QDialog):
                 added_parts = {qpn: self._plm_cache[qpn]
                                for qpn in pns_to_query if qpn in self._plm_cache}
                 self._plm_cache = merge_plm_cache(work_dir, added_parts)
-
-            self._plm_parts_cache = {k: v for k, v in self._plm_cache.items() if v}
             self._populate_diff_table()
             self._lbl_status.setText(
                 f"已添加 {added} 个零件（共查询 {len(pns_to_query)} 个）"

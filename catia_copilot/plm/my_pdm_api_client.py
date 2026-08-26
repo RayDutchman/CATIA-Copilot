@@ -3,7 +3,7 @@ myPDM REST API 客户端。
 
 仅使用标准库（urllib），不引入任何第三方依赖。
 
-认证：JWT (HS256)，access_token 内存保存，refresh_token QSettings 持久化。
+认证：JWT (HS256)，access_token 内存保存，refresh_token 本地 JSON 文件持久化。
 401 时自动使用 refresh_token 刷新，刷新失败则触发重新登录回调。
 
 典型用法：
@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
-from PySide6.QtCore import QSettings
+from catia_copilot.plm.api_client import PlmApiError
 
 from catia_copilot.plm.my_pdm_schemas import (
     TokenResponse,
@@ -40,12 +40,42 @@ from catia_copilot.plm.my_pdm_schemas import (
 logger = logging.getLogger(__name__)
 
 
-class MyPdmApiError(Exception):
-    """myPDM API 调用异常，携带 HTTP 状态码。"""
+def _auth_file() -> str:
+    """myPDM 认证缓存文件路径（%APPDATA%/CATIA Copilot/mypdm_auth.json）。"""
+    base = _os.environ.get("APPDATA") or _os.path.join(_os.path.expanduser("~"), "AppData", "Roaming")
+    return _os.path.join(base, "CATIA Copilot", "mypdm_auth.json")
 
-    def __init__(self, message: str, status_code: int = 0):
-        super().__init__(message)
-        self.status_code = status_code
+
+def _load_refresh_token() -> str:
+    """从本地文件读取已保存的 refresh_token（失败返回空串）。"""
+    try:
+        with open(_auth_file(), encoding="utf-8") as f:
+            data = json.load(f)
+            return str(data.get("refresh_token", "") or "")
+    except Exception:
+        return ""
+
+
+def _save_refresh_token(token: str) -> None:
+    """将 refresh_token 写入本地文件。"""
+    try:
+        _os.makedirs(_os.path.dirname(_auth_file()), exist_ok=True)
+        with open(_auth_file(), "w", encoding="utf-8") as f:
+            json.dump({"refresh_token": token}, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.warning("保存 myPDM refresh_token 失败：%s", exc)
+
+
+def _clear_refresh_token() -> None:
+    """删除本地保存的 refresh_token。"""
+    try:
+        _os.remove(_auth_file())
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        logger.warning("删除 myPDM refresh_token 失败：%s", exc)
+
+
 
 
 class MyPdmApiClient:
@@ -53,12 +83,9 @@ class MyPdmApiClient:
 
     JWT 管理：
     - access_token 保存在实例内存中
-    - refresh_token 通过 QSettings 持久化
+    - refresh_token 通过本地 JSON 文件持久化（%APPDATA%/CATIA Copilot/mypdm_auth.json）
     - 401 时自动尝试刷新，失败则回调 reauth_callback
     """
-
-    _SETTINGS_ORG = "CATIACompanion"
-    _SETTINGS_APP = "MyPdmAuth"
 
     def __init__(self, base_url: str):
         self._base = base_url.rstrip("/")
@@ -73,11 +100,10 @@ class MyPdmApiClient:
         ssl_ctx.verify_mode = ssl.CERT_NONE
         self._ssl_context = ssl_ctx
 
-        # 从 QSettings 恢复 refresh_token
-        s = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
-        saved_refresh = s.value("refresh_token")
+        # 从本地文件恢复 refresh_token
+        saved_refresh = _load_refresh_token()
         if saved_refresh:
-            self._refresh_token = str(saved_refresh)
+            self._refresh_token = saved_refresh
 
     def set_reauth_callback(self, callback: Callable[[], None]) -> None:
         """设置重新登录回调（当 refresh 也失败时触发）。"""
@@ -97,7 +123,7 @@ class MyPdmApiClient:
         h = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; CATIACopilot/2.1)",
+            "User-Agent": "Mozilla/5.0 (compatible; CATIACopilot/1.0)",
         }
         if self._access_token:
             h["Authorization"] = f"Bearer {self._access_token}"
@@ -149,19 +175,19 @@ class MyPdmApiClient:
                 else:
                     if self._reauth_callback:
                         self._reauth_callback()
-                    raise MyPdmApiError("认证已过期，请重新登录", status_code=401) from exc
+                    raise PlmApiError("认证已过期，请重新登录", status_code=401) from exc
 
             if exc.code == 403:
-                raise MyPdmApiError(
+                raise PlmApiError(
                     f"{method} {path} 失败 [403]：权限不足",
                     status_code=403,
                 ) from exc
-            raise MyPdmApiError(
+            raise PlmApiError(
                 f"{method} {path} 失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
             ) from exc
         except urllib.error.URLError as exc:
-            raise MyPdmApiError(f"网络错误（{exc.reason}）：{url}") from exc
+            raise PlmApiError(f"网络错误（{exc.reason}）：{url}") from exc
 
     def _do_refresh(self) -> bool:
         """尝试用 refresh_token 获取新 token。成功返回 True。"""
@@ -186,8 +212,7 @@ class MyPdmApiClient:
                 if token_resp.access_token:
                     self._access_token = token_resp.access_token
                     self._refresh_token = token_resp.refresh_token
-                    s = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
-                    s.setValue("refresh_token", token_resp.refresh_token)
+                    _save_refresh_token(token_resp.refresh_token)
                     logger.info("myPDM token 刷新成功")
                     return True
         except Exception as exc:
@@ -216,8 +241,7 @@ class MyPdmApiClient:
                 self._access_token = result.get("access_token", "")
                 self._refresh_token = result.get("refresh_token", "")
 
-                s = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
-                s.setValue("refresh_token", self._refresh_token)
+                _save_refresh_token(self._refresh_token)
 
                 self._user = self.get_me()
                 logger.info(f"myPDM 登录成功：{self._user.real_name} ({self._user.role})")
@@ -229,21 +253,20 @@ class MyPdmApiClient:
             except Exception:
                 pass
             if exc.code == 401:
-                raise MyPdmApiError("用户名或密码错误", status_code=401) from exc
-            raise MyPdmApiError(
+                raise PlmApiError("用户名或密码错误", status_code=401) from exc
+            raise PlmApiError(
                 f"登录失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
             ) from exc
         except urllib.error.URLError as exc:
-            raise MyPdmApiError(f"无法连接到服务器：{exc.reason}") from exc
+            raise PlmApiError(f"无法连接到服务器：{exc.reason}") from exc
 
     def logout(self) -> None:
         """清除认证状态。"""
         self._access_token = None
         self._refresh_token = None
         self._user = None
-        s = QSettings(self._SETTINGS_ORG, self._SETTINGS_APP)
-        s.remove("refresh_token")
+        _clear_refresh_token()
 
     # ── 用户信息 ──────────────────────────────────────────────────────
 
@@ -435,7 +458,7 @@ class MyPdmApiClient:
                 body_text = exc.read().decode(errors="replace")
             except Exception:
                 pass
-            raise MyPdmApiError(
+            raise PlmApiError(
                 f"附件上传失败 [{exc.code}]: {body_text[:200]}",
                 status_code=exc.code,
             ) from exc

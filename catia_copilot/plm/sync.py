@@ -1436,7 +1436,10 @@ def _do_update_and_upload(
         try:
             _pcom.CoInitialize()
             try:
-                catia   = _win32.GetActiveObject("CATIA.Application")
+                from catia_copilot.utils import get_catia_v5_com_dispatch as _get_catia
+                catia = _get_catia()
+                if catia is None:
+                    raise RuntimeError("无法连接到 CATIA V5（COM 连接失败）")
                 fp_norm = _os.path.normcase(_os.path.normpath(fp))
                 target_doc = None
                 for i in range(catia.Documents.Count):
