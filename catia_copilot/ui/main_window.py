@@ -234,7 +234,7 @@ class MainWindow(QMainWindow):
         catia_running = bool(info.get("catia_process_running"))
 
         status_text = {
-            "connected":    "✅ 已连接（功能测试通过）",
+            "connected":    "✅ 已连接",
             "broken":       "⚠️ 连接异常",
             "disconnected": "❌ 未连接",
         }.get(status, status)

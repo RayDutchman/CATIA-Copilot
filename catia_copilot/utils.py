@@ -613,11 +613,11 @@ def diagnose_catia_connection() -> dict:
         except Exception as exc:
             return None, f"GetActiveObject({key!r}) 失败：{exc}"
 
-    # 构建要尝试的 ProgID/CLSID 列表
-    all_keys_to_try = list(result["registry_catia_progids"])
-    for classic in ("CATIA.Application", "CNEXT.Application"):
-        if classic not in all_keys_to_try:
-            all_keys_to_try.append(classic)
+    # 构建要尝试的 ProgID/CLSID 列表。
+    # 仅使用真正可能是 Application 入口的 key，不把整个注册表 ProgID 列表塞进来
+    # （CATIA.Analysis、CATIA.3DEXPOperation 等非 Application ProgID 永远失败，徒增日志）。
+    # 注册表 ProgID 列表仅作为诊断信息展示（result["registry_catia_progids"]），不参与连接尝试。
+    all_keys_to_try = ["CATIA.Application", "CNEXT.Application"]
     all_keys_to_try += [c for c in _CATIA_V5_KNOWN_CLSIDS if c not in all_keys_to_try]
 
     app = None
@@ -648,7 +648,7 @@ def diagnose_catia_connection() -> dict:
             )
         return result
 
-    # COM 连接成功 — 功能性测试
+    # COM 连接成功 — 读取应用信息
     try:
         result["app_name"] = app.Name
     except Exception as exc:
