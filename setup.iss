@@ -13,19 +13,24 @@
 ; 卸载：控制面板"程序和功能"中可完整卸载
 
 #define AppName      "CATIA Copilot"
-#define AppVersion   "2.2.0"
 #define AppPublisher "Chen Weibo"
-#define AppExeName   "CATIA Copilot 2.2.0.exe"
-; Nuitka 编译产物目录（相对于本 .iss 文件所在的项目根目录）
-#define SourceDir    "..\CATIA-Copilot-dist-nuitka\CATIA Copilot 2.2.0"
+
+; 默认值用于本地直接执行 iscc setup.iss；CI/构建脚本通过 /D 覆盖。
+#ifndef AppVersion
+  #define AppVersion "2.2.0"
+#endif
+#ifndef SourceDir
+  #define SourceDir "..\CATIA-Copilot-dist-nuitka\CATIA Copilot " + AppVersion
+#endif
+#define AppExeName "CATIA Copilot " + AppVersion + ".exe"
 
 [Setup]
 AppId={{89E7150F-7E21-4B13-B613-999FC8E4C4E7}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-AppPublisherURL=https://github.com/your-org/CATIA-Copilot
-AppSupportURL=https://github.com/your-org/CATIA-Copilot/issues
+AppPublisherURL=https://github.com/RayDutchman/CATIA-Copilot
+AppSupportURL=https://github.com/RayDutchman/CATIA-Copilot/issues
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 ; 安装包输出到 dist-nuitka 同级目录
@@ -67,7 +72,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "
 
 [Run]
 ; 安装完成后可选启动
-Filename: "{app}\{#AppExeName}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Description: "立即运行 {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; 卸载时清理程序目录（如有运行时生成的文件）
@@ -80,7 +85,7 @@ var
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
-    Exec('taskkill.exe', '/F /IM "CATIA Copilot 2.2.0.exe"', '',
+    Exec('taskkill.exe', '/F /IM "{#AppExeName}"', '',
          SW_HIDE, ewWaitUntilTerminated, ResultCode);
     { ResultCode 忽略：进程不存在时 taskkill 返回非零，属正常情况 }
 end;

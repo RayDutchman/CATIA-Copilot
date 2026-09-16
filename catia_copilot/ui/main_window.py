@@ -87,7 +87,6 @@ from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
 from catia_copilot.ui.plm_workbench import PlmWorkbench
-from catia_copilot.ui.plm_workbench_mypdm import PlmWorkbench as PlmWorkbenchMyPdm
 from catia_copilot.ui.template_dialog import TemplateDialog
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.utils import (
@@ -116,7 +115,6 @@ class MainWindow(QMainWindow):
         "bom_export":      "从产品导出 BOM",
         "mass_props":      "质量特性工作台",
         "plm_workbench":   "PLM 工作台 (DocDoku)",
-        "plm_workbench_mypdm": "myPDM 工作台",
         "export_pdf":      "从图纸导出 PDF",
         "export_stp":      "从产品/零件导出 STP",
         "drawing_new":     "新建图纸 (Python)",
@@ -161,7 +159,6 @@ class MainWindow(QMainWindow):
                 "bom_export":      self._open_export_bom_from_embed,
                 "mass_props":      self._open_mass_props_from_embed,
                 "plm_workbench":   self._open_plm_workbench_from_embed,
-                "plm_workbench_mypdm": self._open_plm_workbench_mypdm_from_embed,
                 "export_pdf":      self._open_export_pdf_from_embed,
                 "export_stp":      self._open_export_stp_from_embed,
                 "drawing_new":     self._open_drawing_new_from_embed,
@@ -581,14 +578,8 @@ class MainWindow(QMainWindow):
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
-        btn_plm_workbench_mypdm = QPushButton(self._ACTION_LABELS["plm_workbench_mypdm"])
-        btn_plm_workbench_mypdm.setToolTip(
-            "打开 myPDM 工作台"
-        )
-        btn_plm_workbench_mypdm.clicked.connect(self._open_plm_workbench_mypdm)
-
         for btn in (btn_bom_edit, btn_mass_props,
-                    btn_plm_workbench, btn_plm_workbench_mypdm):
+                    btn_plm_workbench):
             layout.addWidget(btn)
 
         layout.addStretch()
@@ -694,11 +685,7 @@ class MainWindow(QMainWindow):
         btn_iso.setToolTip("将 ISO.xml 复制到 CATIA 标准目录")
         btn_iso.clicked.connect(self._copy_iso_to_catia)
 
-        btn_crack = QPushButton("Crack")
-        btn_crack.setToolTip("将 crack 文件夹中的文件复制到 CATIA bin 目录")
-        btn_crack.clicked.connect(self._crack)
-
-        for btn in (btn_font, btn_iso, btn_crack):
+        for btn in (btn_font, btn_iso):
             layout.addWidget(btn)
 
         layout.addSpacing(4)
@@ -1120,11 +1107,6 @@ class MainWindow(QMainWindow):
         view_hwnd = self._embed_manager._current_view_hwnd or 0
         self._embed_action_signal.emit("plm_workbench", view_hwnd)
 
-    def _open_plm_workbench_mypdm_from_embed(self) -> None:
-        """嵌入面板菜单 → PLM 工作台（plm-unified）。"""
-        view_hwnd = self._embed_manager._current_view_hwnd or 0
-        self._embed_action_signal.emit("plm_workbench_mypdm", view_hwnd)
-
     def _open_export_pdf_from_embed(self) -> None:
         """嵌入面板菜单 → CATDrawing → PDF 。"""
         view_hwnd = self._embed_manager._current_view_hwnd or 0
@@ -1197,7 +1179,6 @@ class MainWindow(QMainWindow):
             "mass_props":      self._do_open_mass_props,
             "close":           self._do_close_embed,
             "plm_workbench":   self._do_open_plm_workbench,
-            "plm_workbench_mypdm": self._do_open_plm_workbench_mypdm,
             "export_pdf":      self._do_open_export_pdf,
             "export_stp":      self._do_open_export_stp,
             "drawing_new":     self._do_open_drawing_new,
@@ -1243,11 +1224,6 @@ class MainWindow(QMainWindow):
     def _do_open_plm_workbench(self) -> None:
         """在主线程打开 PLM 工作台（DocDoku）。"""
         self._open_plm_workbench()
-
-    @Slot()
-    def _do_open_plm_workbench_mypdm(self) -> None:
-        """在主线程打开 PLM 工作台（plm-unified）。"""
-        self._open_plm_workbench_mypdm()
 
     @Slot()
     def _do_open_export_pdf(self) -> None:
@@ -1456,10 +1432,6 @@ class MainWindow(QMainWindow):
     def _open_plm_workbench(self) -> None:
         """打开 PLM 工作台 DocDoku 版（非模态独立窗口，单例）。"""
         self._show_dialog("_dlg_plm_workbench", lambda: PlmWorkbench(self))
-
-    def _open_plm_workbench_mypdm(self) -> None:
-        """打开 PLM 工作台 plm-unified 版（非模态独立窗口，单例）。"""
-        self._show_dialog("_dlg_plm_workbench_mypdm", lambda: PlmWorkbenchMyPdm(self))
 
     def _open_stamp_part_template_dialog(self) -> None:
         self._show_dialog("_dlg_stamp_template", lambda: FileConvertDialog(
