@@ -29,6 +29,7 @@ AppId={{89E7150F-7E21-4B13-B613-999FC8E4C4E7}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+LicenseFile=LICENSE
 AppPublisherURL=https://github.com/RayDutchman/CATIA-Copilot
 AppSupportURL=https://github.com/RayDutchman/CATIA-Copilot/issues
 DefaultDirName={autopf}\{#AppName}
@@ -62,6 +63,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 [Files]
 ; 递归复制整个 Nuitka 产物目录
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; 开始菜单
