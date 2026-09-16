@@ -1,0 +1,99 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile Python sources
+        shell: pwsh
+        run: python -m compileall -q main.py catia_copilot
+
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = Select-String -Path "catia_copilot\constants.py" -Pattern 'APP_VERSION\s*=\s*"([^"]+)"' |
+            Select-Object -First 1
+          $appVersion = $version.Matches[0].Groups[1].Value
+          if ("v$appVersion" -ne "${{ github.ref_name }}") {
+            throw "版本不一致：constants.py=$appVersion，tag=${{ github.ref_name }}"
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Nuitka installer
+        shell: pwsh
+        run: .\build_nuitka_installer.ps1
+
+      - name: Verify forbidden files are absent
+        shell: pwsh
+        run: |
+          $distRoot = Join-Path $env:GITHUB_WORKSPACE "..\CATIA-Copilot-dist-nuitka"
+          $forbidden = Get-ChildItem -Path $distRoot -Recurse -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\crack(\\|$)|part_templates" }
+          if ($forbidden) {
+            $forbidden | ForEach-Object { Write-Host $_.FullName }
+            throw "发行产物包含禁止目录或文件"
+          }
+
+      - name: Locate installer
+        shell: pwsh
+        run: |
+          $distRoot = Join-Path $env:GITHUB_WORKSPACE "..\CATIA-Copilot-dist-nuitka"
+          $installer = Get-ChildItem -Path $distRoot -Filter "*Setup*.exe" -File -Recurse |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "找不到 Inno Setup 安装包：$distRoot"
+          }
+          "INSTALLER_PATH=$($installer.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Installer: $($installer.FullName)"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CATIA-Copilot-installer
+          path: ${{ env.INSTALLER_PATH }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "${{ github.ref_name }}" "$env:INSTALLER_PATH" --clobber
+          } else {
+            gh release create "${{ github.ref_name }}" "$env:INSTALLER_PATH" `
+              --verify-tag --title "CATIA Copilot ${{ github.ref_name }}" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw "发布安装包失败" }

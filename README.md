@@ -24,7 +24,7 @@
 |------|------|
 | **BOM 工作台** | 在表格中编辑 BOM 属性（零件编号、术语、定义、版本、来源及自定义用户属性），一键写回 CATIA |
 | **质量特性工作台** | 遍历产品树，汇总各零件质量特性（质量/重心/转动惯量），自动按层级累加并导出 Excel；支持层次化和汇总两种 BOM 模式及多种单位切换 |
-| **PLM 工作台** | 整合 PLM 连接管理、增量同步、Tag 规则、产品注册与历史记录 |
+| **PLM 工作台** | DocDoku PLM 连接、BOM 差异对比、Push/Pull 与同步历史 |
 
 ### 导出
 
@@ -98,18 +98,21 @@ python main.py
 
 ## 打包为 Windows 可执行文件
 
-```bash
-# 前置依赖
-pip install pyinstaller
+正式发行版使用 Nuitka + Inno Setup，避免把 Python 源码作为数据文件复制到安装包：
 
-# 打包
-pyinstaller build.spec
+```powershell
+# 生成 Nuitka standalone 目录
+.\build_nuitka.ps1
 
-# 输出目录
-# dist\CATIA Copilot\CATIA Copilot.exe
+# 生成 Inno Setup 安装包
+.\build_nuitka_installer.ps1
 ```
 
-ISO.xml、ChangFangSong.ttf 等资源文件会由 spec 配置自动复制到输出目录。
+输出目录：`..\CATIA-Copilot-dist-nuitka\`。
+
+`build.spec` + `build.ps1` 仍保留用于旧版 PyInstaller 开发构建，但不作为正式发行流程。
+
+正式发行包包含 `resources/`、`macros/`、`drawing_templates/` 等资源；未完成的 `part_templates/` 不纳入当前发行版。
 
 ---
 
@@ -141,10 +144,10 @@ CATIA-Copilot/
 │       ├── bom_edit_dialog.py       #   BOM 工作台对话框
 │       ├── mass_props_dialog.py     #   质量特性工作台对话框
 │       ├── find_deps_dialog.py      #   查找指向的文档对话框
-│       ├── plm_workbench.py         #   PLM 工作台
+│       ├── plm_workbench.py         #   DocDoku PLM 工作台
+│       ├── plm_workbench_mypdm.py   #   myPDM 工作台代码（当前发行版不开放 UI 入口）
 │       ├── help_dialog.py           #   帮助文档对话框
 │       ├── theme_manager.py         #   主题管理（深色/浅色/原生）
-│       ├── dark.qss / light.qss / native.qss  # 主题样式表
 │       └── log_window.py            #   日志窗口
 ├── build.spec                       # PyInstaller 打包配置
 ├── requirements.txt                 # Python 依赖
@@ -152,7 +155,8 @@ CATIA-Copilot/
 ├── resources/                       # 图标等资源文件
 ├── macros/                          # 宏脚本文件夹
 ├── drawing_templates/               # 图纸模板文件夹
-└── crack/                           # CATIA 授权文件
+├── setup.iss                         # Inno Setup 安装脚本
+└── .github/workflows/release.yml    # GitHub Actions 发布流程
 ```
 
 ---
@@ -163,6 +167,7 @@ CATIA-Copilot/
 |------|------|
 | [PySide6](https://pypi.org/project/PySide6/) | Qt 6 GUI 框架 |
 | [openpyxl](https://pypi.org/project/openpyxl/) | Excel 文件读写 |
+| [pywin32](https://pypi.org/project/pywin32/) | CATIA V5 COM 自动化 |
 
 ---
 
@@ -196,4 +201,4 @@ CATIA-Copilot/
 - **开发者：** CHEN Weibo
 - **邮箱：** thucwb@gmail.com
 
-> 仅供内部使用，请勿外传。
+> 发行版使用前请确认 CATIA、字体、宏和第三方工具的授权范围。

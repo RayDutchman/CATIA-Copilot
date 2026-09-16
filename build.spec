@@ -68,7 +68,6 @@ a = Analysis(
         ('resources', 'resources'),
         ('macros', 'macros'),
         ('drawing_templates', 'drawing_templates'),
-        ('crack', 'crack'),
         ('catia_copilot', 'catia_copilot'),
     ],
     hookspath=[],

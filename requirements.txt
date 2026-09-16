@@ -4,6 +4,7 @@ requests>=2.31.0
 pyinstaller>=6.19.0
 pycatia>=0.9.6
 nuitka>=4.0.0,<5.0.0       # 构建打包（build_nuitka_installer.ps1）
+pywin32>=306               # CATIA V5 COM / Windows API
 
 # 多 Provider 可选依赖（按需安装）
 # boto3>=1.35.0          # AWS Bedrock

@@ -93,7 +93,6 @@ $NuitkaArgs = @(
     '--include-data-dir=resources=resources',
     '--include-data-dir=macros=macros',
     '--include-data-dir=drawing_templates=drawing_templates',
-    '--include-data-dir=crack=crack',
 
     # ── openpyxl 数据文件（模板/schema，Nuitka 不自动收集）──────────────────
     '--include-package-data=openpyxl',
@@ -212,7 +211,7 @@ if (-not (Test-Path $IsccPath)) {
 }
 
 Write-Host "[installer] 开始打包安装程序..."
-& $IsccPath "$ProjectRoot\setup.iss"
+& $IsccPath "/DAppVersion=$AppVersion" "/DSourceDir=$OutputDir" "$ProjectRoot\setup.iss"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "[installer] Inno Setup 打包失败，退出码 $LASTEXITCODE"

@@ -50,7 +50,7 @@ python main.py
 pytest
 
 # 运行指定模块
-pytest tests/test_plm_api.py -v
+pytest tests/test_plm_api_integration.py -v
 
 # 查看覆盖率（需安装 pytest-cov）
 pytest --cov=catia_copilot --cov-report=term-missing
@@ -59,7 +59,7 @@ pytest --cov=catia_copilot --cov-report=term-missing
 测试目录结构：
 ```
 tests/
-├── test_plm_api.py        # PLM REST API 集成测试（33 个用例）
+├── test_plm_api_integration.py # PLM REST API 集成测试
 └── ...
 ```
 
@@ -69,19 +69,20 @@ tests/
 
 ## 打包为 Windows 可执行文件
 
-```bash
-# 安装 PyInstaller
-pip install pyinstaller>=6.19.0
+正式发行使用 Nuitka + Inno Setup：
 
-# 打包（使用 build.spec 配置）
-pyinstaller build.spec
+```powershell
+.\build_nuitka_installer.ps1
 ```
 
-输出目录：`dist\CATIA Copilot\CATIA Copilot.exe`
+输出目录：`..\CATIA-Copilot-dist-nuitka\`。
 
-`build.spec` 会自动：
-- 从 `constants.py` 中正则解析 `APP_VERSION`，输出目录名自动带版本号
-- 将 `ISO.xml`、`ChangFangSong.ttf`、`drawing_templates/` 等资源文件复制到输出目录
+构建脚本会自动：
+- 从 `constants.py` 读取 `APP_VERSION`
+- 使用 Nuitka 生成 standalone 产物
+- 使用 Inno Setup 生成版本化安装包
+- 包含 `resources/`、`macros/`、`drawing_templates/`
+- 不包含 `crack/` 和未完成的 `part_templates/`
 
 ---
 
@@ -95,8 +96,20 @@ pyinstaller build.spec
 | `pyproject.toml` | `version = "x.y.z"` |
 | `README.md` | 顶部版本徽章（文字） |
 | `CHANGELOG.md` | 新增版本条目 |
+| `setup.iss` | 由构建脚本通过预处理变量注入，无需手动同步 |
 
 `build.spec` 自动从 `constants.py` 读取版本号，无需手动同步。
+
+## GitHub Actions 发布
+
+正式发布通过版本标签触发 `.github/workflows/release.yml`：
+
+```powershell
+git tag v2.3.0
+git push origin v2.3.0
+```
+
+Workflow 会在 Windows runner 上执行 Nuitka 和 Inno Setup，生成安装包并发布到 GitHub Release。CATIA COM 和 PLM 连接仍需在本机安装包上验收。
 
 ---
 

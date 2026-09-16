@@ -92,3 +92,7 @@ Temp/
 modules/
 # Windows NUL device (spurious git untracked entry)
 nul
+
+# ── AI 助手开发过程文档（不提交）──────────────────────────────────────
+.superpowers/
+.reasonix/
