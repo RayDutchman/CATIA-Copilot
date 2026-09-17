@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from catia_copilot.catia.connection import get_active_document_path
+from catia_copilot.i18n import translate
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ class FileConvertDialog(QDialog):
 
         # ── "Use active document" option ─────────────────────────────────────
         if show_active_doc_option:
-            self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
+            self._use_active_chk = QCheckBox(translate("CATIACopilot", "使用当前 CATIA 活动文档（无需手动选择文件）"))
             self._use_active_chk.setChecked(True)
             self._use_active_chk.toggled.connect(self._toggle_file_section)
             layout.addWidget(self._use_active_chk)
@@ -125,7 +126,7 @@ class FileConvertDialog(QDialog):
         file_section_layout.setContentsMargins(0, 0, 0, 0)
         file_section_layout.setSpacing(6)
 
-        file_section_layout.addWidget(QLabel(file_label))
+        file_section_layout.addWidget(QLabel(translate("CATIACopilot", file_label)))
 
         self._file_list = QListWidget()
         self._file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -141,9 +142,9 @@ class FileConvertDialog(QDialog):
         file_section_layout.addWidget(self._file_list)
 
         btn_row = QHBoxLayout()
-        browse_btn     = QPushButton("浏览...")
-        remove_btn     = QPushButton("移除所选")
-        remove_all_btn = QPushButton("全部移除")
+        browse_btn     = QPushButton(translate("CATIACopilot", "浏览..."))
+        remove_btn     = QPushButton(translate("CATIACopilot", "移除所选"))
+        remove_all_btn = QPushButton(translate("CATIACopilot", "全部移除"))
         browse_btn.clicked.connect(self._browse_files)
         remove_btn.clicked.connect(self._remove_selected)
         remove_all_btn.clicked.connect(self._remove_all)
@@ -157,10 +158,10 @@ class FileConvertDialog(QDialog):
 
         # ── Output folder (hidden for stamp dialog) ─────────────────────────
         if not self._is_stamp_dialog:
-            output_group  = QGroupBox("输出文件夹")
+            output_group  = QGroupBox(translate("CATIACopilot", "输出文件夹"))
             output_layout = QVBoxLayout(output_group)
-            self._radio_same   = QRadioButton("与源文件相同目录")
-            self._radio_custom = QRadioButton("自定义目录:")
+            self._radio_same   = QRadioButton(translate("CATIACopilot", "与源文件相同目录"))
+            self._radio_custom = QRadioButton(translate("CATIACopilot", "自定义目录:"))
             self._radio_same.setChecked(True)
             _btn_group = QButtonGroup(self)
             _btn_group.addButton(self._radio_same)
@@ -170,10 +171,10 @@ class FileConvertDialog(QDialog):
 
             folder_row = QHBoxLayout()
             self._folder_edit = QLineEdit()
-            self._folder_edit.setPlaceholderText("选择输出文件夹...")
+            self._folder_edit.setPlaceholderText(translate("CATIACopilot", "选择输出文件夹..."))
             self._folder_edit.setReadOnly(True)
             self._folder_edit.setEnabled(False)
-            self._folder_browse_btn = QPushButton("浏览...")
+            self._folder_browse_btn = QPushButton(translate("CATIACopilot", "浏览..."))
             self._folder_browse_btn.setEnabled(False)
             self._folder_browse_btn.clicked.connect(self._browse_output_folder)
             folder_row.addWidget(self._folder_edit)
@@ -197,7 +198,7 @@ class FileConvertDialog(QDialog):
                 saved_add_prefix = saved_add_prefix.lower() == "true"
 
             prefix_row = QHBoxLayout()
-            self._prefix_checkbox = QCheckBox("添加前缀:")
+            self._prefix_checkbox = QCheckBox(translate("CATIACopilot", "添加前缀:"))
             self._prefix_checkbox.setChecked(saved_add_prefix)
             self._prefix_edit = QLineEdit(saved_prefix_value)
             self._prefix_edit.setEnabled(saved_add_prefix)
@@ -212,7 +213,7 @@ class FileConvertDialog(QDialog):
                 saved_add_suffix = saved_add_suffix.lower() == "true"
 
             suffix_row = QHBoxLayout()
-            self._suffix_checkbox = QCheckBox("添加后缀:")
+            self._suffix_checkbox = QCheckBox(translate("CATIACopilot", "添加后缀:"))
             self._suffix_checkbox.setChecked(saved_add_suffix)
             self._suffix_edit = QLineEdit(saved_suffix_value)
             self._suffix_edit.setEnabled(saved_add_suffix)
@@ -231,10 +232,10 @@ class FileConvertDialog(QDialog):
             saved_update = self._settings.value("update_before_export", False)
             if isinstance(saved_update, str):
                 saved_update = saved_update.lower() == "true"
-            self._update_checkbox = QCheckBox("更新图纸后再输出")
+            self._update_checkbox = QCheckBox(translate("CATIACopilot", "更新图纸后再输出"))
             self._update_checkbox.setToolTip(
-                "导出 PDF 前先强制更新 CATDrawing 中每一页的所有视图，"
-                "确保导出结果与最新模型状态一致。"
+                translate("CATIACopilot", "导出 PDF 前先强制更新 CATDrawing 中每一页的所有视图，"
+                    "确保导出结果与最新模型状态一致。")
             )
             self._update_checkbox.setChecked(saved_update)
             layout.addWidget(self._update_checkbox)
@@ -255,9 +256,9 @@ class FileConvertDialog(QDialog):
 
         # ── Action buttons ──────────────────────────────────────────────────
         action_row  = QHBoxLayout()
-        self._confirm_btn = QPushButton("确认")
+        self._confirm_btn = QPushButton(translate("CATIACopilot", "确认"))
         self._confirm_btn.setDefault(True)
-        cancel_btn  = QPushButton("取消")
+        cancel_btn  = QPushButton(translate("CATIACopilot", "取消"))
         self._confirm_btn.clicked.connect(self._confirm)
         cancel_btn.clicked.connect(self.reject)
         action_row.addStretch()
@@ -303,7 +304,7 @@ class FileConvertDialog(QDialog):
 
     def _browse_files(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
-            self, "选择文件", self._last_browse_dir, self._file_filter
+            self, translate("CATIACopilot", "选择文件"), self._last_browse_dir, self._file_filter
         )
         if files:
             self._last_browse_dir = str(Path(files[0]).parent)
@@ -341,7 +342,7 @@ class FileConvertDialog(QDialog):
 
     def _browse_output_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "选择输出文件夹", self._last_output_dir
+            self, translate("CATIACopilot", "选择输出文件夹"), self._last_output_dir
         )
         if folder:
             self._folder_edit.setText(folder)
@@ -361,14 +362,14 @@ class FileConvertDialog(QDialog):
                 active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(
-                    self, "无法获取活动文档",
-                    f"无法从 CATIA 获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
+                    self, translate("CATIACopilot", "无法获取活动文档"),
+                    translate("CATIACopilot", "无法从 CATIA 获取当前活动文档路径：\n{0}\n\n请确保 CATIA 已启动且有活动文档。").format(e),
                 )
                 return
             if active_path is None:
                 QMessageBox.warning(
-                    self, "无活动文档",
-                    "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。",
+                    self, translate("CATIACopilot", "无活动文档"),
+                    translate("CATIACopilot", "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。"),
                 )
                 return
             files = [active_path]
@@ -377,7 +378,7 @@ class FileConvertDialog(QDialog):
             files = [self._file_list.item(i).text()
                      for i in range(self._file_list.count())]
             if not files:
-                QMessageBox.warning(self, "未选择文件", self._no_files_msg)
+                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), translate("CATIACopilot", self._no_files_msg))
                 return
 
             if self._radio_same is None:
@@ -387,7 +388,7 @@ class FileConvertDialog(QDialog):
             else:
                 output_folder = self._folder_edit.text().strip()
                 if not output_folder:
-                    QMessageBox.warning(self, "未选择输出文件夹", "请选择一个输出文件夹。")
+                    QMessageBox.warning(self, translate("CATIACopilot", "未选择输出文件夹"), translate("CATIACopilot", "请选择一个输出文件夹。"))
                     return
 
         # Show progress bar and disable confirm button during conversion
@@ -400,7 +401,7 @@ class FileConvertDialog(QDialog):
         def _progress(i: int, _total: int) -> None:
             self._progress_bar.setValue(i)
             self._progress_bar.setFormat(
-                f"正在转换 ({i + 1}/{_total}): {Path(files[i]).name}"
+                translate("CATIACopilot", "正在转换 ({0}/{1}): {2}").format(i + 1, _total, Path(files[i]).name)
             )
             QApplication.processEvents()
 
@@ -437,20 +438,20 @@ class FileConvertDialog(QDialog):
             self._settings.setValue("update_before_export", self._update_checkbox.isChecked())
 
         self._progress_bar.setValue(total)
-        self._progress_bar.setFormat(f"完成 ({success_count}/{total})")
+        self._progress_bar.setFormat(translate("CATIACopilot", "完成 ({0}/{1})").format(success_count, total))
         self._confirm_btn.setEnabled(True)
 
         if self._is_stamp_dialog:
-            msg = f"已成功刷写 {success_count} / {total} 个文件。"
+            msg = translate("CATIACopilot", "已成功刷写 {0} / {1} 个文件。").format(success_count, total)
             if failed_items:
-                msg += "\n\n失败文件：\n" + "\n".join(failed_items)
-                QMessageBox.warning(self, "刷写完成（含失败）", msg)
+                msg += translate("CATIACopilot", "\n\n失败文件：\n{0}").format("\n".join(failed_items))
+                QMessageBox.warning(self, translate("CATIACopilot", "刷写完成（含失败）"), msg)
             else:
-                QMessageBox.information(self, "刷写完成", msg)
+                QMessageBox.information(self, translate("CATIACopilot", "刷写完成"), msg)
         else:
             QMessageBox.information(
-                self, "导出完成",
-                f"已成功导出 {success_count} / {total} 个文件。",
+                self, translate("CATIACopilot", "导出完成"),
+                translate("CATIACopilot", "已成功导出 {0} / {1} 个文件。").format(success_count, total),
             )
         self.accept()
 

@@ -30,6 +30,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QFont, QFontMetrics, QGuiApplication
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -63,14 +64,15 @@ from catia_copilot.catia.part_from_template import create_part_from_template
 from catia_copilot.catia.template import apply_part_template
 from catia_copilot.constants import (
     ABOUT_TEXT,
-    AI_TAB_LABEL,
     APP_NAME,
     CRACK_DIR_PATH,
     FONT_FILE_PATH,
     ISO_XML_FILE_PATH,
     MAIN_WINDOW_DEFAULT_HEIGHT,
     MAIN_WINDOW_DEFAULT_WIDTH,
+    build_about_text,
 )
+from catia_copilot.i18n import read_language, translate, write_language
 from catia_copilot.logging_setup import LOG_FILE, log_signal_emitter
 # AIChatPanel 懒加载：首次切到 AI 助手 Tab 时才 import，避免拖慢启动
 from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
@@ -109,23 +111,47 @@ class MainWindow(QMainWindow):
     # 快速运行宏支持 CATScript（.catvbs / .catscript）和 VBA（.catvba）文件。
     _MACRO_EXTENSIONS: frozenset[str] = frozenset({".catvbs", ".catscript", ".catvba"})
 
-    # 功能动作的显示名称，嵌入菜单和主菜单按钮共用，避免硬编码不一致
-    _ACTION_LABELS: dict[str, str] = {
-        "bom_edit":        "BOM 工作台",
-        "bom_export":      "从产品导出 BOM",
-        "mass_props":      "质量特性工作台",
-        "plm_workbench":   "PLM 工作台 (DocDoku)",
-        "export_pdf":      "从图纸导出 PDF",
-        "export_stp":      "从产品/零件导出 STP",
-        "drawing_new":     "新建图纸 (Python)",
-        "drawing_refresh": "刷新图纸 (Python)",
-        "stamp_template":  "刷写零件模板",
-        "fastener_asm":    "快速装配紧固件",
-        "nut_plate_asm":   "快速装配托板螺母",
-        "open_related":    "在图纸/零件间切换",
-        "find_deps":       "查找指向的文档",
-        "run_macro":       "运行宏…",
-    }
+    @staticmethod
+    def action_labels() -> dict:
+        """功能动作显示名（嵌入菜单与主窗口按钮共用，随运行时语言求值）。
+
+        固定 label 工厂：函数体内直接写 translate("CATIACopilot", ...) 字面量
+        调用，使 pyside6-lupdate 可提取；词条 key 与顺序保持历史 _ACTION_LABELS。
+        """
+        return {
+            "bom_edit":        translate("CATIACopilot", "BOM 工作台"),
+            "bom_export":      translate("CATIACopilot", "从产品导出 BOM"),
+            "mass_props":      translate("CATIACopilot", "质量特性工作台"),
+            "plm_workbench":   translate("CATIACopilot", "PLM 工作台 (DocDoku)"),
+            "export_pdf":      translate("CATIACopilot", "从图纸导出 PDF"),
+            "export_stp":      translate("CATIACopilot", "从产品/零件导出 STP"),
+            "drawing_new":     translate("CATIACopilot", "新建图纸 (Python)"),
+            "drawing_refresh": translate("CATIACopilot", "刷新图纸 (Python)"),
+            "stamp_template":  translate("CATIACopilot", "刷写零件模板"),
+            "fastener_asm":    translate("CATIACopilot", "快速装配紧固件"),
+            "nut_plate_asm":   translate("CATIACopilot", "快速装配托板螺母"),
+            "open_related":    translate("CATIACopilot", "在图纸/零件间切换"),
+            "find_deps":       translate("CATIACopilot", "查找指向的文档"),
+            "run_macro":       translate("CATIACopilot", "运行宏…"),
+        }
+
+    @staticmethod
+    def connection_states() -> dict:
+        """CATIA 连接状态文案映射（状态栏指示标签与诊断对话框共用，随运行时语言求值）。
+
+        取代原先分散的中文常量，保持 ``MainWindow.connection_states()`` /
+        ``self.connection_states()`` 调用兼容，词条与界面文案一一对应。
+        """
+        return {
+            # 状态栏指示标签
+            "connected":        translate("CATIACopilot", "● CATIA 已连接"),
+            "broken":           translate("CATIACopilot", "⚠ CATIA 连接异常"),
+            "disconnected":     translate("CATIACopilot", "● CATIA 未连接"),
+            # 诊断对话框简短状态
+            "diag_connected":   translate("CATIACopilot", "✅ 已连接"),
+            "diag_broken":      translate("CATIACopilot", "⚠️ 连接异常"),
+            "diag_disconnected": translate("CATIACopilot", "❌ 未连接"),
+        }
 
     def __init__(self) -> None:
         super().__init__()
@@ -138,7 +164,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_connection_indicator()
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(translate("CATIACopilot", "就绪"))
 
         # 应用主题 QSS（全局，对话框等顶层窗口均跟随）
         theme_manager.register(self)
@@ -194,9 +220,12 @@ class MainWindow(QMainWindow):
         self._catia_status_label = QLabel()
         self._catia_status_label.setObjectName("catiaStatusLabel")
         self._catia_status_label.setToolTip(
-            "CATIA V5 COM 连接状态（每 5 秒自动刷新）\n"
-            "橙色表示 COM 对象可获取但功能测试失败，\n"
-            "可通过菜单「帮助 -> CATIA 连接诊断」查看详情"
+            translate(
+                "CATIACopilot",
+                "CATIA V5 COM 连接状态（每 5 秒自动刷新）\n"
+                "橙色表示 COM 对象可获取但功能测试失败，\n"
+                "可通过菜单「帮助 -> CATIA 连接诊断」查看详情",
+            )
         )
         self.statusBar().addPermanentWidget(self._catia_status_label)
 
@@ -210,14 +239,15 @@ class MainWindow(QMainWindow):
     def _update_connection_status(self) -> None:
         """轮询 CATIA 连接状态并更新指示标签的文字和样式。"""
         status = check_catia_connection()
+        states = self.connection_states()
         if status == "connected":
-            self._catia_status_label.setText("● CATIA 已连接")
+            self._catia_status_label.setText(states["connected"])
             self._catia_status_label.setProperty("catiaConnected", "true")
         elif status == "broken":
-            self._catia_status_label.setText("⚠ CATIA 连接异常")
+            self._catia_status_label.setText(states["broken"])
             self._catia_status_label.setProperty("catiaConnected", "broken")
         else:
-            self._catia_status_label.setText("● CATIA 未连接")
+            self._catia_status_label.setText(states["disconnected"])
             self._catia_status_label.setProperty("catiaConnected", "false")
         # 强制重新应用 QSS（动态属性变化后需要刷新样式）
         self._catia_status_label.style().unpolish(self._catia_status_label)
@@ -230,37 +260,66 @@ class MainWindow(QMainWindow):
         is_elevated = bool(info.get("is_elevated"))
         catia_running = bool(info.get("catia_process_running"))
 
+        states = self.connection_states()
         status_text = {
-            "connected":    "✅ 已连接",
-            "broken":       "⚠️ 连接异常",
-            "disconnected": "❌ 未连接",
+            "connected":    states["diag_connected"],
+            "broken":       states["diag_broken"],
+            "disconnected": states["diag_disconnected"],
         }.get(status, status)
 
-        elevated_text = "是（管理员）" if is_elevated else "否（普通用户）"
-        process_text  = "运行中" if catia_running else "未检测到"
+        elevated_text = (
+            translate("CATIACopilot", "是（管理员）")
+            if is_elevated
+            else translate("CATIACopilot", "否（普通用户）")
+        )
+        process_text = (
+            translate("CATIACopilot", "运行中")
+            if catia_running
+            else translate("CATIACopilot", "未检测到")
+        )
 
         lines = [
-            f"<b>连接状态：</b>{status_text}",
-            f"<b>本程序权限：</b>{elevated_text}",
-            f"<b>CNEXT.exe 进程：</b>{process_text}",
+            "<b>{0}</b>{1}".format(translate("CATIACopilot", "连接状态："), status_text),
+            "<b>{0}</b>{1}".format(translate("CATIACopilot", "本程序权限："), elevated_text),
+            "<b>{0}</b>{1}".format(translate("CATIACopilot", "CNEXT.exe 进程："), process_text),
         ]
 
         # ── 已连接：显示连接细节 ─────────────────────────────────────────
         if status == "connected":
             if info["app_name"]:
-                lines.append(f"<b>应用名称：</b>{info['app_name']}")
-            if info.get("is_v5") is not None:
                 lines.append(
-                    "<b>产品类型：</b>CATIA V5 ✅"
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "应用名称："), info["app_name"]
+                    )
+                )
+            if info.get("is_v5") is not None:
+                product = (
+                    translate("CATIACopilot", "CATIA V5 ✅")
                     if info["is_v5"]
-                    else "<b>产品类型：</b>3DEXPERIENCE ⚠️"
+                    else translate("CATIACopilot", "3DEXPERIENCE ⚠️")
+                )
+                lines.append(
+                    "<b>{0}</b>{1}".format(translate("CATIACopilot", "产品类型："), product)
                 )
             if info["doc_count"] is not None:
-                lines.append(f"<b>已打开文档数：</b>{info['doc_count']}")
+                lines.append(
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "已打开文档数："), info["doc_count"]
+                    )
+                )
             if info["active_doc"]:
-                lines.append(f"<b>当前活动文档：</b>{info['active_doc']}")
+                lines.append(
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "当前活动文档："), info["active_doc"]
+                    )
+                )
             else:
-                lines.append("<b>当前活动文档：</b>（无）")
+                lines.append(
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "当前活动文档："),
+                        translate("CATIACopilot", "（无）"),
+                    )
+                )
 
         # ── 连接异常：区分权限不匹配方向 ────────────────────────────────
         elif status == "broken" and catia_running:
@@ -268,33 +327,63 @@ class MainWindow(QMainWindow):
                 # 本程序管理员，CATIA 普通用户
                 lines += [
                     "",
-                    "<b>根本原因：</b>本程序以<b>管理员</b>权限运行， CATIA 以<b>普通用户</b>"
-                    "权限运行。 Windows UAC 隔离机制导致管理员进程无法看到普通用户进程注册的"
-                    " ROT 对象。",
-                    "<b>解决方案：</b>以<b>普通用户身份（不提权）</b>直接运行本程序。",
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "根本原因："),
+                        translate(
+                            "CATIACopilot",
+                            "本程序以<b>管理员</b>权限运行， CATIA 以<b>普通用户</b>"
+                            "权限运行。 Windows UAC 隔离机制导致管理员进程无法看到"
+                            "普通用户进程注册的 ROT 对象。",
+                        ),
+                    ),
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "解决方案："),
+                        translate(
+                            "CATIACopilot",
+                            "以<b>普通用户身份（不提权）</b>直接运行本程序。",
+                        ),
+                    ),
                 ]
             else:
                 lines += [
                     "",
-                    "<b>根本原因：</b>CATIA 进程存在，但所有 COM 连接方式均失败。"
-                    "最常见原因： CATIA 以<b>管理员</b>权限运行，而本程序以<b>普通用户</b>"
-                    "权限运行（UAC ROT 隔离）。",
-                    "<b>解决方案：</b>将 CATIA 改为<b>普通用户</b>权限运行（取消「以管理员身份运行」），"
-                    "使两侧权限级别一致。",
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "根本原因："),
+                        translate(
+                            "CATIACopilot",
+                            "CATIA 进程存在，但所有 COM 连接方式均失败。"
+                            "最常见原因： CATIA 以<b>管理员</b>权限运行，而本程序以"
+                            "<b>普通用户</b>权限运行（UAC ROT 隔离）。",
+                        ),
+                    ),
+                    "<b>{0}</b>{1}".format(
+                        translate("CATIACopilot", "解决方案："),
+                        translate(
+                            "CATIACopilot",
+                            "将 CATIA 改为<b>普通用户</b>权限运行"
+                            "（取消「以管理员身份运行」），使两侧权限级别一致。",
+                        ),
+                    ),
                 ]
 
         # ── 未连接 ───────────────────────────────────────────────────────
         elif status == "disconnected":
             lines += [
                 "",
-                "<b>原因：</b>未检测到运行中的 CATIA V5 进程。",
-                "<b>建议：</b>请先启动 CATIA V5，再重试。",
+                "<b>{0}</b>{1}".format(
+                    translate("CATIACopilot", "原因："),
+                    translate("CATIACopilot", "未检测到运行中的 CATIA V5 进程。"),
+                ),
+                "<b>{0}</b>{1}".format(
+                    translate("CATIACopilot", "建议："),
+                    translate("CATIACopilot", "请先启动 CATIA V5，再重试。"),
+                ),
             ]
 
         html = "<br/>".join(lines)
 
         msg = QMessageBox(self)
-        msg.setWindowTitle("CATIA 连接诊断")
+        msg.setWindowTitle(translate("CATIACopilot", "CATIA 连接诊断"))
         msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setText(html)
         msg.exec()
@@ -409,15 +498,25 @@ class MainWindow(QMainWindow):
         # ── Tab 分页内容区 ──────────────────────────────────────────────────
         self._tab_widget = QTabWidget()
         self._tab_widget.setObjectName("mainTabWidget")  # 专属样式：Tab 标题 padding + 按钮高度
-        self._tab_widget.addTab(self._build_workbench_page(), "工作台")  # 0
-        self._tab_widget.addTab(self._build_export_page(),    "导出")    # 1
-        self._tab_widget.addTab(self._build_drawing_page(),   "模板")    # 2
-        self._tab_widget.addTab(self._build_tools_page(),     "工具")    # 3
+        self._tab_widget.addTab(
+            self._build_workbench_page(), translate("CATIACopilot", "工作台")
+        )  # 0
+        self._tab_widget.addTab(
+            self._build_export_page(), translate("CATIACopilot", "导出")
+        )  # 1
+        self._tab_widget.addTab(
+            self._build_drawing_page(), translate("CATIACopilot", "模板")
+        )  # 2
+        self._tab_widget.addTab(
+            self._build_tools_page(), translate("CATIACopilot", "工具")
+        )  # 3
 
         # AI 助手 Tab：占位符，首次切到时懒加载
         self._ai_chat_panel = None
         self._ai_tab_placeholder = QWidget()
-        self._tab_widget.addTab(self._ai_tab_placeholder, AI_TAB_LABEL)  # 4
+        self._tab_widget.addTab(
+            self._ai_tab_placeholder, translate("CATIACopilot", "AI 助手")
+        )  # 4
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
         self._tab_widget.addTab(self._build_more_page(),      "≡")       # 5
@@ -443,7 +542,9 @@ class MainWindow(QMainWindow):
             from catia_copilot.ui.ai_chat_panel import AIChatPanel  # noqa: PLC0415
             self._ai_chat_panel = AIChatPanel()
             self._tab_widget.removeTab(AI_TAB_INDEX)
-            self._tab_widget.insertTab(AI_TAB_INDEX, self._ai_chat_panel, AI_TAB_LABEL)
+            self._tab_widget.insertTab(
+                AI_TAB_INDEX, self._ai_chat_panel, translate("CATIACopilot", "AI 助手")
+            )
             self._tab_widget.setCurrentIndex(AI_TAB_INDEX)
 
     def _build_log_panel(self) -> QWidget:
@@ -479,7 +580,7 @@ class MainWindow(QMainWindow):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(8)
-        open_btn = QPushButton("打开日志文件")
+        open_btn = QPushButton(translate("CATIACopilot", "打开日志文件"))
         # Fixed 策略：按钮只占 sizeHint 宽度，不会因布局拉伸而变大
         open_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         open_btn.clicked.connect(self._open_log_file)
@@ -517,8 +618,11 @@ class MainWindow(QMainWindow):
                 )
         except Exception as e:
             QMessageBox.warning(
-                self, "无法打开日志文件",
-                f"无法打开日志文件：\n{LOG_FILE}\n\n{e}",
+                self,
+                translate("CATIACopilot", "无法打开日志文件"),
+                translate("CATIACopilot", "无法打开日志文件：\n{0}\n\n{1}").format(
+                    LOG_FILE, e
+                ),
             )
 
     # ── 更多功能菜单 ───────────────────────────────────────────────────────
@@ -560,21 +664,27 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
-        layout.addWidget(self._make_section_label("工作台"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "工作台")))
 
-        btn_bom_edit = QPushButton("BOM 工作台")
-        btn_bom_edit.setToolTip("在表格中编辑 BOM 属性并即时写回 CATIA")
+        btn_bom_edit = QPushButton(self.action_labels()["bom_edit"])
+        btn_bom_edit.setToolTip(translate("CATIACopilot", "在表格中编辑 BOM 属性并即时写回 CATIA"))
         btn_bom_edit.clicked.connect(self._open_bom_edit_dialog_v3)
 
-        btn_mass_props = QPushButton(self._ACTION_LABELS["mass_props"])
+        btn_mass_props = QPushButton(self.action_labels()["mass_props"])
         btn_mass_props.setToolTip(
-            "遍历产品树，读取零件质量/重心/转动惯量，计算产品总质量特性并导出"
+            translate(
+                "CATIACopilot",
+                "遍历产品树，读取零件质量/重心/转动惯量，计算产品总质量特性并导出",
+            )
         )
         btn_mass_props.clicked.connect(self._open_mass_props_dialog)
 
-        btn_plm_workbench = QPushButton(self._ACTION_LABELS["plm_workbench"])
+        btn_plm_workbench = QPushButton(self.action_labels()["plm_workbench"])
         btn_plm_workbench.setToolTip(
-            "打开 PLM 工作台（DocDoku PLM）——整合连接管理、增量同步、Tag 规则、产品注册与历史记录"
+            translate(
+                "CATIACopilot",
+                "打开 PLM 工作台（DocDoku PLM）——整合连接管理、增量同步、Tag 规则、产品注册与历史记录",
+            )
         )
         btn_plm_workbench.clicked.connect(self._open_plm_workbench)
 
@@ -594,18 +704,18 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(6)
 
-        layout.addWidget(self._make_section_label("导出"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "导出")))
 
-        btn_bom_export = QPushButton(self._ACTION_LABELS["bom_export"])
-        btn_bom_export.setToolTip("从 CATProduct 导出 BOM 到 Excel 文件")
+        btn_bom_export = QPushButton(self.action_labels()["bom_export"])
+        btn_bom_export.setToolTip(translate("CATIACopilot", "从 CATProduct 导出 BOM 到 Excel 文件"))
         btn_bom_export.clicked.connect(self._open_export_bom_dialog)
 
-        btn_drawing = QPushButton(self._ACTION_LABELS["export_pdf"])
-        btn_drawing.setToolTip("将 CATDrawing 文件批量导出为 PDF")
+        btn_drawing = QPushButton(self.action_labels()["export_pdf"])
+        btn_drawing.setToolTip(translate("CATIACopilot", "将 CATDrawing 文件批量导出为 PDF"))
         btn_drawing.clicked.connect(self._open_convert_drawing_dialog)
 
-        btn_part = QPushButton(self._ACTION_LABELS["export_stp"])
-        btn_part.setToolTip("将 CATPart 或 CATProduct 文件批量导出为 STEP")
+        btn_part = QPushButton(self.action_labels()["export_stp"])
+        btn_part.setToolTip(translate("CATIACopilot", "将 CATPart 或 CATProduct 文件批量导出为 STEP"))
         btn_part.clicked.connect(self._open_convert_part_dialog)
 
         for btn in (btn_bom_export, btn_drawing, btn_part):
@@ -624,39 +734,60 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         # ── 零件模板 ────────────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("零件模板"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "零件模板")))
 
-        btn_part_from_tpl = QPushButton("从模板新建零件")
+        btn_part_from_tpl = QPushButton(translate("CATIACopilot", "从模板新建零件"))
         btn_part_from_tpl.setToolTip(
-            "以当前活动 CATPart 为模板，通过 NewFrom 创建新零件\n"
-            "（保留参数、关系、几何图形集结构、公式、发布等所有知识工程内容）"
+            translate(
+                "CATIACopilot",
+                "以当前活动 CATPart 为模板，通过 NewFrom 创建新零件\n"
+                "（保留参数、关系、几何图形集结构、公式、发布等所有知识工程内容）",
+            )
         )
         btn_part_from_tpl.clicked.connect(self._open_part_from_template_dialog)
         layout.addWidget(btn_part_from_tpl)
 
         # ── 工程图纸 (Python 实现) ───────────────────────────────────────────
-        layout.addWidget(self._make_section_label("工程图纸 (Python 实现)"))
+        layout.addWidget(
+            self._make_section_label(translate("CATIACopilot", "工程图纸 (Python 实现)"))
+        )
 
-        btn_new_py = QPushButton(self._ACTION_LABELS["drawing_new"])
-        btn_new_py.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸 - Python 实现版本")
+        btn_new_py = QPushButton(self.action_labels()["drawing_new"])
+        btn_new_py.setToolTip(
+            translate("CATIACopilot", "从 CATPart/CATProduct 生成 CATDrawing 图纸 - Python 实现版本")
+        )
         btn_new_py.clicked.connect(self._open_generate_drawing_dialog_python)
 
-        btn_refresh_py = QPushButton(self._ACTION_LABELS["drawing_refresh"])
-        btn_refresh_py.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- Python 实现版本")
+        btn_refresh_py = QPushButton(self.action_labels()["drawing_refresh"])
+        btn_refresh_py.setToolTip(
+            translate(
+                "CATIACopilot",
+                "刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- Python 实现版本",
+            )
+        )
         btn_refresh_py.clicked.connect(self._open_refresh_drawing_dialog_python)
 
         for btn in (btn_new_py, btn_refresh_py):
             layout.addWidget(btn)
 
         # VBScript 实现版本（旧，用于对比测试）
-        layout.addWidget(self._make_section_label("工程图纸 (VBScript 宏)"))
+        layout.addWidget(
+            self._make_section_label(translate("CATIACopilot", "工程图纸 (VBScript 宏)"))
+        )
 
-        btn_new = QPushButton("新建图纸 (VBScript)")
-        btn_new.setToolTip("从 CATPart/CATProduct 生成 CATDrawing 图纸 - VBScript 宏版本")
+        btn_new = QPushButton(translate("CATIACopilot", "新建图纸 (VBScript)"))
+        btn_new.setToolTip(
+            translate("CATIACopilot", "从 CATPart/CATProduct 生成 CATDrawing 图纸 - VBScript 宏版本")
+        )
         btn_new.clicked.connect(self._open_generate_drawing_dialog)
 
-        btn_refresh = QPushButton("刷新图纸 (VBScript)")
-        btn_refresh.setToolTip("刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- VBScript 宏版本")
+        btn_refresh = QPushButton(translate("CATIACopilot", "刷新图纸 (VBScript)"))
+        btn_refresh.setToolTip(
+            translate(
+                "CATIACopilot",
+                "刷新当前活动图纸的参数信息（从对应零件/产品同步属性）- VBScript 宏版本",
+            )
+        )
         btn_refresh.clicked.connect(self._open_refresh_drawing_dialog)
 
         for btn in (btn_new, btn_refresh):
@@ -675,14 +806,14 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         # ── CATIA 资源 ────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("CATIA 资源"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "CATIA 资源")))
 
-        btn_font = QPushButton("复制字体文件到 CATIA 目录")
-        btn_font.setToolTip("将 Changfangsong.ttf 复制到 CATIA 字体目录")
+        btn_font = QPushButton(translate("CATIACopilot", "复制字体文件到 CATIA 目录"))
+        btn_font.setToolTip(translate("CATIACopilot", "将 Changfangsong.ttf 复制到 CATIA 字体目录"))
         btn_font.clicked.connect(self._copy_font_to_catia)
 
-        btn_iso = QPushButton("复制 ISO.xml 到 CATIA 目录")
-        btn_iso.setToolTip("将 ISO.xml 复制到 CATIA 标准目录")
+        btn_iso = QPushButton(translate("CATIACopilot", "复制 ISO.xml 到 CATIA 目录"))
+        btn_iso.setToolTip(translate("CATIACopilot", "将 ISO.xml 复制到 CATIA 标准目录"))
         btn_iso.clicked.connect(self._copy_iso_to_catia)
 
         for btn in (btn_font, btn_iso):
@@ -691,48 +822,51 @@ class MainWindow(QMainWindow):
         layout.addSpacing(4)
 
         # ── 功能 ──────────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("功能"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "功能")))
 
-        btn_stamp = QPushButton(self._ACTION_LABELS["stamp_template"])
-        btn_stamp.setToolTip("为选中的 CATPart 添加标准用户自定义属性")
+        btn_stamp = QPushButton(self.action_labels()["stamp_template"])
+        btn_stamp.setToolTip(translate("CATIACopilot", "为选中的 CATPart 添加标准用户自定义属性"))
         btn_stamp.clicked.connect(self._open_stamp_part_template_dialog)
         layout.addWidget(btn_stamp)
 
         # 快速装配：两个按钮并排
         asm_row = QHBoxLayout()
         asm_row.setSpacing(6)
-        btn_fastener = QPushButton(self._ACTION_LABELS["fastener_asm"])
-        btn_fastener.setToolTip("在产品中连续放置紧固件实例")
+        btn_fastener = QPushButton(self.action_labels()["fastener_asm"])
+        btn_fastener.setToolTip(translate("CATIACopilot", "在产品中连续放置紧固件实例"))
         btn_fastener.clicked.connect(self._open_fastener_assembly_dialog)
-        btn_nut = QPushButton(self._ACTION_LABELS["nut_plate_asm"])
-        btn_nut.setToolTip("在产品中连续放置托板螺母实例")
+        btn_nut = QPushButton(self.action_labels()["nut_plate_asm"])
+        btn_nut.setToolTip(translate("CATIACopilot", "在产品中连续放置托板螺母实例"))
         btn_nut.clicked.connect(self._open_nut_plate_assembly_dialog)
         asm_row.addWidget(btn_fastener)
         asm_row.addWidget(btn_nut)
         layout.addLayout(asm_row)
 
-        btn_open_related = QPushButton(self._ACTION_LABELS["open_related"])
+        btn_open_related = QPushButton(self.action_labels()["open_related"])
         btn_open_related.setToolTip(
-            "自动判断当前活跃文档类型：\n"
-            "• CATPart / CATProduct → 查找对应 CATDrawing\n"
-            "• CATDrawing → 查找对应 CATPart / CATProduct"
+            translate(
+                "CATIACopilot",
+                "自动判断当前活跃文档类型：\n"
+                "• CATPart / CATProduct → 查找对应 CATDrawing\n"
+                "• CATDrawing → 查找对应 CATPart / CATProduct",
+            )
         )
         btn_open_related.clicked.connect(self._open_related_file_for_active_doc)
         layout.addWidget(btn_open_related)
 
-        btn_deps = QPushButton(self._ACTION_LABELS["find_deps"])
-        btn_deps.setToolTip("通过 CATIA COM 查找文件的所有引用文档")
+        btn_deps = QPushButton(self.action_labels()["find_deps"])
+        btn_deps.setToolTip(translate("CATIACopilot", "通过 CATIA COM 查找文件的所有引用文档"))
         btn_deps.clicked.connect(self._open_find_dependencies_dialog)
         layout.addWidget(btn_deps)
 
         # 「运行宏…」按钮，点击后弹出 QMenu 列出宏文件
-        self._btn_run_macro = QPushButton(self._ACTION_LABELS["run_macro"])
-        self._btn_run_macro.setToolTip("选择并运行一个宏文件")
+        self._btn_run_macro = QPushButton(self.action_labels()["run_macro"])
+        self._btn_run_macro.setToolTip(translate("CATIACopilot", "选择并运行一个宏文件"))
         self._btn_run_macro.clicked.connect(lambda: self._show_macro_menu())
         layout.addWidget(self._btn_run_macro)
 
-        btn_macro_folder = QPushButton("打开宏文件夹")
-        btn_macro_folder.setToolTip("在资源管理器中打开 macros 目录")
+        btn_macro_folder = QPushButton(translate("CATIACopilot", "打开宏文件夹"))
+        btn_macro_folder.setToolTip(translate("CATIACopilot", "在资源管理器中打开 macros 目录"))
         btn_macro_folder.clicked.connect(self._open_macros_folder)
         layout.addWidget(btn_macro_folder)
 
@@ -749,66 +883,114 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
 
         # ── 视图 ──────────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("视图"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "视图")))
 
-        btn_log = QPushButton("显示 / 隐藏日志")
-        btn_log.setToolTip("切换底部嵌入式日志面板")
+        btn_log = QPushButton(translate("CATIACopilot", "显示 / 隐藏日志"))
+        btn_log.setToolTip(translate("CATIACopilot", "切换底部嵌入式日志面板"))
         btn_log.clicked.connect(self._toggle_log_from_menu)
         layout.addWidget(btn_log)
 
-        self._btn_embed = QPushButton("嵌入 3D 视图按钮")
+        self._btn_embed = QPushButton(translate("CATIACopilot", "嵌入 3D 视图按钮"))
         self._btn_embed.setCheckable(True)
         self._btn_embed.setObjectName("toggleButton")
         self._btn_embed.setToolTip(
-            "开启后，在 CATIA V5 每个 3D 视图右上角显示功能菜单按钮\n"
-            "点击按钮可快速访问 BOM 、导出、图纸、工具等功能\n"
-            "（需要 CATIA V5 正在运行）"
+            translate(
+                "CATIACopilot",
+                "开启后，在 CATIA V5 每个 3D 视图右上角显示功能菜单按钮\n"
+                "点击按钮可快速访问 BOM 、导出、图纸、工具等功能\n"
+                "（需要 CATIA V5 正在运行）",
+            )
         )
         self._btn_embed.clicked.connect(self._toggle_embed)
         layout.addWidget(self._btn_embed)
 
-        self._btn_dlg_topmost = QPushButton("对话框置顶")
+        self._btn_dlg_topmost = QPushButton(translate("CATIACopilot", "对话框置顶"))
         self._btn_dlg_topmost.setCheckable(True)
         self._btn_dlg_topmost.setObjectName("toggleButton")
         self._btn_dlg_topmost.setToolTip(
-            "开启：功能对话框始终浮于其他窗口之上\n"
-            "关闭：对话框与普通窗口平级，CATIA 弹窗可正常显示在前台"
+            translate(
+                "CATIACopilot",
+                "开启：功能对话框始终浮于其他窗口之上\n"
+                "关闭：对话框与普通窗口平级，CATIA 弹窗可正常显示在前台",
+            )
         )
         self._btn_dlg_topmost.clicked.connect(self._toggle_dlg_topmost)
         layout.addWidget(self._btn_dlg_topmost)
 
-        btn_diag = QPushButton("CATIA 连接诊断")
-        btn_diag.setToolTip("显示 CATIA COM 连接的详细诊断信息")
+        btn_diag = QPushButton(translate("CATIACopilot", "CATIA 连接诊断"))
+        btn_diag.setToolTip(translate("CATIACopilot", "显示 CATIA COM 连接的详细诊断信息"))
         btn_diag.clicked.connect(self._show_catia_diagnostics)
         layout.addWidget(btn_diag)
 
         # 主题切换：在系统深色/浅色之间切换（通过 QGuiApplication.styleHints）
-        _mode_label = {"dark": "切换到浅色", "light": "切换到深色"}
-        self._btn_theme = QPushButton(_mode_label.get(theme_manager.current_mode(), "切换主题"))
-        self._btn_theme.setToolTip("在系统深色/浅色主题之间切换")
+        _mode_label = {
+            "dark":  translate("CATIACopilot", "切换到浅色"),
+            "light": translate("CATIACopilot", "切换到深色"),
+        }
+        self._btn_theme = QPushButton(
+            _mode_label.get(
+                theme_manager.current_mode(), translate("CATIACopilot", "切换主题")
+            )
+        )
+        self._btn_theme.setToolTip(translate("CATIACopilot", "在系统深色/浅色主题之间切换"))
         self._btn_theme.clicked.connect(self._toggle_theme)
         layout.addWidget(self._btn_theme)
 
         layout.addSpacing(4)
 
         # ── 帮助 ──────────────────────────────────────────────────────
-        layout.addWidget(self._make_section_label("帮助"))
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "帮助")))
 
-        btn_help = QPushButton("文档")
+        btn_help = QPushButton(translate("CATIACopilot", "文档"))
         btn_help.clicked.connect(self._show_help)
         layout.addWidget(btn_help)
 
-        btn_about = QPushButton(f"关于 {APP_NAME}")
+        btn_about = QPushButton(translate("CATIACopilot", "关于 {0}").format(APP_NAME))
         btn_about.clicked.connect(self._show_about)
         layout.addWidget(btn_about)
 
-        btn_template = QPushButton("模板对话框")
-        btn_template.setToolTip("打开空对话框模板（用于测试）")
+        btn_template = QPushButton(translate("CATIACopilot", "模板对话框"))
+        btn_template.setToolTip(translate("CATIACopilot", "打开空对话框模板（用于测试）"))
         btn_template.clicked.connect(self._open_template_dialog)
         layout.addWidget(btn_template)
 
+        layout.addSpacing(4)
+
+        # ── 设置：界面语言（重启后生效，首版无导出语言选择）────────────────
+        layout.addWidget(self._make_section_label(translate("CATIACopilot", "设置")))
+
+        row_lang = QHBoxLayout()
+        row_lang.addWidget(QLabel(translate("CATIACopilot", "界面语言")))
+        self.cmbUILang = QComboBox()
+        self.cmbUILang.setObjectName("cmbUILang")
+        self.cmbUILang.addItem(translate("CATIACopilot", "跟随系统"), "system")
+        self.cmbUILang.addItem(translate("CATIACopilot", "简体中文"), "zh_CN")
+        # English 保持译文原文，保证未重启前任何界面语言下均可辨认
+        self.cmbUILang.addItem("English", "en_US")
+        _cur = read_language()
+        _idx = self.cmbUILang.findData(_cur)
+        self.cmbUILang.setCurrentIndex(
+            _idx if _idx >= 0 else self.cmbUILang.findData("system")
+        )
+        row_lang.addWidget(self.cmbUILang)
+        layout.addLayout(row_lang)
+
+        self.btnSaveLang = QPushButton(translate("CATIACopilot", "保存设置（重启后生效）"))
+        self.btnSaveLang.setObjectName("btnSaveLang")
+        self.btnSaveLang.clicked.connect(self._save_lang_settings)
+        layout.addWidget(self.btnSaveLang)
+
         layout.addStretch()
         return self._make_page(body)
+
+    def _save_lang_settings(self) -> None:
+        """保存界面语言设置并提示重启生效（首版不支持导出语言选择）。"""
+        write_language(self.cmbUILang.currentData())
+        QMessageBox.information(
+            self,
+            translate("CATIACopilot", "提示"),
+            translate("CATIACopilot", "语言设置已保存，重启程序后生效。"),
+        )
 
     def _show_macro_menu(self, pos: QPoint | None = None) -> None:
         """在指定位置或「运行宏…」按钮下方弹出宏文件菜单。
@@ -845,7 +1027,7 @@ class MainWindow(QMainWindow):
                     action.setToolTip(str(mp))
                     action.triggered.connect(lambda checked=False, p=mp: self._run_macro(p))
         else:
-            empty = menu.addAction("（未找到宏文件）")
+            empty = menu.addAction(translate("CATIACopilot", "（未找到宏文件）"))
             empty.setEnabled(False)
 
         if pos is None:
@@ -862,17 +1044,17 @@ class MainWindow(QMainWindow):
 
     def _show_about(self) -> None:
         """显示关于对话框。"""
-        QMessageBox.about(self, f"About {APP_NAME}", ABOUT_TEXT)
+        QMessageBox.about(self, translate("CATIACopilot", "关于 {0}").format(APP_NAME), build_about_text())
 
     def _toggle_theme(self) -> None:
         """在系统深色/浅色主题之间切换，并更新按钮文字。"""
         hints = QGuiApplication.styleHints()
         if theme_manager.current_mode() == "dark":
             hints.setColorScheme(Qt.ColorScheme.Light)
-            self._btn_theme.setText("切换到深色")
+            self._btn_theme.setText(translate("CATIACopilot", "切换到深色"))
         else:
             hints.setColorScheme(Qt.ColorScheme.Dark)
-            self._btn_theme.setText("切换到浅色")
+            self._btn_theme.setText(translate("CATIACopilot", "切换到浅色"))
 
     def _show_help(self) -> None:
         """显示帮助文档对话框。"""
@@ -945,7 +1127,11 @@ class MainWindow(QMainWindow):
             self._start_catia_monitor()
         else:
             self._stop_catia_monitor()
-        msg = "对话框已设为置顶" if self._dlg_topmost else "对话框已取消置顶"
+        msg = (
+            translate("CATIACopilot", "对话框已设为置顶")
+            if self._dlg_topmost
+            else translate("CATIACopilot", "对话框已取消置顶")
+        )
         self.statusBar().showMessage(msg, 3000)
 
     def _apply_topmost(self, dlg) -> None:
@@ -1047,17 +1233,19 @@ class MainWindow(QMainWindow):
         """切换 CATIA 吸附边栏模式的开关。"""
         if self._sidebar_manager.is_active or self._sidebar_manager._timer.isActive():
             self._sidebar_manager.stop()
-            self.statusBar().showMessage("已关闭 CATIA 吸附模式", 3000)
+            self.statusBar().showMessage(translate("CATIACopilot", "已关闭 CATIA 吸附模式"), 3000)
         else:
             self._sidebar_manager.start()
-            self.statusBar().showMessage("已开启 CATIA 吸附模式，等待 CATIA V5 窗口…", 3000)
+            self.statusBar().showMessage(
+                translate("CATIACopilot", "已开启 CATIA 吸附模式，等待 CATIA V5 窗口…"), 3000
+            )
 
     def _on_sidebar_mode_changed(self, active: bool) -> None:
         """吸附状态改变时更新状态栏提示。"""
         if active:
-            self.statusBar().showMessage("✔ 已吸附到 CATIA V5 右侧", 4000)
+            self.statusBar().showMessage(translate("CATIACopilot", "✔ 已吸附到 CATIA V5 右侧"), 4000)
         else:
-            self.statusBar().showMessage("CATIA 未检测到，等待中…", 3000)
+            self.statusBar().showMessage(translate("CATIACopilot", "CATIA 未检测到，等待中…"), 3000)
 
     # ── CATIA 3D 视图嵌入 ─────────────────────────────────────────────────
 
@@ -1067,17 +1255,21 @@ class MainWindow(QMainWindow):
         if self._embed_manager.is_active:
             self._embed_manager.stop()
             self._btn_embed.setChecked(False)
-            self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
+            self.statusBar().showMessage(translate("CATIACopilot", "已关闭 3D 视图嵌入模式"), 3000)
             _s.setValue("active", False)
         else:
             ok = self._embed_manager.start()
             if ok:
                 self._btn_embed.setChecked(True)
-                self.statusBar().showMessage("✔ 已在 CATIA 3D 视图中嵌入菜单面板", 4000)
+                self.statusBar().showMessage(
+                    translate("CATIACopilot", "✔ 已在 CATIA 3D 视图中嵌入菜单面板"), 4000
+                )
                 _s.setValue("active", True)
             else:
                 self._btn_embed.setChecked(False)
-                self.statusBar().showMessage("未检测到 CATIA V5，请先启动 CATIA", 4000)
+                self.statusBar().showMessage(
+                    translate("CATIACopilot", "未检测到 CATIA V5，请先启动 CATIA"), 4000
+                )
 
     # 以下四个方法均在 win32 后台线程中被调用，
     # 通过 QTimer.singleShot(0, ...) 安全派发到 Qt 主线程。
@@ -1218,7 +1410,7 @@ class MainWindow(QMainWindow):
         self._embed_manager.stop()
         self._btn_embed.setChecked(False)
         QSettings("CATIACopilot", "EmbedPanel").setValue("active", False)
-        self.statusBar().showMessage("已关闭 3D 视图嵌入模式", 3000)
+        self.statusBar().showMessage(translate("CATIACopilot", "已关闭 3D 视图嵌入模式"), 3000)
 
     @Slot()
     def _do_open_plm_workbench(self) -> None:
@@ -1359,7 +1551,11 @@ class MainWindow(QMainWindow):
                 )
         except Exception as e:
             QMessageBox.warning(
-                self, "无法打开文件夹", f"无法打开宏文件夹：\n{macros_dir}\n\n{e}"
+                self,
+                translate("CATIACopilot", "无法打开文件夹"),
+                translate("CATIACopilot", "无法打开宏文件夹：\n{0}\n\n{1}").format(
+                    macros_dir, e
+                ),
             )
 
     def _run_macro(
@@ -1374,15 +1570,22 @@ class MainWindow(QMainWindow):
         具体执行逻辑见 catia_copilot.catia.macro.run_macro。
         """
         if not macro_path.exists():
-            QMessageBox.warning(self, "文件不存在", f"宏文件不存在：\n{macro_path}")
+            QMessageBox.warning(
+                self,
+                translate("CATIACopilot", "文件不存在"),
+                translate("CATIACopilot", "宏文件不存在：\n{0}").format(macro_path),
+            )
             return
         try:
             _catia_run_macro(macro_path, module_name=module_name, params=params)
         except Exception as e:
             logger.error(f"宏执行失败 {macro_path.name}: {e}")
             QMessageBox.critical(
-                self, "宏执行失败",
-                f"运行宏时出错：\n{macro_path.name}\n\n{e}",
+                self,
+                translate("CATIACopilot", "宏执行失败"),
+                translate("CATIACopilot", "运行宏时出错：\n{0}\n\n{1}").format(
+                    macro_path.name, e
+                ),
             )
 
     # ── Dialog launchers ───────────────────────────────────────────────────
@@ -1390,33 +1593,36 @@ class MainWindow(QMainWindow):
     def _open_convert_part_dialog(self) -> None:
         self._show_dialog("_dlg_convert_part", lambda: FileConvertDialog(
             parent=self,
-            title="从产品/零件导出 STP",
-            file_label="已选 CATPart/CATProduct 文件:",
+            title=translate("CATIACopilot", "从产品/零件导出 STP"),
+            file_label=translate("CATIACopilot", "已选 CATPart/CATProduct 文件:"),
             file_filter="*.CATPart *.CATProduct (*.CATPart *.CATProduct);;All Files (*)",
-            no_files_msg="请至少选择一个 CATPart 或 CATProduct 文件。",
+            no_files_msg=translate(
+                "CATIACopilot", "请至少选择一个 CATPart 或 CATProduct 文件。"
+            ),
             conversion_fn=convert_part_to_step,
             settings_key="CATPart",
             show_prefix_option=True,
             prefix="MD_",
-            note="暂时留空",
+            note=translate("CATIACopilot", "暂时留空"),
         ))
 
     def _open_convert_drawing_dialog(self) -> None:
         self._show_dialog("_dlg_convert_drawing", lambda: FileConvertDialog(
             parent=self,
-            title="从图纸导出 PDF",
-            file_label="已选 CATDrawing 文件:",
+            title=translate("CATIACopilot", "从图纸导出 PDF"),
+            file_label=translate("CATIACopilot", "已选 CATDrawing 文件:"),
             file_filter="*.CATDrawing (*.CATDrawing);;All Files (*)",
-            no_files_msg="请至少选择一个 CATDrawing 文件。",
+            no_files_msg=translate("CATIACopilot", "请至少选择一个 CATDrawing 文件。"),
             conversion_fn=convert_drawing_to_pdf,
             settings_key="CATDrawing",
             show_prefix_option=True,
             prefix="DR_",
             show_update_option=True,
-            note=(
+            note=translate(
+                "CATIACopilot",
                 "如果用于导出的 CATDrawing 有多页，请将 CATIA 设置为"
                 "\u201c将多页文档保存在单向量文件中\u201d"
-                "（工具->选项->常规->兼容性->图形格式->导出（另存为））"
+                "（工具->选项->常规->兼容性->图形格式->导出（另存为））",
             ),
         ))
 
@@ -1436,10 +1642,10 @@ class MainWindow(QMainWindow):
     def _open_stamp_part_template_dialog(self) -> None:
         self._show_dialog("_dlg_stamp_template", lambda: FileConvertDialog(
             parent=self,
-            title="刷写零件模板",
-            file_label="已选 CATPart 文件:",
+            title=translate("CATIACopilot", "刷写零件模板"),
+            file_label=translate("CATIACopilot", "已选 CATPart 文件:"),
             file_filter="*.CATPart (*.CATPart);;All Files (*)",
-            no_files_msg="请至少选择一个 CATPart 文件。",
+            no_files_msg=translate("CATIACopilot", "请至少选择一个 CATPart 文件。"),
             conversion_fn=apply_part_template,
             settings_key="StampPartTemplate",
             show_active_doc_option=True,
@@ -1465,7 +1671,11 @@ class MainWindow(QMainWindow):
             app       = get_catia_v5_application()
             full_name = app.ActiveDocument.FullName
         except Exception as e:
-            QMessageBox.warning(self, "无法访问 CATIA", f"无法获取当前活跃文档：\n{e}")
+            QMessageBox.warning(
+                self,
+                translate("CATIACopilot", "无法访问 CATIA"),
+                translate("CATIACopilot", "无法获取当前活跃文档：\n{0}").format(e),
+            )
             return
 
         ext = full_name.lower().endswith
@@ -1483,8 +1693,10 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-            empty_msg  = f"未能找到对应的 CATDrawing 。\n\n零件：{Path(full_name).name}"
-            pick_title = "选择要打开的图纸"
+            empty_msg = translate(
+                "CATIACopilot", "未能找到对应的 CATDrawing 。\n\n零件：{0}"
+            ).format(Path(full_name).name)
+            pick_title = translate("CATIACopilot", "选择要打开的图纸")
 
         elif ext(".catdrawing",):
             candidates = []
@@ -1498,21 +1710,27 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-            empty_msg  = (
-                f"未能找到对应的 CATPart 或 CATProduct 。\n\n图纸：{Path(full_name).name}"
-            )
-            pick_title = "选择要打开的零件/产品"
+            empty_msg = translate(
+                "CATIACopilot", "未能找到对应的 CATPart 或 CATProduct 。\n\n图纸：{0}"
+            ).format(Path(full_name).name)
+            pick_title = translate("CATIACopilot", "选择要打开的零件/产品")
 
         else:
             QMessageBox.information(
-                self, "不支持的文档类型",
-                f"当前活跃文档不是 CATPart / CATProduct / CATDrawing ：\n{full_name}",
+                self,
+                translate("CATIACopilot", "不支持的文档类型"),
+                translate(
+                    "CATIACopilot",
+                    "当前活跃文档不是 CATPart / CATProduct / CATDrawing ：\n{0}",
+                ).format(full_name),
             )
             return
 
         # 3. 无结果
         if not candidates:
-            QMessageBox.information(self, "未找到关联文件", empty_msg)
+            QMessageBox.information(
+                self, translate("CATIACopilot", "未找到关联文件"), empty_msg
+            )
             return
 
         # 4. 单结果直接打开；多结果弹选择框
@@ -1522,8 +1740,12 @@ class MainWindow(QMainWindow):
                 open_document(chosen, foreground=True)
             except Exception as e:
                 QMessageBox.critical(
-                    self, "打开文件失败",
-                    f"无法在 CATIA 中打开文件：\n{chosen}\n\n错误：{e}",
+                    self,
+                    translate("CATIACopilot", "打开文件失败"),
+                    translate(
+                        "CATIACopilot",
+                        "无法在 CATIA 中打开文件：\n{0}\n\n错误：{1}",
+                    ).format(chosen, e),
                 )
 
     def _pick_one_file(self, paths: list[str], title: str) -> str | None:
@@ -1539,7 +1761,9 @@ class MainWindow(QMainWindow):
         dlg.resize(560, 300)
         vlay = QVBoxLayout(dlg)
 
-        hint = QLabel(f"找到 {len(paths)} 个候选文件，请选择一个：")
+        hint = QLabel(
+            translate("CATIACopilot", "找到 {0} 个候选文件，请选择一个：").format(len(paths))
+        )
         vlay.addWidget(hint)
 
         lst = QListWidget()
@@ -1571,9 +1795,13 @@ class MainWindow(QMainWindow):
         catvba_path = self._macros_dir() / "catia_copilot.catvba"
         if not catvba_path.exists():
             QMessageBox.warning(
-                self, "宏文件未找到",
-                f"未找到 VBA 宏文件：\n{catvba_path}\n\n"
-                "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
+                self,
+                translate("CATIACopilot", "宏文件未找到"),
+                translate(
+                    "CATIACopilot",
+                    "未找到 VBA 宏文件：\n{0}\n\n"
+                    "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
+                ).format(catvba_path),
             )
             return
         self._run_macro(catvba_path, module_name=CATIA_COPILOT_MODULES["fastener_assembly"])
@@ -1583,9 +1811,13 @@ class MainWindow(QMainWindow):
         catvba_path = self._macros_dir() / "catia_copilot.catvba"
         if not catvba_path.exists():
             QMessageBox.warning(
-                self, "宏文件未找到",
-                f"未找到 VBA 宏文件：\n{catvba_path}\n\n"
-                "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
+                self,
+                translate("CATIACopilot", "宏文件未找到"),
+                translate(
+                    "CATIACopilot",
+                    "未找到 VBA 宏文件：\n{0}\n\n"
+                    "请将 catia_copilot.catvba 放入 macros 文件夹后重试。",
+                ).format(catvba_path),
             )
             return
         self._run_macro(catvba_path, module_name=CATIA_COPILOT_MODULES["nut_plate_assembly"])
@@ -1602,16 +1834,20 @@ class MainWindow(QMainWindow):
         templates = sorted(templates_dir.glob("*.CATDrawing"))
         if not templates:
             QMessageBox.warning(
-                self, "未找到模板",
-                f"在以下目录中未找到任何 CATDrawing 模板文件：\n{templates_dir}\n\n"
-                "请将 *.CATDrawing 模板放入该文件夹后重试。",
+                self,
+                translate("CATIACopilot", "未找到模板"),
+                translate(
+                    "CATIACopilot",
+                    "在以下目录中未找到任何 CATDrawing 模板文件：\n{0}\n\n"
+                    "请将 *.CATDrawing 模板放入该文件夹后重试。",
+                ).format(templates_dir),
             )
             return
 
         name, ok = QInputDialog.getItem(
             self,
-            "选择图纸模板",
-            "请选择一个 CATDrawing 模板：",
+            translate("CATIACopilot", "选择图纸模板"),
+            translate("CATIACopilot", "请选择一个 CATDrawing 模板："),
             [t.name for t in templates],
             0,
             False,
@@ -1625,9 +1861,13 @@ class MainWindow(QMainWindow):
         catvbs_path = self._macros_dir() / "generate_drawing.catvbs"
         if not catvbs_path.exists():
             QMessageBox.warning(
-                self, "宏文件未找到",
-                f"未找到 CATScript 宏文件：\n{catvbs_path}\n\n"
-                "请将 generate_drawing.catvbs 放入 macros 文件夹后重试。",
+                self,
+                translate("CATIACopilot", "宏文件未找到"),
+                translate(
+                    "CATIACopilot",
+                    "未找到 CATScript 宏文件：\n{0}\n\n"
+                    "请将 generate_drawing.catvbs 放入 macros 文件夹后重试。",
+                ).format(catvbs_path),
             )
             return
         self._run_macro(catvbs_path, params=[str(template_path)])
@@ -1637,9 +1877,13 @@ class MainWindow(QMainWindow):
         catvbs_path = self._macros_dir() / "refresh_drawing_info.catvbs"
         if not catvbs_path.exists():
             QMessageBox.warning(
-                self, "宏文件未找到",
-                f"未找到 CATScript 宏文件：\n{catvbs_path}\n\n"
-                "请将 refresh_drawing_info.catvbs 放入 macros 文件夹后重试。",
+                self,
+                translate("CATIACopilot", "宏文件未找到"),
+                translate(
+                    "CATIACopilot",
+                    "未找到 CATScript 宏文件：\n{0}\n\n"
+                    "请将 refresh_drawing_info.catvbs 放入 macros 文件夹后重试。",
+                ).format(catvbs_path),
             )
             return
         self._run_macro(catvbs_path)
@@ -1657,16 +1901,20 @@ class MainWindow(QMainWindow):
         templates = sorted(templates_dir.glob("*.CATPart"))
         if not templates:
             QMessageBox.warning(
-                self, "未找到模板",
-                f"在以下目录中未找到任何 CATPart 模板文件：\n{templates_dir}\n\n"
-                "请将 *.CATPart 模板放入该文件夹后重试。",
+                self,
+                translate("CATIACopilot", "未找到模板"),
+                translate(
+                    "CATIACopilot",
+                    "在以下目录中未找到任何 CATPart 模板文件：\n{0}\n\n"
+                    "请将 *.CATPart 模板放入该文件夹后重试。",
+                ).format(templates_dir),
             )
             return
 
         name, ok = QInputDialog.getItem(
             self,
-            "选择零件模板",
-            "请选择一个 CATPart 模板：",
+            translate("CATIACopilot", "选择零件模板"),
+            translate("CATIACopilot", "请选择一个 CATPart 模板："),
             [t.name for t in templates],
             0,
             False,
@@ -1679,8 +1927,11 @@ class MainWindow(QMainWindow):
         def input_callback(title: str, default: str) -> tuple[str, bool]:
             text, ok = QInputDialog.getText(
                 self,
-                "输入新零件号",
-                f"请输入新零件的 PartNumber\n（留空则自动使用：{default}）：",
+                translate("CATIACopilot", "输入新零件号"),
+                translate(
+                    "CATIACopilot",
+                    "请输入新零件的 PartNumber\n（留空则自动使用：{0}）：",
+                ).format(default),
                 text="",
             )
             return (text, ok)
@@ -1692,12 +1943,20 @@ class MainWindow(QMainWindow):
             )
 
             if result["success"]:
-                QMessageBox.information(self, "新建零件成功", result["message"])
+                QMessageBox.information(
+                    self, translate("CATIACopilot", "新建零件成功"), result["message"]
+                )
             else:
-                QMessageBox.critical(self, "新建零件失败", result["message"])
+                QMessageBox.critical(
+                    self, translate("CATIACopilot", "新建零件失败"), result["message"]
+                )
 
         except Exception as e:
-            QMessageBox.critical(self, "新建零件失败", f"发生错误：\n{e}")
+            QMessageBox.critical(
+                self,
+                translate("CATIACopilot", "新建零件失败"),
+                translate("CATIACopilot", "发生错误：\n{0}").format(e),
+            )
 
     # ── Drawing generation (Python implementation) ──────────────────────────
 
@@ -1710,16 +1969,20 @@ class MainWindow(QMainWindow):
         templates = sorted(templates_dir.glob("*.CATDrawing"))
         if not templates:
             QMessageBox.warning(
-                self, "未找到模板",
-                f"在以下目录中未找到任何 CATDrawing 模板文件：\n{templates_dir}\n\n"
-                "请将 *.CATDrawing 模板放入该文件夹后重试。",
+                self,
+                translate("CATIACopilot", "未找到模板"),
+                translate(
+                    "CATIACopilot",
+                    "在以下目录中未找到任何 CATDrawing 模板文件：\n{0}\n\n"
+                    "请将 *.CATDrawing 模板放入该文件夹后重试。",
+                ).format(templates_dir),
             )
             return
 
         name, ok = QInputDialog.getItem(
             self,
-            "选择图纸模板",
-            "请选择一个 CATDrawing 模板：",
+            translate("CATIACopilot", "选择图纸模板"),
+            translate("CATIACopilot", "请选择一个 CATDrawing 模板："),
             [t.name for t in templates],
             0,
             False,
@@ -1733,9 +1996,12 @@ class MainWindow(QMainWindow):
         def input_callback(prop_name: str, part_number: str) -> tuple[str, bool]:
             text, ok = QInputDialog.getText(
                 self,
-                f"补充缺失属性 - {prop_name}",
-                f'零件 "{part_number}" 中未找到用户自定义属性 "{prop_name}"。\n'
-                f'请输入该属性的值（留空则以空值写入图纸）：',
+                translate("CATIACopilot", "补充缺失属性 - {0}").format(prop_name),
+                translate(
+                    "CATIACopilot",
+                    '零件 "{0}" 中未找到用户自定义属性 "{1}"。\n'
+                    "请输入该属性的值（留空则以空值写入图纸）：",
+                ).format(part_number, prop_name),
                 text="",
             )
             return (text, ok)
@@ -1752,7 +2018,7 @@ class MainWindow(QMainWindow):
                 suggested_name = result.get("suggested_name", "")
                 save_path, ok = QFileDialog.getSaveFileName(
                     self,
-                    "另存为",
+                    translate("CATIACopilot", "另存为"),
                     suggested_name,
                     "CATDrawing (*.CATDrawing)",
                 )
@@ -1760,14 +2026,21 @@ class MainWindow(QMainWindow):
                     try:
                         result["drawing_doc"].SaveAs(save_path)
                     except Exception as e:
-                        QMessageBox.critical(self, "保存图纸失败", f"SaveAs 失败：\n{e}")
+                        QMessageBox.critical(
+                            self,
+                            translate("CATIACopilot", "保存图纸失败"),
+                            translate("CATIACopilot", "SaveAs 失败：\n{0}").format(e),
+                        )
             else:
-                QMessageBox.critical(self, "生成图纸失败", result["message"])
+                QMessageBox.critical(
+                    self, translate("CATIACopilot", "生成图纸失败"), result["message"]
+                )
 
         except Exception as e:
             QMessageBox.critical(
-                self, "生成图纸失败",
-                f"发生错误：\n{e}"
+                self,
+                translate("CATIACopilot", "生成图纸失败"),
+                translate("CATIACopilot", "发生错误：\n{0}").format(e),
             )
 
     def _open_refresh_drawing_dialog_python(self) -> None:
@@ -1777,9 +2050,12 @@ class MainWindow(QMainWindow):
         def input_callback(prop_name: str, part_number: str) -> tuple[str, bool]:
             text, ok = QInputDialog.getText(
                 self,
-                f"补充缺失属性 - {prop_name}",
-                f'零件 "{part_number}" 中未找到用户自定义属性 "{prop_name}"。\n'
-                f'请输入该属性的值（留空则以空值写入图纸）：',
+                translate("CATIACopilot", "补充缺失属性 - {0}").format(prop_name),
+                translate(
+                    "CATIACopilot",
+                    '零件 "{0}" 中未找到用户自定义属性 "{1}"。\n'
+                    "请输入该属性的值（留空则以空值写入图纸）：",
+                ).format(part_number, prop_name),
                 text="",
             )
             return (text, ok)
@@ -1787,18 +2063,23 @@ class MainWindow(QMainWindow):
         # 调用 Python 实现的刷新图纸函数
         try:
             result = refresh_drawing(input_callback=input_callback)
-            
+
             if result["success"]:
                 # 显示同步日志
                 log_msg = "\n".join(result["details"])
-                QMessageBox.information(self, "同步日志", log_msg)
+                QMessageBox.information(
+                    self, translate("CATIACopilot", "同步日志"), log_msg
+                )
             else:
-                QMessageBox.critical(self, "刷新图纸失败", result["message"])
-                
+                QMessageBox.critical(
+                    self, translate("CATIACopilot", "刷新图纸失败"), result["message"]
+                )
+
         except Exception as e:
             QMessageBox.critical(
-                self, "刷新图纸失败",
-                f"发生错误：\n{e}"
+                self,
+                translate("CATIACopilot", "刷新图纸失败"),
+                translate("CATIACopilot", "发生错误：\n{0}").format(e),
             )
 
     # ── CATIA resource file helpers ────────────────────────────────────────
@@ -1820,16 +2101,23 @@ class MainWindow(QMainWindow):
         base_name = Path(file_name).name
         if not src_file.exists():
             QMessageBox.warning(
-                self, "文件未找到",
-                f"在工作目录中找不到 '{base_name}'：\n{src_file.parent}",
+                self,
+                translate("CATIACopilot", "文件未找到"),
+                translate("CATIACopilot", "在工作目录中找不到 '{0}'：\n{1}").format(
+                    base_name, src_file.parent
+                ),
             )
             return
 
         catia_root = detect_catia_root()
         if catia_root:
             reply = QMessageBox.question(
-                self, "检测到 CATIA 安装",
-                f"检测到 CATIA 安装路径：\n{catia_root}\n\n是否使用该目录？",
+                self,
+                translate("CATIACopilot", "检测到 CATIA 安装"),
+                translate(
+                    "CATIACopilot",
+                    "检测到 CATIA 安装路径：\n{0}\n\n是否使用该目录？",
+                ).format(catia_root),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
@@ -1838,7 +2126,10 @@ class MainWindow(QMainWindow):
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
                 self,
-                "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                translate(
+                    "CATIACopilot",
+                    "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                ),
                 "",
             )
             if not catia_root:
@@ -1847,8 +2138,12 @@ class MainWindow(QMainWindow):
         dest_dir = Path(catia_root) / relative_dest
         if not dest_dir.exists():
             reply = QMessageBox.question(
-                self, "文件夹未找到",
-                f"目标文件夹不存在：\n{dest_dir}\n\n是否要创建该文件夹？",
+                self,
+                translate("CATIACopilot", "文件夹未找到"),
+                translate(
+                    "CATIACopilot",
+                    "目标文件夹不存在：\n{0}\n\n是否要创建该文件夹？",
+                ).format(dest_dir),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -1860,15 +2155,22 @@ class MainWindow(QMainWindow):
         try:
             shutil.copy2(str(src_file), str(dest_file))
             QMessageBox.information(
-                self, "成功",
-                f"'{base_name}' 已成功复制到：\n{dest_file}",
+                self,
+                translate("CATIACopilot", "成功"),
+                translate("CATIACopilot", "'{0}' 已成功复制到：\n{1}").format(
+                    base_name, dest_file
+                ),
             )
         except PermissionError:
             reply = QMessageBox.question(
-                self, "权限不足",
-                f"无法直接复制文件（权限不足）。\n\n"
-                f"目标路径：\n{dest_file}\n\n"
-                f"是否通过 UAC 提权以管理员身份重试？",
+                self,
+                translate("CATIACopilot", "权限不足"),
+                translate(
+                    "CATIACopilot",
+                    "无法直接复制文件（权限不足）。\n\n"
+                    "目标路径：\n{0}\n\n"
+                    "是否通过 UAC 提权以管理员身份重试？",
+                ).format(dest_file),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -1876,34 +2178,56 @@ class MainWindow(QMainWindow):
                 if accepted:
                     if dest_file.exists():
                         QMessageBox.information(
-                            self, "成功",
-                            f"'{base_name}' 已成功复制到：\n{dest_file}",
+                            self,
+                            translate("CATIACopilot", "成功"),
+                            translate("CATIACopilot", "'{0}' 已成功复制到：\n{1}").format(
+                                base_name, dest_file
+                            ),
                         )
                     else:
                         QMessageBox.warning(
-                            self, "结果未知",
-                            f"提权复制已执行，但无法确认文件是否成功写入。\n"
-                            f"请手动确认：\n{dest_file}",
+                            self,
+                            translate("CATIACopilot", "结果未知"),
+                            translate(
+                                "CATIACopilot",
+                                "提权复制已执行，但无法确认文件是否成功写入。\n"
+                                "请手动确认：\n{0}",
+                            ).format(dest_file),
                         )
                 else:
-                    QMessageBox.information(self, "已取消", "用户取消了 UAC 提权，文件未复制。")
+                    QMessageBox.information(
+                        self,
+                        translate("CATIACopilot", "已取消"),
+                        translate("CATIACopilot", "用户取消了 UAC 提权，文件未复制。"),
+                    )
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"发生意外错误：\n{e}")
+            QMessageBox.critical(
+                self,
+                translate("CATIACopilot", "错误"),
+                translate("CATIACopilot", "发生意外错误：\n{0}").format(e),
+            )
 
     def _crack(self) -> None:
         base_src_dir = resource_path(CRACK_DIR_PATH)
         if not base_src_dir.exists() or not base_src_dir.is_dir():
             QMessageBox.warning(
-                self, "文件夹未找到",
-                f"找不到 'crack' 文件夹：\n{base_src_dir.parent}",
+                self,
+                translate("CATIACopilot", "文件夹未找到"),
+                translate("CATIACopilot", "找不到 'crack' 文件夹：\n{0}").format(
+                    base_src_dir.parent
+                ),
             )
             return
 
         catia_root = detect_catia_root()
         if catia_root:
             reply = QMessageBox.question(
-                self, "检测到 CATIA 安装",
-                f"检测到 CATIA 安装路径：\n{catia_root}\n\n是否使用该目录？",
+                self,
+                translate("CATIACopilot", "检测到 CATIA 安装"),
+                translate(
+                    "CATIACopilot",
+                    "检测到 CATIA 安装路径：\n{0}\n\n是否使用该目录？",
+                ).format(catia_root),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.No:
@@ -1912,7 +2236,10 @@ class MainWindow(QMainWindow):
         if not catia_root:
             catia_root = QFileDialog.getExistingDirectory(
                 self,
-                "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                translate(
+                    "CATIACopilot",
+                    "选择 CATIA 安装目录（例如 C:\\Program Files\\Dassault Systemes\\B28）",
+                ),
                 "",
             )
             if not catia_root:
@@ -1928,9 +2255,13 @@ class MainWindow(QMainWindow):
                 logger.info(f"使用版本专属 crack 目录：{src_dir}")
             else:
                 reply = QMessageBox.question(
-                    self, "找不到版本专属目录",
-                    f"未找到版本专属 crack 子目录：\n{versioned_dir}\n\n"
-                    f"是否改用通用 crack 根目录中的文件？",
+                    self,
+                    translate("CATIACopilot", "找不到版本专属目录"),
+                    translate(
+                        "CATIACopilot",
+                        "未找到版本专属 crack 子目录：\n{0}\n\n"
+                        "是否改用通用 crack 根目录中的文件？",
+                    ).format(versioned_dir),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if reply == QMessageBox.StandardButton.No:
@@ -1940,16 +2271,23 @@ class MainWindow(QMainWindow):
         dest_dir = Path(catia_root) / "win_b64" / "code" / "bin"
         if not dest_dir.exists():
             QMessageBox.critical(
-                self, "文件夹未找到",
-                f"目标文件夹不存在：\n{dest_dir}\n\n请检查您的 CATIA 安装。",
+                self,
+                translate("CATIACopilot", "文件夹未找到"),
+                translate(
+                    "CATIACopilot",
+                    "目标文件夹不存在：\n{0}\n\n请检查您的 CATIA 安装。",
+                ).format(dest_dir),
             )
             return
 
         files = [f for f in src_dir.iterdir() if f.is_file()]
         if not files:
             QMessageBox.warning(
-                self, "文件夹为空",
-                f"crack 源目录中没有文件：\n{src_dir}",
+                self,
+                translate("CATIACopilot", "文件夹为空"),
+                translate("CATIACopilot", "crack 源目录中没有文件：\n{0}").format(
+                    src_dir
+                ),
             )
             return
 
@@ -1961,16 +2299,23 @@ class MainWindow(QMainWindow):
                 copied.append(src_file.name)
                 logger.info(f"  Copied: {src_file.name} -> {dest_file}")
             QMessageBox.information(
-                self, "成功",
-                f"已成功复制 {len(copied)} 个文件到：\n{dest_dir}\n\n"
-                + "\n".join(copied),
+                self,
+                translate("CATIACopilot", "成功"),
+                translate(
+                    "CATIACopilot",
+                    "已成功复制 {0} 个文件到：\n{1}\n\n{2}",
+                ).format(len(copied), dest_dir, "\n".join(copied)),
             )
         except PermissionError:
             reply = QMessageBox.question(
-                self, "权限不足",
-                f"无法直接复制文件（权限不足）。\n\n"
-                f"目标路径：\n{dest_dir}\n\n"
-                f"是否通过 UAC 提权以管理员身份重试？",
+                self,
+                translate("CATIACopilot", "权限不足"),
+                translate(
+                    "CATIACopilot",
+                    "无法直接复制文件（权限不足）。\n\n"
+                    "目标路径：\n{0}\n\n"
+                    "是否通过 UAC 提权以管理员身份重试？",
+                ).format(dest_dir),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
@@ -1980,17 +2325,34 @@ class MainWindow(QMainWindow):
                     success_count = sum(1 for _, dst in ops if dst.exists())
                     if success_count == len(ops):
                         QMessageBox.information(
-                            self, "成功",
-                            f"已成功复制 {success_count} 个文件到：\n{dest_dir}\n\n"
-                            + "\n".join(f.name for f in files),
+                            self,
+                            translate("CATIACopilot", "成功"),
+                            translate(
+                                "CATIACopilot",
+                                "已成功复制 {0} 个文件到：\n{1}\n\n{2}",
+                            ).format(
+                                success_count, dest_dir, "\n".join(f.name for f in files)
+                            ),
                         )
                     else:
                         QMessageBox.warning(
-                            self, "部分完成",
-                            f"提权复制已执行，但仅确认 {success_count}/{len(ops)} 个文件写入成功。\n"
-                            f"目标路径：\n{dest_dir}\n\n请手动确认复制结果。",
+                            self,
+                            translate("CATIACopilot", "部分完成"),
+                            translate(
+                                "CATIACopilot",
+                                "提权复制已执行，但仅确认 {0}/{1} 个文件写入成功。\n"
+                                "目标路径：\n{2}\n\n请手动确认复制结果。",
+                            ).format(success_count, len(ops), dest_dir),
                         )
                 else:
-                    QMessageBox.information(self, "已取消", "用户取消了 UAC 提权，文件未复制。")
+                    QMessageBox.information(
+                        self,
+                        translate("CATIACopilot", "已取消"),
+                        translate("CATIACopilot", "用户取消了 UAC 提权，文件未复制。"),
+                    )
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"发生意外错误：\n{e}")
+            QMessageBox.critical(
+                self,
+                translate("CATIACopilot", "错误"),
+                translate("CATIACopilot", "发生意外错误：\n{0}").format(e),
+            )

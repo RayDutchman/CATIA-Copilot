@@ -78,7 +78,8 @@ memory.md
 .copilot/
 
 # ── 临时 / 探查 / 开发笔记（不属于正式代码库）────────────────────────────────
-tests/
+# 仅忽略根目录 tests/（catia_copilot/tests/ 是正式单元测试，需提交）
+/tests/
 experiments/
 examples/
 
@@ -96,3 +97,6 @@ nul
 # ── AI 助手开发过程文档（不提交）──────────────────────────────────────
 .superpowers/
 .reasonix/
+
+# ── 国际化编译产物（构建流程用 pyside6-lrelease 生成，不入库；.ts 源码仍提交）────────────────
+*.qm

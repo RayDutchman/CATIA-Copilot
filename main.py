@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 # 确保在创建任何控件之前初始化日志系统和 Qt 信号发射器
 import catia_copilot.logging_setup  # noqa: F401
 from catia_copilot.constants import APP_ICON_PATH
+from catia_copilot.i18n import install_translators
 from catia_copilot.ui.main_window import MainWindow
 from catia_copilot.utils import ensure_clean_gencache, resource_path
 
@@ -37,6 +38,8 @@ def main() -> None:
 
     app = QApplication(sys.argv)
     app.setApplicationName("CATIA Copilot")
+    # 在创建窗口前安装翻译器，并保持 Python 引用直到事件循环结束。
+    app_translator, qt_translator = install_translators(app)
 
     # 设置应用程序图标（resources/icon.ico）
     icon_path = resource_path(APP_ICON_PATH)

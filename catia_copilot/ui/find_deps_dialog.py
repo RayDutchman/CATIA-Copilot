@@ -63,6 +63,7 @@ from catia_copilot.constants import (
 from catia_copilot.ui.theme_manager import theme_manager
 from catia_copilot.ui.ui_colors import get_colors
 from catia_copilot.utils import bring_catia_to_foreground, read_catia_thumbnail
+from catia_copilot.i18n import translate
 
 logger = logging.getLogger(__name__)
 
@@ -75,34 +76,49 @@ _EXT_DRAWING = ".catdrawing"
 _EXTS_PART   = (".catpart", ".catproduct")
 
 # ── 启发式补充策略（2A：图纸→零件，2B：零件/产品→图纸）────────────────────
-# 后端键 → 界面显示名
-_HEURISTIC_LABELS: dict[str, str] = {
-    "pn_param_open_docs":     "匹配 PartNumber（已打开文档）",
-    "pn_param_open_drws":     "匹配 PartNumber（已打开图纸）",
-    "pn_param_scan_dirs":     "匹配 PartNumber（目录扫描→零件）",
-    "pn_param_scan_drws":     "匹配 PartNumber（目录扫描→图纸）",
-    "same_name_scan_dirs":    "目录扫描，同名文件",
-    "strip_prefix_scan_dirs": "目录扫描，去前缀后同名文件",
-}
+# 后端键 → 界面显示名（运行时翻译；模块级 translate 会在 import 时固化语言，故用函数）
+def _heuristic_label(key: str) -> str:
+    """返回启发式策略的界面显示名（随界面语言翻译），未知键回退原键。"""
+    if key == "pn_param_open_docs":
+        return translate("CATIACopilot", "匹配 PartNumber（已打开文档）")
+    if key == "pn_param_open_drws":
+        return translate("CATIACopilot", "匹配 PartNumber（已打开图纸）")
+    if key == "pn_param_scan_dirs":
+        return translate("CATIACopilot", "匹配 PartNumber（目录扫描→零件）")
+    if key == "pn_param_scan_drws":
+        return translate("CATIACopilot", "匹配 PartNumber（目录扫描→图纸）")
+    if key == "same_name_scan_dirs":
+        return translate("CATIACopilot", "目录扫描，同名文件")
+    if key == "strip_prefix_scan_dirs":
+        return translate("CATIACopilot", "目录扫描，去前缀后同名文件")
+    return key
 
-_HEURISTIC_HINTS: dict[str, str] = {
-    "pn_param_open_docs":
-        "遍历已打开的零件/产品文档，找 PartNumber 参数等于图纸 PartNumber 的文件\n"
-        "（仅对 CATDrawing 目标有效）",
-    "pn_param_open_drws":
-        "遍历已打开的 CATDrawing ，找 PartNumber 参数等于零件 PartNumber 的图纸\n"
-        "（仅对 CATPart/CATProduct 目标有效）",
-    "pn_param_scan_dirs":
-        "向上扫描目录，找文件名等于图纸 PartNumber 参数的零件文件\n"
-        "（仅对 CATDrawing 目标有效）",
-    "pn_param_scan_drws":
-        "向上扫描目录，找文件名等于零件 PartNumber 参数的图纸文件\n"
-        "（仅对 CATPart/CATProduct 目标有效）",
-    "same_name_scan_dirs":
-        "向上扫描目录，找与目标文件同名的对应文件（两个方向均有效）",
-    "strip_prefix_scan_dirs":
-        "向上扫描目录，去掉「前缀_」或「前缀-」后再与目标文件名比较（两个方向均有效）",
-}
+
+def _heuristic_hint(key: str) -> str:
+    """返回启发式策略的 tooltip（随界面语言翻译），未知键返回空串。"""
+    if key == "pn_param_open_docs":
+        return translate("CATIACopilot",
+            "遍历已打开的零件/产品文档，找 PartNumber 参数等于图纸 PartNumber 的文件\n"
+            "（仅对 CATDrawing 目标有效）")
+    if key == "pn_param_open_drws":
+        return translate("CATIACopilot",
+            "遍历已打开的 CATDrawing ，找 PartNumber 参数等于零件 PartNumber 的图纸\n"
+            "（仅对 CATPart/CATProduct 目标有效）")
+    if key == "pn_param_scan_dirs":
+        return translate("CATIACopilot",
+            "向上扫描目录，找文件名等于图纸 PartNumber 参数的零件文件\n"
+            "（仅对 CATDrawing 目标有效）")
+    if key == "pn_param_scan_drws":
+        return translate("CATIACopilot",
+            "向上扫描目录，找文件名等于零件 PartNumber 参数的图纸文件\n"
+            "（仅对 CATPart/CATProduct 目标有效）")
+    if key == "same_name_scan_dirs":
+        return translate("CATIACopilot",
+            "向上扫描目录，找与目标文件同名的对应文件（两个方向均有效）")
+    if key == "strip_prefix_scan_dirs":
+        return translate("CATIACopilot",
+            "向上扫描目录，去掉「前缀_」或「前缀-」后再与目标文件名比较（两个方向均有效）")
+    return ""
 
 # 启发式策略中属于 2A（图纸→零件）的后端键集合
 _HEURISTIC_2A_KEYS: set[str] = {
@@ -136,7 +152,7 @@ class FindDependenciesDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("查找指向的文档")
+        self.setWindowTitle(translate("CATIACopilot", "查找指向的文档"))
         self.setMinimumSize(750, 600)
         self.resize(900, 650)
 
@@ -155,7 +171,7 @@ class FindDependenciesDialog(QDialog):
         main_layout.setContentsMargins(12, 12, 12, 12)
 
         # ── 目标文件区域 ──────────────────────────────────────────────────────
-        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（不选择文件）")
+        self._use_active_chk = QCheckBox(translate("CATIACopilot", "使用当前 CATIA 活动文档（不选择文件）"))
         self._use_active_chk.toggled.connect(self._on_use_active_toggled)
         main_layout.addWidget(self._use_active_chk)
 
@@ -163,11 +179,11 @@ class FindDependenciesDialog(QDialog):
         self._target_edit = QLineEdit()
         self._target_edit.setReadOnly(True)
         self._target_edit.setPlaceholderText(
-            "选择一个 CATIA 文件（CATPart / CATProduct / CATDrawing）…"
+            translate("CATIACopilot", "选择一个 CATIA 文件（CATPart / CATProduct / CATDrawing）…")
         )
         last = self._settings.value("last_target", "")
         self._target_edit.setText(last)
-        self._browse_btn = QPushButton("浏览...")
+        self._browse_btn = QPushButton(translate("CATIACopilot", "浏览..."))
         self._browse_btn.clicked.connect(self._browse_target)
         file_row.addWidget(self._target_edit)
         file_row.addWidget(self._browse_btn)
@@ -195,12 +211,14 @@ class FindDependenciesDialog(QDialog):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(2)
 
-        result_label = QLabel("搜索结果：")
+        result_label = QLabel(translate("CATIACopilot", "搜索结果："))
         right_layout.addWidget(result_label)
 
         self._table = QTreeWidget()
         self._table.setColumnCount(_COL_COUNT)
-        self._table.setHeaderLabels(["来源", "文件名", "完整路径"])
+        self._table.setHeaderLabels([translate("CATIACopilot", "来源"),
+                                     translate("CATIACopilot", "文件名"),
+                                     translate("CATIACopilot", "完整路径")])
         _hdr = self._table.header()
         _hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         _hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
@@ -222,10 +240,10 @@ class FindDependenciesDialog(QDialog):
 
         # 结果区底部按钮
         result_btn_row = QHBoxLayout()
-        self._open_all_btn = QPushButton("全部打开")
+        self._open_all_btn = QPushButton(translate("CATIACopilot", "全部打开"))
         self._open_all_btn.setEnabled(False)
         self._open_all_btn.clicked.connect(self._open_all)
-        self._copy_all_btn = QPushButton("复制全部路径")
+        self._copy_all_btn = QPushButton(translate("CATIACopilot", "复制全部路径"))
         self._copy_all_btn.setEnabled(False)
         self._copy_all_btn.clicked.connect(self._copy_all_paths)
         result_btn_row.addWidget(self._open_all_btn)
@@ -240,10 +258,10 @@ class FindDependenciesDialog(QDialog):
 
         # ── 底部按钮行 ────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        self._search_btn = QPushButton("开始搜索")
+        self._search_btn = QPushButton(translate("CATIACopilot", "开始搜索"))
         self._search_btn.setDefault(True)
         self._search_btn.clicked.connect(self._start_search)
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(translate("CATIACopilot", "关闭"))
         close_btn.clicked.connect(self.reject)
         btn_row.addWidget(self._search_btn)
         btn_row.addStretch()
@@ -258,11 +276,11 @@ class FindDependenciesDialog(QDialog):
         self._target_edit.setEnabled(not use_active)
         self._browse_btn.setEnabled(not use_active)
         if use_active:
-            self._file_type_label.setText("将使用当前 CATIA 活动文档（搜索时自动获取）")
-            self._target_edit.setPlaceholderText("将在搜索时自动获取活动文档路径…")
+            self._file_type_label.setText(translate("CATIACopilot", "将使用当前 CATIA 活动文档（搜索时自动获取）"))
+            self._target_edit.setPlaceholderText(translate("CATIACopilot", "将在搜索时自动获取活动文档路径…"))
         else:
             self._target_edit.setPlaceholderText(
-                "选择一个 CATIA 文件（CATPart / CATProduct / CATDrawing）…"
+                translate("CATIACopilot", "选择一个 CATIA 文件（CATPart / CATProduct / CATDrawing）…")
             )
             path = self._target_edit.text().strip()
             self._update_file_type_label(path) if path else self._file_type_label.setText("")
@@ -271,8 +289,10 @@ class FindDependenciesDialog(QDialog):
         last      = self._settings.value("last_target", "")
         start_dir = str(Path(last).parent) if last else ""
         file, _   = QFileDialog.getOpenFileName(
-            self, "选择目标 CATIA 文件", start_dir,
-            "CATIA 文件 (*.CATPart *.CATProduct *.CATDrawing);;所有文件 (*)",
+            self,
+            translate("CATIACopilot", "选择目标 CATIA 文件"),
+            start_dir,
+            translate("CATIACopilot", "CATIA 文件 (*.CATPart *.CATProduct *.CATDrawing);;所有文件 (*)"),
         )
         if file:
             self._target_edit.setText(file)
@@ -288,12 +308,12 @@ class FindDependenciesDialog(QDialog):
             return
         ext = Path(path).suffix.lower()
         if ext == _EXT_DRAWING:
-            text = "文件类型： CATDrawing — 将查找引用的文档（COM 链接）及被引用零件/产品（2A 策略）"
+            text = translate("CATIACopilot", "文件类型： CATDrawing — 将查找引用的文档（COM 链接）及被引用零件/产品（2A 策略）")
         elif ext in _EXTS_PART:
-            text = "文件类型： CATPart/CATProduct — 将查找引用的文档（COM 链接）及被引用图纸（2B 策略）"
+            text = translate("CATIACopilot", "文件类型： CATPart/CATProduct — 将查找引用的文档（COM 链接）及被引用图纸（2B 策略）")
         else:
-            suffix = Path(path).suffix or "未知"
-            text = f"文件类型：{suffix} — 仅查找引用的文档（COM 链接），不支持 2A/2B 策略"
+            suffix = Path(path).suffix or translate("CATIACopilot", "未知")
+            text = translate("CATIACopilot", "文件类型：{0} — 仅查找引用的文档（COM 链接），不支持 2A/2B 策略").format(suffix)
         self._file_type_label.setText(text)
 
     # -----------------------------------------------------------------------
@@ -306,23 +326,29 @@ class FindDependenciesDialog(QDialog):
                 active_path = get_active_document_path()
             except Exception as e:
                 QMessageBox.warning(
-                    self, "无法获取活动文档",
-                    f"无法从 CATIA 获取当前活动文档路径：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
+                    self,
+                    translate("CATIACopilot", "无法获取活动文档"),
+                    translate("CATIACopilot", "无法从 CATIA 获取当前活动文档路径：\n{0}\n\n请确保 CATIA 已启动且有活动文档。").format(e),
                 )
                 return None
             if active_path is None:
                 QMessageBox.warning(
-                    self, "无活动文档",
-                    "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。",
+                    self,
+                    translate("CATIACopilot", "无活动文档"),
+                    translate("CATIACopilot", "CATIA 中当前没有活动文档，请先在 CATIA 中打开一个文件。"),
                 )
                 return None
             return active_path
         target = self._target_edit.text().strip()
         if not target:
-            QMessageBox.warning(self, "未选择目标文件", "请先选择一个目标 CATIA 文件。")
+            QMessageBox.warning(self,
+                                translate("CATIACopilot", "未选择目标文件"),
+                                translate("CATIACopilot", "请先选择一个目标 CATIA 文件。"))
             return None
         if not Path(target).exists():
-            QMessageBox.warning(self, "文件不存在", f"目标文件不存在：\n{target}")
+            QMessageBox.warning(self,
+                                translate("CATIACopilot", "文件不存在"),
+                                translate("CATIACopilot", "目标文件不存在：\n{0}").format(target))
             return None
         return target
 
@@ -338,24 +364,26 @@ class FindDependenciesDialog(QDialog):
         vlayout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # ── 正向查询 ───────────────────────────────────────────────────────
-        fwd_group  = QGroupBox("正向查询")
+        fwd_group  = QGroupBox(translate("CATIACopilot", "正向查询"))
         fwd_layout = QVBoxLayout(fwd_group)
         fwd_layout.setSpacing(4)
         fwd_layout.setContentsMargins(8, 4, 8, 8)
 
-        fwd_note = QLabel("顺着引用关系查找目标引用了谁。")
+        fwd_note = QLabel(translate("CATIACopilot", "顺着引用关系查找目标引用了谁。"))
         fwd_note.setObjectName("hintLabel")
         fwd_note.setWordWrap(True)
         fwd_layout.addWidget(fwd_note)
 
-        cb_com = QCheckBox("结构遍历（CATProduct / CATDrawing）")
+        cb_com = QCheckBox(translate("CATIACopilot", "结构遍历（CATProduct / CATDrawing）"))
         cb_com.setToolTip(
-            "通过 CATIA COM 打开目标文件，按类型遍历引用结构：\n"
-            "• CATProduct ：读直接子层（一级）Product.Products，\n"
-            "  收集每个直接子件的文档路径\n"
-            "• CATDrawing ：遍历生成式视图链接，收集关联的\n"
-            "  零件/产品文档路径\n"
-            "• 其他格式：退化为快照差值法，结果可能不完整"
+            translate("CATIACopilot",
+                "通过 CATIA COM 打开目标文件，按类型遍历引用结构：\n"
+                "• CATProduct ：读直接子层（一级）Product.Products，\n"
+                "  收集每个直接子件的文档路径\n"
+                "• CATDrawing ：遍历生成式视图链接，收集关联的\n"
+                "  零件/产品文档路径\n"
+                "• 其他格式：退化为快照差值法，结果可能不完整"
+            )
         )
         cb_com.setChecked(self._load_cb_state("fwd_com", True))
         cb_com.stateChanged.connect(
@@ -367,23 +395,25 @@ class FindDependenciesDialog(QDialog):
         vlayout.addWidget(fwd_group)
 
         # ── 反向查询 ───────────────────────────────────────────────────────
-        rev_group  = QGroupBox("反向查询")
+        rev_group  = QGroupBox(translate("CATIACopilot", "反向查询"))
         rev_layout = QVBoxLayout(rev_group)
         rev_layout.setSpacing(4)
         rev_layout.setContentsMargins(8, 4, 8, 8)
 
-        rev_note = QLabel("逆着引用关系，找出谁引用了目标文件。")
+        rev_note = QLabel(translate("CATIACopilot", "逆着引用关系，找出谁引用了目标文件。"))
         rev_note.setObjectName("hintLabel")
         rev_note.setWordWrap(True)
         rev_layout.addWidget(rev_note)
 
-        cb_rev = QCheckBox("遍历已打开文档（CATProduct / CATDrawing）")
+        cb_rev = QCheckBox(translate("CATIACopilot", "遍历已打开文档（CATProduct / CATDrawing）"))
         cb_rev.setToolTip(
-            "遍历已打开的文档，找出哪些文档引用了目标文件：\n"
-            "• CATProduct ：读直接子层 Product.Products，\n"
-            "  检查目标是否在其中\n"
-            "• CATDrawing ：遍历生成式视图链接，判断是否指向目标\n"
-            "• CATPart ：外部引用暂不支持（COM 接口不可达）"
+            translate("CATIACopilot",
+                "遍历已打开的文档，找出哪些文档引用了目标文件：\n"
+                "• CATProduct ：读直接子层 Product.Products，\n"
+                "  检查目标是否在其中\n"
+                "• CATDrawing ：遍历生成式视图链接，判断是否指向目标\n"
+                "• CATPart ：外部引用暂不支持（COM 接口不可达）"
+            )
         )
         cb_rev.setChecked(self._load_cb_state("rev_open_docs", True))
         cb_rev.stateChanged.connect(
@@ -395,12 +425,12 @@ class FindDependenciesDialog(QDialog):
         vlayout.addWidget(rev_group)
 
         # ── 启发式补充 ─────────────────────────────────────────────────────
-        heu_group  = QGroupBox("启发式补充")
+        heu_group  = QGroupBox(translate("CATIACopilot", "启发式补充"))
         heu_layout = QVBoxLayout(heu_group)
         heu_layout.setSpacing(4)
         heu_layout.setContentsMargins(8, 4, 8, 8)
 
-        heu_note = QLabel("COM 链接断开时的文件名匹配策略。")
+        heu_note = QLabel(translate("CATIACopilot", "COM 链接断开时的文件名匹配策略。"))
         heu_note.setObjectName("hintLabel")
         heu_note.setWordWrap(True)
         heu_layout.addWidget(heu_note)
@@ -414,10 +444,9 @@ class FindDependenciesDialog(QDialog):
             "strip_prefix_scan_dirs",
         ]
         for key in _HEU_ORDER:
-            label = _HEURISTIC_LABELS.get(key, key)
-            cb    = QCheckBox(label)
+            cb    = QCheckBox(_heuristic_label(key))
             cb.setChecked(self._load_cb_state(f"heu_{key}", True))
-            cb.setToolTip(_HEURISTIC_HINTS.get(key, ""))
+            cb.setToolTip(_heuristic_hint(key))
             cb.stateChanged.connect(
                 lambda _, k=key: self._save_cb_state(f"heu_{k}", self._strategy_cbs[f"heu_{k}"].isChecked())
             )
@@ -458,7 +487,7 @@ class FindDependenciesDialog(QDialog):
         self._copy_all_btn.setEnabled(False)
 
         # 显示临时状态行
-        loading_item = QTreeWidgetItem(["", "正在搜索，请稍候…", ""])
+        loading_item = QTreeWidgetItem(["", translate("CATIACopilot", "正在搜索，请稍候…"), ""])
         loading_item.setData(0, _ROLE_IS_HDR, True)
         self._table.addTopLevelItem(loading_item)
         QApplication.processEvents()
@@ -476,7 +505,7 @@ class FindDependenciesDialog(QDialog):
                 fwd_com_results = find_dependencies(target, progress_callback=_cb)
             except Exception as e:
                 logger.warning(f"find_dependencies failed: {e}")
-                errors.append(f"正向查询失败：{e}")
+                errors.append(translate("CATIACopilot", "正向查询失败：{0}").format(e))
 
         # ── 反向查询：遍历已打开文档 ──────────────────────────────────────
         rev_results: list[str] = []
@@ -485,7 +514,7 @@ class FindDependenciesDialog(QDialog):
                 rev_results = find_reverse_dependencies(target, progress_callback=_cb)
             except Exception as e:
                 logger.warning(f"find_reverse_dependencies failed: {e}")
-                errors.append(f"反向查询失败：{e}")
+                errors.append(translate("CATIACopilot", "反向查询失败：{0}").format(e))
 
         # ── 启发式补充：2A（仅 CATDrawing）────────────────────────────────
         heu_2a_results: list[tuple[str, str]] = []  # (strategy_key, path)
@@ -509,7 +538,7 @@ class FindDependenciesDialog(QDialog):
                             heu_2a_results.append((strategy, h))
                 except Exception as e:
                     logger.warning(f"find_part_for_drawing [{strategy}] failed: {e}")
-                    errors.append(f"启发式 2A [{strategy}] 失败：{e}")
+                    errors.append(translate("CATIACopilot", "启发式 2A [{0}] 失败：{1}").format(strategy, e))
 
         # ── 启发式补充：2B（仅 CATPart/CATProduct）───────────────────────
         heu_2b_results: list[tuple[str, str]] = []
@@ -533,7 +562,7 @@ class FindDependenciesDialog(QDialog):
                             heu_2b_results.append((strategy, h))
                 except Exception as e:
                     logger.warning(f"find_drawing_for_part [{strategy}] failed: {e}")
-                    errors.append(f"启发式 2B [{strategy}] 失败：{e}")
+                    errors.append(translate("CATIACopilot", "启发式 2B [{0}] 失败：{1}").format(strategy, e))
 
         # ── 填充结果表格 ──────────────────────────────────────────────────
         self._table.clear()
@@ -544,33 +573,33 @@ class FindDependenciesDialog(QDialog):
 
         # 节 1：正向查询
         if fwd_com_results:
-            self._add_section_header(f"正向查询（结构遍历）— 共 {len(fwd_com_results)} 项")
+            self._add_section_header(translate("CATIACopilot", "正向查询（结构遍历）— 共 {0} 项").format(len(fwd_com_results)))
             for path in fwd_com_results:
-                self._add_result_row("正向", path, c.DEP_COM_FG)
+                self._add_result_row(translate("CATIACopilot", "正向"), path, c.DEP_COM_FG)
 
         # 节 2：反向查询 — 已打开文档
         if rev_results:
-            self._add_section_header(f"反向查询（已打开文档）— 共 {len(rev_results)} 项")
+            self._add_section_header(translate("CATIACopilot", "反向查询（已打开文档）— 共 {0} 项").format(len(rev_results)))
             for path in rev_results:
-                self._add_result_row("反向", path, c.DEP_2B_FG)
+                self._add_result_row(translate("CATIACopilot", "反向"), path, c.DEP_2B_FG)
 
         # 节 3：启发式补充 2A
         if heu_2a_results:
-            self._add_section_header(f"启发式补充（图纸→零件）— 共 {len(heu_2a_results)} 项")
+            self._add_section_header(translate("CATIACopilot", "启发式补充（图纸→零件）— 共 {0} 项").format(len(heu_2a_results)))
             for strategy_key, path in heu_2a_results:
-                label = _HEURISTIC_LABELS.get(strategy_key, strategy_key)
+                label = _heuristic_label(strategy_key)
                 self._add_result_row(label, path, c.DEP_2A_FG)
 
         # 节 4：启发式补充 2B
         if heu_2b_results:
-            self._add_section_header(f"启发式补充（零件→图纸）— 共 {len(heu_2b_results)} 项")
+            self._add_section_header(translate("CATIACopilot", "启发式补充（零件→图纸）— 共 {0} 项").format(len(heu_2b_results)))
             for strategy_key, path in heu_2b_results:
-                label = _HEURISTIC_LABELS.get(strategy_key, strategy_key)
+                label = _heuristic_label(strategy_key)
                 self._add_result_row(label, path, c.DEP_2B_FG)
 
         # 错误
         if errors:
-            self._add_section_header("搜索期间遇到以下错误")
+            self._add_section_header(translate("CATIACopilot", "搜索期间遇到以下错误"))
             for err in errors:
                 item = QTreeWidgetItem(["", f"⚠ {err}", ""])
                 item.setData(0, _ROLE_IS_HDR, True)
@@ -579,12 +608,12 @@ class FindDependenciesDialog(QDialog):
 
         # 汇总行
         if total == 0 and not errors:
-            item = QTreeWidgetItem(["", "未找到任何依赖项目。", ""])
+            item = QTreeWidgetItem(["", translate("CATIACopilot", "未找到任何依赖项目。"), ""])
             item.setData(0, _ROLE_IS_HDR, True)
             item.setForeground(1, QBrush(c.DEP_EMPTY_FG))
             self._table.addTopLevelItem(item)
         elif total > 0:
-            item = QTreeWidgetItem(["", f"搜索完成，共找到 {total} 个结果。", ""])
+            item = QTreeWidgetItem(["", translate("CATIACopilot", "搜索完成，共找到 {0} 个结果。").format(total), ""])
             item.setData(0, _ROLE_IS_HDR, True)
             item.setForeground(1, QBrush(c.DEP_DONE_FG))
             self._table.addTopLevelItem(item)
@@ -660,12 +689,17 @@ class FindDependenciesDialog(QDialog):
             except Exception:
                 pass
         except Exception as e:
-            QMessageBox.critical(self, "全部打开失败", f"无法连接 CATIA ：\n{e}")
+            QMessageBox.critical(
+                self,
+                translate("CATIACopilot", "全部打开失败"),
+                translate("CATIACopilot", "无法连接 CATIA ：\n{0}").format(e),
+            )
             return
         if errors:
             QMessageBox.warning(
-                self, "部分文件打开失败",
-                "以下文件打开失败：\n" + "\n".join(errors),
+                self,
+                translate("CATIACopilot", "部分文件打开失败"),
+                translate("CATIACopilot", "以下文件打开失败：\n{0}").format("\n".join(errors)),
             )
 
     def _open_in_catia(self, fp: str) -> None:
@@ -673,8 +707,9 @@ class FindDependenciesDialog(QDialog):
             open_document(fp, foreground=True)
         except Exception as e:
             QMessageBox.critical(
-                self, "打开失败",
-                f"无法在 CATIA 中打开文件：\n{fp}\n\n{e}",
+                self,
+                translate("CATIACopilot", "打开失败"),
+                translate("CATIACopilot", "无法在 CATIA 中打开文件：\n{0}\n\n{1}").format(fp, e),
             )
 
     # -----------------------------------------------------------------------
@@ -728,7 +763,7 @@ class FindDependenciesDialog(QDialog):
                     menu.addSeparator()
 
         # ── 打开路径 ──────────────────────────────────────────────────────
-        act_open_path = menu.addAction("打开路径")
+        act_open_path = menu.addAction(translate("CATIACopilot", "打开路径"))
         path_available = (
             bool(fp) and fp_path is not None
             and (fp_path.exists() or fp_path.parent.exists())
@@ -736,11 +771,11 @@ class FindDependenciesDialog(QDialog):
         act_open_path.setEnabled(path_available)
 
         # ── 复制路径 ──────────────────────────────────────────────────────
-        act_copy_path = menu.addAction("复制路径")
+        act_copy_path = menu.addAction(translate("CATIACopilot", "复制路径"))
         act_copy_path.setEnabled(bool(fp))
 
         # ── 在 CATIA 中打开 ───────────────────────────────────────────────
-        act_open_catia = menu.addAction("在 CATIA 中打开")
+        act_open_catia = menu.addAction(translate("CATIACopilot", "在 CATIA 中打开"))
         act_open_catia.setEnabled(bool(fp))
 
         action = menu.exec(self._table.viewport().mapToGlobal(pos))

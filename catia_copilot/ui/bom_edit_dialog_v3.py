@@ -86,11 +86,14 @@ from catia_copilot.constants import (
     PART_NUMBER_VALID_PATTERN,
     PRESET_USER_REF_PROPERTIES,
     PRESET_USER_REF_PROPERTY_OPTIONS,
-    SOURCE_OPTIONS,
     SOURCE_TO_DISPLAY,
     TYPE_DISPLAY_NAMES,
+    bom_column_display,
+    source_display,
+    type_display,
     BomNodeType,
 )
+from catia_copilot.i18n import translate
 from catia_copilot.ui.bom_file_rename_dialog import _FileRenameDialog
 from catia_copilot.ui.bom_widgets import (
     _ITEM_LOCKED_ROLE,
@@ -122,6 +125,31 @@ def _make_tree_combo(items: list[str]) -> QComboBox:
     return combo
 
 
+def _build_source_combo() -> QComboBox:
+    """构造 Source 列下拉框。
+
+    显示文案随界面语言翻译；itemData 固定为存储值 "0"/"1"/"2"，
+    写回时读取 currentData()，禁止对显示文本做中文反查。
+    """
+    combo = _make_tree_combo([])
+    for raw in ("0", "1", "2"):
+        combo.addItem(source_display(raw), raw)
+    return combo
+
+
+def _set_combo_value(combo: QComboBox, value: str) -> None:
+    """按值刷新嵌入行的 combo 当前项。
+
+    优先按 itemData 精确匹配（Source 列原始值 "0"/"1"/"2"），
+    未命中时回退到文本匹配（label 显示文案），保证 undo/redo/刷新均不看界面语言。
+    """
+    idx = combo.findData(value)
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+    else:
+        combo.setCurrentText(value)
+
+
 class BomEditDialogV3(QDialog):
     """可编辑 BOM 表格（V3，part_master / instance 分离架构）。
 
@@ -136,7 +164,7 @@ class BomEditDialogV3(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("BOM 工作台 V3")
+        self.setWindowTitle(translate("CATIACopilot", "BOM 工作台 V3"))
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
         self.setWindowFlags(
@@ -239,18 +267,18 @@ class BomEditDialogV3(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # 数据来源选择行
-        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
+        self._use_active_chk = QCheckBox(translate("CATIACopilot", "使用当前 CATIA 活动文档（无需手动选择文件）"))
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
         file_row = QHBoxLayout()
         self._file_edit       = QLineEdit()
-        self._file_edit.setPlaceholderText("选择一个 CATProduct 文件...")
+        self._file_edit.setPlaceholderText(translate("CATIACopilot", "选择一个 CATProduct 文件..."))
         self._file_edit.setReadOnly(True)
-        self._file_browse_btn = QPushButton("浏览...")
+        self._file_browse_btn = QPushButton(translate("CATIACopilot", "浏览..."))
         self._file_browse_btn.clicked.connect(self._browse_file)
-        self._load_btn        = QPushButton("加载 BOM")
-        self._load_btn.setToolTip("从文件或当前活动文档加载 BOM （F5）")
+        self._load_btn        = QPushButton(translate("CATIACopilot", "加载 BOM"))
+        self._load_btn.setToolTip(translate("CATIACopilot", "从文件或当前活动文档加载 BOM （F5）"))
         self._load_btn.clicked.connect(self._load_bom)
         file_row.addWidget(self._file_edit)
         file_row.addWidget(self._file_browse_btn)
@@ -262,7 +290,7 @@ class BomEditDialogV3(QDialog):
         groups_row.setSpacing(8)
 
         # ── 左侧：BOM类型与显示选项（紧凑分组）──────────────────────────────
-        display_group  = QGroupBox("BOM 类型与显示选项")
+        display_group  = QGroupBox(translate("CATIACopilot", "BOM 类型与显示选项"))
         display_layout = QVBoxLayout(display_group)
         display_layout.setSpacing(4)
         display_layout.setContentsMargins(8, 6, 8, 6)
@@ -270,11 +298,11 @@ class BomEditDialogV3(QDialog):
         # 第一行：单选按钮 + 汇总选项
         bom_type_row = QHBoxLayout()
         self._bom_type_btn_group = QButtonGroup(self)
-        self._radio_full_bom     = QRadioButton("完整 BOM")
-        self._radio_hierarchical = QRadioButton("层级 BOM")
-        self._radio_summary_bom  = QRadioButton("汇总 BOM")
+        self._radio_full_bom     = QRadioButton(translate("CATIACopilot", "完整 BOM"))
+        self._radio_hierarchical = QRadioButton(translate("CATIACopilot", "层级 BOM"))
+        self._radio_summary_bom  = QRadioButton(translate("CATIACopilot", "汇总 BOM"))
         self._radio_full_bom.setToolTip(
-            "显示完整产品树，每个实例单独一行，包含实例名列"
+            translate("CATIACopilot", "显示完整产品树，每个实例单独一行，包含实例名列")
         )
         self._radio_full_bom.setMinimumHeight(24)
         if self._full_bom:
@@ -298,9 +326,9 @@ class BomEditDialogV3(QDialog):
         summary_opts_layout.setContentsMargins(0, 0, 0, 0)
         summary_opts_layout.setSpacing(8)
 
-        self._include_assemblies_chk = QCheckBox("包含产品和部件")
+        self._include_assemblies_chk = QCheckBox(translate("CATIACopilot", "包含产品和部件"))
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。"
+            translate("CATIACopilot", "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。")
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
@@ -314,14 +342,14 @@ class BomEditDialogV3(QDialog):
         full_bom_opts_layout.setContentsMargins(0, 0, 0, 0)
         full_bom_opts_layout.setSpacing(8)
 
-        self._show_instance_name_chk = QCheckBox("实例名")
-        self._show_instance_name_chk.setToolTip("完整 BOM 模式下显示实例名列（product.Name）")
+        self._show_instance_name_chk = QCheckBox(translate("CATIACopilot", "实例名"))
+        self._show_instance_name_chk.setToolTip(translate("CATIACopilot", "完整 BOM 模式下显示实例名列（product.Name）"))
         self._show_instance_name_chk.setChecked(self._show_instance_name_col)
         self._show_instance_name_chk.toggled.connect(self._on_full_bom_cols_toggled)
         full_bom_opts_layout.addWidget(self._show_instance_name_chk)
 
-        self._show_description_inst_chk = QCheckBox("实例描述")
-        self._show_description_inst_chk.setToolTip("完整 BOM 模式下显示实例描述列（product.DescriptionInst）")
+        self._show_description_inst_chk = QCheckBox(translate("CATIACopilot", "实例描述"))
+        self._show_description_inst_chk.setToolTip(translate("CATIACopilot", "完整 BOM 模式下显示实例描述列（product.DescriptionInst）"))
         self._show_description_inst_chk.setChecked(self._show_description_inst_col)
         self._show_description_inst_chk.toggled.connect(self._on_full_bom_cols_toggled)
         full_bom_opts_layout.addWidget(self._show_description_inst_chk)
@@ -335,9 +363,9 @@ class BomEditDialogV3(QDialog):
         # 第二行：筛选框
         filter_row = QHBoxLayout()
         filter_row.setSpacing(6)
-        filter_row.addWidget(QLabel("筛选:"))
+        filter_row.addWidget(QLabel(translate("CATIACopilot", "筛选:")))
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("按零件编号、术语、文件名等关键字搜索行…")
+        self._filter_edit.setPlaceholderText(translate("CATIACopilot", "按零件编号、术语、文件名等关键字搜索行…"))
         self._filter_edit.setClearButtonEnabled(True)
         self._filter_edit.textChanged.connect(self._on_filter_changed)
         filter_row.addWidget(self._filter_edit)
@@ -346,7 +374,7 @@ class BomEditDialogV3(QDialog):
         groups_row.addWidget(display_group, 0)
 
         # ── 右侧：属性列（勾选以显示）────────────────────────────────────────
-        preset_group  = QGroupBox("属性列（勾选以显示）")
+        preset_group  = QGroupBox(translate("CATIACopilot", "属性列（勾选以显示）"))
         preset_main_layout = QVBoxLayout(preset_group)
         preset_main_layout.setSpacing(4)
         preset_main_layout.setContentsMargins(8, 6, 8, 6)
@@ -357,20 +385,20 @@ class BomEditDialogV3(QDialog):
         row0 = QHBoxLayout()
         row0.setSpacing(12)
 
-        fn_cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get("Filename", "Filename"))
+        fn_cb = QCheckBox(bom_column_display("Filename"))
         fn_cb.setChecked(self._show_filename_col)
         fn_cb.toggled.connect(self._on_preset_col_toggled)
         row0.addWidget(fn_cb)
         self._preset_checkboxes["Filename"] = fn_cb
 
-        self._filepath_chk = QCheckBox("显示完整路径")
-        self._filepath_chk.setToolTip("勾选后文件名列将显示文件完整路径（含目录），而非仅文件名")
+        self._filepath_chk = QCheckBox(translate("CATIACopilot", "显示完整路径"))
+        self._filepath_chk.setToolTip(translate("CATIACopilot", "勾选后文件名列将显示文件完整路径（含目录），而非仅文件名"))
         self._filepath_chk.setChecked(self._show_filepath_col)
         self._filepath_chk.toggled.connect(self._on_show_filepath_toggled)
         row0.addWidget(self._filepath_chk)
 
         for col_name in BOM_HIDEABLE_COLUMNS:
-            cb = QCheckBox(BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
+            cb = QCheckBox(bom_column_display(col_name))
             cb.setChecked(col_name in self._visible_hideable_cols)
             cb.toggled.connect(self._on_hideable_col_toggled)
             row0.addWidget(cb)
@@ -396,9 +424,10 @@ class BomEditDialogV3(QDialog):
         layout.addLayout(groups_row)
 
         hint = QLabel(
-            "层级 / 类型 / 数量 为结构属性，不可编辑，"
-            "零件编号可编辑但不能与其他行冲突，"
-            "文件名/路径可编辑。"
+            translate("CATIACopilot",
+                "层级 / 类型 / 数量 为结构属性，不可编辑，"
+                "零件编号可编辑但不能与其他行冲突，"
+                "文件名/路径可编辑。")
         )
         hint.setWordWrap(True)
         hint.setObjectName("hintLabel")
@@ -432,24 +461,24 @@ class BomEditDialogV3(QDialog):
         # 底部按钮行
         btn_row = QHBoxLayout()
 
-        autofit_btn = QPushButton("自适应列宽")
-        autofit_btn.setToolTip("根据内容自动调整所有列的宽度")
+        autofit_btn = QPushButton(translate("CATIACopilot", "自适应列宽"))
+        autofit_btn.setToolTip(translate("CATIACopilot", "根据内容自动调整所有列的宽度"))
         autofit_btn.clicked.connect(self._autofit_columns)
         btn_row.addWidget(autofit_btn)
 
-        expand_btn = QPushButton("全部展开")
-        expand_btn.setToolTip("展开结构树中的所有节点")
+        expand_btn = QPushButton(translate("CATIACopilot", "全部展开"))
+        expand_btn.setToolTip(translate("CATIACopilot", "展开结构树中的所有节点"))
         expand_btn.clicked.connect(self._table.expandAll)
         btn_row.addWidget(expand_btn)
 
-        collapse_btn = QPushButton("全部折叠")
-        collapse_btn.setToolTip("折叠结构树中的所有节点")
+        collapse_btn = QPushButton(translate("CATIACopilot", "全部折叠"))
+        collapse_btn.setToolTip(translate("CATIACopilot", "折叠结构树中的所有节点"))
         collapse_btn.clicked.connect(self._table.collapseAll)
         btn_row.addWidget(collapse_btn)
 
         self._undo_btn = QPushButton("↶")
-        self._undo_btn.setAccessibleName("撤销")
-        self._undo_btn.setToolTip("撤销上一步字段编辑（Ctrl+Z）")
+        self._undo_btn.setAccessibleName(translate("CATIACopilot", "撤销"))
+        self._undo_btn.setToolTip(translate("CATIACopilot", "撤销上一步字段编辑（Ctrl+Z）"))
         self._undo_btn.setShortcut(QKeySequence("Ctrl+Z"))
         self._undo_btn.setEnabled(False)
         self._undo_btn.clicked.connect(self._undo)
@@ -459,8 +488,8 @@ class BomEditDialogV3(QDialog):
         btn_row.addWidget(self._undo_btn)
 
         self._redo_btn = QPushButton("↷")
-        self._redo_btn.setAccessibleName("重做")
-        self._redo_btn.setToolTip("重做上一步撤销的编辑（Ctrl+Y）")
+        self._redo_btn.setAccessibleName(translate("CATIACopilot", "重做"))
+        self._redo_btn.setToolTip(translate("CATIACopilot", "重做上一步撤销的编辑（Ctrl+Y）"))
         self._redo_btn.setShortcut(QKeySequence("Ctrl+Y"))
         self._redo_btn.setEnabled(False)
         self._redo_btn.clicked.connect(self._redo)
@@ -475,17 +504,17 @@ class BomEditDialogV3(QDialog):
 
         btn_row.addStretch()
 
-        self._export_btn = QPushButton("导出表格")
-        self._export_btn.setToolTip("将当前表格导出为 Excel （.xlsx）或 CSV 文件（Ctrl+E）")
+        self._export_btn = QPushButton(translate("CATIACopilot", "导出表格"))
+        self._export_btn.setToolTip(translate("CATIACopilot", "将当前表格导出为 Excel （.xlsx）或 CSV 文件（Ctrl+E）"))
         self._export_btn.setEnabled(False)
         self._export_btn.setShortcut(QKeySequence("Ctrl+E"))
         self._export_btn.clicked.connect(self._export_table)
         btn_row.addWidget(self._export_btn)
 
-        self._finish_btn = QPushButton("关闭")
+        self._finish_btn = QPushButton(translate("CATIACopilot", "关闭"))
         self._finish_btn.setDefault(False)
         self._finish_btn.setEnabled(True)
-        self._finish_btn.setToolTip("关闭对话框（所有修改已即时写回 CATIA ）")
+        self._finish_btn.setToolTip(translate("CATIACopilot", "关闭对话框（所有修改已即时写回 CATIA ）"))
         self._finish_btn.setShortcut(QKeySequence("Ctrl+Return"))
         self._finish_btn.clicked.connect(self.accept)
 
@@ -713,9 +742,9 @@ class BomEditDialogV3(QDialog):
         result = []
         for c in self._columns:
             if c == "Filename" and self._show_filepath_col:
-                result.append("完整路径")
+                result.append(bom_column_display("Filepath"))
             else:
-                result.append(BOM_COLUMN_DISPLAY_NAMES.get(c, c))
+                result.append(bom_column_display(c))
         return result
 
     def _build_visible_columns(self) -> list[str]:
@@ -797,9 +826,9 @@ class BomEditDialogV3(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择 CATProduct 文件",
+            self, translate("CATIACopilot", "选择 CATProduct 文件"),
             self._last_browse_dir,
-            "*.CATProduct (*.CATProduct);;All Files (*)",
+            translate("CATIACopilot", "*.CATProduct (*.CATProduct);;All Files (*)"),
         )
         if file:
             self._file_edit.setText(file)
@@ -814,24 +843,24 @@ class BomEditDialogV3(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请先选择一个 CATProduct 文件。")
+                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), translate("CATIACopilot", "请先选择一个 CATProduct 文件。"))
                 return
             if not Path(file_path).exists():
-                QMessageBox.warning(self, "文件不存在", f"文件不存在：\n{file_path}")
+                QMessageBox.warning(self, translate("CATIACopilot", "文件不存在"), translate("CATIACopilot", "文件不存在：\n{0}").format(file_path))
                 return
 
         self._load_btn.setEnabled(False)
-        self._load_btn.setText("加载中…")
+        self._load_btn.setText(translate("CATIACopilot", "加载中…"))
         QApplication.processEvents()
 
-        progress = QProgressDialog("正在加载 BOM ，请稍候…", None, 0, 0, self)
-        progress.setWindowTitle("加载 BOM")
+        progress = QProgressDialog(translate("CATIACopilot", "正在加载 BOM ，请稍候…"), None, 0, 0, self)
+        progress.setWindowTitle(translate("CATIACopilot", "加载 BOM"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            progress.setLabelText(f"正在加载 BOM ，请稍候… 已读取 {count} 个节点")
+            progress.setLabelText(translate("CATIACopilot", "正在加载 BOM ，请稍候… 已读取 {0} 个节点").format(count))
             progress.repaint()
             QApplication.processEvents()
 
@@ -848,17 +877,17 @@ class BomEditDialogV3(QDialog):
             progress.close()
             logger.error(f"Failed to load BOM for edit: {e}")
             QMessageBox.critical(
-                self, "加载失败",
-                f"加载 BOM 时出错：\n{e}\n\n请确保 CATIA 已启动。",
+                self, translate("CATIACopilot", "加载失败"),
+                translate("CATIACopilot", "加载 BOM 时出错：\n{0}\n\n请确保 CATIA 已启动。").format(e),
             )
             self._load_btn.setEnabled(True)
-            self._load_btn.setText("加载 BOM")
+            self._load_btn.setText(translate("CATIACopilot", "加载 BOM"))
             return
         finally:
             progress.close()
 
         self._load_btn.setEnabled(True)
-        self._load_btn.setText("重新加载 BOM")
+        self._load_btn.setText(translate("CATIACopilot", "重新加载 BOM"))
 
         # 保存 part_masters 属性仓库、根 pm_key 和反向索引
         self._root_pm_key     = root_pm_key
@@ -969,13 +998,11 @@ class BomEditDialogV3(QDialog):
                     raw    = str(row_data.get("Source", ""))
                     pm_key_src = str(row_data.get("_pm_key", ""))
                     pn_val = get_part_master_attr(self._part_masters, pm_key_src, "Source", raw)
-                    # source 存原始值，转换为显示值
-                    pn_val = SOURCE_TO_DISPLAY.get(pn_val, SOURCE_OPTIONS[0])
-                    if pn_val not in SOURCE_OPTIONS:
-                        pn_val = SOURCE_OPTIONS[0]
-                    combo = _make_tree_combo(SOURCE_OPTIONS)
+                    # itemData 固定为存储值 "0"/"1"/"2"，显示文案随界面语言
+                    combo = _build_source_combo()
                     combo.blockSignals(True)
-                    combo.setCurrentText(pn_val)
+                    idx = combo.findData(str(pn_val))
+                    combo.setCurrentIndex(idx if idx >= 0 else 0)
                     combo.blockSignals(False)
                     if row_locked:
                         combo.setEnabled(False)
@@ -1026,20 +1053,22 @@ class BomEditDialogV3(QDialog):
                     fp = str(row_data.get("_filepath", ""))
                     fn = str(row_data.get("Filename", ""))
                     if no_file:
-                        # 文件未保存到磁盘：固定显示哨兵文本
-                        value = FILENAME_UNSAVED
+                        # 文件未保存到磁盘：固定显示哨兵文本（随界面语言翻译）
+                        value = translate("CATIACopilot", "未保存")
                     elif self._show_filepath_col:
                         value = fp if fp else fn
                     else:
                         # 已知路径时显示带扩展名的文件名；
                         # 未知路径时回退到存储的文件名茎（可能等于 FILENAME_NOT_FOUND）
                         value = Path(fp).name if fp else fn
+                    if not no_file and value == FILENAME_NOT_FOUND:
+                        value = translate("CATIACopilot", "未检索到")
                 elif col_name == "Filepath":
                     value = str(row_data.get("_filepath", ""))
                 elif col_name in BOM_READONLY_COLUMNS:
                     raw = str(row_data.get(col_name, ""))
-                    # Type 列存储英文 key，显示时转为中文
-                    value = TYPE_DISPLAY_NAMES.get(raw, raw) if col_name == "Type" else raw
+                    # Type 列存储英文 key，显示时经工厂翻译
+                    value = type_display(raw) if col_name == "Type" else raw
                 elif col_name == BOM_INSTANCE_NAME_COLUMN:
                     # 实例名：实例级属性，从 _inst_key_to_info 取
                     inst_info = self._inst_key_to_info.get(inst_key) if inst_key is not None else None
@@ -1085,9 +1114,9 @@ class BomEditDialogV3(QDialog):
                     item.setForeground(ci, grey)
                     item.setBackground(ci, bg)
                 tip = (
-                    "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
+                    translate("CATIACopilot", "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。")
                     if not_found else
-                    "该零件/产品处于轻量化模式，无法读取属性。"
+                    translate("CATIACopilot", "该零件/产品处于轻量化模式，无法读取属性。")
                 )
                 for ci in range(len(self._columns)):
                     item.setToolTip(ci, tip)
@@ -1095,7 +1124,7 @@ class BomEditDialogV3(QDialog):
             # _no_file 行（文件未保存到磁盘）：不锁定，但以淡黄背景和专属提示标识
             if no_file:
                 c = _get_colors(theme_manager.current_mode())
-                no_file_tip = "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。"
+                no_file_tip = translate("CATIACopilot", "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。")
                 for ci in range(len(self._columns)):
                     item.setBackground(ci, c.ROW_UNSAVED_BG)
                     item.setToolTip(ci, no_file_tip)
@@ -1162,16 +1191,16 @@ class BomEditDialogV3(QDialog):
                         item.setData(ci, Qt.ItemDataRole.ForegroundRole, None)
                 if row_locked:
                     tip = (
-                        "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
+                        translate("CATIACopilot", "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。")
                         if not_found else
-                        "该零件/产品处于轻量化模式，无法读取属性。"
+                        translate("CATIACopilot", "该零件/产品处于轻量化模式，无法读取属性。")
                     )
                     for ci in range(col_count):
                         item.setForeground(ci, c.ROW_LOCKED_FG)
                         item.setBackground(ci, c.ROW_NOT_FOUND_BG if not_found else c.ROW_LIGHTWEIGHT_BG)
                         item.setToolTip(ci, tip)
                 elif no_file:
-                    no_file_tip = "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。"
+                    no_file_tip = translate("CATIACopilot", "该零件尚未保存到磁盘，可通过右键菜单「另存为」将其保存。")
                     for ci in range(col_count):
                         item.setBackground(ci, c.ROW_UNSAVED_BG)
                         item.setToolTip(ci, no_file_tip)
@@ -1192,7 +1221,7 @@ class BomEditDialogV3(QDialog):
         return self._inst_key_to_product.get(inst_key)
 
     def _write_cell_to_catia(self, inst_key, col_name: str, value: str,
-                             label: str = "已写回") -> bool:
+                             label: str = translate("CATIACopilot", "已写回")) -> bool:
         """通过缓存 COM 引用将单个单元格值立即写入 CATIA。返回是否成功。
 
         参数：
@@ -1207,7 +1236,7 @@ class BomEditDialogV3(QDialog):
         inst_info = self._inst_key_to_info.get(inst_key)
         product   = self._get_product(inst_key)
         if product is None:
-            self._last_write_status = f"⚠ 未找到 COM 引用（inst_key={inst_key!r}）"
+            self._last_write_status = translate("CATIACopilot", "⚠ 未找到 COM 引用（inst_key={0}）").format(inst_key)
             self._update_status()
             return False
 
@@ -1224,10 +1253,10 @@ class BomEditDialogV3(QDialog):
             if success:
                 self._last_write_status = f"{label}：{pn!r}.{col_name} = {value!r}"
             else:
-                self._last_write_status = f"⚠ 写入失败：{pn!r}.{col_name} = {value!r}"
+                self._last_write_status = translate("CATIACopilot", "⚠ 写入失败：{0}.{1} = {2}").format(pn, col_name, value)
         except Exception as e:
             success = False
-            self._last_write_status = f"⚠ 写入异常：{pn!r}.{col_name}: {e}"
+            self._last_write_status = translate("CATIACopilot", "⚠ 写入异常：{0}.{1}: {2}").format(pn, col_name, e)
             logger.error("_write_cell_to_catia: 异常 inst_key=%r col=%r: %s",
                          inst_key, col_name, e)
         self._update_status()
@@ -1285,9 +1314,24 @@ class BomEditDialogV3(QDialog):
     def _on_source_changed(self, row_idx: int, text: str) -> None:
         if self._is_updating:
             return
-        # Source 显示值→原始值（"0"/"1"/"2"），写入 part_master 存原始值
-        raw = {"未知": "0", "自制": "1", "外购": "2"}.get(text, text)
+        # 存储值从 combo 的 itemData 读取（"0"/"1"/"2"），禁止对显示文本反查
+        raw = self._read_source_raw(row_idx, text)
         self._handle_combo_col_change(row_idx, "Source", display_value=text, store_value=raw)
+
+    def _read_source_raw(self, row_idx: int, fallback: str) -> str:
+        """从 row_idx 行的 Source 下拉框读取当前 itemData 存储值。"""
+        if "Source" not in self._columns:
+            return fallback
+        if row_idx >= len(self._item_by_row):
+            return fallback
+        item = self._item_by_row[row_idx]
+        if item is None:
+            return fallback
+        combo = self._table.itemWidget(item, self._columns.index("Source"))
+        if not isinstance(combo, QComboBox):
+            return fallback
+        data = combo.currentData()
+        return data if isinstance(data, str) and data in ("0", "1", "2") else fallback
 
     # ── 用户自定义选项列变更 ──────────────────────────────────────────────────
 
@@ -1325,7 +1369,8 @@ class BomEditDialogV3(QDialog):
             if ik is not None:
                 insts_to_update.add(ik)
 
-        old_vals: dict = {}
+        old_store_vals: dict = {}
+        old_display_vals: dict = {}
         affected_pm_keys: set[str] = set()
         for r in direct_rows:
             pm_key = str(self._rows[r].get("_pm_key", ""))
@@ -1333,15 +1378,20 @@ class BomEditDialogV3(QDialog):
                 continue
             if pm_key in affected_pm_keys:
                 continue
-            # 旧值记录为显示值（撤销时恢复到界面）
+            # 旧值同时记录存储值（撤销回写用）与显示值（界面回滚用）
             old_store   = get_part_master_attr(self._part_masters, pm_key, col_name, "")
-            old_display = SOURCE_TO_DISPLAY.get(old_store, old_store) if col_name == "Source" else old_store
-            old_vals[pm_key] = old_display
+            old_display = source_display(old_store) if col_name == "Source" else old_store
+            old_store_vals[pm_key] = old_store
+            old_display_vals[pm_key] = old_display
             set_part_master_attr(self._part_masters, pm_key, col_name, store_value)
             write_ok = False
             for ik in self._pm_key_to_inst_keys.get(pm_key, []):
                 if self._get_product(ik) is not None:
-                    write_ok = self._write_cell_to_catia(ik, col_name, display_value)
+                    # Source 列写回存储值（"0"/"1"/"2"）而非显示文案，其余列二者一致
+                    write_ok = self._write_cell_to_catia(
+                        ik, col_name,
+                        store_value if col_name == "Source" else display_value,
+                    )
                     insts_to_update.add(ik)
                     break
             if write_ok:
@@ -1350,6 +1400,7 @@ class BomEditDialogV3(QDialog):
                 # 写入失败：回滚内存，不加入 affected_pm_keys（不更新界面为新值）
                 set_part_master_attr(self._part_masters, pm_key, col_name, old_store)
                 # 回滚触发行的 combo 显示值
+                old_display = old_display_vals.get(pm_key, old_store)
                 self._is_updating = True
                 try:
                     for r in direct_rows:
@@ -1368,9 +1419,10 @@ class BomEditDialogV3(QDialog):
             self._sync_pn_siblings_in_ui(pm_key, col_name, display_value, col_idx=col_idx)
 
         undo_actions = [
-            (pm_key, col_name, old_vals[pm_key], display_value)
+            # 撤销栈存存储值（raw），保证 undo/redo 写回 part_master 与 CATIA 时不受界面语言影响
+            (pm_key, col_name, old_store_vals[pm_key], store_value)
             for pm_key in affected_pm_keys
-            if pm_key in old_vals and old_vals[pm_key] != display_value
+            if pm_key in old_store_vals and old_store_vals[pm_key] != store_value
         ]
         if undo_actions:
             self._push_undo(undo_actions)
@@ -1422,8 +1474,8 @@ class BomEditDialogV3(QDialog):
             # ── 零件编号为空或仅含空格 ────────────────────────────────────────
             if not new_value.strip():
                 QMessageBox.warning(
-                    self, "零件编号不能为空",
-                    "零件编号不能为空或仅含空格，请输入有效的零件编号。",
+                    self, translate("CATIACopilot", "零件编号不能为空"),
+                    translate("CATIACopilot", "零件编号不能为空或仅含空格，请输入有效的零件编号。"),
                 )
                 self._is_updating = True
                 item.setText(col_idx, pn)   # 回退到行中存储的旧 PN
@@ -1433,10 +1485,11 @@ class BomEditDialogV3(QDialog):
             # ── 字符合法性校验 ────────────────────────────────────────────────
             if not PART_NUMBER_VALID_PATTERN.fullmatch(new_value):
                 QMessageBox.warning(
-                    self, "零件编号含非法字符",
-                    f"零件编号 \"{new_value}\" 含有非法字符。\n"
-                    "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
-                    "（\\ / : * ? \" < > |）。",
+                    self, translate("CATIACopilot", "零件编号含非法字符"),
+                    translate("CATIACopilot",
+                        "零件编号 \"{0}\" 含有非法字符。\n"
+                        "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
+                        "（\\ / : * ? \" < > |）。").format(new_value),
                 )
                 self._is_updating = True
                 item.setText(col_idx, pn)
@@ -1459,12 +1512,14 @@ class BomEditDialogV3(QDialog):
                 row_pm_key = str(self._rows[r].get("_pm_key", ""))
                 if self._is_pn_conflicting(row_pm_key, new_value):
                     msg = (
-                        f"零件编号 \"{new_value}\" 与同一产品文件内已有的零件编号冲突，"
-                        "CATIA 不允许。"
+                        translate("CATIACopilot",
+                            "零件编号 \"{0}\" 与同一产品文件内已有的零件编号冲突，"
+                            "CATIA 不允许。").format(new_value)
                         if ":" in row_pm_key else
-                        f"零件编号 \"{new_value}\" 与现有零件编号冲突，不允许修改。"
+                        translate("CATIACopilot",
+                            "零件编号 \"{0}\" 与现有零件编号冲突，不允许修改。").format(new_value)
                     )
-                    QMessageBox.warning(self, "零件编号冲突", msg)
+                    QMessageBox.warning(self, translate("CATIACopilot", "零件编号冲突"), msg)
                     self._is_updating = True
                     item.setText(col_idx, pn)
                     self._is_updating = False
@@ -1503,7 +1558,7 @@ class BomEditDialogV3(QDialog):
                         "_on_item_changed: rename_part_master 失败 pm_key=%r new_pn=%r",
                         row_pm_key, new_value,
                     )
-                    self._last_write_status = f"⚠ 零件编号修改失败（pm_key={row_pm_key!r}）"
+                    self._last_write_status = translate("CATIACopilot", "⚠ 零件编号修改失败（pm_key={0}）").format(row_pm_key)
                     self._update_status()
                     self._is_updating = True
                     item.setText(col_idx, old_val)
@@ -1622,8 +1677,8 @@ class BomEditDialogV3(QDialog):
             self._update_status()   # 立即刷新状态栏，不等外层调用
 
         if not new_value.strip():
-            QMessageBox.warning(self, "实例名称不能为空",
-                                "实例名称不能为空或仅含空格。")
+            QMessageBox.warning(self, translate("CATIACopilot", "实例名称不能为空"),
+                                translate("CATIACopilot", "实例名称不能为空或仅含空格。"))
             _rollback()
             return
 
@@ -1635,9 +1690,10 @@ class BomEditDialogV3(QDialog):
                 continue   # 跳过自身
             if sib.get("instance_name") == new_value:
                 QMessageBox.warning(
-                    self, "实例名称冲突",
-                    f"同一父节点下已存在实例名称 \"{new_value}\"，\n"
-                    "请使用不同的实例名称。",
+                    self, translate("CATIACopilot", "实例名称冲突"),
+                    translate("CATIACopilot",
+                        "同一父节点下已存在实例名称 \"{0}\"，\n"
+                        "请使用不同的实例名称。").format(new_value),
                 )
                 _rollback()
                 return
@@ -1649,10 +1705,10 @@ class BomEditDialogV3(QDialog):
                                 new_value, self._all_custom_columns)
                 if not ok:
                     # bom_write.py 已 warning 记录底层原因，此处只更新状态栏并回滚
-                    self._last_write_status = f"⚠ 写入失败：实例名 {old_val!r} → {new_value!r}"
+                    self._last_write_status = translate("CATIACopilot", "⚠ 写入失败：实例名 {0} → {1}").format(old_val, new_value)
                     _rollback()
                 else:
-                    self._last_write_status = f"已写回：实例名 {old_val!r} → {new_value!r}"
+                    self._last_write_status = translate("CATIACopilot", "已写回：实例名 {0} → {1}").format(old_val, new_value)
 
                     # 更新 inst_info（唯一真相）
                     inst_info["instance_name"] = new_value
@@ -1672,11 +1728,11 @@ class BomEditDialogV3(QDialog):
                     self._push_undo([(inst_key, BOM_INSTANCE_NAME_COLUMN, old_val, new_value)])
 
             except Exception as e:
-                self._last_write_status = f"⚠ 写入异常：实例名 {old_val!r}: {e}"
+                self._last_write_status = translate("CATIACopilot", "⚠ 写入异常：实例名 {0}: {1}").format(old_val, e)
                 logger.error("_handle_instance_name_changed: 异常 inst_key=%r: %s", inst_key, e)
                 _rollback()
         else:
-            self._last_write_status = f"⚠ 未找到实例 COM 引用（行 {row_idx + 1}）"
+            self._last_write_status = translate("CATIACopilot", "⚠ 未找到实例 COM 引用（行 {0}）").format(row_idx + 1)
         self._update_status()
 
     # ── 批量单元格写入（内部辅助） ────────────────────────────────────────────
@@ -1815,7 +1871,7 @@ class BomEditDialogV3(QDialog):
                         if isinstance(widget, QComboBox):
                             if widget.currentText() != new_value:
                                 widget.blockSignals(True)
-                                widget.setCurrentText(new_value)
+                                _set_combo_value(widget, new_value)
                                 widget.blockSignals(False)
                         else:
                             if tree_item.text(col_idx) != new_value:
@@ -1893,7 +1949,7 @@ class BomEditDialogV3(QDialog):
             forward: True 应用 new_val（重做），False 应用 old_val（撤销）。
         """
         insts_affected: set = set()
-        _label = "已重做" if forward else "已撤销"
+        _label = translate("CATIACopilot", "已重做") if forward else translate("CATIACopilot", "已撤销")
         self._is_updating = True
         try:
             for key, col_name, old_val, new_val in actions:
@@ -1907,7 +1963,7 @@ class BomEditDialogV3(QDialog):
                     if product is not None:
                         try:
                             product.Name = value
-                            self._last_write_status = f"{_label}：实例名 → {value!r}"
+                            self._last_write_status = translate("CATIACopilot", "{0}：实例名 → {1}").format(_label, value)
                         except Exception as e:
                             logger.error("undo/redo instance name write error: %s", e)
                     # 唯一真相：只更新 _inst_key_to_info（即 part_masters 树）
@@ -1974,7 +2030,7 @@ class BomEditDialogV3(QDialog):
                                     widget = self._table.itemWidget(tree_item, col_idx)
                                     if isinstance(widget, QComboBox):
                                         widget.blockSignals(True)
-                                        widget.setCurrentText(value)
+                                        _set_combo_value(widget, value)
                                         widget.blockSignals(False)
                                     else:
                                         tree_item.setText(col_idx, value)
@@ -2037,7 +2093,13 @@ class BomEditDialogV3(QDialog):
                 col_idx = self._columns.index(col_name) if col_name in self._columns else -1
                 if col_idx >= 0:
                     widget = self._table.itemWidget(src_item, col_idx)
-                    src_value = widget.currentText() if isinstance(widget, QComboBox) else src_item.text(col_idx)
+                    if isinstance(widget, QComboBox):
+                        # 存储值优先从 itemData 读取（Source 列原始值 "0"/"1"/"2"），
+                        # 其它 combo 无 itemData 时回退到显示文本
+                        data = widget.currentData()
+                        src_value = data if data is not None else widget.currentText()
+                    else:
+                        src_value = src_item.text(col_idx)
                 else:
                     return
             else:
@@ -2046,9 +2108,10 @@ class BomEditDialogV3(QDialog):
         # 实例名列：同父下不允许重复，同值填充无意义，直接拒绝
         if col_name == BOM_INSTANCE_NAME_COLUMN:
             QMessageBox.information(
-                self, "无法批量填充",
-                "实例名称在同一父节点下必须唯一，不支持同值批量填充。\n"
-                "如需批量编号，请使用「序列填充」功能。",
+                self, translate("CATIACopilot", "无法批量填充"),
+                translate("CATIACopilot",
+                    "实例名称在同一父节点下必须唯一，不支持同值批量填充。\n"
+                    "如需批量编号，请使用「序列填充」功能。"),
             )
             return
 
@@ -2056,8 +2119,9 @@ class BomEditDialogV3(QDialog):
         fail_count = self._apply_cell_values(assignments)
         if fail_count:
             QMessageBox.warning(
-                self, "写入失败",
-                f"有 {fail_count} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。",
+                self, translate("CATIACopilot", "写入失败"),
+                translate("CATIACopilot",
+                    "有 {0} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。").format(fail_count),
             )
 
     # ── 序列填充 ──────────────────────────────────────────────────────────────
@@ -2120,7 +2184,7 @@ class BomEditDialogV3(QDialog):
         saved_suffix = self._edit_settings.value(_SETT_PFX + "suffix", "")
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("序列填充")
+        dlg.setWindowTitle(translate("CATIACopilot", "序列填充"))
         dlg.setFixedWidth(_DLG_W)
         root = QVBoxLayout(dlg)
         root.setSpacing(10)
@@ -2143,9 +2207,9 @@ class BomEditDialogV3(QDialog):
             main_grid.setColumnStretch(c, 0)
 
         # ── 行0：前缀 / 序列值（第1项） / 后缀 标题 ──────────────────────────
-        lbl_prefix = QLabel("前缀")
-        lbl_seq1h  = QLabel("序列值（第 1 项）")
-        lbl_suffix = QLabel("后缀")
+        lbl_prefix = QLabel(translate("CATIACopilot", "前缀"))
+        lbl_seq1h  = QLabel(translate("CATIACopilot", "序列值（第 1 项）"))
+        lbl_suffix = QLabel(translate("CATIACopilot", "后缀"))
         for lbl in (lbl_prefix, lbl_seq1h, lbl_suffix):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_grid.addWidget(lbl_prefix, 0, 1, Qt.AlignmentFlag.AlignCenter)
@@ -2154,7 +2218,7 @@ class BomEditDialogV3(QDialog):
 
         # ── 行1：前缀输入 / 序列值只读预览 / 后缀输入 ────────────────────────
         prefix_edit = QLineEdit(saved_prefix)
-        prefix_edit.setPlaceholderText("（可为空）")
+        prefix_edit.setPlaceholderText(translate("CATIACopilot", "（可为空）"))
         prefix_edit.setFixedHeight(_ROW_H)
         prefix_edit.setFixedWidth(_COL_W)
 
@@ -2162,12 +2226,12 @@ class BomEditDialogV3(QDialog):
         seq1_label.setFixedHeight(_ROW_H)
         seq1_label.setFixedWidth(_COL_W)
         seq1_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        seq1_label.setToolTip("第 1 项序列值（不含前后缀）")
+        seq1_label.setToolTip(translate("CATIACopilot", "第 1 项序列值（不含前后缀）"))
         seq1_label.setFrameShape(seq1_label.Shape.StyledPanel)  # 视觉上像输入框
         seq1_label.setFrameShadow(seq1_label.Shadow.Sunken)
 
         suffix_edit = QLineEdit(saved_suffix)
-        suffix_edit.setPlaceholderText("（可为空）")
+        suffix_edit.setPlaceholderText(translate("CATIACopilot", "（可为空）"))
         suffix_edit.setFixedHeight(_ROW_H)
         suffix_edit.setFixedWidth(_COL_W)
 
@@ -2176,9 +2240,9 @@ class BomEditDialogV3(QDialog):
         main_grid.addWidget(suffix_edit, 1, 3, Qt.AlignmentFlag.AlignCenter)
 
         # ── 行2：起始 / 步长 / 位数（填零） 标题 ────────────────────────────
-        lbl_start  = QLabel("起始数字")
-        lbl_step   = QLabel("步长")
-        lbl_digits = QLabel("位数（填零）")
+        lbl_start  = QLabel(translate("CATIACopilot", "起始数字"))
+        lbl_step   = QLabel(translate("CATIACopilot", "步长"))
+        lbl_digits = QLabel(translate("CATIACopilot", "位数（填零）"))
         for lbl in (lbl_start, lbl_step, lbl_digits):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_grid.addWidget(lbl_start,  2, 1, Qt.AlignmentFlag.AlignCenter)
@@ -2199,7 +2263,7 @@ class BomEditDialogV3(QDialog):
         start_alpha_edit.setFixedHeight(_ROW_H)
         start_alpha_edit.setFixedWidth(_COL_W)
         start_alpha_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        start_alpha_edit.setToolTip("起始字母（A~ZZ），仅允许大写英文字母")
+        start_alpha_edit.setToolTip(translate("CATIACopilot", "起始字母（A~ZZ），仅允许大写英文字母"))
         start_alpha_edit.setVisible(False)
 
         # 用容器把 start_spin / start_alpha_edit 叠放，切换时 setVisible
@@ -2221,7 +2285,7 @@ class BomEditDialogV3(QDialog):
         digits_spin = QSpinBox()
         digits_spin.setRange(0, 6)
         digits_spin.setValue(0)
-        digits_spin.setToolTip("数字最小位数（不足时补前导零）；0 = 不补零")
+        digits_spin.setToolTip(translate("CATIACopilot", "数字最小位数（不足时补前导零）；0 = 不补零"))
         digits_spin.setFixedHeight(_ROW_H)
         digits_spin.setFixedWidth(_COL_W)
 
@@ -2231,8 +2295,8 @@ class BomEditDialogV3(QDialog):
 
         # ── 行4：模式 toggle（跨3列） ─────────────────────────────────────────
         mode_group = QButtonGroup(dlg)
-        rb_numeric = QRadioButton("数字序列")
-        rb_alpha   = QRadioButton("字母序列（A, B…, Z, AA…, ZZ）")
+        rb_numeric = QRadioButton(translate("CATIACopilot", "数字序列"))
+        rb_alpha   = QRadioButton(translate("CATIACopilot", "字母序列（A, B…, Z, AA…, ZZ）"))
         rb_numeric.setChecked(True)
         mode_group.addButton(rb_numeric, 0)
         mode_group.addButton(rb_alpha,   1)
@@ -2280,14 +2344,14 @@ class BomEditDialogV3(QDialog):
             for i, lbl in enumerate(preview_labels):
                 is_last = (i == n_preview - 1) and (len(ordered_row_indices) > n_preview)
                 val  = pfx + _make_seq_value(i) + sfx
-                text = f"预览 {i + 1}：{val}"
+                text = translate("CATIACopilot", "预览 {0}：{1}").format(i + 1, val)
                 lbl.setText(text)
 
         def _on_mode_changed() -> None:
             is_numeric = rb_numeric.isChecked()
             start_spin.setVisible(is_numeric)
             start_alpha_edit.setVisible(not is_numeric)
-            lbl_start.setText("起始数字" if is_numeric else "起始字母")
+            lbl_start.setText(translate("CATIACopilot", "起始数字") if is_numeric else translate("CATIACopilot", "起始字母"))
             lbl_digits.setEnabled(is_numeric)
             digits_spin.setEnabled(is_numeric)
             _update_all()
@@ -2317,8 +2381,8 @@ class BomEditDialogV3(QDialog):
         # ── 行6：按钮 ─────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        ok_btn     = QPushButton("确定")
-        cancel_btn = QPushButton("取消")
+        ok_btn     = QPushButton(translate("CATIACopilot", "确定"))
+        cancel_btn = QPushButton(translate("CATIACopilot", "取消"))
         ok_btn.setDefault(True)
         ok_btn.clicked.connect(dlg.accept)
         cancel_btn.clicked.connect(dlg.reject)
@@ -2372,8 +2436,9 @@ class BomEditDialogV3(QDialog):
         fail_count = self._apply_cell_values(assignments)
         if fail_count:
             QMessageBox.warning(
-                self, "写入失败",
-                f"有 {fail_count} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。",
+                self, translate("CATIACopilot", "写入失败"),
+                translate("CATIACopilot",
+                    "有 {0} 处写入未被 CATIA 接受。\n详情见底部状态栏及日志。").format(fail_count),
             )
 
     def _refresh_keys_appearance(self, inst_keys: set) -> None:
@@ -2507,7 +2572,7 @@ class BomEditDialogV3(QDialog):
             if pm is not None:
                 target_inst_info = pm   # part_master 本身，有 instances 字段
             else:
-                QMessageBox.warning(self, "无 COM 引用", "选中行没有有效的 COM 引用，无法执行操作。")
+                QMessageBox.warning(self, translate("CATIACopilot", "无 COM 引用"), translate("CATIACopilot", "选中行没有有效的 COM 引用，无法执行操作。"))
                 return
 
         # ── 辅助：对 pm_key 对应 part_master 的 instances 生成改名计划 ──────────
@@ -2543,23 +2608,23 @@ class BomEditDialogV3(QDialog):
         _collect(target_pm_key, plan)
 
         if not plan:
-            QMessageBox.information(self, "无子节点", "选中节点下没有子节点。")
+            QMessageBox.information(self, translate("CATIACopilot", "无子节点"), translate("CATIACopilot", "选中节点下没有子节点。"))
             return
 
         # ── 确认对话框 ────────────────────────────────────────────────────────────
         already_ok  = sum(1 for ii, n in plan if ii.get("instance_name") == n)
         need_change = len(plan) - already_ok
         if need_change == 0:
-            QMessageBox.information(self, "无需修改", "所有实例名已符合 PartNumber.n 规则。")
+            QMessageBox.information(self, translate("CATIACopilot", "无需修改"), translate("CATIACopilot", "所有实例名已符合 PartNumber.n 规则。"))
             return
 
         skip_hint = (
-            f"\n注意：{len(skipped_no_file_subtrees)} 个断链/未保存节点的子树已跳过。"
+            translate("CATIACopilot", "\n注意：{0} 个断链/未保存节点的子树已跳过。").format(len(skipped_no_file_subtrees))
             if skipped_no_file_subtrees else ""
         )
         reply = QMessageBox.question(
-            self, "自动修改实例名（子树范围）",
-            f"共 {len(plan)} 个实例，其中 {need_change} 个需要修改。{skip_hint}\n\n是否继续？",
+            self, translate("CATIACopilot", "自动修改实例名（子树范围）"),
+            translate("CATIACopilot", "共 {0} 个实例，其中 {1} 个需要修改。{2}\n\n是否继续？").format(len(plan), need_change, skip_hint),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
@@ -2612,8 +2677,8 @@ class BomEditDialogV3(QDialog):
 
             if phase1_failed:
                 QMessageBox.warning(
-                    self, "写入失败",
-                    "自动修改实例名第一阶段（临时名）失败，所有变更已回滚。",
+                    self, translate("CATIACopilot", "写入失败"),
+                    translate("CATIACopilot", "自动修改实例名第一阶段（临时名）失败，所有变更已回滚。"),
                 )
                 return
 
@@ -2677,11 +2742,11 @@ class BomEditDialogV3(QDialog):
 
         if errors:
             QMessageBox.warning(
-                self, "部分写入失败",
-                f"已修改 {changed} 个实例名，以下条目写入失败：\n" + "\n".join(errors[:10]),
+                self, translate("CATIACopilot", "部分写入失败"),
+                translate("CATIACopilot", "已修改 {0} 个实例名，以下条目写入失败：\n{1}").format(changed, "\n".join(errors[:10])),
             )
         else:
-            self._last_write_status = f"已自动修改 {changed} 个实例名"
+            self._last_write_status = translate("CATIACopilot", "已自动修改 {0} 个实例名").format(changed)
             self._update_status()
 
     def _auto_rename_files(self, row_idx: int) -> None:
@@ -2735,28 +2800,28 @@ class BomEditDialogV3(QDialog):
                 to_rename.append((fp, pn))
 
         if not to_rename:
-            QMessageBox.information(self, "无需改名", "选中节点及其子树内所有文件名已与零件编号一致。")
+            QMessageBox.information(self, translate("CATIACopilot", "无需改名"), translate("CATIACopilot", "选中节点及其子树内所有文件名已与零件编号一致。"))
             return
 
         delete_old = (
             QMessageBox.question(
-                self, "是否删除旧文件",
-                f"将对子树内 {len(to_rename)} 个文件执行另存为改名。\n"
-                "另存为完成后，是否删除旧文件？",
+                self, translate("CATIACopilot", "是否删除旧文件"),
+                translate("CATIACopilot", "将对子树内 {0} 个文件执行另存为改名。\n另存为完成后，是否删除旧文件？").format(len(to_rename)),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             ) == QMessageBox.StandardButton.Yes
         )
 
-        QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
+        QMessageBox.information(self, translate("CATIACopilot", "请在 CATIA 中继续操作"), translate("CATIACopilot", "准备就绪，请在 CATIA 中确认后续操作。"))
 
         renamed_count = 0
         for fp, pn in reversed(to_rename):
             if not PART_NUMBER_VALID_PATTERN.fullmatch(pn):
                 QMessageBox.warning(
-                    self, "零件编号含非法字符",
-                    f"零件编号 「{pn}」 含有非法字符。\n"
-                    "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
-                    "（\\ / : * ? \" < > |）。\n请在表格中修改此零件编号后重试。",
+                    self, translate("CATIACopilot", "零件编号含非法字符"),
+                    translate("CATIACopilot",
+                        "零件编号 「{0}」 含有非法字符。\n"
+                        "不允许：控制字符、非 ASCII 字符，以及 Windows 文件名禁用字符"
+                        "（\\ / : * ? \" < > |）。\n请在表格中修改此零件编号后重试。").format(pn),
                 )
                 continue
             if not Path(fp).exists():
@@ -2767,10 +2832,10 @@ class BomEditDialogV3(QDialog):
                     logger.info("SaveAs skipped for %s (user cancelled)", Path(fp).name)
                     continue
             except FileNotFoundError as e:
-                QMessageBox.warning(self, "无法找到文档", str(e))
+                QMessageBox.warning(self, translate("CATIACopilot", "无法找到文档"), str(e))
                 continue
             except Exception as e:
-                QMessageBox.warning(self, "另存为失败", f"文件「{Path(fp).name}」另存为失败：\n{e}")
+                QMessageBox.warning(self, translate("CATIACopilot", "另存为失败"), translate("CATIACopilot", "文件「{0}」另存为失败：\n{1}").format(Path(fp).name, e))
                 continue
 
             # 同步更新 part_masters 中的 filepath / filename（唯一真相）
@@ -2787,8 +2852,8 @@ class BomEditDialogV3(QDialog):
 
         if renamed_count > 0:
             QMessageBox.information(
-                self, "改名完成",
-                f"已成功将 {renamed_count} 个文件通过 CATIA 另存为功能改名。",
+                self, translate("CATIACopilot", "改名完成"),
+                translate("CATIACopilot", "已成功将 {0} 个文件通过 CATIA 另存为功能改名。").format(renamed_count),
             )
             self._populate_table()
 
@@ -2801,8 +2866,8 @@ class BomEditDialogV3(QDialog):
         }
         if len(selected_row_indices) != 1:
             QMessageBox.warning(
-                self, "请选择单行",
-                "请在表格中选中恰好一行，再执行此操作。",
+                self, translate("CATIACopilot", "请选择单行"),
+                translate("CATIACopilot", "请在表格中选中恰好一行，再执行此操作。"),
             )
             return
 
@@ -2811,7 +2876,7 @@ class BomEditDialogV3(QDialog):
         fp       = str(row_data.get("_filepath", ""))
 
         if not fp or row_data.get("_not_found"):
-            QMessageBox.warning(self, "无有效路径", "该行没有可用的文件路径，无法执行重命名/移动。")
+            QMessageBox.warning(self, translate("CATIACopilot", "无有效路径"), translate("CATIACopilot", "该行没有可用的文件路径，无法执行重命名/移动。"))
             return
         # 注意：此处不检查 Path(fp).exists()；
         # 未保存过的零件（文件尚不在磁盘上但在CATIA内存中打开）同样允许另存为。
@@ -2827,13 +2892,13 @@ class BomEditDialogV3(QDialog):
         file_on_disk = Path(fp).exists()
         delete_old = file_on_disk and (
             QMessageBox.question(
-                self, "是否删除旧文件",
-                f"另存为完成后，是否删除旧文件？\n\n旧文件：{fp}",
+                self, translate("CATIACopilot", "是否删除旧文件"),
+                translate("CATIACopilot", "另存为完成后，是否删除旧文件？\n\n旧文件：{0}").format(fp),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             ) == QMessageBox.StandardButton.Yes
         )
 
-        QMessageBox.information(self, "请在 CATIA 中继续操作", "准备就绪，请在 CATIA 中确认后续操作。")
+        QMessageBox.information(self, translate("CATIACopilot", "请在 CATIA 中继续操作"), translate("CATIACopilot", "准备就绪，请在 CATIA 中确认后续操作。"))
 
         try:
             new_fp, skipped = rename_document(
@@ -2847,10 +2912,10 @@ class BomEditDialogV3(QDialog):
                 )
                 return
         except FileNotFoundError as e:
-            QMessageBox.warning(self, "无法找到文档", str(e))
+            QMessageBox.warning(self, translate("CATIACopilot", "无法找到文档"), str(e))
             return
         except Exception as e:
-            QMessageBox.warning(self, "另存为失败", f"文件操作失败：\n{e}")
+            QMessageBox.warning(self, translate("CATIACopilot", "另存为失败"), translate("CATIACopilot", "文件操作失败：\n{0}").format(e))
             return
 
         new_stem = Path(new_fp).stem
@@ -2867,8 +2932,8 @@ class BomEditDialogV3(QDialog):
                 row["_no_file"]  = False
         self._populate_table()
         QMessageBox.information(
-            self, "操作成功",
-            f"文件已成功另存为：\n{new_fp}",
+            self, translate("CATIACopilot", "操作成功"),
+            translate("CATIACopilot", "文件已成功另存为：\n{0}").format(new_fp),
         )
     
     # ── 导出表格 ──────────────────────────────────────────────────────────────
@@ -2876,7 +2941,7 @@ class BomEditDialogV3(QDialog):
     def _export_table(self) -> None:
         """将当前显示的 BOM 表格导出为 Excel 或 CSV 文件。"""
         if not self._bom_loaded or not self._rows:
-            QMessageBox.warning(self, "无数据", "请先加载 BOM 。")
+            QMessageBox.warning(self, translate("CATIACopilot", "无数据"), translate("CATIACopilot", "请先加载 BOM 。"))
             return
 
         # 根据根产品零件编号建议默认文件名
@@ -2902,9 +2967,9 @@ class BomEditDialogV3(QDialog):
 
         dest, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "导出 BOM 表格",
+            translate("CATIACopilot", "导出 BOM 表格"),
             initial_name,
-            "Excel 工作簿 (*.xlsx);;CSV 文件 (*.csv)",
+            translate("CATIACopilot", "Excel 工作簿 (*.xlsx);;CSV 文件 (*.csv)"),
         )
         if not dest:
             return
@@ -2963,13 +3028,13 @@ class BomEditDialogV3(QDialog):
                 self._write_csv(dest_path, export_cols, rows_data)
         except PermissionError:
             QMessageBox.critical(
-                self, "导出失败",
-                f"无法写入文件（文件可能已在其他程序中打开）：\n{dest_path}",
+                self, translate("CATIACopilot", "导出失败"),
+                translate("CATIACopilot", "无法写入文件（文件可能已在其他程序中打开）：\n{0}").format(dest_path),
             )
             return
         except Exception as e:
             logger.error(f"BOM table export failed: {e}")
-            QMessageBox.critical(self, "导出失败", f"导出时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "导出失败"), translate("CATIACopilot", "导出时出错：\n{0}").format(e))
             return
 
         self._show_export_success(dest_path)
@@ -2977,11 +3042,11 @@ class BomEditDialogV3(QDialog):
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
         msg = QMessageBox(self)
-        msg.setWindowTitle("导出成功")
-        msg.setText(f"BOM 已成功导出：\n{dest_path}")
+        msg.setWindowTitle(translate("CATIACopilot", "导出成功"))
+        msg.setText(translate("CATIACopilot", "BOM 已成功导出：\n{0}").format(dest_path))
         msg.setIcon(QMessageBox.Icon.Information)
-        open_file_btn   = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
-        open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
+        open_file_btn   = msg.addButton(translate("CATIACopilot", "打开文件"), QMessageBox.ButtonRole.ActionRole)
+        open_folder_btn = msg.addButton(translate("CATIACopilot", "打开所在文件夹"), QMessageBox.ButtonRole.ActionRole)
         msg.addButton(QMessageBox.StandardButton.Ok)
         msg.exec()
         clicked = msg.clickedButton()
@@ -3143,7 +3208,7 @@ class BomEditDialogV3(QDialog):
                     menu.addSeparator()
 
         # ── 打开路径 ──────────────────────────────────────────────────────────
-        act_open_path = menu.addAction("打开路径")
+        act_open_path = menu.addAction(translate("CATIACopilot", "打开路径"))
         path_available = (
             bool(fp) and not no_file and fp_path is not None
             and (fp_path.exists() or fp_path.parent.exists())
@@ -3151,7 +3216,7 @@ class BomEditDialogV3(QDialog):
         act_open_path.setEnabled(path_available)
 
         # ── 复制路径 ──────────────────────────────────────────────────────────
-        act_copy_path = menu.addAction("复制路径")
+        act_copy_path = menu.addAction(translate("CATIACopilot", "复制路径"))
         act_copy_path.setEnabled(bool(fp) and not no_file)
 
         # ── 复制单元格内容 ────────────────────────────────────────────────────
@@ -3164,13 +3229,13 @@ class BomEditDialogV3(QDialog):
                 cell_text = widget.currentText()
             else:
                 cell_text = item.text(clicked_col_idx)
-        act_copy_cell = menu.addAction("复制单元格内容")
+        act_copy_cell = menu.addAction(translate("CATIACopilot", "复制单元格内容"))
         act_copy_cell.setEnabled(bool(cell_text))
 
         # ── 在CATIA中打开 ─────────────────────────────────────────────────────
         # 仅当文件在磁盘上存在且不是损坏/轻量化引用时启用。
         # 部件行共享父产品的文件路径，因此也排除在外。
-        act_open_catia = menu.addAction("在 CATIA 中打开")
+        act_open_catia = menu.addAction(translate("CATIACopilot", "在 CATIA 中打开"))
         catia_available = (
             not is_component and not not_found and not unreadable
             and fp_path is not None and fp_path.exists()
@@ -3206,19 +3271,19 @@ class BomEditDialogV3(QDialog):
         _fill_col_display = BOM_COLUMN_DISPLAY_NAMES.get(fill_col_name, fill_col_name) if fill_col_name else ""
 
         act_fill_same = menu.addAction(
-            f"首行内容填充（{_fill_col_display}）" if fill_enabled else "首行内容填充"
+            translate("CATIACopilot", "首行内容填充（{0}）").format(_fill_col_display) if fill_enabled else translate("CATIACopilot", "首行内容填充")
         )
         act_fill_same.setEnabled(fill_enabled)
 
         act_fill_seq = menu.addAction(
-            f"序列填充（{_fill_col_display}）" if fill_seq_enabled else "序列填充"
+            translate("CATIACopilot", "序列填充（{0}）").format(_fill_col_display) if fill_seq_enabled else translate("CATIACopilot", "序列填充")
         )
         act_fill_seq.setEnabled(fill_seq_enabled)
 
         menu.addSeparator()
 
         # ── 另存为 ────────────────────────────────────────────────────────────
-        act_edit_path = menu.addAction("另存为")
+        act_edit_path = menu.addAction(translate("CATIACopilot", "另存为"))
         # 允许对未保存过的零件（文件不在磁盘上但在CATIA内存中）执行另存为；
         # 仅排除没有路径或CATIA无法找到的节点。
         act_edit_path.setEnabled(bool(fp) and not is_component and not not_found)
@@ -3226,26 +3291,28 @@ class BomEditDialogV3(QDialog):
         menu.addSeparator()
 
         # ── 自动修改文件名（子树范围）────────────────────────────────────────
-        act_auto_rename_files = menu.addAction("自动修改文件名（子树范围）")
+        act_auto_rename_files = menu.addAction(translate("CATIACopilot", "自动修改文件名（子树范围）"))
         act_auto_rename_files.setToolTip(
-            "将选中节点及其子树内所有文件名与零件编号不符的文件批量另存为改名\n"
-            "（部件共享父产品文件，自动跳过）"
+            translate("CATIACopilot",
+                "将选中节点及其子树内所有文件名与零件编号不符的文件批量另存为改名\n"
+                "（部件共享父产品文件，自动跳过）")
         )
         act_auto_rename_files.setEnabled(self._bom_loaded)
 
         # ── 自动修改实例名（子树范围）（仅完整 BOM 模式）────────────────────────────────
-        act_auto_rename_instances = menu.addAction("自动修改实例名（子树范围）")
+        act_auto_rename_instances = menu.addAction(translate("CATIACopilot", "自动修改实例名（子树范围）"))
         act_auto_rename_instances.setToolTip(
-            "将选中产品/部件的子节点实例名批量改为 PartNumber.X 格式，并递归处理子装配\n"
-            "（仅完整 BOM 模式可用）"
+            translate("CATIACopilot",
+                "将选中产品/部件的子节点实例名批量改为 PartNumber.X 格式，并递归处理子装配\n"
+                "（仅完整 BOM 模式可用）")
         )
         act_auto_rename_instances.setEnabled(
             self._bom_loaded and is_assembly and self._full_bom
         )
 
         # ── 刷新属性值（从 CATIA 重新读取）───────────────────────────────────
-        act_refresh = menu.addAction("刷新属性值（子树范围）")
-        act_refresh.setToolTip("从 CATIA COM 重新读取选中节点及其子树内所有行的属性值，覆盖表格中的当前显示值")
+        act_refresh = menu.addAction(translate("CATIACopilot", "刷新属性值（子树范围）"))
+        act_refresh.setToolTip(translate("CATIACopilot", "从 CATIA COM 重新读取选中节点及其子树内所有行的属性值，覆盖表格中的当前显示值"))
         act_refresh.setEnabled(self._bom_loaded and bool(selected_row_indices))
 
         action = menu.exec(self._table.viewport().mapToGlobal(pos))
@@ -3333,10 +3400,10 @@ class BomEditDialogV3(QDialog):
         ))
 
         progress = QProgressDialog(
-            f"正在刷新 {len(ordered_pm_keys)} 个零件…",
+            translate("CATIACopilot", "正在刷新 {0} 个零件…").format(len(ordered_pm_keys)),
             None, 0, len(ordered_pm_keys), self,
         )
-        progress.setWindowTitle("刷新属性值")
+        progress.setWindowTitle(translate("CATIACopilot", "刷新属性值"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
 
@@ -3418,12 +3485,10 @@ class BomEditDialogV3(QDialog):
                             if col_name == "Source":
                                 raw = get_part_master_attr(
                                     self._part_masters, pm_key, "Source", "")
-                                display_val = SOURCE_TO_DISPLAY.get(
-                                    raw, SOURCE_OPTIONS[0])
                                 widget = self._table.itemWidget(tree_item, col_idx)
                                 if isinstance(widget, QComboBox):
                                     widget.blockSignals(True)
-                                    widget.setCurrentText(display_val)
+                                    _set_combo_value(widget, str(raw))
                                     widget.blockSignals(False)
                             elif PRESET_USER_REF_PROPERTY_OPTIONS.get(col_name) is not None:
                                 val = get_part_master_attr(
@@ -3443,7 +3508,7 @@ class BomEditDialogV3(QDialog):
         finally:
             self._is_updating = False
 
-        self._last_write_status = f"已刷新：{len(refreshed_pm_keys)} 个零件"
+        self._last_write_status = translate("CATIACopilot", "已刷新：{0} 个零件").format(len(refreshed_pm_keys))
         self._update_status()
 
     def _open_path(self, fp: str) -> None:
@@ -3470,4 +3535,4 @@ class BomEditDialogV3(QDialog):
         try:
             open_document(fp, foreground=True)
         except Exception as e:
-            QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")
+            QMessageBox.warning(self, translate("CATIACopilot", "在 CATIA 中打开失败"), translate("CATIACopilot", "无法在 CATIA 中打开文件：\n{0}").format(e))

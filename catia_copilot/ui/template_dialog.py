@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from catia_copilot.i18n import translate
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ class TemplateDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("模板对话框")
+        self.setWindowTitle(translate("CATIACopilot", "模板对话框"))
         self.setMinimumSize(500, 500)
         self.resize(500, 500)
 
@@ -58,7 +60,7 @@ class TemplateDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # ── 内容区域 ──────────────────────────────────────────────────────
-        label = QLabel("这是一个空对话框模板。\n\n在这里添加你的 UI 组件。")
+        label = QLabel(translate("CATIACopilot", "这是一个空对话框模板。\n\n在这里添加你的 UI 组件。"))
         label.setWordWrap(True)
         layout.addWidget(label)
 
@@ -68,11 +70,11 @@ class TemplateDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
-        btn_ok = QPushButton("确定")
+        btn_ok = QPushButton(translate("CATIACopilot", "确定"))
         btn_ok.clicked.connect(self.accept)
         btn_layout.addWidget(btn_ok)
 
-        btn_cancel = QPushButton("取消")
+        btn_cancel = QPushButton(translate("CATIACopilot", "取消"))
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(btn_cancel)
 

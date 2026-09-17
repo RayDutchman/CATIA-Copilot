@@ -69,13 +69,14 @@ from catia_copilot.catia.mass_props_collect import (
 )
 from catia_copilot.constants import (
     FILENAME_UNSAVED,
-    MASS_PROPS_COLUMN_DISPLAY_NAMES,
     MASS_PROPS_HIDEABLE_COLUMNS,
     MASS_PROPS_READONLY_COLUMNS,
     MAX_INERTIA_INDEX,
-    TYPE_DISPLAY_NAMES,
+    type_display,
+    mass_props_column_display,
     BomNodeType,
 )
+from catia_copilot.i18n import translate
 from catia_copilot.ui.bom_widgets import (
     _BomSortItem,
     _BomTreeWidget,
@@ -119,7 +120,23 @@ _EXCL_FONT: QFont = QFont()
 _EXCL_FONT.setItalic(True)
 
 # 对称件（虚拟行）视觉样式
-_MIRROR_TOOLTIP: str = "对称件（虚拟行），相对 ZX 平面与原件对称，不可直接编辑。"
+def _mirror_tooltip() -> str:
+    """对称件（虚拟行）tooltip（运行时翻译；模块级 translate 会在 import 时固化语言）。"""
+    return translate("CATIACopilot", "对称件（虚拟行），相对 ZX 平面与原件对称，不可直接编辑。")
+
+
+# 导出表头恒中文映射（源语言，不走 translate：导出数据不随界面语言变化）
+_EXPORT_COLUMN_CHINESE: dict[str, str] = {
+    "Level":         "层级",
+    "Type":          "类型",
+    "Filename":      "文件名",
+    "Part Number":   "零件编号",
+    "Instance Name": "实例名",
+    "Nomenclature":  "术语（中文名称）",
+    "Revision":      "版本",
+    "Quantity":      "数量",
+    "Status":        "状态",
+}
 
 
 class _MassPropsDelegate(_RowHeightDelegate):
@@ -184,7 +201,7 @@ class MassPropsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("质量特性工作台")
+        self.setWindowTitle(translate("CATIACopilot", "质量特性工作台"))
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
@@ -398,6 +415,18 @@ class MassPropsDialog(QDialog):
     def _column_header(self, col_name: str) -> str:
         """返回列名的中文显示名（含当前单位后缀）。"""
         if col_name == "Density":
+            return translate("CATIACopilot", "密度 (kg/m³)")
+        if col_name == "Weight":
+            return translate("CATIACopilot", "重量 ({0})").format(self._mass_unit)
+        if col_name in _INERTIA_IDX:
+            return translate("CATIACopilot", "{0} ({1})").format(col_name, self._inertia_unit)
+        if col_name in ("CogX", "CogY", "CogZ"):
+            return translate("CATIACopilot", "{0} ({1})").format(col_name, self._cog_unit)
+        return mass_props_column_display(col_name)
+
+    def _export_column_header(self, col_name: str) -> str:
+        """导出表头恒中文（含当前单位后缀），与界面语言无关。"""
+        if col_name == "Density":
             return "密度 (kg/m³)"
         if col_name == "Weight":
             return f"重量 ({self._mass_unit})"
@@ -405,7 +434,7 @@ class MassPropsDialog(QDialog):
             return f"{col_name} ({self._inertia_unit})"
         if col_name in ("CogX", "CogY", "CogZ"):
             return f"{col_name} ({self._cog_unit})"
-        return MASS_PROPS_COLUMN_DISPLAY_NAMES.get(col_name, col_name)
+        return _EXPORT_COLUMN_CHINESE.get(col_name, col_name)
 
     def _display_headers(self) -> list[str]:
         return [self._column_header(c) for c in self._columns]
@@ -445,14 +474,14 @@ class MassPropsDialog(QDialog):
 
         # ── 前提条件说明（窗口过窄时允许截断）──────────────────────────────
         prereq_lbl = QLabel(
-            "⚠ 使用说明：本功能用于统计产品的重量、重心、转动惯量。基本原理是读取指定产品树下的每个零件的'属性-机械'中的结果或'测量惯量'结果，"
-            "和每个零件在根产品中的位置，计算出产品重量、重心、转动惯量。"
-            "当使用'Analyze'模式时，读取的是零件的'属性-机械'中的数据，需要零件的主几何体被正确赋予材料，且不得有多余的几何体或包络体（因为它们也会被一同纳入统计）。"
-            "当使用'惯量包络体'模式时，读取的是零件中勾选 '保持测量' 的惯量测量结果（惯量包络体），需要在 CATIA 中 <b>单独打开</b> 每个零件,执行'测量惯量'并勾选 <b>保持测量</b>。"
-            "在产品窗口中建立的惯量包络体的参考坐标系为根产品坐标系（即使当前工作对象是零件），"
-            "这会导致坐标系与根产品不重合的零件的测量结果不正确。"
-            f"测量结果必须命名为 <b>惯量包络体.x</b>（x 为 1–{MAX_INERTIA_INDEX} 的整数），"
-            "支持一个零件具有多个惯量包络体，产品中的惯量包络体将不被读取。"
+            translate("CATIACopilot", "⚠ 使用说明：本功能用于统计产品的重量、重心、转动惯量。基本原理是读取指定产品树下的每个零件的'属性-机械'中的结果或'测量惯量'结果，")
+            + translate("CATIACopilot", "和每个零件在根产品中的位置，计算出产品重量、重心、转动惯量。")
+            + translate("CATIACopilot", "当使用'Analyze'模式时，读取的是零件的'属性-机械'中的数据，需要零件的主几何体被正确赋予材料，且不得有多余的几何体或包络体（因为它们也会被一同纳入统计）。")
+            + translate("CATIACopilot", "当使用'惯量包络体'模式时，读取的是零件中勾选 '保持测量' 的惯量测量结果（惯量包络体），需要在 CATIA 中 <b>单独打开</b> 每个零件,执行'测量惯量'并勾选 <b>保持测量</b>。")
+            + translate("CATIACopilot", "在产品窗口中建立的惯量包络体的参考坐标系为根产品坐标系（即使当前工作对象是零件），")
+            + translate("CATIACopilot", "这会导致坐标系与根产品不重合的零件的测量结果不正确。")
+            + translate("CATIACopilot", "测量结果必须命名为 <b>惯量包络体.x</b>（x 为 1–{0} 的整数），").format(MAX_INERTIA_INDEX)
+            + translate("CATIACopilot", "支持一个零件具有多个惯量包络体，产品中的惯量包络体将不被读取。")
         )
         prereq_lbl.setWordWrap(True)
         self._prereq_lbl = prereq_lbl
@@ -460,32 +489,32 @@ class MassPropsDialog(QDialog):
         layout.addWidget(prereq_lbl)
 
         # ── 数据来源选择 ────────────────────────────────────────────────────
-        self._use_active_chk = QCheckBox("使用当前 CATIA 活动文档（无需手动选择文件）")
+        self._use_active_chk = QCheckBox(translate("CATIACopilot", "使用当前 CATIA 活动文档（无需手动选择文件）"))
         self._use_active_chk.toggled.connect(self._toggle_file_row)
         layout.addWidget(self._use_active_chk)
 
         file_row = QHBoxLayout()
         self._file_edit = QLineEdit()
-        self._file_edit.setPlaceholderText("选择一个 CATProduct 文件…")
+        self._file_edit.setPlaceholderText(translate("CATIACopilot", "选择一个 CATProduct 文件…"))
         self._file_edit.setReadOnly(True)
-        self._file_browse_btn = QPushButton("浏览…")
+        self._file_browse_btn = QPushButton(translate("CATIACopilot", "浏览…"))
         self._file_browse_btn.clicked.connect(self._browse_file)
-        self._load_btn = QPushButton("加载")
+        self._load_btn = QPushButton(translate("CATIACopilot", "加载"))
         self._load_btn.clicked.connect(self._load_data)
-        self._load_json_btn = QPushButton("载入已保存数据…")
-        self._load_json_btn.setToolTip("从之前保存的数据文件中载入质量特性（无需打开 CATIA）")
+        self._load_json_btn = QPushButton(translate("CATIACopilot", "载入已保存数据…"))
+        self._load_json_btn.setToolTip(translate("CATIACopilot", "从之前保存的数据文件中载入质量特性（无需打开 CATIA）"))
         self._load_json_btn.clicked.connect(self._load_data_from_json)
-        self._append_data_btn = QPushButton("追加数据…")
+        self._append_data_btn = QPushButton(translate("CATIACopilot", "追加数据…"))
         self._append_data_btn.setToolTip(
-            "从已保存的数据文件（.mpd）追加分总成数据并合并汇总\n"
-            "（适用于主产品过大、分批读取各分总成的场景；各分总成坐标系须与主产品一致）"
+            translate("CATIACopilot", "从已保存的数据文件（.mpd）追加分总成数据并合并汇总\n"
+                "（适用于主产品过大、分批读取各分总成的场景；各分总成坐标系须与主产品一致）")
         )
         self._append_data_btn.setEnabled(False)
         self._append_data_btn.clicked.connect(self._append_data_from_file)
-        self._append_active_btn = QPushButton("追加活动文档…")
+        self._append_active_btn = QPushButton(translate("CATIACopilot", "追加活动文档…"))
         self._append_active_btn.setToolTip(
-            "将 CATIA 当前活动文档（分总成）的质量特性追加到现有数据中\n"
-            "（各分总成坐标系须与主产品一致）"
+            translate("CATIACopilot", "将 CATIA 当前活动文档（分总成）的质量特性追加到现有数据中\n"
+                "（各分总成坐标系须与主产品一致）")
         )
         self._append_active_btn.setEnabled(False)
         self._append_active_btn.clicked.connect(self._append_from_active)
@@ -498,7 +527,7 @@ class MassPropsDialog(QDialog):
         layout.addLayout(file_row)
 
         # ── 选项面板（2 行）────────────────────────────────────────────────
-        opts_group = QGroupBox("读取与显示选项")
+        opts_group = QGroupBox(translate("CATIACopilot", "读取与显示选项"))
         opts_main = QVBoxLayout(opts_group)
         opts_main.setSpacing(4)
         opts_main.setContentsMargins(8, 6, 8, 6)
@@ -509,11 +538,11 @@ class MassPropsDialog(QDialog):
 
         # BOM 类型
         self._bom_type_group = QButtonGroup(self)
-        self._radio_hier = QRadioButton("完整 BOM")
-        self._radio_summ = QRadioButton("汇总 BOM")
+        self._radio_hier = QRadioButton(translate("CATIACopilot", "完整 BOM"))
+        self._radio_summ = QRadioButton(translate("CATIACopilot", "汇总 BOM"))
         self._radio_summ.setToolTip(
-            "汇总 BOM ：按零件编号合并同种零件，仅显示零件行。\n"
-            "产品、部件、对称件不在此视图中显示。"
+            translate("CATIACopilot", "汇总 BOM ：按零件编号合并同种零件，仅显示零件行。\n"
+                "产品、部件、对称件不在此视图中显示。")
         )
         self._radio_summ.setMinimumHeight(24)
         self._radio_hier.setChecked(not self._summarize)
@@ -530,16 +559,16 @@ class MassPropsDialog(QDialog):
         row1.addSpacing(4); row1.addWidget(_sep1); row1.addSpacing(4)
 
         # 数据来源
-        self._radio_src_keep = QRadioButton("惯量包络体")
+        self._radio_src_keep = QRadioButton(translate("CATIACopilot", "惯量包络体"))
         self._radio_src_analyze = QRadioButton("Analyze")
         self._radio_src_keep.setToolTip(
-            "读取 SPA 保持测量写入的「惯量包络体.N」参数。\n"
-            "需用户预先在 SPA 中执行「测量惯量 + 保持测量」操作。"
+            translate("CATIACopilot", "读取 SPA 保持测量写入的「惯量包络体.N」参数。\n"
+                "需用户预先在 SPA 中执行「测量惯量 + 保持测量」操作。")
         )
         self._radio_src_analyze.setToolTip(
-            "通过 CATIA Analyze API 实时计算零件质量特性。\n"
-            "需零件已赋材料；无需手动创建保持测量。\n"
-            "选中时「惯量包络体读取」选项不可用。"
+            translate("CATIACopilot", "通过 CATIA Analyze API 实时计算零件质量特性。\n"
+                "需零件已赋材料；无需手动创建保持测量。\n"
+                "选中时「惯量包络体读取」选项不可用。")
         )
         self._radio_src_keep.setChecked(self._source == "keep_inertia")
         self._radio_src_analyze.setChecked(self._source == "analyze")
@@ -548,7 +577,7 @@ class MassPropsDialog(QDialog):
         self._source_group.addButton(self._radio_src_analyze)
         self._radio_src_keep.toggled.connect(self._on_source_changed)
         self._radio_src_analyze.toggled.connect(self._on_source_changed)
-        row1.addWidget(QLabel("数据来源:"))
+        row1.addWidget(QLabel(translate("CATIACopilot", "数据来源:")))
         row1.addWidget(self._radio_src_analyze)
         row1.addWidget(self._radio_src_keep)
 
@@ -558,20 +587,20 @@ class MassPropsDialog(QDialog):
 
         # 读取模式
         self._read_mode_group = QButtonGroup(self)
-        self._radio_read_first = QRadioButton("只读.1")
-        self._radio_read_last  = QRadioButton("最大编号")
-        self._radio_read_all   = QRadioButton("全部汇总")
+        self._radio_read_first = QRadioButton(translate("CATIACopilot", "只读.1"))
+        self._radio_read_last  = QRadioButton(translate("CATIACopilot", "最大编号"))
+        self._radio_read_all   = QRadioButton(translate("CATIACopilot", "全部汇总"))
         self._radio_read_first.setToolTip(
-            '仅读取名为"惯量包络体.1"的保持测量结果。\n'
-            "速度最快：只进行一次参数查询，不扫描其余编号。"
+            translate("CATIACopilot", "仅读取名为\"惯量包络体.1\"的保持测量结果。\n"
+                "速度最快：只进行一次参数查询，不扫描其余编号。")
         )
         self._radio_read_last.setToolTip(
-            f"扫描编号 1 到 {MAX_INERTIA_INDEX} 的全部惯量包络体，使用编号最大的有效保持测量结果。\n"
-            f"速度较慢：每个缺失的编号均会产生一次 COM 异常，最多 {MAX_INERTIA_INDEX - 1} 次。"
+            translate("CATIACopilot", "扫描编号 1 到 {0} 的全部惯量包络体，使用编号最大的有效保持测量结果。\n"
+                "速度较慢：每个缺失的编号均会产生一次 COM 异常，最多 {1} 次。").format(MAX_INERTIA_INDEX, MAX_INERTIA_INDEX - 1)
         )
         self._radio_read_all.setToolTip(
-            f"扫描编号 1 到 {MAX_INERTIA_INDEX} 的全部惯量包络体，读取所有有效测量并按平行轴定理汇总为单一质量特性。\n"
-            f"速度较慢：每个缺失的编号均会产生一次 COM 异常，最多 {MAX_INERTIA_INDEX - 1} 次。"
+            translate("CATIACopilot", "扫描编号 1 到 {0} 的全部惯量包络体，读取所有有效测量并按平行轴定理汇总为单一质量特性。\n"
+                "速度较慢：每个缺失的编号均会产生一次 COM 异常，最多 {1} 次。").format(MAX_INERTIA_INDEX, MAX_INERTIA_INDEX - 1)
         )
         self._radio_read_first.setChecked(self._read_mode == "first")
         self._radio_read_last.setChecked(self._read_mode == "last")
@@ -582,7 +611,7 @@ class MassPropsDialog(QDialog):
         self._radio_read_first.toggled.connect(self._on_read_mode_changed)
         self._radio_read_last.toggled.connect(self._on_read_mode_changed)
         self._radio_read_all.toggled.connect(self._on_read_mode_changed)
-        row1.addWidget(QLabel("惯量包络体读取:"))
+        row1.addWidget(QLabel(translate("CATIACopilot", "惯量包络体读取:")))
         row1.addWidget(self._radio_read_first)
         row1.addWidget(self._radio_read_last)
         row1.addWidget(self._radio_read_all)   
@@ -597,10 +626,10 @@ class MassPropsDialog(QDialog):
         row1.addSpacing(4); row1.addWidget(_sep3); row1.addSpacing(4)
 
         # 忽略隐藏节点
-        self._skip_hidden_chk = QCheckBox("忽略隐藏的节点")
+        self._skip_hidden_chk = QCheckBox(translate("CATIACopilot", "忽略隐藏的节点"))
         self._skip_hidden_chk.setChecked(self._skip_hidden)
         self._skip_hidden_chk.setToolTip(
-            "勾选时：零件处于隐藏状态则跳过；产品/部件处于隐藏状态则连同其子孙一并跳过"
+            translate("CATIACopilot", "勾选时：零件处于隐藏状态则跳过；产品/部件处于隐藏状态则连同其子孙一并跳过")
         )
         self._skip_hidden_chk.toggled.connect(self._on_skip_hidden_changed)
         row1.addWidget(self._skip_hidden_chk)
@@ -623,7 +652,7 @@ class MassPropsDialog(QDialog):
         self._mass_unit_group.addButton(self._radio_mass_kg)
         self._radio_mass_g.toggled.connect(self._on_unit_changed)
         self._radio_mass_kg.toggled.connect(self._on_unit_changed)
-        row2.addWidget(QLabel("重量:"))
+        row2.addWidget(QLabel(translate("CATIACopilot", "重量:")))
         row2.addWidget(self._radio_mass_g)
         row2.addWidget(self._radio_mass_kg)
 
@@ -641,7 +670,7 @@ class MassPropsDialog(QDialog):
         self._cog_unit_group.addButton(self._radio_cog_m)
         self._radio_cog_mm.toggled.connect(self._on_unit_changed)
         self._radio_cog_m.toggled.connect(self._on_unit_changed)
-        row2.addWidget(QLabel("长度:"))
+        row2.addWidget(QLabel(translate("CATIACopilot", "长度:")))
         row2.addWidget(self._radio_cog_mm)
         row2.addWidget(self._radio_cog_m)
 
@@ -655,9 +684,9 @@ class MassPropsDialog(QDialog):
         for iu in _IU:
             self._inertia_combo.addItem(iu)
         self._inertia_combo.setCurrentText(self._inertia_unit)
-        self._inertia_combo.setToolTip("选择转动惯量的显示单位")
+        self._inertia_combo.setToolTip(translate("CATIACopilot", "选择转动惯量的显示单位"))
         self._inertia_combo.currentTextChanged.connect(self._on_inertia_unit_changed)
-        row2.addWidget(QLabel("惯量:"))
+        row2.addWidget(QLabel(translate("CATIACopilot", "惯量:")))
         row2.addWidget(self._inertia_combo)
 
         _sep5 = QFrame(); _sep5.setFrameShape(QFrame.Shape.VLine)
@@ -665,10 +694,10 @@ class MassPropsDialog(QDialog):
         row2.addSpacing(4); row2.addWidget(_sep5); row2.addSpacing(4)
 
         # 显示列
-        row2.addWidget(QLabel("显示列:"))
+        row2.addWidget(QLabel(translate("CATIACopilot", "显示列:")))
         self._hid_col_checks: dict[str, QCheckBox] = {}
         for col_name in MASS_PROPS_HIDEABLE_COLUMNS:
-            cb = QCheckBox(MASS_PROPS_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
+            cb = QCheckBox(mass_props_column_display(col_name))
             cb.setChecked(col_name in self._visible_hideable_cols)
             cb.setProperty("col_name", col_name)
             cb.toggled.connect(self._on_col_visibility_changed)
@@ -689,9 +718,9 @@ class MassPropsDialog(QDialog):
         # ── 搜索筛选框（Ctrl+F） ──────────────────────────────────────────────
         filter_row = QHBoxLayout()
         filter_row.setSpacing(6)
-        filter_row.addWidget(QLabel("筛选:"))
+        filter_row.addWidget(QLabel(translate("CATIACopilot", "筛选:")))
         self._filter_edit = QLineEdit()
-        self._filter_edit.setPlaceholderText("按零件编号、文件名、术语等关键字搜索行… (Ctrl+F)")
+        self._filter_edit.setPlaceholderText(translate("CATIACopilot", "按零件编号、文件名、术语等关键字搜索行… (Ctrl+F)"))
         self._filter_edit.setClearButtonEnabled(True)
         self._filter_edit.textChanged.connect(self._on_filter_changed)
         filter_row.addWidget(self._filter_edit)
@@ -724,7 +753,7 @@ class MassPropsDialog(QDialog):
         layout.addWidget(self._table, 1)
 
         # ── 汇总面板 ────────────────────────────────────────────────────────
-        summary_group = QGroupBox("汇总结果（基于根产品坐标系）")
+        summary_group = QGroupBox(translate("CATIACopilot", "汇总结果（基于根产品坐标系）"))
         summary_h = QHBoxLayout(summary_group)
         summary_h.setSpacing(12)
         summary_h.setContentsMargins(10, 8, 10, 8)
@@ -750,12 +779,12 @@ class MassPropsDialog(QDialog):
         left_g.setSpacing(4)
         left_g.setContentsMargins(0, 0, 0, 0)
 
-        left_g.addWidget(_sec_lbl("总重量"), 0, 0, 1, 2)
+        left_g.addWidget(_sec_lbl(translate("CATIACopilot", "总重量")), 0, 0, 1, 2)
         left_g.addWidget(_fld_lbl("m"), 1, 0)
         self._edit_weight = _val_edit()
         left_g.addWidget(self._edit_weight, 1, 1)
 
-        left_g.addWidget(_sec_lbl("重心 (G)"), 2, 0, 1, 2)
+        left_g.addWidget(_sec_lbl(translate("CATIACopilot", "重心 (G)")), 2, 0, 1, 2)
         for r, (text, attr) in enumerate([("Gx", "_edit_cx"), ("Gy", "_edit_cy"), ("Gz", "_edit_cz")]):
             left_g.addWidget(_fld_lbl(text), r + 3, 0)
             edit = _val_edit()
@@ -770,7 +799,7 @@ class MassPropsDialog(QDialog):
         mid_g.setSpacing(4)
         mid_g.setContentsMargins(0, 0, 0, 0)
 
-        mid_g.addWidget(_sec_lbl("惯量矩阵"), 0, 0, 1, 6)
+        mid_g.addWidget(_sec_lbl(translate("CATIACopilot", "惯量矩阵")), 0, 0, 1, 6)
         _inertia_rows = [
             ("Ixx", "_edit_ixx", "Ixy", "_edit_ixy", "Ixz", "_edit_ixz"),
             ("Iyx", "_edit_iyx", "Iyy", "_edit_iyy", "Iyz", "_edit_iyz"),
@@ -791,14 +820,14 @@ class MassPropsDialog(QDialog):
         right_g.setSpacing(4)
         right_g.setContentsMargins(0, 0, 0, 0)
 
-        right_g.addWidget(_sec_lbl("重心主惯量矩"), 0, 0, 1, 6)
+        right_g.addWidget(_sec_lbl(translate("CATIACopilot", "重心主惯量矩")), 0, 0, 1, 6)
         for c, (text, attr) in enumerate([("M1", "_edit_m1"), ("M2", "_edit_m2"), ("M3", "_edit_m3")]):
             right_g.addWidget(_fld_lbl(text), 1, c * 2)
             edit = _val_edit()
             setattr(self, attr, edit)
             right_g.addWidget(edit, 1, c * 2 + 1)
 
-        right_g.addWidget(_sec_lbl("主轴"), 2, 0, 1, 6)
+        right_g.addWidget(_sec_lbl(translate("CATIACopilot", "主轴")), 2, 0, 1, 6)
         _axes_rows = [
             ("A1x", "_edit_a1x", "A2x", "_edit_a2x", "A3x", "_edit_a3x"),
             ("A1y", "_edit_a1y", "A2y", "_edit_a2y", "A3y", "_edit_a3y"),
@@ -824,36 +853,36 @@ class MassPropsDialog(QDialog):
         # ── 底部按钮行 ──────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
 
-        autofit_btn = QPushButton("自适应列宽")
+        autofit_btn = QPushButton(translate("CATIACopilot", "自适应列宽"))
         autofit_btn.clicked.connect(self._autofit_columns)
         btn_row.addWidget(autofit_btn)
 
-        expand_btn = QPushButton("全部展开")
+        expand_btn = QPushButton(translate("CATIACopilot", "全部展开"))
         expand_btn.clicked.connect(self._table.expandAll)
         btn_row.addWidget(expand_btn)
 
-        collapse_btn = QPushButton("全部折叠")
+        collapse_btn = QPushButton(translate("CATIACopilot", "全部折叠"))
         collapse_btn.clicked.connect(self._table.collapseAll)
         btn_row.addWidget(collapse_btn)
 
         btn_row.addStretch()
 
-        self._save_json_btn = QPushButton("保存数据…")
-        self._save_json_btn.setToolTip("将当前行数据保存为数据文件，可在不打开 CATIA 的情况下重新载入")
+        self._save_json_btn = QPushButton(translate("CATIACopilot", "保存数据…"))
+        self._save_json_btn.setToolTip(translate("CATIACopilot", "将当前行数据保存为数据文件，可在不打开 CATIA 的情况下重新载入"))
         self._save_json_btn.setEnabled(False)
         self._save_json_btn.clicked.connect(self._save_data_to_json)
         btn_row.addWidget(self._save_json_btn)
 
-        self._export_btn = QPushButton("导出表格")
+        self._export_btn = QPushButton(translate("CATIACopilot", "导出表格"))
         self._export_btn.setToolTip(
-            "将完整 BOM 数据（含汇总行）导出为 Excel （.xlsx）或 CSV 文件。\n"
-            "无论当前显示完整 BOM 还是汇总 BOM ，导出内容始终为完整 BOM 。"
+            translate("CATIACopilot", "将完整 BOM 数据（含汇总行）导出为 Excel （.xlsx）或 CSV 文件。\n"
+                "无论当前显示完整 BOM 还是汇总 BOM ，导出内容始终为完整 BOM 。")
         )
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_table)
         btn_row.addWidget(self._export_btn)
 
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(translate("CATIACopilot", "关闭"))
         close_btn.clicked.connect(self.reject)
         btn_row.addWidget(close_btn)
 
@@ -865,16 +894,16 @@ class MassPropsDialog(QDialog):
         """返回当前 BOM 模式对应的说明文字。"""
         if self._summarize:
             return (
-                "【汇总 BOM】按零件编号合并，仅列出零件（不含产品、部件和对称件）。"
-                "Weight / CogX / CogY / CogZ / Ixx–Iyz "
-                "在零件自身坐标系下显示，与装配位置无关。"
-                "底部「汇总结果」在根产品坐标系下计算。"
+                translate("CATIACopilot", "【汇总 BOM】按零件编号合并，仅列出零件（不含产品、部件和对称件）。")
+                + "Weight / CogX / CogY / CogZ / Ixx–Iyz "
+                + translate("CATIACopilot", "在零件自身坐标系下显示，与装配位置无关。")
+                + translate("CATIACopilot", "底部「汇总结果」在根产品坐标系下计算。")
             )
         return (
-            "【完整 BOM】展示零件节点和产品/部件节点。"
-            "Weight / CogX / CogY / CogZ / Ixx–Iyz "
-            "在根产品坐标系下显示，与零件的装配位置有关。"
-            "底部「汇总结果」在根产品坐标系下计算。"
+            translate("CATIACopilot", "【完整 BOM】展示零件节点和产品/部件节点。")
+            + "Weight / CogX / CogY / CogZ / Ixx–Iyz "
+            + translate("CATIACopilot", "在根产品坐标系下显示，与零件的装配位置有关。")
+            + translate("CATIACopilot", "底部「汇总结果」在根产品坐标系下计算。")
         )
 
     # ── 文件/活动文档切换 ──────────────────────────────────────────────────
@@ -885,7 +914,7 @@ class MassPropsDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择 CATProduct 文件",
+            self, translate("CATIACopilot", "选择 CATProduct 文件"),
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -898,7 +927,7 @@ class MassPropsDialog(QDialog):
 
     def _update_title(self) -> None:
         """在标题栏末尾追加 ' *' 表示有未保存到磁盘的编辑；清除则恢复原标题。"""
-        base = "质量特性工作台"
+        base = translate("CATIACopilot", "质量特性工作台")
         self.setWindowTitle(f"{base} *" if self._is_dirty else base)
 
     # ── 搜索筛选 ───────────────────────────────────────────────────────────
@@ -1071,24 +1100,24 @@ class MassPropsDialog(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请先选择一个 CATProduct 文件。")
+                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), translate("CATIACopilot", "请先选择一个 CATProduct 文件。"))
                 return
             if not Path(file_path).exists():
-                QMessageBox.warning(self, "文件不存在", f"文件不存在：\n{file_path}")
+                QMessageBox.warning(self, translate("CATIACopilot", "文件不存在"), translate("CATIACopilot", "文件不存在：\n{0}").format(file_path))
                 return
 
         self._load_btn.setEnabled(False)
-        self._load_btn.setText("加载中…")
+        self._load_btn.setText(translate("CATIACopilot", "加载中…"))
         QApplication.processEvents()
 
-        progress = QProgressDialog("正在加载产品树，请稍候…", None, 0, 0, self)
-        progress.setWindowTitle("加载质量特性")
+        progress = QProgressDialog(translate("CATIACopilot", "正在加载产品树，请稍候…"), None, 0, 0, self)
+        progress.setWindowTitle(translate("CATIACopilot", "加载质量特性"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            progress.setLabelText(f"正在加载产品树，请稍候… 已读取 {count} 个节点")
+            progress.setLabelText(translate("CATIACopilot", "正在加载产品树，请稍候… 已读取 {0} 个节点").format(count))
             progress.repaint()
             QApplication.processEvents()
 
@@ -1101,17 +1130,17 @@ class MassPropsDialog(QDialog):
             progress.close()
             logger.error(f"加载质量特性失败: {e}")
             QMessageBox.critical(
-                self, "加载失败",
-                f"加载产品树时出错：\n{e}\n\n请确保 CATIA 已启动。",
+                self, translate("CATIACopilot", "加载失败"),
+                translate("CATIACopilot", "加载产品树时出错：\n{0}\n\n请确保 CATIA 已启动。").format(e),
             )
             self._load_btn.setEnabled(True)
-            self._load_btn.setText("加载")
+            self._load_btn.setText(translate("CATIACopilot", "加载"))
             return
         finally:
             progress.close()
 
         self._load_btn.setEnabled(True)
-        self._load_btn.setText("重新加载")
+        self._load_btn.setText(translate("CATIACopilot", "重新加载"))
 
         self._apply_loaded_rows(rows)
 
@@ -1163,19 +1192,19 @@ class MassPropsDialog(QDialog):
         )
         if failed_count:
             _read_mode_desc = {
-                "first": "「惯量包络体.1」",
-                "last":  f"编号最大的「惯量包络体.N」（N ≤ {MAX_INERTIA_INDEX}）",
-                "all":   f"「惯量包络体.1」至「惯量包络体.{MAX_INERTIA_INDEX}」",
-            }.get(self._read_mode, "惯量包络体")
+                "first": translate("CATIACopilot", "「惯量包络体.1」"),
+                "last":  translate("CATIACopilot", "编号最大的「惯量包络体.N」（N ≤ {0}）").format(MAX_INERTIA_INDEX),
+                "all":   translate("CATIACopilot", "「惯量包络体.1」至「惯量包络体.{0}」").format(MAX_INERTIA_INDEX),
+            }.get(self._read_mode, translate("CATIACopilot", "惯量包络体"))
             QMessageBox.information(
-                self, "部分零件测量失败",
-                f"有 {failed_count} 个零件节点无法完成质量特性测量（显示橙色背景）。\n\n"
-                "可能原因：\n"
-                "  • 零件文档无法加载到 CATIA 会话中\n"
-                f"  • 当前读取模式要求的 {_read_mode_desc} 保持测量不存在\n"
-                "  • 测量结果保存在产品中而非零件中\n\n"
-                "未能测量的零件不参与最终汇总计算。可以对其右键选择「在 CATIA 中打开」\n"
-                "检查问题所在，然后右键选择「重新读取质量特性」。",
+                self, translate("CATIACopilot", "部分零件测量失败"),
+                translate("CATIACopilot", "有 {0} 个零件节点无法完成质量特性测量（显示橙色背景）。\n\n"
+                    "可能原因：\n"
+                    "  • 零件文档无法加载到 CATIA 会话中\n"
+                    "  • 当前读取模式要求的 {1} 保持测量不存在\n"
+                    "  • 测量结果保存在产品中而非零件中\n\n"
+                    "未能测量的零件不参与最终汇总计算。可以对其右键选择「在 CATIA 中打开」\n"
+                    "检查问题所在，然后右键选择「重新读取质量特性」。").format(failed_count, _read_mode_desc),
             )
 
 
@@ -1204,7 +1233,7 @@ class MassPropsDialog(QDialog):
         default_path = str(Path(default_dir) / default_name) if default_dir else default_name
 
         dest, _ = QFileDialog.getSaveFileName(
-            self, "保存质量特性数据", default_path, "质量特性数据文件 (*.mpd)"
+            self, translate("CATIACopilot", "保存质量特性数据"), default_path, "质量特性数据文件 (*.mpd)"
         )
         if not dest:
             return
@@ -1219,23 +1248,23 @@ class MassPropsDialog(QDialog):
             self._update_title()
         except Exception as e:
             logger.error(f"保存质量特性数据失败: {e}")
-            QMessageBox.critical(self, "保存失败", f"保存数据时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "保存失败"), translate("CATIACopilot", "保存数据时出错：\n{0}").format(e))
 
     def _load_data_from_json(self) -> None:
         """从压缩二进制数据文件载入行数据（无需 CATIA ，_root_mp 由后处理重建）。"""
         src, _ = QFileDialog.getOpenFileName(
-            self, "载入质量特性数据", "", "质量特性数据文件 (*.mpd)"
+            self, translate("CATIACopilot", "载入质量特性数据"), "", "质量特性数据文件 (*.mpd)"
         )
         if not src:
             return
         if not Path(src).exists():
-            QMessageBox.warning(self, "文件不存在", f"文件不存在：\n{src}")
+            QMessageBox.warning(self, translate("CATIACopilot", "文件不存在"), translate("CATIACopilot", "文件不存在：\n{0}").format(src))
             return
         try:
             rows = load_rows(src)
         except Exception as e:
             logger.error(f"载入质量特性数据失败: {e}")
-            QMessageBox.critical(self, "载入失败", f"载入数据时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "载入失败"), translate("CATIACopilot", "载入数据时出错：\n{0}").format(e))
             return
         self._apply_loaded_rows(rows)
 
@@ -1247,10 +1276,10 @@ class MassPropsDialog(QDialog):
         前提：各分总成坐标系须与主产品（及彼此）一致，无须额外坐标变换。
         """
         if not self._rows:
-            QMessageBox.warning(self, "无基础数据", "请先加载基础产品数据，再追加分总成数据。")
+            QMessageBox.warning(self, translate("CATIACopilot", "无基础数据"), translate("CATIACopilot", "请先加载基础产品数据，再追加分总成数据。"))
             return
         srcs, _ = QFileDialog.getOpenFileNames(
-            self, "追加质量特性数据", self._last_browse_dir,
+            self, translate("CATIACopilot", "追加质量特性数据"), self._last_browse_dir,
             "质量特性数据文件 (*.mpd)"
         )
         if not srcs:
@@ -1261,7 +1290,7 @@ class MassPropsDialog(QDialog):
         appended_rows: list[dict] = []
         for src in srcs:
             if not Path(src).exists():
-                errors.append(f"文件不存在：{src}")
+                errors.append(translate("CATIACopilot", "文件不存在：{0}").format(src))
                 continue
             try:
                 extra = load_rows(src)
@@ -1275,8 +1304,8 @@ class MassPropsDialog(QDialog):
 
         if errors:
             QMessageBox.warning(
-                self, "部分文件追加失败",
-                "以下文件追加时出错：\n\n" + "\n".join(errors),
+                self, translate("CATIACopilot", "部分文件追加失败"),
+                translate("CATIACopilot", "以下文件追加时出错：\n\n{0}").format("\n".join(errors)),
             )
 
         if appended_rows:
@@ -1291,21 +1320,21 @@ class MassPropsDialog(QDialog):
         前提：活动文档坐标系须与已加载数据的坐标系一致。
         """
         if not self._rows:
-            QMessageBox.warning(self, "无基础数据", "请先加载基础产品数据，再追加分总成数据。")
+            QMessageBox.warning(self, translate("CATIACopilot", "无基础数据"), translate("CATIACopilot", "请先加载基础产品数据，再追加分总成数据。"))
             return
 
         self._append_active_btn.setEnabled(False)
-        self._append_active_btn.setText("读取中…")
+        self._append_active_btn.setText(translate("CATIACopilot", "读取中…"))
         QApplication.processEvents()
 
-        progress = QProgressDialog("正在读取当前活动文档，请稍候…", None, 0, 0, self)
-        progress.setWindowTitle("追加质量特性")
+        progress = QProgressDialog(translate("CATIACopilot", "正在读取当前活动文档，请稍候…"), None, 0, 0, self)
+        progress.setWindowTitle(translate("CATIACopilot", "追加质量特性"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            progress.setLabelText(f"正在读取当前活动文档，请稍候… 已读取 {count} 个节点")
+            progress.setLabelText(translate("CATIACopilot", "正在读取当前活动文档，请稍候… 已读取 {0} 个节点").format(count))
             progress.repaint()
             QApplication.processEvents()
 
@@ -1321,17 +1350,17 @@ class MassPropsDialog(QDialog):
         except Exception as e:
             logger.error(f"追加活动文档质量特性失败: {e}")
             QMessageBox.critical(
-                self, "读取失败",
-                f"读取当前活动文档时出错：\n{e}\n\n请确保 CATIA 已启动且有活动文档。",
+                self, translate("CATIACopilot", "读取失败"),
+                translate("CATIACopilot", "读取当前活动文档时出错：\n{0}\n\n请确保 CATIA 已启动且有活动文档。").format(e),
             )
             return
         finally:
             progress.close()
             self._append_active_btn.setEnabled(True)
-            self._append_active_btn.setText("追加活动文档…")
+            self._append_active_btn.setText(translate("CATIACopilot", "追加活动文档…"))
 
         if not extra:
-            QMessageBox.information(self, "无数据", "当前活动文档未读取到任何节点，未进行追加。")
+            QMessageBox.information(self, translate("CATIACopilot", "无数据"), translate("CATIACopilot", "当前活动文档未读取到任何节点，未进行追加。"))
             return
 
         combined = merge_rows(self._rows, extra)
@@ -1433,7 +1462,7 @@ class MassPropsDialog(QDialog):
                 continue
             pn = str(row.get("Part Number", ""))
             if not pn:
-                pn = str(row.get("Filename", "")) or "(未分组)"
+                pn = str(row.get("Filename", "")) or translate("CATIACopilot", "(未分组)")
             if pn not in seen_pn:
                 r = dict(row)
                 r["_rows_idx"] = i   # 映射回 _rows 的规范索引
@@ -1540,7 +1569,7 @@ class MassPropsDialog(QDialog):
                     effective_type = row_data.get("_mirror_src_type") if node_type == BomNodeType.MIRROR else node_type
                     item.setText(col_idx, "" if (effective_type if effective_type is not None else node_type) in BomNodeType.ASSEMBLY_TYPES else "—")
                 elif density < 0:
-                    item.setText(col_idx, "不统一")
+                    item.setText(col_idx, translate("CATIACopilot", "不统一"))
                 else:
                     item.setText(col_idx, _fmt(density))
             elif col_name == "Weight":
@@ -1563,7 +1592,7 @@ class MassPropsDialog(QDialog):
             elif col_name == "Type":
                 # 存储英文 key，显示时转为中文
                 raw = str(row_data.get("Type", ""))
-                item.setText(col_idx, TYPE_DISPLAY_NAMES.get(raw, raw))
+                item.setText(col_idx, type_display(raw))
             else:
                 item.setText(col_idx, str(row_data.get(col_name, "")))
 
@@ -1587,7 +1616,7 @@ class MassPropsDialog(QDialog):
         item.setData(0, _EXCLUDED_ROLE, is_excluded)
         if is_excluded:
             c = _get_colors(theme_manager.current_mode())
-            excl_tip = "该行已被排除，不参与计算。"
+            excl_tip = translate("CATIACopilot", "该行已被排除，不参与计算。")
             for ci in range(len(self._columns)):
                 item.setBackground(ci, c.EXCL_BG)
                 item.setForeground(ci, c.EXCL_FG)
@@ -1664,8 +1693,8 @@ class MassPropsDialog(QDialog):
                 return
             if new_weight_stored <= 0.0:
                 QMessageBox.warning(
-                    self, "重量不合法",
-                    "重量必须为正数，请输入大于 0 的值。",
+                    self, translate("CATIACopilot", "重量不合法"),
+                    translate("CATIACopilot", "重量必须为正数，请输入大于 0 的值。"),
                 )
                 self._is_updating = True
                 item.setText(col_idx, self._fmt_mass_val(row_data.get("Weight")))
@@ -1697,8 +1726,8 @@ class MassPropsDialog(QDialog):
                 return
             if new_density_stored <= 0.0:
                 QMessageBox.warning(
-                    self, "密度不合法",
-                    "密度必须为正数，请输入大于 0 的值。",
+                    self, translate("CATIACopilot", "密度不合法"),
+                    translate("CATIACopilot", "密度必须为正数，请输入大于 0 的值。"),
                 )
                 self._is_updating = True
                 density_old = row_data.get("Density")
@@ -1865,7 +1894,7 @@ class MassPropsDialog(QDialog):
             result = rollup_mass_properties(self._rows)
         except Exception as e:
             logger.error(f"质量特性计算失败: {e}")
-            QMessageBox.critical(self, "计算失败", f"计算总质量特性时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "计算失败"), translate("CATIACopilot", "计算总质量特性时出错：\n{0}").format(e))
             return
         self._rollup_result = result
         self._update_summary_labels(result)
@@ -1961,7 +1990,7 @@ class MassPropsDialog(QDialog):
 
     def _export_table(self) -> None:
         if not self._rows:
-            QMessageBox.warning(self, "无数据", "请先加载产品树数据。")
+            QMessageBox.warning(self, translate("CATIACopilot", "无数据"), translate("CATIACopilot", "请先加载产品树数据。"))
             return
 
         # ── 默认文件名：根产品零件编号 + "_惯量汇总"（与"保存数据"对话框一致）──
@@ -1978,7 +2007,7 @@ class MassPropsDialog(QDialog):
         default_path = str(Path(default_dir) / f"{default_stem}.xlsx") if default_dir else f"{default_stem}.xlsx"
 
         dest, _ = QFileDialog.getSaveFileName(
-            self, "导出质量特性表格",
+            self, translate("CATIACopilot", "导出质量特性表格"),
             default_path,
             "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)",
         )
@@ -2001,16 +2030,16 @@ class MassPropsDialog(QDialog):
             self._show_export_success(dest_path)
         except Exception as e:
             logger.error(f"导出失败: {e}")
-            QMessageBox.critical(self, "导出失败", f"导出时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "导出失败"), translate("CATIACopilot", "导出时出错：\n{0}").format(e))
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
         msg = QMessageBox(self)
-        msg.setWindowTitle("导出成功")
-        msg.setText(f"文件已成功导出：\n{dest_path}")
+        msg.setWindowTitle(translate("CATIACopilot", "导出成功"))
+        msg.setText(translate("CATIACopilot", "文件已成功导出：\n{0}").format(dest_path))
         msg.setIcon(QMessageBox.Icon.Information)
-        open_file_btn   = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
-        open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
+        open_file_btn   = msg.addButton(translate("CATIACopilot", "打开文件"), QMessageBox.ButtonRole.ActionRole)
+        open_folder_btn = msg.addButton(translate("CATIACopilot", "打开所在文件夹"), QMessageBox.ButtonRole.ActionRole)
         msg.addButton(QMessageBox.StandardButton.Ok)
         msg.exec()
         clicked = msg.clickedButton()
@@ -2061,7 +2090,7 @@ class MassPropsDialog(QDialog):
 
         # 写入表头
         for ci, col_name in enumerate(export_cols, start=1):
-            cell = ws.cell(row=1, column=ci, value=self._column_header(col_name))
+            cell = ws.cell(row=1, column=ci, value=self._export_column_header(col_name))
             cell.font   = Font(bold=True)
             cell.fill   = header_fill
             cell.border = thin_border
@@ -2204,7 +2233,7 @@ class MassPropsDialog(QDialog):
 
         with open(dest, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow([self._column_header(c) for c in export_cols])
+            writer.writerow([self._export_column_header(c) for c in export_cols])
             for row_data in display_rows:
                 writer.writerow([_cell_value(c, row_data) for c in export_cols])
             if self._rollup_result:
@@ -2580,7 +2609,7 @@ class MassPropsDialog(QDialog):
                             if d_val is None:
                                 d_text = empty_text
                             elif d_val < 0:
-                                d_text = "不统一"
+                                d_text = translate("CATIACopilot", "不统一")
                             else:
                                 d_text = _fmt(d_val)
                             vis_item.setText(ci, d_text)
@@ -2642,7 +2671,7 @@ class MassPropsDialog(QDialog):
                     item.setBackground(ci, c.EXCL_BG)
                     item.setForeground(ci, c.EXCL_FG)
                     item.setFont(ci, _EXCL_FONT)
-                    item.setToolTip(ci, "该行已被排除，不参与计算。")
+                    item.setToolTip(ci, translate("CATIACopilot", "该行已被排除，不参与计算。"))
                 else:
                     item.setBackground(ci, default_brush)
                     item.setForeground(ci, default_brush)
@@ -2672,23 +2701,23 @@ class MassPropsDialog(QDialog):
         if is_mirror:
             for ci in range(col_count):
                 item.setBackground(ci, c.MIRROR_BG)
-                item.setToolTip(ci, _MIRROR_TOOLTIP)
+                item.setToolTip(ci, _mirror_tooltip())
         elif row_locked:
             if not_found:
                 bg  = c.ROW_NOT_FOUND_BG
-                tip = "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。"
+                tip = translate("CATIACopilot", "该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。")
             elif meas_failed:
                 bg  = c.ROW_MEAS_FAILED_BG
-                tip = "该零件的质量特性测量失败，行内容不可编辑。"
+                tip = translate("CATIACopilot", "该零件的质量特性测量失败，行内容不可编辑。")
             else:
                 bg  = c.ROW_LIGHTWEIGHT_BG
-                tip = "该零件/产品处于轻量化模式，无法读取属性。"
+                tip = translate("CATIACopilot", "该零件/产品处于轻量化模式，无法读取属性。")
             for ci in range(col_count):
                 item.setForeground(ci, c.ROW_LOCKED_FG)
                 item.setBackground(ci, bg)
                 item.setToolTip(ci, tip)
         elif no_file:
-            no_file_tip = "该零件尚未保存到磁盘，质量特性数据可能不完整。"
+            no_file_tip = translate("CATIACopilot", "该零件尚未保存到磁盘，质量特性数据可能不完整。")
             for ci in range(col_count):
                 item.setBackground(ci, c.ROW_UNSAVED_BG)
                 item.setToolTip(ci, no_file_tip)
@@ -2738,7 +2767,7 @@ class MassPropsDialog(QDialog):
         menu = QMenu(self)
 
         # ── 打开路径（仅单选）────────────────────────────────────────────
-        act_open_path = menu.addAction("打开路径")
+        act_open_path = menu.addAction(translate("CATIACopilot", "打开路径"))
         path_available = (
             is_single
             and not is_mirror
@@ -2748,11 +2777,11 @@ class MassPropsDialog(QDialog):
         act_open_path.setEnabled(path_available)
 
         # ── 复制路径（仅单选）────────────────────────────────────────────
-        act_copy_path = menu.addAction("复制路径")
+        act_copy_path = menu.addAction(translate("CATIACopilot", "复制路径"))
         act_copy_path.setEnabled(is_single and not is_mirror and bool(fp) and not no_file)
 
         # ── 在CATIA中打开（仅单选）───────────────────────────────────────
-        act_open_catia = menu.addAction("在 CATIA 中打开")
+        act_open_catia = menu.addAction(translate("CATIACopilot", "在 CATIA 中打开"))
         catia_available = (
             is_single
             and not is_mirror
@@ -2768,7 +2797,7 @@ class MassPropsDialog(QDialog):
         # 汇总 BOM：仅刷新当前行对应零件的质量特性（不涉及 mat4）。
         # 两种模式均通过 _product COM 引用直接测量，无需文件已保存到磁盘。
         act_refresh = menu.addAction(
-            "刷新质量特性（子树范围）" if not self._summarize else "刷新质量特性"
+            translate("CATIACopilot", "刷新质量特性（子树范围）") if not self._summarize else translate("CATIACopilot", "刷新质量特性")
         )
         refresh_available = (
             is_single
@@ -2778,15 +2807,15 @@ class MassPropsDialog(QDialog):
         act_refresh.setEnabled(refresh_available)
         if not self._summarize:
             act_refresh.setToolTip(
-                "通过 CATIA COM 引用直接重新测量选中节点及其子树内所有零件的质量特性。\n"
-                "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
-                "无需零件文件已保存到磁盘，适用于尚未保存的新建零件。"
+                translate("CATIACopilot", "通过 CATIA COM 引用直接重新测量选中节点及其子树内所有零件的质量特性。\n"
+                    "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
+                    "无需零件文件已保存到磁盘，适用于尚未保存的新建零件。")
             )
         else:
             act_refresh.setToolTip(
-                "通过 CATIA COM 引用重新测量当前零件的质量特性。\n"
-                "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
-                "无需零件文件已保存到磁盘。"
+                translate("CATIACopilot", "通过 CATIA COM 引用重新测量当前零件的质量特性。\n"
+                    "按当前面板选择的「Analyze」或「惯量包络体」方式执行。\n"
+                    "无需零件文件已保存到磁盘。")
             )
 
         # ── 层级BOM专属：增加对称件 / 参与计算 / 删除 ─────────────────────
@@ -2800,16 +2829,16 @@ class MassPropsDialog(QDialog):
             all_excluded = all(bool(self._rows[ri].get("_excluded", False)) for ri in selected_idxs)
             any_excluded = any(bool(self._rows[ri].get("_excluded", False)) for ri in selected_idxs)
             if all_excluded:
-                toggle_label = "参与计算：×"
+                toggle_label = translate("CATIACopilot", "参与计算：×")
             elif any_excluded:
-                toggle_label = "参与计算：切换"
+                toggle_label = translate("CATIACopilot", "参与计算：切换")
             else:
-                toggle_label = "参与计算：√"
+                toggle_label = translate("CATIACopilot", "参与计算：√")
             act_toggle = menu.addAction(toggle_label)
-            act_delete = menu.addAction("删除本行" if is_single else f"删除选中 {len(selected_idxs)} 行")
+            act_delete = menu.addAction(translate("CATIACopilot", "删除本行") if is_single else translate("CATIACopilot", "删除选中 {0} 行").format(len(selected_idxs)))
 
             menu.addSeparator()
-            act_add_mirror = menu.addAction("增加对称件")
+            act_add_mirror = menu.addAction(translate("CATIACopilot", "增加对称件"))
             # 仅对单选非对称件的零件/产品/部件行有效；对称件自身不可再次对称；
             # 同一行已有对称件（_mirror_child_id 已设置）时也不允许重复添加。
             already_has_mirror = bool(
@@ -2842,12 +2871,12 @@ class MassPropsDialog(QDialog):
         elif act_delete is not None and action == act_delete:
             if is_single:
                 pn_label = str(row_data.get("Part Number", "") or row_data.get("Filename", ""))
-                msg = f"确定要删除「{pn_label}」及其子节点吗？\n此操作不可撤销。"
+                msg = translate("CATIACopilot", "确定要删除「{0}」及其子节点吗？\n此操作不可撤销。").format(pn_label)
             else:
-                msg = f"确定要删除选中的 {len(selected_idxs)} 行（及各自的子节点）吗？\n此操作不可撤销。"
+                msg = translate("CATIACopilot", "确定要删除选中的 {0} 行（及各自的子节点）吗？\n此操作不可撤销。").format(len(selected_idxs))
             confirm = QMessageBox.question(
                 self,
-                "确认删除",
+                translate("CATIACopilot", "确认删除"),
                 msg,
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
@@ -2881,7 +2910,7 @@ class MassPropsDialog(QDialog):
         try:
             open_document(fp, foreground=True)
         except Exception as e:
-            QMessageBox.warning(self, "在 CATIA 中打开失败", f"无法在 CATIA 中打开文件：\n{e}")
+            QMessageBox.warning(self, translate("CATIACopilot", "在 CATIA 中打开失败"), translate("CATIACopilot", "无法在 CATIA 中打开文件：\n{0}").format(e))
 
     # ── 刷新质量特性 ─────────────────────────────────────────────────────────
 
@@ -2899,8 +2928,8 @@ class MassPropsDialog(QDialog):
 
         if product is None:
             QMessageBox.warning(
-                self, "无 COM 引用",
-                f"零件「{pn}」没有有效的 COM 引用（可能来自载入文件），无法刷新。",
+                self, translate("CATIACopilot", "无 COM 引用"),
+                translate("CATIACopilot", "零件「{0}」没有有效的 COM 引用（可能来自载入文件），无法刷新。").format(pn),
             )
             return
 
@@ -2919,7 +2948,7 @@ class MassPropsDialog(QDialog):
             QApplication.restoreOverrideCursor()
 
         if new_mp is None:
-            QMessageBox.warning(self, "刷新失败", f"零件「{pn}」质量特性测量失败。")
+            QMessageBox.warning(self, translate("CATIACopilot", "刷新失败"), translate("CATIACopilot", "零件「{0}」质量特性测量失败。").format(pn))
             return
 
         # 汇总 BOM 用零件自身坐标系，_placement 为 identity（不影响坐标变换）
@@ -2950,7 +2979,7 @@ class MassPropsDialog(QDialog):
         self._rollup_result = None
         self._clear_summary_labels()
         self._calculate()
-        QMessageBox.information(self, "刷新完成", f"零件「{pn}」质量特性已刷新。")
+        QMessageBox.information(self, translate("CATIACopilot", "刷新完成"), translate("CATIACopilot", "零件「{0}」质量特性已刷新。").format(pn))
 
     @staticmethod
     def _apply_new_mp(row: dict, new_mp: dict, placement) -> None:
@@ -3018,8 +3047,8 @@ class MassPropsDialog(QDialog):
 
         if not subtree_idxs:
             QMessageBox.information(
-                self, "无零件行",
-                "选中节点及其子树内没有可刷新的零件行。",
+                self, translate("CATIACopilot", "无零件行"),
+                translate("CATIACopilot", "选中节点及其子树内没有可刷新的零件行。"),
             )
             return
 
@@ -3089,9 +3118,8 @@ class MassPropsDialog(QDialog):
 
         if not updated:
             QMessageBox.warning(
-                self, "刷新失败",
-                "子树内所有零件均未能重新测量。\n\n失败零件：\n"
-                + "\n".join(f"  • {p}" for p in failed_pns[:10]),
+                self, translate("CATIACopilot", "刷新失败"),
+                translate("CATIACopilot", "子树内所有零件均未能重新测量。\n\n失败零件：\n{0}").format("\n".join(f"  • {p}" for p in failed_pns[:10])),
             )
             return
 
@@ -3132,15 +3160,15 @@ class MassPropsDialog(QDialog):
         self._clear_summary_labels()
         self._calculate()
 
-        msg = f"已刷新 {len(updated)} 个子树内零件节点"
+        msg = translate("CATIACopilot", "已刷新 {0} 个子树内零件节点").format(len(updated))
         if sibling_updated:
-            msg += f"，另同步 {len(sibling_updated)} 个子树外同零件实例"
-        msg += "。"
+            msg += translate("CATIACopilot", "，另同步 {0} 个子树外同零件实例").format(len(sibling_updated))
+        msg += translate("CATIACopilot", "。")
         if failed_pns:
-            msg += "\n\n以下零件刷新失败：\n" + "\n".join(f"  • {p}" for p in failed_pns[:10])
-            QMessageBox.warning(self, "部分刷新失败", msg)
+            msg += translate("CATIACopilot", "\n\n以下零件刷新失败：\n{0}").format("\n".join(f"  • {p}" for p in failed_pns[:10]))
+            QMessageBox.warning(self, translate("CATIACopilot", "部分刷新失败"), msg)
         else:
-            QMessageBox.information(self, "刷新完成", msg)
+            QMessageBox.information(self, translate("CATIACopilot", "刷新完成"), msg)
 
     def _refresh_part_item_after_reread(
         self,
@@ -3176,7 +3204,7 @@ class MassPropsDialog(QDialog):
                 if d_val is None:
                     item.setText(col_idx, "—")
                 elif d_val < 0:
-                    item.setText(col_idx, "不统一")
+                    item.setText(col_idx, translate("CATIACopilot", "不统一"))
                 else:
                     item.setText(col_idx, _fmt(d_val))
             elif col_name == "Weight":

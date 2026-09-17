@@ -46,6 +46,7 @@ import win32gui
 import win32process
 
 from catia_copilot.catia.macro import CATIA_COPILOT_MODULES
+from catia_copilot.i18n import translate
 from catia_copilot.utils import resource_path
 
 logger = logging.getLogger(__name__)
@@ -913,7 +914,7 @@ class CATIAEmbedManager:
         def append(menu, flags, item_id, text):
             ctypes.windll.user32.AppendMenuW(menu, flags, item_id, text)
 
-        # 从主窗口的 _ACTION_LABELS 读取文字，保持与主菜单一致
+        # 从主窗口的 action_labels() 读取运行时文案，保持与主菜单按钮一致
         # 注意：main_window 在顶层导入了本模块（catia_embed），因此这里必须保留
         # 函数级懒加载以避免循环导入，PyInstaller 能通过 main_window 的顶层导入
         # 链追踪到此模块，不会漏打包。
@@ -921,7 +922,7 @@ class CATIAEmbedManager:
             from catia_copilot.ui.main_window import (
                 MainWindow,  # noqa: PLC0415 — 循环依赖，必须懒加载
             )
-            L = MainWindow._ACTION_LABELS
+            L = MainWindow.action_labels()
         except Exception:
             L = {}
 
@@ -929,25 +930,25 @@ class CATIAEmbedManager:
             return L.get(key, fallback)
 
         # ── 工作台 ────────────────────────────────────────────────────
-        append(hmenu, MF_STRING,    MENU_BOM_EDIT,       label("bom_edit",        "BOM 工作台"))
-        append(hmenu, MF_STRING,    MENU_MASS_PROPS,     label("mass_props",      "质量特性工作台"))
-        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   "PLM 工作台 (DocDoku)"))
+        append(hmenu, MF_STRING,    MENU_BOM_EDIT,       label("bom_edit",        translate("CATIACopilot", "BOM 工作台")))
+        append(hmenu, MF_STRING,    MENU_MASS_PROPS,     label("mass_props",      translate("CATIACopilot", "质量特性工作台")))
+        append(hmenu, MF_STRING,    MENU_PLM_WORKBENCH,  label("plm_workbench",   translate("CATIACopilot", "PLM 工作台 (DocDoku)")))
         append(hmenu, MF_SEPARATOR, 0,                   None)
         # ── 导出 ──────────────────────────────────────────────────────
-        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      "从产品导出 BOM"))
-        append(hmenu, MF_STRING,    MENU_EXPORT_PDF,     label("export_pdf",      "从图纸导出 PDF"))
-        append(hmenu, MF_STRING,    MENU_EXPORT_STP,     label("export_stp",      "从产品/零件导出 STP"))
+        append(hmenu, MF_STRING,    MENU_BOM_EXPORT,     label("bom_export",      translate("CATIACopilot", "从产品导出 BOM")))
+        append(hmenu, MF_STRING,    MENU_EXPORT_PDF,     label("export_pdf",      translate("CATIACopilot", "从图纸导出 PDF")))
+        append(hmenu, MF_STRING,    MENU_EXPORT_STP,     label("export_stp",      translate("CATIACopilot", "从产品/零件导出 STP")))
         append(hmenu, MF_SEPARATOR, 0,                   None)
         # ── 图纸 ──────────────────────────────────────────────────────
-        append(hmenu, MF_STRING,    MENU_DRAWING_NEW,    label("drawing_new",     "新建图纸 (Python)"))
-        append(hmenu, MF_STRING,    MENU_DRAWING_REFRESH, label("drawing_refresh", "刷新图纸 (Python)"))
+        append(hmenu, MF_STRING,    MENU_DRAWING_NEW,    label("drawing_new",     translate("CATIACopilot", "新建图纸 (Python)")))
+        append(hmenu, MF_STRING,    MENU_DRAWING_REFRESH, label("drawing_refresh", translate("CATIACopilot", "刷新图纸 (Python)")))
         append(hmenu, MF_SEPARATOR, 0,                   None)
         # ── 工具 ──────────────────────────────────────────────────────
-        append(hmenu, MF_STRING,    MENU_STAMP_TEMPLATE, label("stamp_template",  "刷写零件模板"))
-        append(hmenu, MF_STRING,    MENU_FASTENER_ASM,   label("fastener_asm",    "快速装配紧固件"))
-        append(hmenu, MF_STRING,    MENU_NUT_PLATE_ASM,  label("nut_plate_asm",   "快速装配托板螺母"))
-        append(hmenu, MF_STRING,    MENU_OPEN_RELATED,   label("open_related",    "在图纸/零件间切换"))
-        append(hmenu, MF_STRING,    MENU_FIND_DEPS,      label("find_deps",       "查找指向的文档"))
+        append(hmenu, MF_STRING,    MENU_STAMP_TEMPLATE, label("stamp_template",  translate("CATIACopilot", "刷写零件模板")))
+        append(hmenu, MF_STRING,    MENU_FASTENER_ASM,   label("fastener_asm",    translate("CATIACopilot", "快速装配紧固件")))
+        append(hmenu, MF_STRING,    MENU_NUT_PLATE_ASM,  label("nut_plate_asm",   translate("CATIACopilot", "快速装配托板螺母")))
+        append(hmenu, MF_STRING,    MENU_OPEN_RELATED,   label("open_related",    translate("CATIACopilot", "在图纸/零件间切换")))
+        append(hmenu, MF_STRING,    MENU_FIND_DEPS,      label("find_deps",       translate("CATIACopilot", "查找指向的文档")))
 
         # 运行宏子菜单
         # ID 分配：
@@ -976,15 +977,15 @@ class CATIAEmbedManager:
                     append(macro_submenu, MF_STRING, macro_id, macro_path.name)
                     plain_idx += 1
         else:
-            append(macro_submenu, MF_STRING, 0, "（未找到宏文件）")
+            append(macro_submenu, MF_STRING, 0, translate("CATIACopilot", "（未找到宏文件）"))
             ctypes.windll.user32.EnableMenuItem(macro_submenu, 0, 0x0001)  # MF_GRAYED
 
-        append(hmenu, MF_POPUP, macro_submenu, label("run_macro", "运行宏"))
+        append(hmenu, MF_POPUP, macro_submenu, label("run_macro", translate("CATIACopilot", "运行宏")))
 
         append(hmenu, MF_SEPARATOR, 0,                   None)
-        append(hmenu, MF_STRING,    MENU_POS_RESET,      "恢复默认位置")
+        append(hmenu, MF_STRING,    MENU_POS_RESET,      translate("CATIACopilot", "恢复默认位置"))
         append(hmenu, MF_SEPARATOR, 0,                   None)
-        append(hmenu, MF_STRING,    MENU_CLOSE,          "关闭面板")
+        append(hmenu, MF_STRING,    MENU_CLOSE,          translate("CATIACopilot", "关闭面板"))
 
         rect = win32gui.GetWindowRect(panel_hwnd)
         x = rect[0]   # 面板左边缘

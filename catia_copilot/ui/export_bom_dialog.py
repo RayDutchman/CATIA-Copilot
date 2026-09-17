@@ -36,10 +36,11 @@ from PySide6.QtWidgets import (
 from catia_copilot.catia.bom_export import export_bom_to_excel
 from catia_copilot.constants import (
     BOM_ALL_COLUMNS,
-    BOM_COLUMN_DISPLAY_NAMES,
     BOM_DEFAULT_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
+    bom_column_display,
 )
+from catia_copilot.i18n import translate
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class ExportBomDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("从产品导出 BOM")
+        self.setWindowTitle(translate("CATIACopilot", "从产品导出 BOM"))
         self.setMinimumSize(500, 700)
 
         self._settings        = QSettings("CATIACopilot", "ExportBOMDialog")
@@ -82,11 +83,11 @@ class ExportBomDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # ── Source selection ────────────────────────────────────────────────
-        src_group  = QGroupBox("数据来源")
+        src_group  = QGroupBox(translate("CATIACopilot", "数据来源"))
         src_layout = QVBoxLayout(src_group)
         self._src_btn_group = QButtonGroup(self)
-        self._radio_active  = QRadioButton("使用当前 CATIA 活动文档")
-        self._radio_file    = QRadioButton("选择文件:")
+        self._radio_active  = QRadioButton(translate("CATIACopilot", "使用当前 CATIA 活动文档"))
+        self._radio_file    = QRadioButton(translate("CATIACopilot", "选择文件:"))
         if self._use_active_doc:
             self._radio_active.setChecked(True)
         else:
@@ -98,9 +99,9 @@ class ExportBomDialog(QDialog):
         file_row = QHBoxLayout()
         file_row.addWidget(self._radio_file)
         self._file_edit       = QLineEdit()
-        self._file_edit.setPlaceholderText("选择一个 CATProduct 文件...")
+        self._file_edit.setPlaceholderText(translate("CATIACopilot", "选择一个 CATProduct 文件..."))
         self._file_edit.setReadOnly(True)
-        self._file_browse_btn = QPushButton("浏览...")
+        self._file_browse_btn = QPushButton(translate("CATIACopilot", "浏览..."))
         self._file_browse_btn.clicked.connect(self._browse_file)
         file_row.addWidget(self._file_edit)
         file_row.addWidget(self._file_browse_btn)
@@ -110,10 +111,10 @@ class ExportBomDialog(QDialog):
         layout.addWidget(src_group)
 
         # ── Output folder ───────────────────────────────────────────────────
-        output_group  = QGroupBox("输出文件夹")
+        output_group  = QGroupBox(translate("CATIACopilot", "输出文件夹"))
         output_layout = QVBoxLayout(output_group)
-        self._radio_same   = QRadioButton("与源文件相同目录")
-        self._radio_custom = QRadioButton("自定义目录:")
+        self._radio_same   = QRadioButton(translate("CATIACopilot", "与源文件相同目录"))
+        self._radio_custom = QRadioButton(translate("CATIACopilot", "自定义目录:"))
         if self._use_same_dir:
             self._radio_same.setChecked(True)
         else:
@@ -126,10 +127,10 @@ class ExportBomDialog(QDialog):
 
         folder_row = QHBoxLayout()
         self._folder_edit = QLineEdit()
-        self._folder_edit.setPlaceholderText("选择输出文件夹...")
+        self._folder_edit.setPlaceholderText(translate("CATIACopilot", "选择输出文件夹..."))
         self._folder_edit.setReadOnly(True)
         self._folder_edit.setEnabled(False)
-        self._folder_browse_btn = QPushButton("浏览...")
+        self._folder_browse_btn = QPushButton(translate("CATIACopilot", "浏览..."))
         self._folder_browse_btn.setEnabled(False)
         self._folder_browse_btn.clicked.connect(self._browse_output_folder)
         folder_row.addWidget(self._folder_edit)
@@ -146,7 +147,7 @@ class ExportBomDialog(QDialog):
             self._folder_browse_btn.setEnabled(True)
 
         # ── BOM type + summary options (combined group) ─────────────────────
-        bom_opts_group  = QGroupBox("BOM 类型与汇总选项")
+        bom_opts_group  = QGroupBox(translate("CATIACopilot", "BOM 类型与汇总选项"))
         bom_opts_group.setMinimumHeight(60)  # Prevent height jumping when switching BOM types
         bom_opts_layout = QVBoxLayout(bom_opts_group)
         bom_opts_layout.setSpacing(4)
@@ -155,8 +156,8 @@ class ExportBomDialog(QDialog):
         # Single row: radio buttons + inline summary options
         bom_type_row = QHBoxLayout()
         self._bom_type_btn_group = QButtonGroup(self)
-        self._radio_hierarchical = QRadioButton("层级 BOM")
-        self._radio_summary      = QRadioButton("汇总 BOM")
+        self._radio_hierarchical = QRadioButton(translate("CATIACopilot", "层级 BOM"))
+        self._radio_summary      = QRadioButton(translate("CATIACopilot", "汇总 BOM"))
         if self._summarize:
             self._radio_summary.setChecked(True)
         else:
@@ -172,15 +173,15 @@ class ExportBomDialog(QDialog):
         summary_opts_layout.setContentsMargins(0, 0, 0, 0)
         summary_opts_layout.setSpacing(8)
 
-        self._include_assemblies_chk = QCheckBox("包含产品和部件（子产品）")
+        self._include_assemblies_chk = QCheckBox(translate("CATIACopilot", "包含产品和部件（子产品）"))
         self._include_assemblies_chk.setToolTip(
-            "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。"
+            translate("CATIACopilot", "勾选后，汇总 BOM 中也会列出产品和部件（子产品），而不仅限于零件。")
         )
         self._include_assemblies_chk.setChecked(self._summary_include_assemblies)
         self._include_assemblies_chk.toggled.connect(self._on_include_assemblies_toggled)
         summary_opts_layout.addWidget(self._include_assemblies_chk)
         summary_opts_layout.addSpacing(8)
-        summary_opts_layout.addWidget(QLabel("排序列:"))
+        summary_opts_layout.addWidget(QLabel(translate("CATIACopilot", "排序列:")))
         self._sort_col_combo = QComboBox()
         summary_opts_layout.addWidget(self._sort_col_combo)
 
@@ -191,11 +192,11 @@ class ExportBomDialog(QDialog):
         layout.addWidget(bom_opts_group)
 
         # ── Output format ────────────────────────────────────────────────────
-        fmt_group  = QGroupBox("输出格式")
+        fmt_group  = QGroupBox(translate("CATIACopilot", "输出格式"))
         fmt_layout = QHBoxLayout(fmt_group)
         self._fmt_btn_group  = QButtonGroup(self)
-        self._radio_xlsx     = QRadioButton("Excel 工作簿 (.xlsx)")
-        self._radio_csv      = QRadioButton("CSV 文件 (.csv)")
+        self._radio_xlsx     = QRadioButton(translate("CATIACopilot", "Excel 工作簿 (.xlsx)"))
+        self._radio_csv      = QRadioButton(translate("CATIACopilot", "CSV 文件 (.csv)"))
         self._fmt_btn_group.addButton(self._radio_xlsx)
         self._fmt_btn_group.addButton(self._radio_csv)
         if self._output_format == "csv":
@@ -208,12 +209,12 @@ class ExportBomDialog(QDialog):
         fmt_layout.addStretch()
         layout.addWidget(fmt_group)
 
-        col_group  = QGroupBox("导出列（拖动以排序）")
+        col_group  = QGroupBox(translate("CATIACopilot", "导出列（拖动以排序）"))
         col_outer  = QVBoxLayout(col_group)
         col_layout = QHBoxLayout()
 
         avail_layout = QVBoxLayout()
-        avail_layout.addWidget(QLabel("可用列:"))
+        avail_layout.addWidget(QLabel(translate("CATIACopilot", "可用列:")))
         self._avail_list = QListWidget()
         self._avail_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self._avail_list.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -245,7 +246,7 @@ class ExportBomDialog(QDialog):
         col_layout.addLayout(arrow_layout)
 
         selected_layout = QVBoxLayout()
-        selected_layout.addWidget(QLabel("已选列:"))
+        selected_layout.addWidget(QLabel(translate("CATIACopilot", "已选列:")))
         self._selected_list = QListWidget()
         self._selected_list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self._selected_list.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -274,7 +275,7 @@ class ExportBomDialog(QDialog):
         # Populate sort column combo (after all_known is built)
         for col in all_known:
             self._sort_col_combo.addItem(
-                BOM_COLUMN_DISPLAY_NAMES.get(col, col), col
+                bom_column_display(col), col
             )
         saved_sort_idx = self._sort_col_combo.findData(self._summary_sort_column)
         if saved_sort_idx >= 0:
@@ -291,9 +292,9 @@ class ExportBomDialog(QDialog):
 
         # ── Action buttons ──────────────────────────────────────────────────
         action_row  = QHBoxLayout()
-        confirm_btn = QPushButton("导出")
+        confirm_btn = QPushButton(translate("CATIACopilot", "导出"))
         confirm_btn.setDefault(True)
-        cancel_btn  = QPushButton("取消")
+        cancel_btn  = QPushButton(translate("CATIACopilot", "取消"))
         confirm_btn.clicked.connect(self._confirm)
         cancel_btn.clicked.connect(self.reject)
         action_row.addStretch()
@@ -306,7 +307,7 @@ class ExportBomDialog(QDialog):
     @staticmethod
     def _make_col_item(internal_name: str) -> QListWidgetItem:
         item = QListWidgetItem(
-            BOM_COLUMN_DISPLAY_NAMES.get(internal_name, internal_name)
+            bom_column_display(internal_name)
         )
         item.setData(Qt.ItemDataRole.UserRole, internal_name)
         return item
@@ -338,7 +339,7 @@ class ExportBomDialog(QDialog):
 
     def _browse_file(self) -> None:
         file, _ = QFileDialog.getOpenFileName(
-            self, "选择 CATProduct 文件",
+            self, translate("CATIACopilot", "选择 CATProduct 文件"),
             self._last_browse_dir,
             "*.CATProduct (*.CATProduct);;All Files (*)",
         )
@@ -349,7 +350,7 @@ class ExportBomDialog(QDialog):
 
     def _browse_output_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "选择输出文件夹", self._last_output_dir
+            self, translate("CATIACopilot", "选择输出文件夹"), self._last_output_dir
         )
         if folder:
             self._folder_edit.setText(folder)
@@ -429,7 +430,7 @@ class ExportBomDialog(QDialog):
         else:
             file_path = self._file_edit.text().strip()
             if not file_path:
-                QMessageBox.warning(self, "未选择文件", "请选择一个 CATProduct 文件。")
+                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), translate("CATIACopilot", "请选择一个 CATProduct 文件。"))
                 return
 
         selected_cols = [
@@ -437,7 +438,7 @@ class ExportBomDialog(QDialog):
             for i in range(self._selected_list.count())
         ]
         if not selected_cols:
-            QMessageBox.warning(self, "未选择列", "请至少选择一列进行导出。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未选择列"), translate("CATIACopilot", "请至少选择一列进行导出。"))
             return
         self._settings.setValue("selected_columns", selected_cols)
 
@@ -447,22 +448,25 @@ class ExportBomDialog(QDialog):
             output_folder = self._folder_edit.text().strip()
             if not output_folder:
                 QMessageBox.warning(
-                    self, "未选择输出文件夹",
-                    "请选择一个输出文件夹（使用活动文档时需指定）。",
+                    self, translate("CATIACopilot", "未选择输出文件夹"),
+                    translate("CATIACopilot", "请选择一个输出文件夹（使用活动文档时需指定）。"),
                 )
                 return
 
         summarize = self._radio_summary.isChecked()
-        label_text = "正在导出汇总 BOM ，请稍候…" if summarize else "正在导出 BOM ，请稍候…"
+        label_text = (translate("CATIACopilot", "正在导出汇总 BOM ，请稍候…") if summarize
+                      else translate("CATIACopilot", "正在导出 BOM ，请稍候…"))
         progress = QProgressDialog(label_text, None, 0, 0, self)
-        progress.setWindowTitle("导出汇总 BOM" if summarize else "导出 BOM")
+        progress.setWindowTitle(translate("CATIACopilot", "导出汇总 BOM") if summarize
+                                else translate("CATIACopilot", "导出 BOM"))
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(300)
         progress.setValue(0)
 
         def _on_row_collected(count: int) -> None:
-            base = "正在导出汇总 BOM ，请稍候…" if summarize else "正在导出 BOM ，请稍候…"
-            progress.setLabelText(f"{base} 已读取 {count} 个节点")
+            base = (translate("CATIACopilot", "正在导出汇总 BOM ，请稍候…") if summarize
+                    else translate("CATIACopilot", "正在导出 BOM ，请稍候…"))
+            progress.setLabelText(translate("CATIACopilot", "{0} 已读取 {1} 个节点").format(base, count))
             progress.repaint()
             QApplication.processEvents()
 
@@ -479,7 +483,7 @@ class ExportBomDialog(QDialog):
             )
         except Exception as e:
             progress.close()
-            QMessageBox.critical(self, "导出失败", f"导出 BOM 时出错：\n{e}")
+            QMessageBox.critical(self, translate("CATIACopilot", "导出失败"), translate("CATIACopilot", "导出 BOM 时出错：\n{0}").format(e))
             return
         finally:
             progress.close()
@@ -488,18 +492,19 @@ class ExportBomDialog(QDialog):
         if dest_path is not None:
             self._show_export_success(dest_path)
         else:
-            fmt_label = "CSV 文件" if self._output_format == "csv" else "Excel 文件"
-            QMessageBox.information(self, "导出成功", f"BOM 已成功导出为{fmt_label}。")
+            fmt_label = (translate("CATIACopilot", "CSV 文件")
+                         if self._output_format == "csv" else translate("CATIACopilot", "Excel 文件"))
+            QMessageBox.information(self, translate("CATIACopilot", "导出成功"), translate("CATIACopilot", "BOM 已成功导出为{0}。").format(fmt_label))
         self.accept()
 
     def _show_export_success(self, dest_path: Path) -> None:
         """导出成功后弹出含"打开文件"和"打开所在文件夹"按钮的提示框。"""
         msg = QMessageBox(self)
-        msg.setWindowTitle("导出成功")
-        msg.setText(f"BOM 已成功导出：\n{dest_path}")
+        msg.setWindowTitle(translate("CATIACopilot", "导出成功"))
+        msg.setText(translate("CATIACopilot", "BOM 已成功导出：\n{0}").format(dest_path))
         msg.setIcon(QMessageBox.Icon.Information)
-        open_file_btn   = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
-        open_folder_btn = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
+        open_file_btn   = msg.addButton(translate("CATIACopilot", "打开文件"), QMessageBox.ButtonRole.ActionRole)
+        open_folder_btn = msg.addButton(translate("CATIACopilot", "打开所在文件夹"), QMessageBox.ButtonRole.ActionRole)
         msg.addButton(QMessageBox.StandardButton.Ok)
         msg.exec()
         clicked = msg.clickedButton()

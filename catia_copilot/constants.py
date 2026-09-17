@@ -7,6 +7,8 @@ so they can be imported by any module without circular-dependency risk.
 
 import re
 
+from PySide6.QtCore import QCoreApplication
+
 # ---------------------------------------------------------------------------
 # Application info
 # ---------------------------------------------------------------------------
@@ -45,6 +47,45 @@ ABOUT_TEXT = f"""{APP_NAME} v{APP_VERSION}
 ─────────────────────────────────────────
 
 \u00a9 2026 {APP_AUTHOR}. 仅供内部使用。"""
+
+
+def build_about_text() -> str:
+    """关于对话框正文（运行时翻译）。品牌名/版本/作者等真实属性名不翻译。"""
+    features = [
+        QCoreApplication.translate("CATIACopilot", "从图纸导出 PDF（CATDrawing 批量导出）"),
+        QCoreApplication.translate("CATIACopilot", "从产品/零件导出 STP（CATPart / CATProduct 批量导出）"),
+        QCoreApplication.translate("CATIACopilot", "从产品导出 BOM（导出至 Excel）"),
+        QCoreApplication.translate("CATIACopilot", "BOM 工作台（在线编辑属性并写回 CATIA）"),
+        QCoreApplication.translate("CATIACopilot", "质量特性工作台（质量/重心/转动惯量统计与汇总）"),
+        QCoreApplication.translate("CATIACopilot", "PLM 工作台（连接管理、增量同步、Tag 规则）"),
+        QCoreApplication.translate("CATIACopilot", "新建图纸 / 刷新图纸（从模板生成或同步 CATDrawing）"),
+        QCoreApplication.translate("CATIACopilot", "刷写零件模板（添加标准用户自定义属性）"),
+        QCoreApplication.translate("CATIACopilot", "紧固件 / 托板螺母快速装配（VBA 宏批量装配）"),
+        QCoreApplication.translate("CATIACopilot", "在图纸/零件间切换（自动查找关联文档）"),
+        QCoreApplication.translate("CATIACopilot", "查找指向的文档（COM 依赖分析）"),
+        QCoreApplication.translate("CATIACopilot", "运行宏（快捷运行 .catvbs / .catscript / .catvba）"),
+        QCoreApplication.translate("CATIACopilot", "字体文件 / ISO.xml 标准文件一键部署"),
+        QCoreApplication.translate("CATIACopilot", "CATIA 3D 视图嵌入菜单（快速访问所有功能）"),
+        QCoreApplication.translate("CATIACopilot", "COM 连接诊断（自动检测连接状态与异常）"),
+    ]
+    divider = "─" * 41
+    return "\n".join([
+        f"{APP_NAME} v{APP_VERSION}",
+        "",
+        QCoreApplication.translate("CATIACopilot", "一款面向工程团队的 CATIA V5 效率工具。"),
+        "",
+        QCoreApplication.translate("CATIACopilot", "主要功能："),
+    ] + ["  • " + line for line in features] + [
+        "",
+        divider,
+        QCoreApplication.translate("CATIACopilot", "开发者    {0}").format(APP_AUTHOR),
+        QCoreApplication.translate("CATIACopilot", "联系方式  {0}").format(APP_CONTACT),
+        QCoreApplication.translate("CATIACopilot", "发布日期  {0}").format(APP_DATE),
+        divider,
+        "",
+        QCoreApplication.translate("CATIACopilot", "© 2026 {0}. 仅供内部使用。").format(APP_AUTHOR),
+    ])
+
 
 # ---------------------------------------------------------------------------
 # BOM 节点类型常量
@@ -460,3 +501,118 @@ AI_MEMORY_FILENAME = "memory.md"
 
 # 发给 LLM 的最近消息数上限（system 消息不计入，0 = 不限制）
 AI_MAX_CONTEXT_MESSAGES = 100
+
+# ---------------------------------------------------------------------------
+# 界面显示工厂（i18n）
+#
+# 业务数据字典（TYPE_DISPLAY_NAMES / BOM_COLUMN_DISPLAY_NAMES /
+# MASS_PROPS_COLUMN_DISPLAY_NAMES / SOURCE_* 等）原值保持不变，供导出等
+# "恒中文"路径与数据转换使用；UI 层显示必须经过下述工厂函数以随界面语言翻译。
+#
+# 工厂内逐 key 直接调用 QCoreApplication.translate("CATIACopilot", "中文字面量")，
+# 保证 lupdate 可按字面量提取；词条未收录时 QCoreApplication.translate 回退源中文。
+# 不在此构建"中文→英文"运行时字典（禁止按 current_ui_language() 手工切换）。
+# ---------------------------------------------------------------------------
+
+def type_display(key: str) -> str:
+    """BOM 节点类型英文 key → 界面显示文案（随界面语言翻译）。"""
+    if key == BomNodeType.PART:
+        return QCoreApplication.translate("CATIACopilot", "零件")
+    if key == BomNodeType.PRODUCT:
+        return QCoreApplication.translate("CATIACopilot", "产品")
+    if key == BomNodeType.COMPONENT:
+        return QCoreApplication.translate("CATIACopilot", "部件")
+    if key == BomNodeType.MIRROR:
+        return QCoreApplication.translate("CATIACopilot", "对称件")
+    return key
+
+
+def source_display(raw: str) -> str:
+    """Source 原始存储值（"0"/"1"/"2"）→ 界面显示文案（随界面语言翻译）。"""
+    if raw == "0":
+        return QCoreApplication.translate("CATIACopilot", "未知")
+    if raw == "1":
+        return QCoreApplication.translate("CATIACopilot", "自制")
+    if raw == "2":
+        return QCoreApplication.translate("CATIACopilot", "外购")
+    return raw
+
+
+def bom_column_display(key: str) -> str:
+    """内部 BOM 列名 → 界面表头（随界面语言翻译）。"""
+    if key == "#":
+        return "#"
+    if key == "Level":
+        return QCoreApplication.translate("CATIACopilot", "层级")
+    if key == "Type":
+        return QCoreApplication.translate("CATIACopilot", "类型")
+    if key == "Filename":
+        return QCoreApplication.translate("CATIACopilot", "文件名")
+    if key == "Filepath":
+        return QCoreApplication.translate("CATIACopilot", "完整路径")
+    if key == "Part Number":
+        return QCoreApplication.translate("CATIACopilot", "零件编号")
+    if key == "Nomenclature":
+        return QCoreApplication.translate("CATIACopilot", "术语（中文名称）")
+    if key == "Definition":
+        return QCoreApplication.translate("CATIACopilot", "定义")
+    if key == "Revision":
+        return QCoreApplication.translate("CATIACopilot", "版本")
+    if key == "Source":
+        return QCoreApplication.translate("CATIACopilot", "源")
+    if key == "Description":
+        return QCoreApplication.translate("CATIACopilot", "描述")
+    if key == "Quantity":
+        return QCoreApplication.translate("CATIACopilot", "数量")
+    if key == "Instance Name":
+        return QCoreApplication.translate("CATIACopilot", "实例名")
+    if key == "description_inst":
+        return QCoreApplication.translate("CATIACopilot", "实例描述")
+    return key
+
+
+def mass_props_column_display(key: str) -> str:
+    """质量特性内部列名 → 界面表头（随界面语言翻译，含单位后缀）。"""
+    if key == "#":
+        return "#"
+    if key == "Level":
+        return QCoreApplication.translate("CATIACopilot", "层级")
+    if key == "Type":
+        return QCoreApplication.translate("CATIACopilot", "类型")
+    if key == "Filename":
+        return QCoreApplication.translate("CATIACopilot", "文件名")
+    if key == "Part Number":
+        return QCoreApplication.translate("CATIACopilot", "零件编号")
+    if key == "Instance Name":
+        return QCoreApplication.translate("CATIACopilot", "实例名")
+    if key == "Nomenclature":
+        return QCoreApplication.translate("CATIACopilot", "术语（中文名称）")
+    if key == "Revision":
+        return QCoreApplication.translate("CATIACopilot", "版本")
+    if key == "Quantity":
+        return QCoreApplication.translate("CATIACopilot", "数量")
+    if key == "Status":
+        return QCoreApplication.translate("CATIACopilot", "状态")
+    if key == "Density":
+        return QCoreApplication.translate("CATIACopilot", "密度 (kg/m³)")
+    if key == "Weight":
+        return QCoreApplication.translate("CATIACopilot", "重量 (kg)")
+    if key == "CogX":
+        return QCoreApplication.translate("CATIACopilot", "重心 X (mm)")
+    if key == "CogY":
+        return QCoreApplication.translate("CATIACopilot", "重心 Y (mm)")
+    if key == "CogZ":
+        return QCoreApplication.translate("CATIACopilot", "重心 Z (mm)")
+    if key == "Ixx":
+        return QCoreApplication.translate("CATIACopilot", "Ixx (kg·mm²)")
+    if key == "Iyy":
+        return QCoreApplication.translate("CATIACopilot", "Iyy (kg·mm²)")
+    if key == "Izz":
+        return QCoreApplication.translate("CATIACopilot", "Izz (kg·mm²)")
+    if key == "Ixy":
+        return QCoreApplication.translate("CATIACopilot", "Ixy (kg·mm²)")
+    if key == "Ixz":
+        return QCoreApplication.translate("CATIACopilot", "Ixz (kg·mm²)")
+    if key == "Iyz":
+        return QCoreApplication.translate("CATIACopilot", "Iyz (kg·mm²)")
+    return key
