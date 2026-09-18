@@ -54,7 +54,11 @@ VersionInfoProductName={#AppName}
 VersionInfoCompany={#AppPublisher}
 
 [Languages]
+; Installer wizard offers Simplified Chinese / English. This only controls the
+; installer UI language; the app UI language is an independent user setting
+; (QSettings: CATIACopilot/Application -> "language") and is not linked here.
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 ; 桌面快捷方式（默认勾选）

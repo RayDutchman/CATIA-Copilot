@@ -44,6 +44,16 @@ jobs:
             throw "版本不一致：constants.py=$appVersion，tag=${{ github.ref_name }}"
           }
 
+      - name: Verify translations
+        shell: pwsh
+        run: python scripts/verify_translations.py
+
+      - name: Run unit tests (offscreen)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s catia_copilot/tests -p "test_*.py"
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --yes --no-progress

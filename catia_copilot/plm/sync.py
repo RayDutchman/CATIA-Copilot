@@ -215,6 +215,44 @@ class SyncResult:
 
 # ── 结构化同步事件（供 UI 进度解析使用，替代脆弱的文本解析） ────────────────────
 
+# ── 语言无关状态码（全 ASCII）────────────────────────────────────────────────
+# 以下 code 是 UI 进度/状态的结构化来源：UI 必须读 code，不得通过翻译文本反推。
+# source_code：节点结果来源类别
+CODE_SOURCE_CREATED   = "created"    # 新建成功（source="新建"）
+CODE_SOURCE_UPDATED   = "updated"    # 已存在并更新（source="签出"/"已签出-本人"/"覆盖他人签出"）
+CODE_SOURCE_SKIPPED   = "skipped"    # 跳过类终态（不新建 / 被他人签出 / 撤销他人签出失败）
+CODE_SOURCE_UNCHANGED = "unchanged"  # 增量判断：属性无变化，跳过
+CODE_SOURCE_FAILED    = "failed"     # 失败类终态（创建 / 签出 / 撤销后签出失败）
+
+# update_code：更新结果（终态 col2 或过程行状态）
+CODE_UPDATE_WRITTEN           = "written"            # 属性已写入
+CODE_UPDATE_UPDATE_FAILED     = "update-failed"      # ✗ 更新失败
+CODE_UPDATE_UPLOADED          = "uploaded"           # 附件/文件上传成功（过程行）
+CODE_UPDATE_UPLOAD_FAILED     = "upload-failed"      # 上传失败（过程行）
+CODE_UPDATE_CONVERTING        = "converting"         # CAD 转换中（过程行）
+CODE_UPDATE_CONVERTED         = "converted"          # CAD 转换完成（过程行）
+CODE_UPDATE_CONVERSION_FAILED = "conversion-failed"  # 转换失败 / 超时（过程行）
+
+# checkin_code：签入结果
+CODE_CHECKIN_CHECKED_IN      = "checked-in"     # 已签入
+CODE_CHECKIN_CHECKIN_FAILED  = "checkin-failed" # ✗ 签入失败
+CODE_CHECKIN_RETAINED        = "retained"       # 保留签出
+
+# 现有中文签出来源 → source_code 的集中映射（生产端一次性映射）。
+# 注意：code 是 UI 结构化的唯一事实来源，UI 不得通过翻译既有中文文本反推 code。
+_SOURCE_CODE_MAP: dict[str, str] = {
+    "新建":         CODE_SOURCE_CREATED,
+    "签出":         CODE_SOURCE_UPDATED,
+    "已签出-本人":    CODE_SOURCE_UPDATED,
+    "覆盖他人签出":   CODE_SOURCE_UPDATED,
+}
+
+
+def _source_code_for(source: str) -> str:
+    """将签出来源中文文案映射为语言无关 source_code。"""
+    return _SOURCE_CODE_MAP.get(source, CODE_SOURCE_UPDATED)
+
+
 @dataclass
 class SyncEvent:
     """结构化同步进度事件。
@@ -227,12 +265,17 @@ class SyncEvent:
       - "node_skip": 节点跳过
       - "node_fail": 节点失败
       - "summary": 同步汇总
-    part_number: 零件编号
-    source: 签出来源（如 "新建"、"签出"、"已签出-本人"、"覆盖他人签出"）
-    update: 更新结果（如 "属性已写入"、"STP 已上传"、"✗ 更新失败"）
-    checkin: 签入状态（如 "已签入"、"保留签出"、""）
+    part_number: 零件编号（明确、完整；含 "<"/"|" 等特殊字符时不截断）
+    source: 签出来源显示文案（如 "新建"、"签出"、"已签出-本人"、"覆盖他人签出"）
+    update: 更新结果显示文案（如 "属性已写入"、"STP 已上传"、"✗ 更新失败"）
+    checkin: 签入状态显示文案（如 "已签入"、"保留签出"、""）
     message: 原始日志消息（兼容旧代码）
     speed_kbps: 上传速度 KB/s（可选）
+    source_code: 签出来源语言无关状态码（CODE_SOURCE_*，缺省 None）
+    update_code: 更新结果语言无关状态码（CODE_UPDATE_*，缺省 None）
+    checkin_code: 签入结果语言无关状态码（CODE_CHECKIN_*，缺省 None）
+    _text_line: 生产端预生成的整行文本，仅供文本回调兼容层使用（结构化消费者
+                应忽略；未设置时由 _emit_text 按 type 推导）。
     """
     type: str
     part_number: str = ""
@@ -241,10 +284,21 @@ class SyncEvent:
     checkin: str = ""
     message: str = ""
     speed_kbps: float | None = None
+    source_code: str | None = None
+    update_code: str | None = None
+    checkin_code: str | None = None
+    _text_line: str = field(default="", repr=False)
 
 
 def _emit_text(cb, event: SyncEvent) -> None:
-    """将结构化事件转换为文本日志（兼容旧回调）。"""
+    """将结构化事件转换为文本日志（兼容旧回调）。
+
+    若生产端已提供 _text_line（完整预格式化行），原样输出，
+    保证文本回调收到与旧版完全一致的日志行（UI 文本解析在 Task 3.2 前仍依赖）。
+    """
+    if event._text_line:
+        cb(event._text_line)
+        return
     if event.type == "header":
         cb(_log_header())
     elif event.type == "node_start":
@@ -931,7 +985,17 @@ def sync_bom_to_plm(
             # 保留签出：不执行 checkin，输出终态日志行并写回 CATIA 属性
             cb(f"── 保留签出（{len(tickets)} 个零件，不执行签入）──")
             for t in tickets:
-                cb(_log_row(t.source, t.update_col or "属性已写入", "保留签出", t.lbl))
+                _done_line = _log_row(t.source, t.update_col or "属性已写入", "保留签出", t.lbl)
+                cb(SyncEvent(
+                    type="node_done", part_number=t.part_number,
+                    source=t.source,
+                    update=t.update_col or "属性已写入",
+                    checkin="保留签出",
+                    checkin_code=CODE_CHECKIN_RETAINED,
+                    source_code=_source_code_for(t.source),
+                    update_code=(CODE_UPDATE_WRITTEN if t.update_ok else CODE_UPDATE_UPDATE_FAILED),
+                    message=_done_line, _text_line=_done_line,
+                ))
                 # checkout 时 PLM 已创建新 iteration，此处写回本地文件
                 if t.node.filepath and _os.path.isfile(t.node.filepath):
                     _write_plm_attrs_to_catia(t.node.filepath, t.version, t.iteration)
@@ -1164,7 +1228,12 @@ def _sync_node(
             except PlmApiError:
                 pass
             result.skipped += 1
-            cb(_log_skip("跳过-不新建", lbl))
+            _skip_line = _log_skip("跳过-不新建", lbl)
+            cb(SyncEvent(
+                type="node_skip", part_number=pn,
+                source="跳过-不新建", source_code=CODE_SOURCE_SKIPPED,
+                message=_skip_line, _text_line=_skip_line,
+            ))
             return None
         result.created += 1
         _ref = _do_update_and_upload(
@@ -1191,7 +1260,12 @@ def _sync_node(
             result.failed += 1
             msg = f"创建失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg} — {exc}")
-            cb(_log_fail(msg, lbl))
+            _fail_line = _log_fail(msg, lbl)
+            cb(SyncEvent(
+                type="node_fail", part_number=pn,
+                source=msg, source_code=CODE_SOURCE_FAILED,
+                message=_fail_line, _text_line=_fail_line,
+            ))
             return None
 
     # 3. 零件已存在
@@ -1209,7 +1283,12 @@ def _sync_node(
         }
         if node_attrs == plm_attrs and not child_components:
             result.unchanged += 1
-            cb(_log_skip("无变化-跳过", lbl))
+            _skip_line = _log_skip("无变化-跳过", lbl)
+            cb(SyncEvent(
+                type="node_skip", part_number=pn,
+                source="无变化-跳过", source_code=CODE_SOURCE_UNCHANGED,
+                message=_skip_line, _text_line=_skip_line,
+            ))
             cached_ver = plm_parts_cache[pn].get("version", version)
             return part_number, cached_ver
 
@@ -1226,7 +1305,12 @@ def _sync_node(
             result.failed += 1
             msg = f"签出失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg} — {exc}")
-            cb(_log_fail(msg, lbl))
+            _fail_line = _log_fail(msg, lbl)
+            cb(SyncEvent(
+                type="node_fail", part_number=pn,
+                source=msg, source_code=CODE_SOURCE_FAILED,
+                message=_fail_line, _text_line=_fail_line,
+            ))
             return part_number, version
 
         _ref = _do_update_and_upload(
@@ -1253,7 +1337,13 @@ def _sync_node(
         if options.other_checked_out_policy == CheckedOutByOtherPolicy.SKIP:
             result.skipped += 1
             result.errors.append(f"{lbl}: 已被 {checkout_owner} 签出，已跳过")
-            cb(_log_skip(f"跳过-被@{checkout_owner}", lbl))
+            _skip_reason = f"跳过-被@{checkout_owner}"
+            _skip_line = _log_skip(_skip_reason, lbl)
+            cb(SyncEvent(
+                type="node_skip", part_number=pn,
+                source=_skip_reason, source_code=CODE_SOURCE_SKIPPED,
+                message=_skip_line, _text_line=_skip_line,
+            ))
             uploaded_pns[pn] = (part_number, version)  # 防止同零件多层级出现时重复报警
             return part_number, version
 
@@ -1265,7 +1355,13 @@ def _sync_node(
             result.skipped += 1
             msg = f"撤销失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg}（权限不足，锁定者：{checkout_owner}）— {exc}")
-            cb(_log_skip(f"撤销失败-@{checkout_owner}", lbl))
+            _skip_reason = f"撤销失败-@{checkout_owner}"
+            _skip_line = _log_skip(_skip_reason, lbl)
+            cb(SyncEvent(
+                type="node_skip", part_number=pn,
+                source=_skip_reason, source_code=CODE_SOURCE_SKIPPED,
+                message=_skip_line, _text_line=_skip_line,
+            ))
             return part_number, version
 
         try:
@@ -1276,7 +1372,12 @@ def _sync_node(
             result.failed += 1
             msg = f"撤销后签出失败({exc.status_code})"
             result.errors.append(f"{lbl}: {msg} — {exc}")
-            cb(_log_fail(msg, lbl))
+            _fail_line = _log_fail(msg, lbl)
+            cb(SyncEvent(
+                type="node_fail", part_number=pn,
+                source=msg, source_code=CODE_SOURCE_FAILED,
+                message=_fail_line, _text_line=_fail_line,
+            ))
             return part_number, version
 
         _ref = _do_update_and_upload(
@@ -1418,15 +1519,31 @@ def _do_update_and_upload(
             client.upload_attached_file(workspace, part_number, version, iteration, fp)
             _elapsed = _time.time() - _t0
             upload_col = "CATIA文件已上传"
-            cb(_log_row(source, "CATIA文件已上传", "", lbl))
+            _progress_line = _log_row(source, "CATIA文件已上传", "", lbl)
+            _speed_kbps: float | None = None
             if _elapsed > 0:
                 _fsize_kb = _os.path.getsize(fp) / 1024
                 if _fsize_kb > 0:
-                    cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
+                    _speed_kbps = _fsize_kb / max(_elapsed, 0.001)
+            cb(SyncEvent(
+                type="node_progress", part_number=part_number,
+                source=source, update="CATIA文件已上传",
+                update_code=CODE_UPDATE_UPLOADED, source_code=_source_code_for(source),
+                speed_kbps=_speed_kbps,
+                message=_progress_line, _text_line=_progress_line,
+            ))
+            if _speed_kbps is not None:
+                cb(f"  {upload_col} ({_fmt_speed(_speed_kbps)})")
         except Exception as _exc:
             logger.warning(f"{lbl}: CATIA 文件上传失败 — {_exc}")
             result.errors.append(f"{lbl}: CATIA 文件上传失败 — {_exc}")
-            cb(_log_row(source, "✗ CATIA文件上传失败", "", lbl))
+            _fail_line = _log_row(source, "✗ CATIA文件上传失败", "", lbl)
+            cb(SyncEvent(
+                type="node_progress", part_number=part_number,
+                source=source, update="✗ CATIA文件上传失败",
+                update_code=CODE_UPDATE_UPLOAD_FAILED, source_code=_source_code_for(source),
+                message=_fail_line, _text_line=_fail_line,
+            ))
 
     # 2. 导出并上传 STP 几何文件（仅 Part 类型；触发 PLM 异步 CAD 转换）
     if (options.upload_step_file
@@ -1465,17 +1582,33 @@ def _do_update_and_upload(
                     result.step_uploaded += 1
                     upload_col       = "STP已上传"
                     needs_conversion = True
-                    cb(_log_row(source, "STP已上传", "", lbl))
+                    _progress_line = _log_row(source, "STP已上传", "", lbl)
+                    _speed_kbps: float | None = None
                     if _elapsed > 0:
                         _fsize_kb = _os.path.getsize(stp_path) / 1024
                         if _fsize_kb > 0:
-                            cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
+                            _speed_kbps = _fsize_kb / max(_elapsed, 0.001)
+                    cb(SyncEvent(
+                        type="node_progress", part_number=part_number,
+                        source=source, update="STP已上传",
+                        update_code=CODE_UPDATE_UPLOADED, source_code=_source_code_for(source),
+                        speed_kbps=_speed_kbps,
+                        message=_progress_line, _text_line=_progress_line,
+                    ))
+                    if _speed_kbps is not None:
+                        cb(f"  {upload_col} ({_fmt_speed(_speed_kbps)})")
             finally:
                 _pcom.CoUninitialize()
         except Exception as _exc:
             logger.warning(f"{lbl}: STP 上传失败（不影响主流程）— {_exc}")
             result.errors.append(f"{lbl}: STP 上传失败 — {_exc}")
-            cb(_log_row(source, "✗ STP上传失败", "", lbl))
+            _fail_line = _log_row(source, "✗ STP上传失败", "", lbl)
+            cb(SyncEvent(
+                type="node_progress", part_number=part_number,
+                source=source, update="✗ STP上传失败",
+                update_code=CODE_UPDATE_UPLOAD_FAILED, source_code=_source_code_for(source),
+                message=_fail_line, _text_line=_fail_line,
+            ))
 
     # 3. 将对应 CATDrawing 转换为 PDF 并上传
     #    按 constants.DRAWING_SEARCH_STRATEGIES 策略查找 CATDrawing
@@ -1500,11 +1633,21 @@ def _do_update_and_upload(
                             )
                             _elapsed = _time.time() - _t0
                             upload_col = "图纸PDF已上传"
-                            cb(_log_row(source, "图纸PDF已上传", "", lbl))
+                            _progress_line = _log_row(source, "图纸PDF已上传", "", lbl)
+                            _speed_kbps: float | None = None
                             if _elapsed > 0:
                                 _fsize_kb = _os.path.getsize(pdf_path) / 1024
                                 if _fsize_kb > 0:
-                                    cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
+                                    _speed_kbps = _fsize_kb / max(_elapsed, 0.001)
+                            cb(SyncEvent(
+                                type="node_progress", part_number=part_number,
+                                source=source, update="图纸PDF已上传",
+                                update_code=CODE_UPDATE_UPLOADED, source_code=_source_code_for(source),
+                                speed_kbps=_speed_kbps,
+                                message=_progress_line, _text_line=_progress_line,
+                            ))
+                            if _speed_kbps is not None:
+                                cb(f"  {upload_col} ({_fmt_speed(_speed_kbps)})")
                         else:
                             raise FileNotFoundError(f"PDF 文件未生成：{pdf_path}")
                     else:
@@ -1512,7 +1655,13 @@ def _do_update_and_upload(
             except Exception as _exc:
                 logger.warning(f"{lbl}: 图纸 PDF 上传失败 — {_exc}")
                 result.errors.append(f"{lbl}: 图纸 PDF 上传失败 — {_exc}")
-                cb(_log_row(source, "✗ 图纸PDF上传失败", "", lbl))
+                _fail_line = _log_row(source, "✗ 图纸PDF上传失败", "", lbl)
+                cb(SyncEvent(
+                    type="node_progress", part_number=part_number,
+                    source=source, update="✗ 图纸PDF上传失败",
+                    update_code=CODE_UPDATE_UPLOAD_FAILED, source_code=_source_code_for(source),
+                    message=_fail_line, _text_line=_fail_line,
+                ))
         elif drawing_path is None:
             logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过 PDF 上传")
 
@@ -1527,15 +1676,31 @@ def _do_update_and_upload(
                 )
                 _elapsed = _time.time() - _t0
                 upload_col = "图纸文件已上传"
-                cb(_log_row(source, "图纸文件已上传", "", lbl))
+                _progress_line = _log_row(source, "图纸文件已上传", "", lbl)
+                _speed_kbps: float | None = None
                 if _elapsed > 0:
                     _fsize_kb = _os.path.getsize(drawing_path) / 1024
                     if _fsize_kb > 0:
-                        cb(f"  {upload_col} ({_fmt_speed(_fsize_kb / max(_elapsed, 0.001))})")
+                        _speed_kbps = _fsize_kb / max(_elapsed, 0.001)
+                cb(SyncEvent(
+                    type="node_progress", part_number=part_number,
+                    source=source, update="图纸文件已上传",
+                    update_code=CODE_UPDATE_UPLOADED, source_code=_source_code_for(source),
+                    speed_kbps=_speed_kbps,
+                    message=_progress_line, _text_line=_progress_line,
+                ))
+                if _speed_kbps is not None:
+                    cb(f"  {upload_col} ({_fmt_speed(_speed_kbps)})")
             except Exception as _exc:
                 logger.warning(f"{lbl}: CATDrawing 上传失败 — {_exc}")
                 result.errors.append(f"{lbl}: CATDrawing 上传失败 — {_exc}")
-                cb(_log_row(source, "✗ 图纸文件上传失败", "", lbl))
+                _fail_line = _log_row(source, "✗ 图纸文件上传失败", "", lbl)
+                cb(SyncEvent(
+                    type="node_progress", part_number=part_number,
+                    source=source, update="✗ 图纸文件上传失败",
+                    update_code=CODE_UPDATE_UPLOAD_FAILED, source_code=_source_code_for(source),
+                    message=_fail_line, _text_line=_fail_line,
+                ))
         elif drawing_path is None:
             logger.debug(f"{lbl}: 未找到对应 CATDrawing，跳过文件上传（TODO-01）")
 
@@ -1587,8 +1752,18 @@ def _do_checkin_ticket(
         logger.warning(f"{ticket.lbl}: {msg}")
         result.errors.append(f"{ticket.lbl}: {msg}")
 
-    # 终态行：col1/col2/col3 均非空，UI 触发一次 node_done
-    cb(_log_row(ticket.source, ticket.update_col, col3, ticket.lbl))
+    # 终态行：col1/col2/col3 均非空，每个零件仅触发一次 node_done
+    _done_line = _log_row(ticket.source, ticket.update_col, col3, ticket.lbl)
+    cb(SyncEvent(
+        type="node_done", part_number=ticket.part_number,
+        source=ticket.source,
+        update=ticket.update_col,
+        checkin=col3,
+        checkin_code=(CODE_CHECKIN_CHECKED_IN if col3 == "已签入" else CODE_CHECKIN_CHECKIN_FAILED),
+        source_code=_source_code_for(ticket.source),
+        update_code=(CODE_UPDATE_WRITTEN if ticket.update_ok else CODE_UPDATE_UPDATE_FAILED),
+        message=_done_line, _text_line=_done_line,
+    ))
 
     # ── 签入成功后：将 PLM_Version / PLM_Iteration 写回 CATIA 文件 ────────────
     # checkin 后重查一次真实迭代号（不同后端行为不同：

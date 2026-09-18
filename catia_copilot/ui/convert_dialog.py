@@ -126,7 +126,7 @@ class FileConvertDialog(QDialog):
         file_section_layout.setContentsMargins(0, 0, 0, 0)
         file_section_layout.setSpacing(6)
 
-        file_section_layout.addWidget(QLabel(translate("CATIACopilot", file_label)))
+        file_section_layout.addWidget(QLabel(file_label))
 
         self._file_list = QListWidget()
         self._file_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -378,7 +378,7 @@ class FileConvertDialog(QDialog):
             files = [self._file_list.item(i).text()
                      for i in range(self._file_list.count())]
             if not files:
-                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), translate("CATIACopilot", self._no_files_msg))
+                QMessageBox.warning(self, translate("CATIACopilot", "未选择文件"), self._no_files_msg)
                 return
 
             if self._radio_same is None:

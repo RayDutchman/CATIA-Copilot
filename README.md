@@ -1,94 +1,96 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # CATIA Copilot
 
-> 一款面向工程团队的 CATIA V5 辅助工具，旨在简化日常操作、提升工作效率。
+> A CATIA V5 assistant tool for engineering teams, designed to streamline daily operations and boost productivity.
 
-**版本：** 2.2.0 &nbsp;|&nbsp; **发布日期：** 2026-07-01 &nbsp;|&nbsp; **作者：** CHEN Weibo
+**Version:** 2.2.0 &nbsp;|&nbsp; **Release Date:** 2026-07-01 &nbsp;|&nbsp; **Author:** CHEN Weibo
 
-> 历史版本变更说明见 [CHANGELOG.md](CHANGELOG.md)。
+> Changelog: see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## 功能一览
+## Features
 
 ### AI Copilot
 
-| 功能 | 说明 |
-|------|------|
-| **AI 对话助手** | 流式对话面板，支持多会话管理、Markdown 渲染、工具调用卡片；AI 可直接操作 CATIA（读写属性、BOM、导出、建模等） |
-| **多 Provider 支持** | 支持 OpenAI、Anthropic、Gemini 等多家服务商；Settings 对话框可配置 API key、base URL、模型 |
-| **AI 驱动建模** | AI 生成 Python 建模脚本并动态执行，支持草图、拉伸、旋转、倒角、阵列等特征；失败自动返回 traceback 供 AI 自纠正 |
+| Feature | Description |
+|---------|-------------|
+| **AI Chat Assistant** | Streaming chat panel with multi-session management, Markdown rendering, and tool-call cards; AI can directly operate CATIA (read/write attributes, BOM, export, modeling, etc.) |
+| **Multi-Provider Support** | Supports OpenAI, Anthropic, Gemini, and more; Settings dialog allows configuring API keys, base URLs, and models |
+| **AI-Driven Modeling** | AI generates Python modeling scripts and executes them dynamically; supports sketches, extrusions, rotations, chamfers, patterns, and other features; failures automatically return tracebacks for AI self-correction |
 
-### 工作台
+### Workbenches
 
-| 功能 | 说明 |
-|------|------|
-| **BOM 工作台** | 在表格中编辑 BOM 属性（零件编号、术语、定义、版本、来源及自定义用户属性），一键写回 CATIA |
-| **质量特性工作台** | 遍历产品树，汇总各零件质量特性（质量/重心/转动惯量），自动按层级累加并导出 Excel；支持层次化和汇总两种 BOM 模式及多种单位切换 |
-| **PLM 工作台** | DocDoku PLM 连接、BOM 差异对比、Push/Pull 与同步历史 |
+| Feature | Description |
+|---------|-------------|
+| **BOM Workbench** | Edit BOM attributes (part number, nomenclature, definition, version, source, and custom user attributes) in a table; write back to CATIA with one click |
+| **Mass Properties Workbench** | Traverses the product tree, aggregates mass properties (mass / center of gravity / moment of inertia) per part, auto-sums by hierarchy, and exports to Excel; supports hierarchical and summary BOM modes with multiple unit options |
+| **PLM Workbench** | DocDoku PLM connection, BOM diff comparison, Push/Pull, and sync history |
 
-### 导出
+### Export
 
-| 功能 | 说明 |
-|------|------|
-| **从产品导出 BOM** | 从 CATProduct 中提取完整 BOM 信息并导出至 Excel (.xlsx) |
-| **从图纸导出 PDF** | 批量将 CATDrawing 文件导出为 PDF，支持自定义文件前缀 |
-| **从产品/零件导出 STP** | 批量将 CATPart 或 CATProduct 文件导出为 STEP 格式 |
+| Feature | Description |
+|---------|-------------|
+| **Export BOM from Product** | Extracts complete BOM information from CATProduct and exports to Excel (.xlsx) |
+| **Export PDF from Drawing** | Batch-exports CATDrawing files to PDF with customizable file prefix |
+| **Export STP from Product/Part** | Batch-exports CATPart or CATProduct files to STEP format |
 
-### 图纸
+### Drawings
 
-| 功能 | 说明 |
-|------|------|
-| **新建图纸** | 根据 `drawing_templates` 文件夹中的 CATDrawing 模板，在 CATIA 中为当前活动零件/产品生成新图纸 |
-| **刷新图纸** | 将当前活动 CATDrawing 图纸的参数与对应零件/产品同步刷新（零件编号、术语、版本及自定义属性） |
+| Feature | Description |
+|---------|-------------|
+| **New Drawing** | Generates a new drawing in CATIA for the active part/product based on CATDrawing templates in the `drawing_templates` folder |
+| **Refresh Drawing** | Refreshes parameters of the active CATDrawing to match its associated part/product (part number, nomenclature, version, and custom attributes) |
 
-### 工具
+### Tools
 
-| 功能 | 说明 |
-|------|------|
-| **复制字体文件到 CATIA 目录** | 将 ChangFangSong.ttf 一键复制到 CATIA TrueType 字体目录 |
-| **复制 ISO.xml 到 CATIA 目录** | 将 ISO.xml 标准文件一键复制到 CATIA drafting 标准目录 |
-| **刷写零件模板** | 为 CATPart 批量添加标准用户自定义属性（物料编码、物料名称等） |
-| **快速装配紧固件 / 托板螺母** | 通过 VBA 宏快速批量装配紧固件或托板螺母到产品孔位，支持翻转方向 |
-| **在图纸/零件间切换** | 自动判断当前活跃文档类型，双向查找并打开关联的图纸或零件/产品 |
-| **查找指向的文档** | 通过 CATIA COM 查找文件的所有引用文档，支持多种查找策略 |
-| **运行宏** | 自动扫描 macros 文件夹中的 `.catvbs` / `.catscript` / `.catvba` 文件，可直接运行 |
+| Feature | Description |
+|---------|-------------|
+| **Copy Font to CATIA Directory** | Copies ChangFangSong.ttf to the CATIA TrueType font directory |
+| **Copy ISO.xml to CATIA Directory** | Copies ISO.xml standard file to the CATIA drafting standards directory |
+| **Apply Part Template** | Batch-adds standard user-defined attributes (material code, material name, etc.) to CATPart files |
+| **Quick Assemble Fasteners / Plate Nuts** | Uses VBA macros to batch-assemble fasteners or plate nuts into product holes with optional flip direction |
+| **Switch between Drawing / Part** | Auto-detects the active document type and opens the associated drawing or part/product |
+| **Find Referenced Documents** | Finds all referencing documents of a file via CATIA COM with multiple search strategies |
+| **Run Macro** | Auto-scans `.catvbs` / `.catscript` / `.catvba` files in the macros folder and runs them directly |
 
-### 其他
+### Other
 
-- **CATIA 3D 视图嵌入菜单** — 在每个 3D 视图右上角嵌入功能菜单按钮，可快速访问所有功能；支持拖拽定位，菜单按工作台/导出/图纸/工具分区
-- **CATIA 连接指示器**（状态栏）— 每 5 秒轮询 COM 连接状态；三色显示：绿色（已连接且功能正常）、橙色（连接异常）、红色（未连接）
-- **CATIA 连接诊断** — 可查看详细诊断报告（CATIA 版本、已打开文档数、活动文档及修复建议）
-- **原生主题** — 使用 Windows 系统 `windows11` 风格渲染器，外观随系统深浅色自动切换，与 CATIA V5 界面风格一致
-- **gen_py 自动清理** — 启动时自动删除 `%LOCALAPPDATA%\Temp\gen_py\` 早绑定缓存，防止 COM 连接污染
-- **日志窗口** — 查看操作记录与错误信息
-- **帮助文档** — 内置帮助文档，在菜单「帮助 → 文档」中查看
-
----
-
-## 运行环境要求
-
-- **操作系统：** Windows 10 / 11
-- **Python：** 3.10 或更高版本
-- **CATIA V5 R28：** 文件导出等功能需要 CATIA 处于运行状态（通过 COM 自动化接口通信）
+- **CATIA 3D View Embedded Menu** — Embeds a function menu button in the top-right corner of every 3D view for quick access; supports drag-to-reposition; menu is organized by workbench / export / drawing / tool sections
+- **CATIA Connection Indicator** (Status Bar) — Polls COM connection status every 5 seconds; tri-color display: green (connected, all functions available), orange (connection issue), red (disconnected)
+- **CATIA Connection Diagnostics** — View detailed diagnostic reports (CATIA version, open document count, active document, and repair suggestions)
+- **Native Theme** — Uses the Windows 11 system renderer; appearance automatically follows the system light/dark mode, matching the CATIA V5 interface style
+- **gen_py Auto-Cleanup** — Automatically deletes early-binding cache under `%LOCALAPPDATA%\Temp\gen_py\` at startup to prevent COM connection pollution
+- **Log Window** — View operation records and error messages
+- **Help Documentation** — Built-in help docs accessible via the Help → Documentation menu
 
 ---
 
-## 安装 / 开发环境搭建
+## Requirements
+
+- **OS:** Windows 10 / 11
+- **Python:** 3.10 or later
+- **CATIA V5 R28:** File export and other features require CATIA to be running (communicated via COM automation interface)
+
+---
+
+## Installation / Development Setup
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone the repository
 git clone https://github.com/RayDutchman/CATIA-Copilot.git
 cd CATIA-Copilot
 
-# 2. 创建并激活虚拟环境
+# 2. Create and activate a virtual environment
 python -m venv .venv
 .venv\Scripts\activate
 
-# 3. 安装依赖
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
-### 运行
+### Running
 
 ```bash
 python main.py
@@ -96,109 +98,109 @@ python main.py
 
 ---
 
-## 打包为 Windows 可执行文件
+## Building a Windows Executable
 
-正式发行版使用 Nuitka + Inno Setup，避免把 Python 源码作为数据文件复制到安装包：
+Official releases use Nuitka + Inno Setup, avoiding the need to copy Python source files as data into the installer:
 
 ```powershell
-# 生成 Nuitka standalone 目录
+# Generate Nuitka standalone directory
 .\build_nuitka.ps1
 
-# 生成 Inno Setup 安装包
+# Generate Inno Setup installer
 .\build_nuitka_installer.ps1
 ```
 
-输出目录：`..\CATIA-Copilot-dist-nuitka\`。
+Output directory: `..\CATIA-Copilot-dist-nuitka\`.
 
-`build.spec` + `build.ps1` 仍保留用于旧版 PyInstaller 开发构建，但不作为正式发行流程。
+`build.spec` + `build.ps1` are retained for legacy PyInstaller development builds but are not part of the official release workflow.
 
-正式发行包包含 `resources/`、`macros/`、`drawing_templates/` 等资源；未完成的 `part_templates/` 不纳入当前发行版。
+Official release packages include `resources/`, `macros/`, `drawing_templates/`, and other assets; the incomplete `part_templates/` is not included in the current release.
 
 ---
 
-## 项目结构
+## Project Structure
 
 ```
 CATIA-Copilot/
-├── main.py                          # 应用入口
+├── main.py                          # Application entry point
 ├── catia_copilot/
-│   ├── constants.py                 # 常量与配置
-│   ├── logging_setup.py             # 日志初始化
-│   ├── utils.py                     # 工具函数
-│   ├── catia/                       # CATIA COM 自动化逻辑
-│   │   ├── conversion.py            #   图纸/零件导出
-│   │   ├── template.py              #   零件模板刷写
-│   │   ├── bom_collect.py           #   BOM 数据采集
-│   │   ├── bom_export.py            #   BOM 导出 Excel
-│   │   ├── bom_write.py             #   BOM 属性写回 CATIA
-│   │   ├── dependencies.py          #   依赖查找
-│   │   ├── drawing_operations.py    #   图纸操作
-│   │   ├── mass_props_collect.py    #   质量特性采集
-│   │   └── utils.py                 #   COM 工具函数
-│   └── ui/                          # PySide6 界面
-│       ├── main_window.py           #   主窗口
-│       ├── catia_embed.py           #   3D 视图嵌入菜单
-│       ├── catia_sidebar.py         #   CATIA 吸附边栏
-│       ├── convert_dialog.py        #   文件转换对话框
-│       ├── export_bom_dialog.py     #   BOM 导出对话框
-│       ├── bom_edit_dialog.py       #   BOM 工作台对话框
-│       ├── mass_props_dialog.py     #   质量特性工作台对话框
-│       ├── find_deps_dialog.py      #   查找指向的文档对话框
-│       ├── plm_workbench.py         #   DocDoku PLM 工作台
-│       ├── plm_workbench_mypdm.py   #   myPDM 工作台代码（当前发行版不开放 UI 入口）
-│       ├── help_dialog.py           #   帮助文档对话框
-│       ├── theme_manager.py         #   主题管理（深色/浅色/原生）
-│       └── log_window.py            #   日志窗口
-├── build.spec                       # PyInstaller 打包配置
-├── requirements.txt                 # Python 依赖
-├── pyproject.toml                   # 项目元数据
-├── resources/                       # 图标等资源文件
-├── macros/                          # 宏脚本文件夹
-├── drawing_templates/               # 图纸模板文件夹
-├── setup.iss                         # Inno Setup 安装脚本
-└── .github/workflows/release.yml    # GitHub Actions 发布流程
+│   ├── constants.py                 # Constants and configuration
+│   ├── logging_setup.py             # Logging initialization
+│   ├── utils.py                     # Utility functions
+│   ├── catia/                       # CATIA COM automation logic
+│   │   ├── conversion.py            #   Drawing/Part export
+│   │   ├── template.py              #   Part template application
+│   │   ├── bom_collect.py           #   BOM data collection
+│   │   ├── bom_export.py            #   BOM export to Excel
+│   │   ├── bom_write.py             #   BOM attribute write-back to CATIA
+│   │   ├── dependencies.py          #   Dependency lookup
+│   │   ├── drawing_operations.py    #   Drawing operations
+│   │   ├── mass_props_collect.py    #   Mass properties collection
+│   │   └── utils.py                 #   COM utility functions
+│   └── ui/                          # PySide6 UI
+│       ├── main_window.py           #   Main window
+│       ├── catia_embed.py           #   3D view embedded menu
+│       ├── catia_sidebar.py         #   CATIA docked sidebar
+│       ├── convert_dialog.py        #   File conversion dialog
+│       ├── export_bom_dialog.py     #   BOM export dialog
+│       ├── bom_edit_dialog.py       #   BOM workbench dialog
+│       ├── mass_props_dialog.py     #   Mass properties workbench dialog
+│       ├── find_deps_dialog.py      #   Find referenced documents dialog
+│       ├── plm_workbench.py         #   DocDoku PLM workbench
+│       ├── plm_workbench_mypdm.py   #   myPDM workbench (UI entry not enabled in current release)
+│       ├── help_dialog.py           #   Help documentation dialog
+│       ├── theme_manager.py         #   Theme management (dark/light/native)
+│       └── log_window.py            #   Log window
+├── build.spec                       # PyInstaller build configuration
+├── requirements.txt                 # Python dependencies
+├── pyproject.toml                   # Project metadata
+├── resources/                       # Icons and other assets
+├── macros/                          # Macro scripts folder
+├── drawing_templates/               # Drawing templates folder
+├── setup.iss                        # Inno Setup installer script
+└── .github/workflows/release.yml    # GitHub Actions release workflow
 ```
 
 ---
 
-## 依赖
+## Dependencies
 
-| 包 | 用途 |
-|------|------|
-| [PySide6](https://pypi.org/project/PySide6/) | Qt 6 GUI 框架 |
-| [openpyxl](https://pypi.org/project/openpyxl/) | Excel 文件读写 |
-| [pywin32](https://pypi.org/project/pywin32/) | CATIA V5 COM 自动化 |
-
----
-
-## 自定义属性联动说明（`PRESET_USER_REF_PROPERTIES`）
-
-`catia_copilot/constants.py` 中的 `PRESET_USER_REF_PROPERTIES` 列表定义了程序内置的用户自定义属性名称（物料编码、物料名称、规格型号、物料来源、数据状态、存货类别、重量、备注）。手动编辑该列表后，**Python 部分**会在重启程序后全部自动生效，**VBA 宏和文档**则需手动同步。
-
-### ✅ 修改后自动联动（Python 层）
-
-| 文件 | 作用 |
-|------|------|
-| `catia_copilot/catia/template.py` | 刷写零件模板时，按列表逐项向 CATPart 写入用户属性 |
-| `catia_copilot/ui/bom_edit_dialog.py` | BOM 编辑对话框：过滤已保存可见列、构建全量列集合、渲染属性复选框、生成显示列头 |
-| `catia_copilot/ui/export_bom_dialog.py` | BOM 导出对话框：构建"可用列 / 已选列"列表 |
-
-### ⚠️ 需手动同步的地方
-
-| 文件 | 原因 |
-|------|------|
-| `macros/generate_drawing.catvbs`（第 85–88 行） | VBA 宏内独立硬编码属性名数组（与 Python 列表相互独立），且包含 `PRESET_USER_REF_PROPERTIES` 中没有的 `"材料"` 字段 |
-| `macros/refresh_drawing_info.catvbs`（第 119–121 行） | 同上，另一个独立的 VBA 属性名数组 |
-| `catia_copilot/ui/help_dialog.py`（第 52–53、76–77 行） | 帮助窗口 HTML 文本中硬编码了属性名称列表，仅影响界面说明文字，不影响功能 |
-| `README.md`（本文件）| 功能一览表中对属性名的文字描述需同步更新 |
-
-> **总结：** 修改 `constants.py` 中的 `PRESET_USER_REF_PROPERTIES` 后，Python 程序所有读写逻辑均会在重启后自动跟随更新；唯一需要人工同步的是两个 VBA 宏文件中各自独立的属性名数组，以及帮助文档和 README 中的说明文字。
+| Package | Purpose |
+|---------|---------|
+| [PySide6](https://pypi.org/project/PySide6/) | Qt 6 GUI framework |
+| [openpyxl](https://pypi.org/project/openpyxl/) | Excel file read/write |
+| [pywin32](https://pypi.org/project/pywin32/) | CATIA V5 COM automation |
 
 ---
 
-## 联系方式
+## Custom Property Linkage (`PRESET_USER_REF_PROPERTIES`)
 
-- **开发者：** CHEN Weibo
-- **邮箱：** thucwb@gmail.com
+The `PRESET_USER_REF_PROPERTIES` list in `catia_copilot/constants.py` defines the built-in user-defined property names (material code, material name, specification, material source, data status, inventory category, weight, remarks). After manually editing this list, the **Python side** takes effect automatically on restart; **VBA macros and documentation** require manual synchronization.
 
-> 发行版使用前请确认 CATIA、字体、宏和第三方工具的授权范围。
+### Auto-linked after modification (Python layer)
+
+| File | Role |
+|------|------|
+| `catia_copilot/catia/template.py` | Writes user properties to CATPart one by one according to the list when applying part templates |
+| `catia_copilot/ui/bom_edit_dialog.py` | BOM edit dialog: filters saved visible columns, builds full column set, renders attribute checkboxes, generates display headers |
+| `catia_copilot/ui/export_bom_dialog.py` | BOM export dialog: builds "available columns / selected columns" lists |
+
+### Manual synchronization required
+
+| File | Reason |
+|------|--------|
+| `macros/generate_drawing.catvbs` (lines 85–88) | Hardcoded attribute name array in VBA macro, independent of the Python list; also contains a `"材料"` (material) field not in `PRESET_USER_REF_PROPERTIES` |
+| `macros/refresh_drawing_info.catvbs` (lines 119–121) | Same — another independent VBA attribute name array |
+| `catia_copilot/ui/help_dialog.py` (lines 76–77, 590–591) | Hardcoded attribute names in help window HTML text; affects display text only, not functionality |
+| `README.md` (this file) | Feature table descriptions of attribute names need manual update |
+
+> **Summary:** After modifying `PRESET_USER_REF_PROPERTIES` in `constants.py`, all Python read/write logic auto-updates on restart. The only manual synchronization needed is the two independent attribute name arrays in the VBA macro files, plus help documentation and README descriptions.
+
+---
+
+## Contact
+
+- **Developer:** CHEN Weibo
+- **Email:** thucwb@gmail.com
+
+> Before using the release version, please verify the licensing scope of CATIA, fonts, macros, and third-party tools.

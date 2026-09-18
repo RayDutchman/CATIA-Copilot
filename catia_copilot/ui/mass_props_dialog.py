@@ -1233,7 +1233,7 @@ class MassPropsDialog(QDialog):
         default_path = str(Path(default_dir) / default_name) if default_dir else default_name
 
         dest, _ = QFileDialog.getSaveFileName(
-            self, translate("CATIACopilot", "保存质量特性数据"), default_path, "质量特性数据文件 (*.mpd)"
+            self, translate("CATIACopilot", "保存质量特性数据"), default_path, translate("CATIACopilot", "质量特性数据文件 (*.mpd)")
         )
         if not dest:
             return
@@ -1253,7 +1253,7 @@ class MassPropsDialog(QDialog):
     def _load_data_from_json(self) -> None:
         """从压缩二进制数据文件载入行数据（无需 CATIA ，_root_mp 由后处理重建）。"""
         src, _ = QFileDialog.getOpenFileName(
-            self, translate("CATIACopilot", "载入质量特性数据"), "", "质量特性数据文件 (*.mpd)"
+            self, translate("CATIACopilot", "载入质量特性数据"), "", translate("CATIACopilot", "质量特性数据文件 (*.mpd)")
         )
         if not src:
             return
@@ -1280,7 +1280,7 @@ class MassPropsDialog(QDialog):
             return
         srcs, _ = QFileDialog.getOpenFileNames(
             self, translate("CATIACopilot", "追加质量特性数据"), self._last_browse_dir,
-            "质量特性数据文件 (*.mpd)"
+            translate("CATIACopilot", "质量特性数据文件 (*.mpd)")
         )
         if not srcs:
             return
@@ -2009,7 +2009,7 @@ class MassPropsDialog(QDialog):
         dest, _ = QFileDialog.getSaveFileName(
             self, translate("CATIACopilot", "导出质量特性表格"),
             default_path,
-            "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)",
+            translate("CATIACopilot", "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)"),
         )
         if not dest:
             return

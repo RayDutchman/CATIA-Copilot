@@ -1,0 +1,17 @@
+{
+  "新建": "Create",
+  "已更新": "Updated",
+  "跳过": "Skipped",
+  "无变化": "Unchanged",
+  "失败": "Failed",
+  "属性已写入": "Attributes written",
+  "✗ 更新失败": "✗ Update failed",
+  "已上传": "Uploaded",
+  "✗ 上传失败": "✗ Upload failed",
+  "转换中": "Converting",
+  "转换完成": "Converted",
+  "✗ 转换失败": "✗ Conversion failed",
+  "已签入": "Checked in",
+  "✗ 签入失败": "✗ Check-in failed",
+  "保留签出": "Checkout kept"
+}

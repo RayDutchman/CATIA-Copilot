@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from catia_copilot.ai import config as ai_config
 from catia_copilot.ai.session import ChatSession
+from catia_copilot.i18n import translate
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class SessionConfigDialog(QDialog):
         super().__init__(parent)
         self._session = session
         self._on_clear = on_clear  # 可选回调：清空消息后调用
-        self.setWindowTitle("会话设置")
+        self.setWindowTitle(translate("CATIACopilot", "会话设置"))
         self.setMinimumWidth(460)
         self._build_ui()
 
@@ -66,7 +67,7 @@ class SessionConfigDialog(QDialog):
         layout.setSpacing(10)
 
         # 标题提示
-        title = QLabel(f"会话：{self._session.name}")
+        title = QLabel(translate("CATIACopilot", "会话：{0}").format(self._session.name))
         title.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(title)
 
@@ -82,7 +83,10 @@ class SessionConfigDialog(QDialog):
 
         self._model_combo = QComboBox()
         self._model_combo.setEditable(True)
-        self._model_combo.addItem(f"使用全局默认（{global_default}）", userData="")
+        self._model_combo.addItem(
+            translate("CATIACopilot", "使用全局默认（{0}）").format(global_default),
+            userData="",
+        )
         for mid in model_ids:
             self._model_combo.addItem(mid, userData=mid)
 
@@ -97,7 +101,7 @@ class SessionConfigDialog(QDialog):
         else:
             self._model_combo.setCurrentIndex(0)
 
-        form.addRow("模型：", self._model_combo)
+        form.addRow(translate("CATIACopilot", "模型："), self._model_combo)
 
         # ── Temperature ───────────────────────────────────────────────────────
         temp_widget = QWidget()
@@ -127,11 +131,11 @@ class SessionConfigDialog(QDialog):
             self._temp_slider.setValue(pos)
         self._on_temp_changed(self._temp_slider.value())
 
-        form.addRow("Temperature：", temp_widget)
-        form.addRow("", QLabel(
-            "  0=最确定，2=最富创造性；建议 0.5–0.7；"
-            "\"未设置\"跟随全局 ai_config.json"
-        ))
+        form.addRow(translate("CATIACopilot", "Temperature："), temp_widget)
+        form.addRow("", QLabel(translate(
+            "CATIACopilot",
+            "  0=最确定，2=最富创造性；建议 0.5–0.7；\"未设置\"跟随全局 ai_config.json"
+        )))
 
         # ── 上下文消息数上限 ──────────────────────────────────────────────────
         ctx_widget = QWidget()
@@ -147,10 +151,12 @@ class SessionConfigDialog(QDialog):
         self._ctx_spin.setFixedWidth(80)
 
         ctx_layout.addWidget(self._ctx_spin)
-        ctx_layout.addWidget(QLabel("条（发给 LLM 的最近消息数，system 不计入）"))
+        ctx_layout.addWidget(QLabel(
+            translate("CATIACopilot", "条（发给 LLM 的最近消息数，system 不计入）")
+        ))
         ctx_layout.addStretch()
 
-        form.addRow("上下文消息数：", ctx_widget)
+        form.addRow(translate("CATIACopilot", "上下文消息数："), ctx_widget)
 
         # ── 工作空间路径 ──────────────────────────────────────────────────────
         ws_widget = QWidget()
@@ -159,15 +165,17 @@ class SessionConfigDialog(QDialog):
         ws_layout.setSpacing(4)
 
         self._ws_edit = QLineEdit()
-        self._ws_edit.setPlaceholderText("留空 = 不限制（可访问任意路径）")
+        self._ws_edit.setPlaceholderText(
+            translate("CATIACopilot", "留空 = 不限制（可访问任意路径）")
+        )
         if self._session.workspace:
             self._ws_edit.setText(self._session.workspace)
 
-        ws_browse = QPushButton("浏览…")
+        ws_browse = QPushButton(translate("CATIACopilot", "浏览…"))
         ws_browse.setFixedWidth(60)
         ws_browse.clicked.connect(self._browse_workspace)
 
-        ws_clear = QPushButton("清除")
+        ws_clear = QPushButton(translate("CATIACopilot", "清除"))
         ws_clear.setFixedWidth(50)
         ws_clear.clicked.connect(lambda: self._ws_edit.clear())
 
@@ -175,22 +183,22 @@ class SessionConfigDialog(QDialog):
         ws_layout.addWidget(ws_browse)
         ws_layout.addWidget(ws_clear)
 
-        form.addRow("工作空间：", ws_widget)
-        form.addRow("", QLabel(
-            "  设置后，AI 只能操作该目录下的文件（防止误操作其他项目）"
-        ))
+        form.addRow(translate("CATIACopilot", "工作空间："), ws_widget)
+        form.addRow("", QLabel(translate(
+            "CATIACopilot", "  设置后，AI 只能操作该目录下的文件（防止误操作其他项目）"
+        )))
 
         layout.addLayout(form)
 
         # ── 重置按钮 ──────────────────────────────────────────────────────────
-        reset_btn = QPushButton("重置所有字段为默认值")
+        reset_btn = QPushButton(translate("CATIACopilot", "重置所有字段为默认值"))
         reset_btn.clicked.connect(self._reset_all)
         layout.addWidget(reset_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
         # ── 危险操作区：清空消息记录 ──────────────────────────────────────────
         danger_line = QHBoxLayout()
-        clear_msg_btn = QPushButton("清空本会话消息记录…")
-        clear_msg_btn.setToolTip("删除本会话的所有对话历史，此操作不可撤销")
+        clear_msg_btn = QPushButton(translate("CATIACopilot", "清空本会话消息记录…"))
+        clear_msg_btn.setToolTip(translate("CATIACopilot", "删除本会话的所有对话历史，此操作不可撤销"))
         clear_msg_btn.setStyleSheet(
             "QPushButton { color: #c0392b; }"
             "QPushButton:hover { background: rgba(192,57,43,20); }"
@@ -214,8 +222,10 @@ class SessionConfigDialog(QDialog):
         """二次确认后清空会话消息记录，并调用 on_clear 回调。"""
         ret = QMessageBox.question(
             self,
-            "清空消息记录",
-            f"确定要清空会话「{self._session.name}」的所有对话历史吗？\n此操作不可撤销。",
+            translate("CATIACopilot", "清空消息记录"),
+            translate("CATIACopilot",
+                      "确定要清空会话「{0}」的所有对话历史吗？\n此操作不可撤销。")
+            .format(self._session.name),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if ret != QMessageBox.StandardButton.Yes:
@@ -227,7 +237,7 @@ class SessionConfigDialog(QDialog):
     def _on_temp_changed(self, pos: int):
         """滑块位置变化时更新旁边的文字标签。"""
         if pos == 0:
-            self._temp_label.setText("未设置")
+            self._temp_label.setText(translate("CATIACopilot", "未设置"))
         else:
             val = (pos - 1) / 10.0
             self._temp_label.setText(f"{val:.1f}")
@@ -237,7 +247,7 @@ class SessionConfigDialog(QDialog):
         current = self._ws_edit.text().strip()
         start = current if current and Path(current).exists() else ""
         folder = QFileDialog.getExistingDirectory(
-            self, "选择工作空间目录", start
+            self, translate("CATIACopilot", "选择工作空间目录"), start
         )
         if folder:
             self._ws_edit.setText(folder)

@@ -54,6 +54,31 @@ if ($Win32DllArgs.Count -eq 0) {
     Write-Warning "[warn] pywin32_system32 DLL 未找到，pywin32 功能可能异常"
 }
 
+# [i18n] prebuild: verify TS catalogs, rebuild QM files, locate Qt base translation
+$I18nDir = Join-Path $ProjectRoot 'resources\i18n'
+Write-Host "[i18n] verifying TS catalogs (completeness / placeholders / production lupdate coverage) ..."
+& python (Join-Path $ProjectRoot 'scripts\verify_translations.py')
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[i18n] verify_translations failed, abort build (exit code $LASTEXITCODE)"
+    exit $LASTEXITCODE
+}
+Write-Host "[i18n] rebuilding QM files (pyside6-lrelease) ..."
+foreach ($lang in @('en_US', 'zh_CN')) {
+    & pyside6-lrelease (Join-Path $I18nDir "catia_copilot_$lang.ts") `
+        -qm (Join-Path $I18nDir "catia_copilot_$lang.qm")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[i18n] pyside6-lrelease $lang failed (exit code $LASTEXITCODE)"
+        exit $LASTEXITCODE
+    }
+}
+# qtbase_zh_CN.qm: Chinese Qt standard buttons (QMessageBox etc.); shipped with PySide6
+$QtBaseZhQm = python -c "import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), 'translations', 'qtbase_zh_CN.qm'))"
+if (-not (Test-Path $QtBaseZhQm)) {
+    Write-Error "[i18n] PySide6 qtbase_zh_CN.qm not found: $QtBaseZhQm"
+    exit 1
+}
+Write-Host "[i18n] Qt base translation: $QtBaseZhQm"
+
 Write-Host "[build] 版本: $AppVersion"
 Write-Host "[build] 输出目录: $OutputDir"
 Write-Host "[build] 开始 Nuitka 编译..."
@@ -188,5 +213,22 @@ foreach ($name in $gitFiles) {
         Remove-Item -Force
 }
 Write-Host "[slim] 已清理 git 残留文件"
+
+# [i18n] postbuild: drop qtbase_zh_CN.qm into the bundle (beside PySide6 package)
+$QtTransTarget = @(
+    (Join-Path $OutputDir '_internal\PySide6\translations'),
+    (Join-Path $OutputDir 'PySide6\translations')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $QtTransTarget) {
+    Write-Error "[i18n] PySide6\translations dir not found in output, cannot ship qtbase_zh_CN.qm"
+    exit 1
+}
+$QtBaseDest = Join-Path $QtTransTarget 'qtbase_zh_CN.qm'
+Copy-Item -Force $QtBaseZhQm $QtBaseDest
+if (-not (Test-Path $QtBaseDest)) {
+    Write-Error "[i18n] failed to copy qtbase_zh_CN.qm -> $QtBaseDest"
+    exit 1
+}
+Write-Host "[i18n] copied qtbase_zh_CN.qm -> $QtBaseDest"
 
 Write-Host "[build] 完成！产物位于: $OutputDir"

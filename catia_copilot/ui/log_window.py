@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from catia_copilot.logging_setup import LOG_FILE
+from catia_copilot.i18n import translate
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class LogWindow(QWidget):
         )
         layout.addWidget(self._log_view)
 
-        open_log_btn = QPushButton("打开日志文件")
+        open_log_btn = QPushButton(translate("CATIACopilot", "打开日志文件"))
         open_log_btn.clicked.connect(self._open_log_file)
         layout.addWidget(open_log_btn)
 
@@ -83,8 +84,10 @@ class LogWindow(QWidget):
                 )
         except Exception as e:
             QMessageBox.warning(
-                self, "无法打开日志文件",
-                f"无法打开日志文件：\n{LOG_FILE}\n\n{e}",
+                self,
+                translate("CATIACopilot", "无法打开日志文件"),
+                translate("CATIACopilot",
+                          "无法打开日志文件：\n{0}\n\n{1}").format(LOG_FILE, e),
             )
 
     def closeEvent(self, event) -> None:

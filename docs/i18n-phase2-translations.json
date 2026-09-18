@@ -655,5 +655,7 @@
  "取消": "Cancel",
  "未选择输出文件夹": "No output folder selected",
  "使用当前 CATIA 活动文档": "Use the current active CATIA document",
- "请选择一个 CATProduct 文件。": "Please select a CATProduct file."
+ "请选择一个 CATProduct 文件。": "Please select a CATProduct file.",
+ "质量特性数据文件 (*.mpd)": "Mass Properties Data File (*.mpd)",
+ "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)": "Excel File (*.xlsx);;CSV File (*.csv)"
 }

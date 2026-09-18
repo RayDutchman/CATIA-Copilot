@@ -59,9 +59,25 @@ from catia_copilot.constants import (
     BOM_HIDEABLE_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
 )
+from catia_copilot.i18n import translate
 from catia_copilot.plm.api_client import PlmApiClient
 from catia_copilot.plm.sync import (
     AfterUpdatePolicy,
+    CODE_CHECKIN_CHECKED_IN,
+    CODE_CHECKIN_CHECKIN_FAILED,
+    CODE_CHECKIN_RETAINED,
+    CODE_SOURCE_CREATED,
+    CODE_SOURCE_FAILED,
+    CODE_SOURCE_SKIPPED,
+    CODE_SOURCE_UNCHANGED,
+    CODE_SOURCE_UPDATED,
+    CODE_UPDATE_CONVERTED,
+    CODE_UPDATE_CONVERTING,
+    CODE_UPDATE_CONVERSION_FAILED,
+    CODE_UPDATE_UPDATE_FAILED,
+    CODE_UPDATE_UPLOAD_FAILED,
+    CODE_UPDATE_UPLOADED,
+    CODE_UPDATE_WRITTEN,
     CheckedOutByOtherPolicy,
     ExistingPartPolicy,
     OwnCheckedOutPolicy,
@@ -161,6 +177,153 @@ def _sync_row_color(source: str, update: str = "", checkin: str = "") -> QColor 
     return None
 
 
+def _sync_row_color_from_event(event) -> QColor | None:
+    """按稳定 code 决定同步行颜色（语言无关，业务只读 code，不解析中文文案）。
+
+    颜色语义与 _sync_row_color 一致：
+      红色  — 任何失败（source failed / update update-failed、upload-failed、
+                 conversion-failed / checkin checkin-failed）
+      灰色  — 跳过 / 无变化
+      绿色  — 新建成功
+      蓝色  — 已有零件更新成功
+    code 缺失或未知（如 summary / 未带 code 的过程行）返回 None，不染色。
+    """
+    palette = _app_palette()
+    src_code = getattr(event, "source_code", None)
+    upd_code = getattr(event, "update_code", None)
+    chk_code = getattr(event, "checkin_code", None)
+
+    if (
+        src_code == CODE_SOURCE_FAILED
+        or upd_code in (
+            CODE_UPDATE_UPDATE_FAILED,
+            CODE_UPDATE_UPLOAD_FAILED,
+            CODE_UPDATE_CONVERSION_FAILED,
+        )
+        or chk_code == CODE_CHECKIN_CHECKIN_FAILED
+    ):
+        return palette.color(palette.ColorRole.Link) if palette else QColor("#e74c3c")
+    if src_code in (CODE_SOURCE_SKIPPED, CODE_SOURCE_UNCHANGED):
+        return palette.color(palette.ColorRole.Mid) if palette else QColor("#7f8c8d")
+    if src_code == CODE_SOURCE_CREATED:
+        return QColor("#27ae60")  # 绿色在深/浅色下都可读
+    if src_code == CODE_SOURCE_UPDATED:
+        return palette.color(palette.ColorRole.Highlight) if palette else QColor("#2980b9")
+    return None
+
+
+def _event_source_text(event) -> str:
+    """按稳定 source_code 生成签出来源文案（固定字面量翻译）。
+
+    code 缺失或未知时安全回退事件原始文案，保证不因 code 扩展而空白。
+    """
+    code = getattr(event, "source_code", None)
+    fixed = {
+        CODE_SOURCE_CREATED:   translate("CATIACopilot", "新建"),
+        CODE_SOURCE_UPDATED:   translate("CATIACopilot", "已更新"),
+        CODE_SOURCE_SKIPPED:   translate("CATIACopilot", "跳过"),
+        CODE_SOURCE_UNCHANGED: translate("CATIACopilot", "无变化"),
+        CODE_SOURCE_FAILED:    translate("CATIACopilot", "失败"),
+    }
+    if code in fixed:
+        return fixed[code]
+    return getattr(event, "source", "") or ""
+
+
+def _event_update_text(event) -> str:
+    """按稳定 update_code 生成更新结果文案（固定字面量翻译）。
+
+    code 缺失或未知时安全回退事件原始文案，保证不因 code 扩展而空白。
+    """
+    code = getattr(event, "update_code", None)
+    fixed = {
+        CODE_UPDATE_WRITTEN:           translate("CATIACopilot", "属性已写入"),
+        CODE_UPDATE_UPDATE_FAILED:     translate("CATIACopilot", "✗ 更新失败"),
+        CODE_UPDATE_UPLOADED:          translate("CATIACopilot", "已上传"),
+        CODE_UPDATE_UPLOAD_FAILED:     translate("CATIACopilot", "✗ 上传失败"),
+        CODE_UPDATE_CONVERTING:        translate("CATIACopilot", "转换中"),
+        CODE_UPDATE_CONVERTED:         translate("CATIACopilot", "转换完成"),
+        CODE_UPDATE_CONVERSION_FAILED: translate("CATIACopilot", "✗ 转换失败"),
+    }
+    if code in fixed:
+        return fixed[code]
+    return getattr(event, "update", "") or ""
+
+
+def _event_checkin_text(event) -> str:
+    """按稳定 checkin_code 生成签入状态文案（固定字面量翻译）。
+
+    code 缺失或未知时安全回退事件原始文案，保证不因 code 扩展而空白。
+    """
+    code = getattr(event, "checkin_code", None)
+    fixed = {
+        CODE_CHECKIN_CHECKED_IN:     translate("CATIACopilot", "已签入"),
+        CODE_CHECKIN_CHECKIN_FAILED: translate("CATIACopilot", "✗ 签入失败"),
+        CODE_CHECKIN_RETAINED:       translate("CATIACopilot", "保留签出"),
+    }
+    if code in fixed:
+        return fixed[code]
+    return getattr(event, "checkin", "") or ""
+
+
+def _fmt_kbps(kbps: float) -> str:
+    """将上传速度数值（KB/s）格式化为可读文本，≥1024 KB/s 自动切换 MB/s。"""
+    if kbps >= 1024:
+        return f"{kbps / 1024:.1f} MB/s"
+    return f"{kbps:.1f} KB/s"
+
+
+def _st_display(state: str) -> str:
+    """差异状态业务值 → 界面显示文案（仅渲染；业务比较仍用 PlmWorkbench._ST_* 原值）。"""
+    fixed = {
+        PlmWorkbench._ST_OK:         translate("CATIACopilot", "✓ 一致"),
+        PlmWorkbench._ST_LOCAL_NEW:  translate("CATIACopilot", "↑ 本地新"),
+        PlmWorkbench._ST_PLM_NEW:    translate("CATIACopilot", "↓ PLM新"),
+        PlmWorkbench._ST_LOCAL_ONLY: translate("CATIACopilot", "仅本地"),
+        PlmWorkbench._ST_PLM_ONLY:   translate("CATIACopilot", "仅PLM"),
+        PlmWorkbench._ST_NO_SYNC:    translate("CATIACopilot", "⚠ 无法同步"),
+    }
+    return fixed.get(state, state or PlmWorkbench._ST_UNKNOWN)
+
+
+def _header_display(col: int) -> str:
+    """差异对比表列索引 → 表头文案（随界面语言翻译）。
+
+    _DC_HEADERS 保持业务中文原值（供索引与外部引用），渲染时经本工厂翻译；
+    选择列（0）保持空串，附件列（12）保持 FontAwesome 回形针符号。
+    """
+    fixed = {
+        PlmWorkbench._DC_DIFF:    translate("CATIACopilot", "状态"),
+        PlmWorkbench._DC_PN:      translate("CATIACopilot", "零件编号"),
+        PlmWorkbench._DC_VER:     translate("CATIACopilot", "版本/迭代"),
+        PlmWorkbench._DC_LVER:    translate("CATIACopilot", "本地版本"),
+        PlmWorkbench._DC_NAME:    translate("CATIACopilot", "零件名称"),
+        PlmWorkbench._DC_TYPE:    translate("CATIACopilot", "类型"),
+        PlmWorkbench._DC_AUTHOR:  translate("CATIACopilot", "作者"),
+        PlmWorkbench._DC_COUT:    translate("CATIACopilot", "签出者"),
+        PlmWorkbench._DC_LCST:    translate("CATIACopilot", "生命周期状态"),
+        PlmWorkbench._DC_LMTIME:  translate("CATIACopilot", "本地修改时间"),
+        PlmWorkbench._DC_PMTIME:  translate("CATIACopilot", "PLM修改时间"),
+    }
+    if col in fixed:
+        return fixed[col]
+    if col == PlmWorkbench._DC_SEL:
+        return ""
+    if col == PlmWorkbench._DC_FILES:
+        return "\uf0c6"
+    return ""
+
+
+def _sync_col_display(key: str) -> str:
+    """同步结果内部列名 → 表头文案（仅渲染；_SYNC_COL_DISPLAY 业务值保持不变）。"""
+    fixed = {
+        _SYNC_COL_SOURCE:  translate("CATIACopilot", "签出来源"),
+        _SYNC_COL_UPDATE:  translate("CATIACopilot", "更新结果"),
+        _SYNC_COL_CHECKIN: translate("CATIACopilot", "签入状态"),
+    }
+    return fixed.get(key, key)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 后台工作线程
 # ─────────────────────────────────────────────────────────────────────────────
@@ -206,6 +369,7 @@ class _SyncWorker(QThread):
     upload_log = Signal(str, str, str, str)
     sync_done  = Signal(object)
     error      = Signal(str)
+    sync_event = Signal(object)  # 完整结构化 SyncEvent（Task 3.2 业务唯一入口）
 
     def __init__(self, base_url: str, login: str, password: str, workspace: str,
                  options: SyncOptions, push_rows: list[dict]) -> None:
@@ -255,6 +419,9 @@ class _SyncWorker(QThread):
                             event.update,
                             event.checkin,
                         )
+                    # 结构化事件最后发出：其后翻译文案与 code 级颜色覆盖
+                    # progress/upload_log 的原始中文；业务计数只在 _on_sync_event 进行
+                    self.sync_event.emit(event)
 
                 sub = sync_bom_to_plm(
                     bom_root, c, self._workspace,
@@ -646,7 +813,7 @@ class PlmWorkbench(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("PLM 工作台")
+        self.setWindowTitle(translate("CATIACopilot", "PLM 工作台"))
         self.setMinimumSize(1100, 660)
         self.resize(1400, 800)
 
@@ -774,7 +941,7 @@ class PlmWorkbench(QDialog):
         dot_font = QFont("Segoe UI Emoji"); dot_font.setPointSize(11)
         self._lbl_conn_dot  = QLabel("●")
         self._lbl_conn_dot.setFont(dot_font)
-        self._lbl_conn_info = QLabel("未配置")
+        self._lbl_conn_info = QLabel(translate("CATIACopilot", "未配置"))
         h.addWidget(self._lbl_conn_dot)
         h.addWidget(self._lbl_conn_info)
 
@@ -782,7 +949,7 @@ class PlmWorkbench(QDialog):
         h.addWidget(sep0)
 
         # 工作区路径显示
-        self._lbl_work_dir = QLabel("工作区：—")
+        self._lbl_work_dir = QLabel(translate("CATIACopilot", "工作区：—"))
         self._lbl_work_dir.setStyleSheet("color: palette(mid);")
         h.addWidget(self._lbl_work_dir)
 
@@ -790,16 +957,16 @@ class PlmWorkbench(QDialog):
         h.addWidget(sep1)
 
         # 加载工作区
-        self._btn_load_ws = QPushButton("↺ 加载工作区")
+        self._btn_load_ws = QPushButton(translate("CATIACopilot", "↺ 加载工作区"))
         self._btn_load_ws.setFont(_ef)
-        self._btn_load_ws.setToolTip("扫描工作目录中的 CATPart/CATProduct 文件并通过 CATIA COM 读取属性")
+        self._btn_load_ws.setToolTip(translate("CATIACopilot", "扫描工作目录中的 CATPart/CATProduct 文件并通过 CATIA COM 读取属性"))
         self._btn_load_ws.clicked.connect(self._on_load_workspace)
         h.addWidget(self._btn_load_ws)
 
         # 刷新 PLM 状态
-        self._btn_refresh_plm = QPushButton("☁ 刷新 PLM 状态")
+        self._btn_refresh_plm = QPushButton(translate("CATIACopilot", "☁ 刷新 PLM 状态"))
         self._btn_refresh_plm.setFont(_ef)
-        self._btn_refresh_plm.setToolTip("按工作区零件号列表查询 PLM，更新缓存和差异列")
+        self._btn_refresh_plm.setToolTip(translate("CATIACopilot", "按工作区零件号列表查询 PLM，更新缓存和差异列"))
         self._btn_refresh_plm.clicked.connect(self._on_refresh_plm_status)
         h.addWidget(self._btn_refresh_plm)
 
@@ -807,19 +974,19 @@ class PlmWorkbench(QDialog):
         h.addWidget(sep2)
 
         # Push
-        self._btn_push = QPushButton("⬆ Push 选中")
+        self._btn_push = QPushButton(translate("CATIACopilot", "⬆ Push 选中"))
         self._btn_push.setFont(_ef)
         self._btn_push.setObjectName("primaryBtn")
         self._btn_push.setEnabled(False)
-        self._btn_push.setToolTip("将勾选零件推送到 PLM")
+        self._btn_push.setToolTip(translate("CATIACopilot", "将勾选零件推送到 PLM"))
         self._btn_push.clicked.connect(self._on_sync_start)
         h.addWidget(self._btn_push)
 
         # Pull
-        self._btn_pull_sel = QPushButton("⬇ Pull 选中")
+        self._btn_pull_sel = QPushButton(translate("CATIACopilot", "⬇ Pull 选中"))
         self._btn_pull_sel.setFont(_ef)
         self._btn_pull_sel.setEnabled(False)
-        self._btn_pull_sel.setToolTip("从 PLM 下载勾选零件的文件到工作目录")
+        self._btn_pull_sel.setToolTip(translate("CATIACopilot", "从 PLM 下载勾选零件的文件到工作目录"))
         self._btn_pull_sel.clicked.connect(self._on_pull_selected)
         h.addWidget(self._btn_pull_sel)
 
@@ -827,8 +994,8 @@ class PlmWorkbench(QDialog):
         h.addWidget(sep3)
 
         # 全选 / 全不选
-        btn_sel_all  = QPushButton("全选")
-        btn_sel_none = QPushButton("全不选")
+        btn_sel_all  = QPushButton(translate("CATIACopilot", "全选"))
+        btn_sel_none = QPushButton(translate("CATIACopilot", "全不选"))
         btn_sel_all.setFont(_ef); btn_sel_none.setFont(_ef)
         btn_sel_all.setFixedWidth(48); btn_sel_none.setFixedWidth(60)
         btn_sel_all.clicked.connect(lambda: self._set_diff_checked(True))
@@ -837,19 +1004,19 @@ class PlmWorkbench(QDialog):
         h.addWidget(btn_sel_none)
 
         # 新增 PLM Part
-        btn_add_plm = QPushButton("+ 新增 PLM Part")
+        btn_add_plm = QPushButton(translate("CATIACopilot", "+ 新增 PLM Part"))
         btn_add_plm.setFont(_ef)
-        btn_add_plm.setToolTip("手动输入零件号，追加到本地 PLM 缓存（适用于工作目录为空的情形）")
+        btn_add_plm.setToolTip(translate("CATIACopilot", "手动输入零件号，追加到本地 PLM 缓存（适用于工作目录为空的情形）"))
         btn_add_plm.clicked.connect(self._on_add_plm_part)
         h.addWidget(btn_add_plm)
 
         h.addStretch()
 
         # 高级选项（点击切换面板显示/隐藏）
-        self._btn_adv = QPushButton("⚙ 同步选项")
+        self._btn_adv = QPushButton(translate("CATIACopilot", "⚙ 同步选项"))
         self._btn_adv.setFont(_ef); self._btn_adv.setFlat(True)
         self._btn_adv.setCheckable(False)
-        self._btn_adv.setToolTip("显示/隐藏同步选项")
+        self._btn_adv.setToolTip(translate("CATIACopilot", "显示/隐藏同步选项"))
         self._btn_adv.clicked.connect(self._toggle_adv)
         h.addWidget(self._btn_adv)
 
@@ -857,13 +1024,13 @@ class PlmWorkbench(QDialog):
         h.addWidget(sep4)
 
         # 历史
-        btn_hist = QPushButton("📋 历史")
+        btn_hist = QPushButton(translate("CATIACopilot", "📋 历史"))
         btn_hist.setFont(_ef); btn_hist.setFlat(True)
         btn_hist.clicked.connect(self._on_show_history)
         h.addWidget(btn_hist)
 
         # 设置
-        btn_cfg = QPushButton("⚙ 设置")
+        btn_cfg = QPushButton(translate("CATIACopilot", "⚙ 设置"))
         btn_cfg.setFont(_ef); btn_cfg.setFlat(True)
         btn_cfg.clicked.connect(self._on_show_settings)
         h.addWidget(btn_cfg)
@@ -874,7 +1041,7 @@ class PlmWorkbench(QDialog):
     def _build_diff_table(self) -> QWidget:
         """构建主体差异对比表（13 列）。"""
         self._tbl_diff = QTableWidget(0, len(self._DC_HEADERS))
-        self._tbl_diff.setHorizontalHeaderLabels(self._DC_HEADERS)
+        self._tbl_diff.setHorizontalHeaderLabels([_header_display(i) for i in range(len(self._DC_HEADERS))])
         self._tbl_diff.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tbl_diff.setSelectionMode(QAbstractItemView.NoSelection)
         self._tbl_diff.setFocusPolicy(Qt.NoFocus)
@@ -965,7 +1132,7 @@ class PlmWorkbench(QDialog):
 
         row = QHBoxLayout()
         row.setSpacing(8)
-        self._lbl_status  = QLabel("就绪")
+        self._lbl_status  = QLabel(translate("CATIACopilot", "就绪"))
         self._lbl_speed   = QLabel("")
         self._lbl_summary = QLabel("")
         self._lbl_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -1004,7 +1171,7 @@ class PlmWorkbench(QDialog):
         else:
             self._lbl_conn_dot.setText("🔴")
             self._lbl_conn_dot.setStyleSheet("color: red;")
-            self._lbl_conn_info.setText("未配置")
+            self._lbl_conn_info.setText(translate("CATIACopilot", "未配置"))
 
     # ─────────────────────────────────────────────────────────────────────────
     # 通用工具
@@ -1057,7 +1224,10 @@ class PlmWorkbench(QDialog):
 
         # 更新工作区路径显示
         wd = self._get_work_dir()
-        self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
+        if wd:
+            self._lbl_work_dir.setText(translate("CATIACopilot", "工作区：{0}").format(wd))
+        else:
+            self._lbl_work_dir.setText(translate("CATIACopilot", "工作区：—"))
 
         # 检测关键配置是否变更（服务器地址、PLM工作区、本地工作目录）
         s_after = QSettings(_S_ORG, _S_PLM_CFG)
@@ -1075,13 +1245,15 @@ class PlmWorkbench(QDialog):
             self._sync_just_pushed.clear()
             changed_fields = []
             if _after[0] != _before[0]:
-                changed_fields.append("服务器地址")
+                changed_fields.append(translate("CATIACopilot", "服务器地址"))
             if _after[1] != _before[1]:
-                changed_fields.append("PLM 工作区")
+                changed_fields.append(translate("CATIACopilot", "PLM 工作区"))
             if _after[2] != _before[2]:
-                changed_fields.append("本地工作目录")
+                changed_fields.append(translate("CATIACopilot", "本地工作目录"))
             self._lbl_status.setText(
-                f"配置已变更（{'/'.join(changed_fields)}），请重新加载工作区。"
+                translate("CATIACopilot", "配置已变更（{0}），请重新加载工作区。").format(
+                    "/".join(changed_fields)
+                )
             )
 
     def _on_show_history(self) -> None:
@@ -1100,9 +1272,9 @@ class PlmWorkbench(QDialog):
         self._le_password.setEchoMode(QLineEdit.Password)
         self._le_workspace = QLineEdit(workspace)
         self._le_work_dir  = QLineEdit(work_dir)
-        self._btn_browse_work_dir = QPushButton("浏览…")
+        self._btn_browse_work_dir = QPushButton(translate("CATIACopilot", "浏览…"))
         self._btn_browse_work_dir.clicked.connect(self._on_browse_work_dir)
-        self._lbl_ws_detail = QLabel("— 未获取 —")
+        self._lbl_ws_detail = QLabel(translate("CATIACopilot", "— 未获取 —"))
         self._txt_conn_log  = QPlainTextEdit()
         self._txt_conn_log.setReadOnly(True)
         self._tbl_plm_tags  = QTableWidget(0, 2)
@@ -1116,14 +1288,19 @@ class PlmWorkbench(QDialog):
         # 仅保留 QSettings 键名引用，供 closeEvent 使用
 
         self._tbl_history = QTableWidget(0, 7)
-        self._tbl_history.setHorizontalHeaderLabels(["时间", "新建", "更新", "跳过", "失败", "用户名", "同步模式"])
+        self._tbl_history.setHorizontalHeaderLabels([
+            translate("CATIACopilot", "时间"), translate("CATIACopilot", "新建"),
+            translate("CATIACopilot", "更新"), translate("CATIACopilot", "跳过"),
+            translate("CATIACopilot", "失败"), translate("CATIACopilot", "用户名"),
+            translate("CATIACopilot", "同步模式"),
+        ])
         self._txt_hist = QPlainTextEdit(); self._txt_hist.setReadOnly(True)
 
         self._reload_rules_table()
 
         # 工作区路径显示初始化
         wd = work_dir
-        self._lbl_work_dir.setText(f"工作区：{wd}" if wd else "工作区：—")
+        self._lbl_work_dir.setText(translate("CATIACopilot", "工作区：{0}").format(wd) if wd else translate("CATIACopilot", "工作区：—"))
 
     # ─────────────────────────────────────────────────────────────────────────
     # 加载工作区
@@ -1161,15 +1338,15 @@ class PlmWorkbench(QDialog):
             self._catia_search_order_warned = True
             if not self._check_catia_doc_locator_order():
                 ret = QMessageBox.warning(
-                    self, "CATIA 设置需要调整",
-                    "检测到 CATIA 文档查找顺序设置不正确。\n\n"
-                    "当前 CATIA 打开 CATProduct 时会优先按内部存储的绝对路径查找子件，\n"
-                    "可能导致找到的文件非工作目录中的文件。\n\n"
-                    "请前往 CATIA：\n"
-                    "  工具 > 选项 > 常规 > 文档\n"
-                    "  在「已链接的文档本地化」列表中，\n"
-                    "  将「指向文档的文件夹」移到「链接文件夹」之前。\n\n"
-                    "调整后重新启动 CATIA，使修改生效。",
+                    self, translate("CATIACopilot", "CATIA 设置需要调整"),
+                    translate("CATIACopilot", "检测到 CATIA 文档查找顺序设置不正确。\n\n"
+                        "当前 CATIA 打开 CATProduct 时会优先按内部存储的绝对路径查找子件，\n"
+                        "可能导致找到的文件非工作目录中的文件。\n\n"
+                        "请前往 CATIA：\n"
+                        "  工具 > 选项 > 常规 > 文档\n"
+                        "  在「已链接的文档本地化」列表中，\n"
+                        "  将「指向文档的文件夹」移到「链接文件夹」之前。\n\n"
+                        "调整后重新启动 CATIA，使修改生效。"),
                     QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 )
                 if ret == QMessageBox.StandardButton.Cancel:
@@ -1178,18 +1355,18 @@ class PlmWorkbench(QDialog):
 
         work_dir = self._get_work_dir()
         if not work_dir:
-            QMessageBox.warning(self, "未设置工作目录", '请先在"设置"中配置工作目录。')
+            QMessageBox.warning(self, translate("CATIACopilot", "未设置工作目录"), translate("CATIACopilot", "请先在\"设置\"中配置工作目录。"))
             return
 
         import os
         if not os.path.isdir(work_dir):
-            QMessageBox.warning(self, "工作目录不存在", f"路径不存在：\n{work_dir}")
+            QMessageBox.warning(self, translate("CATIACopilot", "工作目录不存在"), translate("CATIACopilot", "路径不存在：\n{0}").format(work_dir))
             return
 
         self._btn_load_ws.setEnabled(False)
         self._pgb.setRange(0, 0)
         self._pgb.setVisible(True)
-        self._lbl_status.setText("正在扫描工作区……")
+        self._lbl_status.setText(translate("CATIACopilot", "正在扫描工作区……"))
 
         w = _WorkspaceScanWorker(work_dir)
         w.progress.connect(self._on_scan_progress)
@@ -1201,7 +1378,11 @@ class PlmWorkbench(QDialog):
         if total > 0:
             self._pgb.setRange(0, total)
             self._pgb.setValue(done)
-        msg = f"正在读取 ({done}/{total})：{filename}" if filename else f"扫描完成 {done} 个文件"
+        msg = (
+            translate("CATIACopilot", "正在读取 ({0}/{1})：{2}").format(done, total, filename)
+            if filename
+            else translate("CATIACopilot", "扫描完成 {0} 个文件").format(done)
+        )
         self._lbl_status.setText(msg)
 
     def _on_scan_done(self, local_parts: list) -> None:
@@ -1227,7 +1408,7 @@ class PlmWorkbench(QDialog):
         self._populate_diff_table()
         n_local = len(local_parts)
         n_plm   = len(self._plm_cache)
-        self._lbl_status.setText(f"工作区已加载：{n_local} 个本地文件，{n_plm} 条 PLM 缓存记录")
+        self._lbl_status.setText(translate("CATIACopilot", "工作区已加载：{0} 个本地文件，{1} 条 PLM 缓存记录").format(n_local, n_plm))
         # 加载完成后自动刷新 PLM 状态
         QTimer.singleShot(500, self._on_refresh_plm_status)
         self._btn_push.setEnabled(True)
@@ -1236,12 +1417,12 @@ class PlmWorkbench(QDialog):
     def _on_scan_fail(self, err: str) -> None:
         self._btn_load_ws.setEnabled(True)
         self._pgb.setVisible(False)
-        self._lbl_status.setText(f"扫描失败：{err}")
+        self._lbl_status.setText(translate("CATIACopilot", "扫描失败：{0}").format(err))
         # 扫描失败时清空表格，避免显示上次的过期数据
         self._tbl_diff.setRowCount(0)
         self._diff_rows = []
         self._local_parts = []
-        QMessageBox.critical(self, "扫描工作区失败", err)
+        QMessageBox.critical(self, translate("CATIACopilot", "扫描工作区失败"), err)
 
     # ─────────────────────────────────────────────────────────────────────────
     # 刷新 PLM 状态
@@ -1255,7 +1436,7 @@ class PlmWorkbench(QDialog):
 
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", '请先在"设置"中配置 PLM 连接信息。')
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先在\"设置\"中配置 PLM 连接信息。"))
             return
 
         # 收集所有零件号（本地文件 + 已有缓存中的）
@@ -1264,7 +1445,7 @@ class PlmWorkbench(QDialog):
         all_pns = list(dict.fromkeys(pns_from_local + pns_from_cache))  # 去重保序
 
         if not all_pns:
-            QMessageBox.information(self, "无零件", "请先加载工作区或新增 PLM Part。")
+            QMessageBox.information(self, translate("CATIACopilot", "无零件"), translate("CATIACopilot", "请先加载工作区或新增 PLM Part。"))
             return
 
         self._plm_status_running = True
@@ -1272,7 +1453,7 @@ class PlmWorkbench(QDialog):
         self._pgb.setRange(0, len(all_pns))
         self._pgb.setValue(0)
         self._pgb.setVisible(True)
-        self._lbl_status.setText(f"正在查询 PLM 状态（0/{len(all_pns)}）……")
+        self._lbl_status.setText(translate("CATIACopilot", "正在查询 PLM 状态（0/{0}）……").format(len(all_pns)))
 
         w = _PlmStatusWorker(base_url, login, password, workspace, all_pns)
         w.progress.connect(self._on_plm_status_progress)
@@ -1282,7 +1463,7 @@ class PlmWorkbench(QDialog):
 
     def _on_plm_status_progress(self, done: int, total: int) -> None:
         self._pgb.setValue(done)
-        self._lbl_status.setText(f"查询 PLM 状态……（{done}/{total}）")
+        self._lbl_status.setText(translate("CATIACopilot", "查询 PLM 状态……（{0}/{1}）").format(done, total))
 
     def _on_plm_status_done(self, result: dict) -> None:
         """PLM 查询完成：合并缓存，刷新表格差异列。"""
@@ -1321,15 +1502,17 @@ class PlmWorkbench(QDialog):
         found    = sum(1 for v in result.values() if v is not None)
         not_found = len(result) - found
         self._lbl_status.setText(
-            f"PLM 状态已刷新：找到 {found} 个，未找到 {not_found} 个"
+            translate("CATIACopilot", "PLM 状态已刷新：找到 {0} 个，未找到 {1} 个").format(
+                found, not_found
+            )
         )
 
     def _on_plm_status_fail(self, err: str) -> None:
         self._plm_status_running = False
         self._btn_refresh_plm.setEnabled(True)
         self._pgb.setVisible(False)
-        self._lbl_status.setText(f"PLM 查询失败：{err}")
-        QMessageBox.critical(self, "PLM 查询失败", err)
+        self._lbl_status.setText(translate("CATIACopilot", "PLM 查询失败：{0}").format(err))
+        QMessageBox.critical(self, translate("CATIACopilot", "PLM 查询失败"), err)
 
     # 兼容旧方法引用
     def _on_plm_status_loaded(self, parts: list) -> None:
@@ -1436,18 +1619,18 @@ class PlmWorkbench(QDialog):
             self._tbl_diff.setCellWidget(row_idx, self._DC_SEL, chk_w)
 
             # col 1: 差异状态
-            st_text = status
+            st_text = _st_display(status)
             st_item = _item(st_text, Qt.AlignCenter)
             color = self._STATUS_COLORS.get(status, "#7f8c8d")
             st_item.setForeground(QColor(color))
             if warn:
                 tips = []
                 if local:
-                    if local.no_file: tips.append("文件从未保存到磁盘")
-                    if not local.is_saved: tips.append("文件有未保存的修改")
-                    if not local.is_readable: tips.append("COM 读取部分失败，属性可能不完整（不影响 Push）")
-                    if not local.part_number: tips.append("零件号为空")
-                if status == self._ST_PLM_NEW: tips.append("PLM 版本更新，建议先 Pull")
+                    if local.no_file: tips.append(translate("CATIACopilot", "文件从未保存到磁盘"))
+                    if not local.is_saved: tips.append(translate("CATIACopilot", "文件有未保存的修改"))
+                    if not local.is_readable: tips.append(translate("CATIACopilot", "COM 读取部分失败，属性可能不完整（不影响 Push）"))
+                    if not local.part_number: tips.append(translate("CATIACopilot", "零件号为空"))
+                    if status == self._ST_PLM_NEW: tips.append(translate("CATIACopilot", "PLM 版本更新，建议先 Pull"))
                 if tips:
                     st_item.setToolTip("\n".join(tips))
             self._tbl_diff.setItem(row_idx, self._DC_DIFF, st_item)
@@ -1512,7 +1695,7 @@ class PlmWorkbench(QDialog):
                 lbl_files.setFont(_fa_f)
                 lbl_files.setStyleSheet("color: #4C566A;")
                 lbl_files.setAlignment(Qt.AlignCenter)
-                lbl_files.setToolTip("查看 PLM 附件")
+                lbl_files.setToolTip(translate("CATIACopilot", "查看 PLM 附件"))
                 lbl_files.setCursor(Qt.PointingHandCursor)
                 lbl_files.mousePressEvent = lambda e, p=pn, v=ver, pi=plm: self._on_show_attachments(p, v, pi)
                 w = QWidget(); l = QHBoxLayout(w)
@@ -1589,14 +1772,22 @@ class PlmWorkbench(QDialog):
         # 图标1：eye / pencil（PLM 状态）
         if has_plm_data:
             ch1  = FA_PENCIL if is_checked_out else FA_EYE
-            tip1 = f"已签出（{checkout_user}）" if is_checked_out else "未签出（已签入）"
+            tip1 = (
+                translate("CATIACopilot", "已签出（{0}）").format(checkout_user)
+                if is_checked_out
+                else translate("CATIACopilot", "未签出（已签入）")
+            )
             layout.addWidget(_icon_lbl(ch1, tip1))
         else:
             layout.addWidget(_icon_lbl("", "", visible=False))  # 占位，保持列对齐
 
         # 图标2：cube / cubes（本地文件类型）
         ch2  = FA_CUBES if is_product else FA_CUBE
-        tip2 = "装配体 (CATProduct)" if is_product else "零件 (CATPart)"
+        tip2 = (
+            translate("CATIACopilot", "装配体 (CATProduct)")
+            if is_product
+            else translate("CATIACopilot", "零件 (CATPart)")
+        )
         layout.addWidget(_icon_lbl(ch2, tip2))
 
         # 零件编号文字（默认颜色，加粗）
@@ -1691,7 +1882,7 @@ class PlmWorkbench(QDialog):
         """弹出零件附件详情窗口。"""
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先配置 PLM 连接信息。"))
             return
         dlg = _AttachmentDialog(
             base_url, login, password, workspace,
@@ -1709,7 +1900,7 @@ class PlmWorkbench(QDialog):
         """读取勾选行，执行 Push 到 PLM。"""
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先配置 PLM 连接信息。"))
             return
 
         # 收集勾选行
@@ -1728,7 +1919,7 @@ class PlmWorkbench(QDialog):
             push_rows.append(row_data)
 
         if not push_rows:
-            QMessageBox.information(self, "未选择", "请先勾选要 Push 的零件行。")
+            QMessageBox.information(self, translate("CATIACopilot", "未选择"), translate("CATIACopilot", "请先勾选要 Push 的零件行。"))
             return
 
         # ── 实时查询 PLM 最新状态（替代缓存数据） ─────────────────────────────
@@ -1794,10 +1985,10 @@ class PlmWorkbench(QDialog):
         if unsaved:
             msg = "\n".join(unsaved[:10])
             if len(unsaved) > 10:
-                msg += f"\n…等共 {len(unsaved)} 个"
+                msg += translate("CATIACopilot", "\n…等共 {0} 个").format(len(unsaved))
             QMessageBox.critical(
-                self, "存在未保存文件",
-                f"以下文件有未保存的修改，请先保存后再同步：\n\n{msg}",
+                self, translate("CATIACopilot", "存在未保存文件"),
+                translate("CATIACopilot", "以下文件有未保存的修改，请先保存后再同步：\n\n{0}").format(msg),
             )
             return
 
@@ -1809,17 +2000,19 @@ class PlmWorkbench(QDialog):
                 stem = os.path.splitext(os.path.basename(local.filepath))[0]
                 if stem != local.part_number:
                     invalid_names.append(
-                        f"{local.part_number}  ←  文件：{os.path.basename(local.filepath)}"
+                        translate("CATIACopilot", "{0}  ←  文件：{1}").format(
+                            local.part_number, os.path.basename(local.filepath)
+                        )
                     )
         if invalid_names:
             msg = "\n".join(invalid_names[:10])
             if len(invalid_names) > 10:
-                msg += f"\n…等共 {len(invalid_names)} 个"
+                msg += translate("CATIACopilot", "\n…等共 {0} 个").format(len(invalid_names))
             QMessageBox.critical(
-                self, "文件名与零件编号不一致",
-                f"以下文件的文件名（不含扩展名）与零件编号不一致：\n\n{msg}\n\n"
-                "Push 后 Pull 时 CATIA 将无法在同目录找到引用的子文件。\n"
-                "请在 CATIA 中另存为正确文件名后再 Push。",
+                self, translate("CATIACopilot", "文件名与零件编号不一致"),
+                translate("CATIACopilot", "以下文件的文件名（不含扩展名）与零件编号不一致：\n\n{0}\n\n"
+                    "Push 后 Pull 时 CATIA 将无法在同目录找到引用的子文件。\n"
+                    "请在 CATIA 中另存为正确文件名后再 Push。").format(msg),
             )
             return
 
@@ -1828,10 +2021,10 @@ class PlmWorkbench(QDialog):
         if plm_newer:
             msg = "\n".join(plm_newer[:10])
             if len(plm_newer) > 10:
-                msg += f"\n…等共 {len(plm_newer)} 个"
+                msg += translate("CATIACopilot", "\n…等共 {0} 个").format(len(plm_newer))
             ret = QMessageBox.warning(
-                self, "PLM 有更新版本",
-                f"以下零件在 PLM 中有更新版本，强制推送会覆盖 PLM 侧的修改：\n\n{msg}\n\n确认继续？",
+                self, translate("CATIACopilot", "PLM 有更新版本"),
+                translate("CATIACopilot", "以下零件在 PLM 中有更新版本，强制推送会覆盖 PLM 侧的修改：\n\n{0}\n\n确认继续？").format(msg),
                 QMessageBox.Yes | QMessageBox.Cancel,
                 QMessageBox.Cancel,
             )
@@ -1853,7 +2046,7 @@ class PlmWorkbench(QDialog):
         self._sync_total_nodes = total_nodes
         self._sync_done_nodes  = 0
         self._sync_seen_pns    = set()
-        self._lbl_status.setText(f"正在同步…… (0/{total_nodes})")
+        self._lbl_status.setText(translate("CATIACopilot", "正在同步…… (0/{0})").format(total_nodes))
         self._sync_result_map.clear()
         self._lbl_summary.setText("")
         self._last_sync_login = login
@@ -1864,6 +2057,7 @@ class PlmWorkbench(QDialog):
         w.upload_log.connect(self._on_upload_log)
         w.sync_done.connect(self._on_sync_done)
         w.error.connect(self._on_sync_error)
+        w.sync_event.connect(self._on_sync_event)
         self._start_worker(w)
 
     def _on_sync_done(self, result) -> None:
@@ -1871,22 +2065,24 @@ class PlmWorkbench(QDialog):
         self._btn_load_ws.setEnabled(True)
         self._pgb.setValue(self._pgb.maximum())
         self._pgb.setVisible(False)
-        self._lbl_status.setText("同步完成")
+        self._lbl_status.setText(translate("CATIACopilot", "同步完成"))
         self._lbl_speed.setText("")
         parts = [
-            f"新建 {result.created}", f"更新 {result.updated}",
-            f"跳过 {result.skipped}", f"无变化 {result.unchanged}",
-            f"失败 {result.failed}",
+            translate("CATIACopilot", "新建 {0}").format(result.created),
+            translate("CATIACopilot", "更新 {0}").format(result.updated),
+            translate("CATIACopilot", "跳过 {0}").format(result.skipped),
+            translate("CATIACopilot", "无变化 {0}").format(result.unchanged),
+            translate("CATIACopilot", "失败 {0}").format(result.failed),
         ]
         self._lbl_summary.setText("  ".join(parts))
         # 有异常时弹窗展示详情
         if result.errors:
-            msg_lines = [f"同步完成，共 {len(result.errors)} 条警告/错误：\n"]
+            msg_lines = [translate("CATIACopilot", "同步完成，共 {0} 条警告/错误：\n").format(len(result.errors))]
             for e in result.errors[:20]:
                 msg_lines.append(f"  · {e}")
             if len(result.errors) > 20:
-                msg_lines.append(f"  …等共 {len(result.errors)} 条")
-            QMessageBox.warning(self, "同步结果", "\n".join(msg_lines))
+                msg_lines.append(translate("CATIACopilot", "  …等共 {0} 条").format(len(result.errors)))
+            QMessageBox.warning(self, translate("CATIACopilot", "同步结果"), "\n".join(msg_lines))
         self._save_history(result, user=self._last_sync_login, mode=self._last_sync_mode)
         self._refresh_history_list()
         # 同步完成后自动刷新 PLM 状态
@@ -1898,10 +2094,10 @@ class PlmWorkbench(QDialog):
         self._btn_load_ws.setEnabled(True)
         self._pgb.setVisible(False)
         self._lbl_speed.setText("")
-        self._lbl_status.setText(f"同步失败：{err}")
+        self._lbl_status.setText(translate("CATIACopilot", "同步失败：{0}").format(err))
         # Push 失败时清空 _sync_just_pushed，避免差异表伪装成"一致"
         self._sync_just_pushed.clear()
-        QMessageBox.critical(self, "同步失败", err)
+        QMessageBox.critical(self, translate("CATIACopilot", "同步失败"), err)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Pull（从 PLM 拉取文件）
@@ -1912,10 +2108,10 @@ class PlmWorkbench(QDialog):
         base_url, login, password, workspace = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先配置 PLM 连接信息。"))
             return
         if not work_dir:
-            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置工作目录。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未设置工作目录"), translate("CATIACopilot", "请先在设置中配置工作目录。"))
             return
         dlg = _PullDialog(base_url, login, password, workspace, work_dir, parent=self)
         dlg.exec()
@@ -1925,10 +2121,10 @@ class PlmWorkbench(QDialog):
         base_url, login, password, workspace = self._read_conn()
         work_dir = self._get_work_dir()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息。")
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先配置 PLM 连接信息。"))
             return
         if not work_dir:
-            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置工作目录。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未设置工作目录"), translate("CATIACopilot", "请先在设置中配置工作目录。"))
             return
 
         checked = []
@@ -1949,7 +2145,7 @@ class PlmWorkbench(QDialog):
             checked.append((pn, ver, itr))
 
         if not checked:
-            QMessageBox.information(self, "未选择", "请先勾选有 PLM 版本信息的行。")
+            QMessageBox.information(self, translate("CATIACopilot", "未选择"), translate("CATIACopilot", "请先勾选有 PLM 版本信息的行。"))
             return
 
         try:
@@ -1957,7 +2153,7 @@ class PlmWorkbench(QDialog):
             c = PlmApiClient(base_url)
             c.login(login, password)
         except Exception as exc:
-            QMessageBox.critical(self, "连接失败", str(exc))
+            QMessageBox.critical(self, translate("CATIACopilot", "连接失败"), str(exc))
             return
 
         # ── 实时查询 PLM 最新版本（替代缓存数据） ──────────────────────────────
@@ -2000,13 +2196,13 @@ class PlmWorkbench(QDialog):
                 dl_items.append((pn, ver, itr, fname))
 
         if not dl_items:
-            QMessageBox.information(self, "无附件", "所有勾选零件均无可下载附件。")
+            QMessageBox.information(self, translate("CATIACopilot", "无附件"), translate("CATIACopilot", "所有勾选零件均无可下载附件。"))
             return
 
         self._pgb.setRange(0, len(dl_items))
         self._pgb.setValue(0)
         self._pgb.setVisible(True)
-        self._lbl_status.setText(f"开始下载 {len(dl_items)} 个文件……")
+        self._lbl_status.setText(translate("CATIACopilot", "开始下载 {0} 个文件……").format(len(dl_items)))
 
         w = _PullWorker(base_url, login, password, workspace)
         w.file_progress.connect(lambda fn, dl, tot, spd: self._lbl_speed.setText(f"{spd/1024/1024:.1f} MB/s" if spd >= 1048576 else f"{spd/1024:.1f} KB/s"))
@@ -2014,7 +2210,7 @@ class PlmWorkbench(QDialog):
         w.all_done.connect(self._on_pull_all_done)
         w.failure.connect(lambda err: (
             self._pgb.__class__.setVisible(self._pgb, False),
-            QMessageBox.critical(self, "Pull 失败", err),
+            QMessageBox.critical(self, translate("CATIACopilot", "Pull 失败"), err),
         ))
         w.set_download(dl_items, work_dir, mod_dates=mod_dates)
         self._start_worker(w)
@@ -2022,7 +2218,7 @@ class PlmWorkbench(QDialog):
     def _on_pull_all_done(self, n: int) -> None:
         """Pull 全部完成后：更新本地文件信息 + 重新扫描工作区（含新增文件）+ 刷新 PLM 状态。"""
         self._pgb.__class__.setVisible(self._pgb, False)
-        self._lbl_status.setText(f"Pull 完成：{n} 个文件，正在重新扫描工作区……")
+        self._lbl_status.setText(translate("CATIACopilot", "Pull 完成：{0} 个文件，正在重新扫描工作区……").format(n))
         self._lbl_speed.setText("")
         # 更新已有条目的 mtime（快速路径，无需 COM）
         for info in self._local_parts:
@@ -2048,17 +2244,17 @@ class PlmWorkbench(QDialog):
         - PLM 中不存在    → 明确提示，不创建占位条目
         """
         from PySide6.QtWidgets import QInputDialog
-        pn, ok = QInputDialog.getText(self, "新增 PLM Part", "输入零件号（Part Number）：")
+        pn, ok = QInputDialog.getText(self, translate("CATIACopilot", "新增 PLM Part"), translate("CATIACopilot", "输入零件号（Part Number）："))
         if not ok or not pn.strip():
             return
         pn = pn.strip()
 
         base_url, login, password, workspace = self._read_conn()
         if not base_url or not login:
-            QMessageBox.warning(self, "配置不完整", "请先配置 PLM 连接信息，以便查询该零件。")
+            QMessageBox.warning(self, translate("CATIACopilot", "配置不完整"), translate("CATIACopilot", "请先配置 PLM 连接信息，以便查询该零件。"))
             return
 
-        self._lbl_status.setText(f"正在查询 PLM：{pn}……")
+        self._lbl_status.setText(translate("CATIACopilot", "正在查询 PLM：{0}……").format(pn))
         try:
             from catia_copilot.plm.api_client import PlmApiClient
             c = PlmApiClient(base_url)
@@ -2071,25 +2267,25 @@ class PlmWorkbench(QDialog):
                 root_detail = None
             if not root_detail:
                 QMessageBox.warning(
-                    self, "PLM 中不存在",
-                    f"在 PLM 工作区中未找到零件号：{pn}\n\n请确认零件号是否正确。",
+                    self, translate("CATIACopilot", "PLM 中不存在"),
+                    translate("CATIACopilot", "在 PLM 工作区中未找到零件号：{0}\n\n请确认零件号是否正确。").format(pn),
                 )
-                self._lbl_status.setText("未找到零件，操作已取消")
+                self._lbl_status.setText(translate("CATIACopilot", "未找到零件，操作已取消"))
                 return
 
             root_ver = str(root_detail.get("version") or "A")
 
             # ── 2. 询问是否递归展开子孙 ───────────────────────────────────────
             reply = QMessageBox.question(
-                self, "新增 PLM Part",
-                f"找到零件：{pn}（版本 {root_ver}）\n\n"
-                "是否递归展开其所有子孙零件并一并加入缓存？\n"
-                "（对于单个零件点「否」，对于装配体点「是」）",
+                self, translate("CATIACopilot", "新增 PLM Part"),
+                translate("CATIACopilot", "找到零件：{0}（版本 {1}）\n\n"
+                    "是否递归展开其所有子孙零件并一并加入缓存？\n"
+                    "（对于单个零件点「否」，对于装配体点「是」）").format(pn, root_ver),
                 QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
                 QMessageBox.Yes,
             )
             if reply == QMessageBox.Cancel:
-                self._lbl_status.setText("操作已取消")
+                self._lbl_status.setText(translate("CATIACopilot", "操作已取消"))
                 return
 
             # ── 3. 收集所有需要查询的零件号 ─────────────────────────────────
@@ -2097,7 +2293,7 @@ class PlmWorkbench(QDialog):
 
             if reply == QMessageBox.Yes:
                 # 递归获取 BOM 子树（仅取零件号，不需要附件）
-                self._lbl_status.setText(f"正在递归展开 {pn} 的子孙……")
+                self._lbl_status.setText(translate("CATIACopilot", "正在递归展开 {0} 的子孙……").format(pn))
                 try:
                     bom_rows = c.get_part_components_flat(workspace, pn, root_ver)
                     child_pns = [
@@ -2109,12 +2305,12 @@ class PlmWorkbench(QDialog):
                     pns_to_query = list(dict.fromkeys(pns_to_query))  # 去重保序
                 except Exception as exc:
                     QMessageBox.warning(
-                        self, "递归展开失败",
-                        f"展开子树时出错（将只添加根零件）：\n{exc}",
+                        self, translate("CATIACopilot", "递归展开失败"),
+                        translate("CATIACopilot", "展开子树时出错（将只添加根零件）：\n{0}").format(exc),
                     )
 
             # ── 4. 批量查询摘要并写入缓存 ─────────────────────────────────────
-            self._lbl_status.setText(f"正在查询 {len(pns_to_query)} 个零件的 PLM 详情……")
+            self._lbl_status.setText(translate("CATIACopilot", "正在查询 {0} 个零件的 PLM 详情……").format(len(pns_to_query)))
             self._pgb.setRange(0, len(pns_to_query))
             self._pgb.setValue(0)
             self._pgb.setVisible(True)
@@ -2141,13 +2337,15 @@ class PlmWorkbench(QDialog):
                 self._plm_cache = merge_plm_cache(work_dir, added_parts)
             self._populate_diff_table()
             self._lbl_status.setText(
-                f"已添加 {added} 个零件（共查询 {len(pns_to_query)} 个）"
+                translate("CATIACopilot", "已添加 {0} 个零件（共查询 {1} 个）").format(
+                    added, len(pns_to_query)
+                )
             )
 
         except Exception as exc:
             self._pgb.setVisible(False)
-            self._lbl_status.setText(f"查询失败：{exc}")
-            QMessageBox.warning(self, "查询失败", str(exc))
+            self._lbl_status.setText(translate("CATIACopilot", "查询失败：{0}").format(exc))
+            QMessageBox.warning(self, translate("CATIACopilot", "查询失败"), str(exc))
 
     # ─────────────────────────────────────────────────────────────────────────
     # 兼容旧业务逻辑方法（_on_load_preview / _populate_local_table 等）
@@ -2182,7 +2380,7 @@ class PlmWorkbench(QDialog):
 
     def _on_browse_work_dir(self) -> None:
         current = self._le_work_dir.text().strip()
-        path = QFileDialog.getExistingDirectory(self, "选择工作目录", current)
+        path = QFileDialog.getExistingDirectory(self, translate("CATIACopilot", "选择工作目录"), current)
         if path:
             self._le_work_dir.setText(path)
 
@@ -2244,17 +2442,17 @@ class PlmWorkbench(QDialog):
         grid1 = QGridLayout(); grid1.setSpacing(4); grid1.setContentsMargins(0,0,0,0)
         grid1.setColumnStretch(1, 0); grid1.setColumnStretch(2, 0); grid1.setColumnStretch(3, 1)
 
-        (self._rb_create_yes, self._rb_create_no),     self._bg_create = _make_radio_grp("新建",     "跳过")
-        self._rb_exist_checkout = QRadioButton("签出更新")
+        (self._rb_create_yes, self._rb_create_no),     self._bg_create = _make_radio_grp(translate("CATIACopilot", "新建"),     translate("CATIACopilot", "跳过"))
+        self._rb_exist_checkout = QRadioButton(translate("CATIACopilot", "签出更新"))
         self._rb_exist_checkout.setChecked(True)
         self._bg_exist = QButtonGroup()
         self._bg_exist.addButton(self._rb_exist_checkout)
-        (self._rb_after_checkin, self._rb_after_keep),  self._bg_after  = _make_radio_grp("自动签入", "保留签出")
+        (self._rb_after_checkin, self._rb_after_keep),  self._bg_after  = _make_radio_grp(translate("CATIACopilot", "自动签入"), translate("CATIACopilot", "保留签出"))
 
         radio_rows1 = [
-            ("不存在：", self._rb_create_yes,    self._rb_create_no),
-            ("已签入：", self._rb_exist_checkout, None),
-            ("推送后：", self._rb_after_checkin,  self._rb_after_keep),
+            (translate("CATIACopilot", "不存在："), self._rb_create_yes,    self._rb_create_no),
+            (translate("CATIACopilot", "已签入："), self._rb_exist_checkout, None),
+            (translate("CATIACopilot", "推送后："), self._rb_after_checkin,  self._rb_after_keep),
         ]
         for r, (lbl_txt, rb1, rb2) in enumerate(radio_rows1):
             lbl = QLabel(lbl_txt); lbl.setStyleSheet(_lbl_style)
@@ -2265,10 +2463,10 @@ class PlmWorkbench(QDialog):
                 grid1.addWidget(rb2, r, 2)
 
         # 预设按钮竖向放在第3列（与 radio 行对齐）
-        btn_preset_new    = QPushButton("新建模式")
-        btn_preset_update = QPushButton("更新模式")
-        btn_preset_new.setToolTip("新建所有不存在的零件，跳过已有零件，不增量")
-        btn_preset_update.setToolTip("仅更新已有零件（签出后更新），不新建，开启增量")
+        btn_preset_new    = QPushButton(translate("CATIACopilot", "新建模式"))
+        btn_preset_update = QPushButton(translate("CATIACopilot", "更新模式"))
+        btn_preset_new.setToolTip(translate("CATIACopilot", "新建所有不存在的零件，跳过已有零件，不增量"))
+        btn_preset_update.setToolTip(translate("CATIACopilot", "仅更新已有零件（签出后更新），不新建，开启增量"))
         btn_preset_new.clicked.connect(self._apply_preset_new)
         btn_preset_update.clicked.connect(self._apply_preset_update)
         grid1.addWidget(btn_preset_new,    0, 3)
@@ -2287,22 +2485,22 @@ class PlmWorkbench(QDialog):
         grid2 = QGridLayout(); grid2.setSpacing(4); grid2.setContentsMargins(8,0,8,0)
         grid2.setColumnStretch(1, 1); grid2.setColumnStretch(3, 1)
 
-        self._chk_incremental     = QCheckBox("增量同步")
-        self._chk_reg_product     = QCheckBox("注册顶层产品")
-        self._chk_upload_catpart  = QCheckBox("上传 CATIA 文件")
-        self._chk_upload_stp      = QCheckBox("上传 STP 文件")
-        self._chk_upload_drw_file = QCheckBox("上传图纸文件")
-        self._chk_upload_drw_pdf  = QCheckBox("上传 PDF")
+        self._chk_incremental     = QCheckBox(translate("CATIACopilot", "增量同步"))
+        self._chk_reg_product     = QCheckBox(translate("CATIACopilot", "注册顶层产品"))
+        self._chk_upload_catpart  = QCheckBox(translate("CATIACopilot", "上传 CATIA 文件"))
+        self._chk_upload_stp      = QCheckBox(translate("CATIACopilot", "上传 STP 文件"))
+        self._chk_upload_drw_file = QCheckBox(translate("CATIACopilot", "上传图纸文件"))
+        self._chk_upload_drw_pdf  = QCheckBox(translate("CATIACopilot", "上传 PDF"))
         self._chk_reg_product.setEnabled(False)
         self._chk_reg_product.setToolTip(
-            "当前不可用：POST /products 接口返回 403。\n"
-            "该操作要求的权限级别高于工作区管理员角色，需联系 PLM 供应商确认权限配置。"
+            translate("CATIACopilot", "当前不可用：POST /products 接口返回 403。\n"
+                "该操作要求的权限级别高于工作区管理员角色，需联系 PLM 供应商确认权限配置。")
         )
-        self._chk_incremental.setToolTip("增量同步：跳过属性无变化的零件")
-        self._chk_upload_catpart.setToolTip("上传 CATPart / CATProduct 原始文件")
-        self._chk_upload_stp.setToolTip("上传 STP 几何文件（PLM 转 OBJ 供三维预览）")
-        self._chk_upload_drw_file.setToolTip("上传 CATDrawing 原文件")
-        self._chk_upload_drw_pdf.setToolTip("上传图纸 PDF")
+        self._chk_incremental.setToolTip(translate("CATIACopilot", "增量同步：跳过属性无变化的零件"))
+        self._chk_upload_catpart.setToolTip(translate("CATIACopilot", "上传 CATPart / CATProduct 原始文件"))
+        self._chk_upload_stp.setToolTip(translate("CATIACopilot", "上传 STP 几何文件（PLM 转 OBJ 供三维预览）"))
+        self._chk_upload_drw_file.setToolTip(translate("CATIACopilot", "上传 CATDrawing 原文件"))
+        self._chk_upload_drw_pdf.setToolTip(translate("CATIACopilot", "上传图纸 PDF"))
 
         # 每行2个：(行, 列偏移, checkbox)
         chk_layout = [
@@ -2324,11 +2522,11 @@ class PlmWorkbench(QDialog):
         # ── 区3：他人签出选项（未完全实现，标注说明）────────────────────────
         grid3 = QGridLayout(); grid3.setSpacing(4); grid3.setContentsMargins(8,0,0,0)
 
-        (self._rb_other_skip, self._rb_other_force), self._bg_other = _make_radio_grp("跳过", "强制")
+        (self._rb_other_skip, self._rb_other_force), self._bg_other = _make_radio_grp(translate("CATIACopilot", "跳过"), translate("CATIACopilot", "强制"))
         self._rb_other_force.setEnabled(False)
-        self._rb_other_force.setToolTip("强制覆盖他人签出（尚未实现）")
+        self._rb_other_force.setToolTip(translate("CATIACopilot", "强制覆盖他人签出（尚未实现）"))
 
-        lbl_other = QLabel("他人签出："); lbl_other.setStyleSheet(_lbl_style)
+        lbl_other = QLabel(translate("CATIACopilot", "他人签出：")); lbl_other.setStyleSheet(_lbl_style)
         lbl_other.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid3.addWidget(lbl_other,            0, 0)
         grid3.addWidget(self._rb_other_skip,  0, 1)
@@ -2408,7 +2606,7 @@ class PlmWorkbench(QDialog):
         self._txt_hist.setObjectName("logView")
         self._txt_hist.setPlaceholderText("— 点击左侧记录查看详情 —")
         right_v.addWidget(self._txt_hist, 1)
-        btn_clear = QPushButton("清空历史")
+        btn_clear = QPushButton(translate("CATIACopilot", "清空历史"))
         btn_clear.setFixedHeight(24)
         btn_clear.clicked.connect(self._on_clear_history)
         right_v.addWidget(btn_clear)
@@ -2541,7 +2739,9 @@ class PlmWorkbench(QDialog):
         v_rw.addWidget(QLabel('自动打标签规则（Checkin 后按"设计状态"属性值自动打 Tag）：'))
 
         self._tbl_rules = QTableWidget(0, 3)
-        self._tbl_rules.setHorizontalHeaderLabels(["CATIA 属性值", "PLM 标签", "操作"])
+        self._tbl_rules.setHorizontalHeaderLabels(
+            [_rules_table_header_display(i) for i in range(3)]
+        )
         _hdr_rules = self._tbl_rules.horizontalHeader()
         _hdr_rules.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         _hdr_rules.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -2675,7 +2875,7 @@ class PlmWorkbench(QDialog):
         vis_cols = self._preview_visible_cols()
         self._preview_tree.clear()
         self._preview_tree.setColumnCount(len(vis_cols))
-        headers = [_SYNC_COL_DISPLAY.get(c, BOM_COLUMN_DISPLAY_NAMES.get(c, c)) for c in vis_cols]
+        headers = [_sync_col_display(c) if c in _SYNC_COL_DISPLAY else BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in vis_cols]
         self._preview_tree.setHeaderLabels(headers)
         self._preview_tree.setRootIsDecorated(True)
 
@@ -2780,95 +2980,94 @@ class PlmWorkbench(QDialog):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _on_sync_progress(self, msg: str) -> None:
-        """解析 sync.py 的结构化日志行，更新状态标签和 _sync_result_map。"""
-        import re as _re
-        stripped = msg.strip()
+        """文本日志回调：仅把原始日志显示在状态栏，不再解析做业务。
 
+        Task 3.2 起进度/结果业务（结果映射、行颜色、终态计数、速度显示）
+        全部由结构化事件 `_on_sync_event` 驱动；此处保留 raw 日志展示，
+        转换过程行（summary）也原样显示，不再冒充结构化结果。
+        """
+        if not msg:
+            return
+        stripped = str(msg).strip()
+        if not stripped:
+            return
+        # 纯装饰横线（如旧日志的 "---" 分隔行）不显示：仅展示过滤，不解析业务
         if stripped.replace("-", "").replace(" ", "") == "":
             return
-
-        # 解析上传速度（格式：xx.x KB/s 或 xxx KB/s）
-        _speed_m = _re.search(r'(\d+(?:\.\d+)?)\s*(KB|MB)/s', stripped, _re.IGNORECASE)
-        if _speed_m:
-            self._lbl_upload_speed.setText(f"{_speed_m.group(1)} {_speed_m.group(2)}/s")
-
-        extracted_pn: str | None = None
-        is_terminal = False
-
-        if stripped.startswith(">>"):
-            inner = stripped[2:].strip()
-            idx = inner.rfind(" | ")
-            if idx >= 0:
-                reason = inner[:idx].strip()
-                lbl    = inner[idx + 3:].strip()
-                pn = lbl.split("<")[0].strip()
-                self._update_sync_result(pn, reason, "", "")
-                extracted_pn = pn
-                is_terminal = True
-        elif stripped.startswith("[X]"):
-            inner = stripped[3:].strip()
-            idx = inner.rfind(" | ")
-            if idx >= 0:
-                reason = inner[:idx].strip()
-                lbl    = inner[idx + 3:].strip()
-                pn = lbl.split("<")[0].strip()
-                self._update_sync_result(pn, reason, "", "")
-                extracted_pn = pn
-                is_terminal = True
-        elif " | " in stripped:
-            parts = [p.strip() for p in stripped.split(" | ")]
-            if len(parts) >= 4:
-                col1 = parts[0]
-                col2 = parts[1]
-                col3 = parts[2]
-                lbl  = parts[-1]
-                if col1 not in ("签出来源",):
-                    pn = lbl.split("<")[0].strip()
-                    extracted_pn = pn
-                    if col3:
-                        self._update_sync_result(pn, col1, col2, col3)
-                        is_terminal = True
-                    else:
-                        existing = self._sync_result_map.get(pn, ("", "", ""))
-                        self._sync_result_map[pn] = (existing[0] or col1, col2, existing[2])
-                        self._refresh_sync_cols_in_tree(
-                            pn, existing[0] or col1, col2, existing[2],
-                        )
-
-        total = getattr(self, "_sync_total_nodes", 0)
-        if extracted_pn:
-            seen = getattr(self, "_sync_seen_pns", set())
-            if extracted_pn not in seen:
-                seen.add(extracted_pn)
-                self._sync_seen_pns = seen
-                self._sync_done_nodes = getattr(self, "_sync_done_nodes", 0) + 1
-                self._pgb_sync.setValue(min(self._sync_done_nodes, total))
-
-        done = getattr(self, "_sync_done_nodes", 0)
-        if done or is_terminal:
-            # 截断过长文本，但避免在 <名称> 中间切断
+        # 截断过长文本，但避免在 <名称> 中间切断（纯展示，不影响业务）
+        if len(stripped) > 200:
             _show = stripped[:200]
             _lt = _show.rfind("<")
             if _lt >= 0 and ">" not in _show[_lt:]:
                 _show = _show[:_lt]
-            self._lbl_sync_status.setText(
-                f"正在同步…… ({done} / {total})  {_show}"
-            )
-        else:
-            self._lbl_sync_status.setText(stripped)
+            stripped = _show
+        self._lbl_sync_status.setText(stripped)
 
-    def _update_sync_result(self, pn: str, source: str, update: str, checkin: str) -> None:
+    def _on_sync_event(self, event) -> None:
+        """消费结构化 SyncEvent，驱动同步业务展示与计数（Task 3.2）。
+
+        - 速度：speed_kbps 为数值型真实速度（语言无关），直接格式化显示。
+        - 终态（node_done / node_skip / node_fail）：按 pn（含 < / | 完整
+          保留）去重计数一次；来源/更新/签入文案由稳定 code 映射固定字面量
+          翻译，code 未知时安全回退事件原文；行颜色同样由 code 决定。
+        - 过程行（node_progress）：只刷新更新列，不参与终态计数。
+        - header / summary：仅保留 raw 日志展示，不冒充结构化结果。
+        """
+        # 1. 速度（数值型，语言无关）
+        kbps = getattr(event, "speed_kbps", None)
+        if kbps is not None:
+            self._lbl_upload_speed.setText(_fmt_kbps(float(kbps)))
+
+        pn = (getattr(event, "part_number", "") or "").strip()
+        etype = getattr(event, "type", "")
+
+        if etype in ("node_done", "node_skip", "node_fail") and pn:
+            source  = _event_source_text(event)
+            update  = _event_update_text(event)
+            checkin = _event_checkin_text(event)
+            self._update_sync_result(
+                pn, source, update, checkin,
+                color=_sync_row_color_from_event(event),
+            )
+            if pn not in self._sync_seen_pns:
+                self._sync_seen_pns.add(pn)
+                self._sync_done_nodes = getattr(self, "_sync_done_nodes", 0) + 1
+                total = getattr(self, "_sync_total_nodes", 0)
+                self._pgb_sync.setValue(min(self._sync_done_nodes, total))
+                _show = (getattr(event, "message", "") or "").strip()
+                if len(_show) > 200:
+                    _show = _show[:200]
+                self._lbl_sync_status.setText(
+                    translate("CATIACopilot", "正在同步…… ({0} / {1})  {2}").format(
+                        self._sync_done_nodes, total, _show
+                    )
+                )
+        elif etype == "node_progress" and pn:
+            # 过程行：只刷新更新列与颜色，不参与终态计数
+            existing = self._sync_result_map.get(pn, ("", "", ""))
+            source = existing[0] or _event_source_text(event)
+            update = _event_update_text(event) or existing[1]
+            self._update_sync_result(
+                pn, source, update, existing[2],
+                color=_sync_row_color_from_event(event),
+            )
+
+    def _update_sync_result(self, pn: str, source: str, update: str, checkin: str,
+                            color: QColor | None = None) -> None:
         """更新同步结果映射并刷新预览树。
 
         直接使用 pn 作为键，避免从 lbl 字符串解析。
+        color 由结构化事件提供；为 None 时沿用旧文本匹配色（_sync_row_color）。
         """
         self._sync_result_map[pn] = (source, update, checkin)
-        self._refresh_sync_cols_in_tree(pn, source, update, checkin)
+        self._refresh_sync_cols_in_tree(pn, source, update, checkin, color=color)
 
-    def _refresh_sync_cols_in_tree(self, pn: str, source: str, update: str, checkin: str) -> None:
+    def _refresh_sync_cols_in_tree(self, pn: str, source: str, update: str, checkin: str,
+                                   color: QColor | None = None) -> None:
         """在隐藏的预览树中更新同步结果列（供内部追踪使用）。
 
         使用 pn->item 映射字典实现 O(1) 查找，避免全树遍历。
+        color 由结构化事件提供；为 None 时按文本回退（兼容 BOM 重载场景）。
         """
         vis_cols = self._preview_visible_cols()
         if self._preview_tree.columnCount() != len(vis_cols):
@@ -2894,7 +3093,8 @@ class PlmWorkbench(QDialog):
             self._preview_pn_item_map.pop(pn, None)
             return
 
-        color = _sync_row_color(source, update, checkin)
+        if color is None:
+            color = _sync_row_color(source, update, checkin)
         for col_idx, text in [
             (sync_src_idx, source  or "—"),
             (sync_upd_idx, update  or "—"),
@@ -2983,7 +3183,7 @@ class PlmWorkbench(QDialog):
         self._tbl_rules.insertRow(row)
         self._tbl_rules.setItem(row, 0, QTableWidgetItem(catia_val))
         self._tbl_rules.setItem(row, 1, QTableWidgetItem(plm_tag))
-        btn_del = QPushButton("删除")
+        btn_del = QPushButton(translate("CATIACopilot", "删除"))
         btn_del.setFixedWidth(56)
         btn_del.clicked.connect(lambda: self._on_delete_rule(btn_del))
         self._tbl_rules.setCellWidget(row, 2, btn_del)
@@ -3097,8 +3297,8 @@ class PlmWorkbench(QDialog):
 
     def _on_clear_history(self) -> None:
         if QMessageBox.question(
-            self, "清空历史",
-            "确定清空所有同步历史记录？此操作不可撤销。",
+            self, translate("CATIACopilot", "清空历史"),
+            translate("CATIACopilot", "确定清空所有同步历史记录？此操作不可撤销。"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         ) != QMessageBox.StandardButton.Yes:
             return
@@ -3110,6 +3310,26 @@ class PlmWorkbench(QDialog):
     # Pull（从 PLM 拉取文件到本地）
     # ─────────────────────────────────────────────────────────────────────────
 
+# 设置对话框：标签表 / 规则表 表头渲染（仅渲染；表格内部列结构不变）
+def _tags_table_header_display(col: int) -> str:
+    """设置对话框标签表列索引 → 表头文案（随界面语言翻译；ID 列保持拉丁原文）。"""
+    fixed = {
+        0: translate("CATIACopilot", "标签名称"),
+        1: "ID",
+    }
+    return fixed.get(col, "")
+
+
+def _rules_table_header_display(col: int) -> str:
+    """设置对话框规则表列索引 → 表头文案（随界面语言翻译）。"""
+    fixed = {
+        0: translate("CATIACopilot", "CATIA 属性值"),
+        1: translate("CATIACopilot", "PLM 标签"),
+        2: translate("CATIACopilot", "操作"),
+    }
+    return fixed.get(col, "")
+
+
 class _SettingsDialog(QDialog):
     """PLM 工作台设置（连接配置 + 标签规则）。
 
@@ -3119,7 +3339,7 @@ class _SettingsDialog(QDialog):
     def __init__(self, workbench: "PlmWorkbench"):
         super().__init__(workbench)
         self._wb = workbench
-        self.setWindowTitle("PLM 设置")
+        self.setWindowTitle(translate("CATIACopilot", "PLM 设置"))
         self.setMinimumSize(640, 560)
         self.resize(720, 640)
         self._build_ui()
@@ -3138,7 +3358,7 @@ class _SettingsDialog(QDialog):
         layout.setSpacing(12)
 
         # ── 连接配置 ──────────────────────────────────────────────────────────
-        grp_cfg = QGroupBox("连接配置")
+        grp_cfg = QGroupBox(translate("CATIACopilot", "连接配置"))
         form = QFormLayout(grp_cfg)
         form.setSpacing(6)
 
@@ -3153,23 +3373,23 @@ class _SettingsDialog(QDialog):
         self._le_password.setEchoMode(QLineEdit.EchoMode.Password)
         self._le_workspace = QLineEdit(workspace)
         self._le_work_dir  = QLineEdit(work_dir)
-        self._le_work_dir.setPlaceholderText("Pull 下载文件保存目录…")
+        self._le_work_dir.setPlaceholderText(translate("CATIACopilot", "Pull 下载文件保存目录…"))
 
         work_dir_row = QHBoxLayout()
-        btn_browse = QPushButton("浏览…"); btn_browse.setFixedWidth(60)
+        btn_browse = QPushButton(translate("CATIACopilot", "浏览…")); btn_browse.setFixedWidth(60)
         btn_browse.clicked.connect(self._on_browse)
         work_dir_row.addWidget(self._le_work_dir)
         work_dir_row.addWidget(btn_browse)
 
-        form.addRow("服务端地址：", self._le_base_url)
-        form.addRow("用户名：",     self._le_login)
-        form.addRow("密码：",       self._le_password)
-        form.addRow("工作区：",     self._le_workspace)
-        form.addRow("工作目录：",   work_dir_row)
+        form.addRow(translate("CATIACopilot", "服务端地址："), self._le_base_url)
+        form.addRow(translate("CATIACopilot", "用户名："),     self._le_login)
+        form.addRow(translate("CATIACopilot", "密码："),       self._le_password)
+        form.addRow(translate("CATIACopilot", "工作区："),     self._le_workspace)
+        form.addRow(translate("CATIACopilot", "工作目录："),   work_dir_row)
 
         btn_row = QHBoxLayout()
-        btn_save = QPushButton("保存配置")
-        btn_test = QPushButton("测试连接")
+        btn_save = QPushButton(translate("CATIACopilot", "保存配置"))
+        btn_test = QPushButton(translate("CATIACopilot", "测试连接"))
         btn_save.clicked.connect(self._on_save)
         btn_test.clicked.connect(self._on_test)
         btn_row.addWidget(btn_save)
@@ -3179,7 +3399,7 @@ class _SettingsDialog(QDialog):
         layout.addWidget(grp_cfg)
 
         # ── 工作区详情 ────────────────────────────────────────────────────────
-        grp_ws = QGroupBox("工作区详情")
+        grp_ws = QGroupBox(translate("CATIACopilot", "工作区详情"))
         v_ws = QVBoxLayout(grp_ws)
         self._lbl_ws = QLabel(self._wb._lbl_ws_detail.text())
         self._lbl_ws.setWordWrap(True)
@@ -3187,13 +3407,15 @@ class _SettingsDialog(QDialog):
         layout.addWidget(grp_ws)
 
         # ── 标签规则 ──────────────────────────────────────────────────────────
-        grp_rules = QGroupBox("标签自动映射规则")
+        grp_rules = QGroupBox(translate("CATIACopilot", "标签自动映射规则"))
         v_r = QVBoxLayout(grp_rules)
         v_r.setSpacing(6)
 
-        v_r.addWidget(QLabel("工作区标签："))
+        v_r.addWidget(QLabel(translate("CATIACopilot", "工作区标签：")))
         self._tbl_plm_tags = QTableWidget(0, 2)
-        self._tbl_plm_tags.setHorizontalHeaderLabels(["标签名称", "ID"])
+        self._tbl_plm_tags.setHorizontalHeaderLabels(
+            [_tags_table_header_display(i) for i in range(2)]
+        )
         _ht = self._tbl_plm_tags.horizontalHeader()
         _ht.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         _ht.resizeSection(0, 180)
@@ -3204,10 +3426,11 @@ class _SettingsDialog(QDialog):
         v_r.addWidget(self._tbl_plm_tags)
 
         tag_op = QHBoxLayout()
-        btn_refresh_tags = QPushButton("刷新标签列表")
+        btn_refresh_tags = QPushButton(translate("CATIACopilot", "刷新标签列表"))
         btn_refresh_tags.clicked.connect(self._on_refresh_tags)
-        self._le_new_tag = QLineEdit(); self._le_new_tag.setPlaceholderText("新标签名称…")
-        btn_create_tag   = QPushButton("新建标签")
+        self._le_new_tag = QLineEdit()
+        self._le_new_tag.setPlaceholderText(translate("CATIACopilot", "新标签名称…"))
+        btn_create_tag   = QPushButton(translate("CATIACopilot", "新建标签"))
         btn_create_tag.clicked.connect(self._on_create_tag)
         tag_op.addWidget(btn_refresh_tags)
         tag_op.addStretch()
@@ -3218,10 +3441,10 @@ class _SettingsDialog(QDialog):
         sep = QWidget(); sep.setFixedHeight(1)
         sep.setStyleSheet("background: palette(mid);")
         v_r.addWidget(sep)
-        v_r.addWidget(QLabel('规则（Checkin 后按"设计状态"属性值自动打 Tag）：'))
+        v_r.addWidget(QLabel(translate("CATIACopilot", '规则（Checkin 后按"设计状态"属性值自动打 Tag）：')))
 
         self._tbl_rules = QTableWidget(0, 3)
-        self._tbl_rules.setHorizontalHeaderLabels(["CATIA 属性值", "PLM 标签", "操作"])
+        self._tbl_rules.setHorizontalHeaderLabels([_rules_table_header_display(i) for i in range(3)])
         _hr = self._tbl_rules.horizontalHeader()
         _hr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         _hr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -3233,10 +3456,11 @@ class _SettingsDialog(QDialog):
         v_r.addWidget(self._tbl_rules)
 
         add_row = QHBoxLayout()
-        self._le_rule_catia = QLineEdit(); self._le_rule_catia.setPlaceholderText('CATIA"设计状态"属性值')
+        self._le_rule_catia = QLineEdit()
+        self._le_rule_catia.setPlaceholderText(translate("CATIACopilot", 'CATIA"设计状态"属性值'))
         self._cmb_rule_tag  = QComboBox(); self._cmb_rule_tag.setEditable(True)
         self._cmb_rule_tag.setPlaceholderText("PLM Tag")
-        btn_add_rule = QPushButton("添加规则")
+        btn_add_rule = QPushButton(translate("CATIACopilot", "添加规则"))
         btn_add_rule.clicked.connect(self._on_add_rule)
         add_row.addWidget(self._le_rule_catia, 2)
         add_row.addWidget(self._cmb_rule_tag, 2)
@@ -3245,12 +3469,12 @@ class _SettingsDialog(QDialog):
         layout.addWidget(grp_rules)
 
         # ── 连接日志 ──────────────────────────────────────────────────────────
-        grp_log = QGroupBox("连接日志")
+        grp_log = QGroupBox(translate("CATIACopilot", "连接日志"))
         v_log = QVBoxLayout(grp_log)
         self._txt_conn_log = QPlainTextEdit()
         self._txt_conn_log.setReadOnly(True)
         self._txt_conn_log.setFixedHeight(120)
-        self._txt_conn_log.setPlaceholderText('— 点击"测试连接"验证配置 —')
+        self._txt_conn_log.setPlaceholderText(translate("CATIACopilot", '— 点击"测试连接"验证配置 —'))
         # 同步 workbench 已有日志
         self._txt_conn_log.setPlainText(self._wb._txt_conn_log.toPlainText())
         v_log.addWidget(self._txt_conn_log)
@@ -3265,7 +3489,7 @@ class _SettingsDialog(QDialog):
         # 关闭按钮
         close_row = QHBoxLayout()
         close_row.addStretch()
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(translate("CATIACopilot", "关闭"))
         btn_close.clicked.connect(self.accept)
         close_row.addWidget(btn_close)
         root.addLayout(close_row)
@@ -3274,8 +3498,10 @@ class _SettingsDialog(QDialog):
     # ── 事件处理 ──────────────────────────────────────────────────────────────
 
     def _on_browse(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "选择工作目录",
-                                                 self._le_work_dir.text())
+        path = QFileDialog.getExistingDirectory(
+            self, translate("CATIACopilot", "选择工作目录"),
+            self._le_work_dir.text(),
+        )
         if path:
             self._le_work_dir.setText(path)
 
@@ -3290,37 +3516,39 @@ class _SettingsDialog(QDialog):
         # 同步 workbench 的工作目录输入框（如果存在）
         if hasattr(self._wb, "_le_work_dir") and self._wb._le_work_dir:
             self._wb._le_work_dir.setText(self._le_work_dir.text())
-        self._log("配置已保存。", "ok")
+        self._log(translate("CATIACopilot", "配置已保存。"), "ok")
         self._wb._update_conn_status_bar()
 
     def _on_test(self) -> None:
         """测试连接。"""
-        self._log("正在测试连接……", "info")
+        self._log(translate("CATIACopilot", "正在测试连接……"), "info")
         base_url  = self._le_base_url.text().strip()
         login     = self._le_login.text().strip()
         password  = self._le_password.text()
         workspace = self._le_workspace.text().strip()
         if not base_url or not login:
-            self._log("请先填写服务端地址和用户名。", "warn")
+            self._log(translate("CATIACopilot", "请先填写服务端地址和用户名。"), "warn")
             return
         w = _ConnectWorker(base_url, login, password, workspace)
         w.success.connect(lambda ln, users, ws_info: self._on_conn_ok(ln, users, ws_info))
-        w.failure.connect(lambda err: self._log(f"连接失败：{err}", "error"))
+        w.failure.connect(
+            lambda err: self._log(translate("CATIACopilot", "连接失败：{0}").format(err), "error")
+        )
         # 借用 workbench 的 _start_worker 管理线程
         self._wb._start_worker(w)
 
     def _on_conn_ok(self, login_name: str, users: list, ws_info: dict) -> None:
         info_parts = []
         if ws_info.get("id"):
-            info_parts.append(f"工作区 ID：{ws_info['id']}")
+            info_parts.append(translate("CATIACopilot", "工作区 ID：{0}").format(ws_info["id"]))
         if ws_info.get("description"):
-            info_parts.append(f"描述：{ws_info['description']}")
+            info_parts.append(translate("CATIACopilot", "描述：{0}").format(ws_info["description"]))
         if isinstance(users, list):
-            info_parts.append(f"成员数：{len(users)}")
-        detail = "  |  ".join(info_parts) or "连接成功"
+            info_parts.append(translate("CATIACopilot", "成员数：{0}").format(len(users)))
+        detail = "  |  ".join(info_parts) or translate("CATIACopilot", "连接成功")
         self._lbl_ws.setText(detail)
         self._wb._lbl_ws_detail.setText(detail)
-        self._log(f"连接成功 ({login_name})", "ok")
+        self._log(translate("CATIACopilot", "连接成功 ({0})").format(login_name), "ok")
         self._wb._update_conn_status_bar()
 
     def _on_refresh_tags(self) -> None:
@@ -3360,7 +3588,7 @@ class _SettingsDialog(QDialog):
                 item = src.item(row, col)
                 self._tbl_rules.setItem(row, col, QTableWidgetItem(item.text() if item else ""))
             # 删除按钮
-            btn_del = QPushButton("删除")
+            btn_del = QPushButton(translate("CATIACopilot", "删除"))
             btn_del.setFixedWidth(52)
             btn_del.clicked.connect(lambda _, r=row: self._on_delete_rule(r))
             self._tbl_rules.setCellWidget(row, 2, btn_del)
@@ -3386,13 +3614,27 @@ class _SettingsDialog(QDialog):
 # 历史对话框
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _history_table_header_display(col: int) -> str:
+    """历史对话框表格列索引 → 表头文案（随界面语言翻译）。"""
+    fixed = {
+        0: translate("CATIACopilot", "时间"),
+        1: translate("CATIACopilot", "新建"),
+        2: translate("CATIACopilot", "更新"),
+        3: translate("CATIACopilot", "跳过"),
+        4: translate("CATIACopilot", "失败"),
+        5: translate("CATIACopilot", "用户名"),
+        6: translate("CATIACopilot", "同步模式"),
+    }
+    return fixed.get(col, "")
+
+
 class _HistoryDialog(QDialog):
     """同步历史查看对话框。"""
 
     def __init__(self, workbench: "PlmWorkbench"):
         super().__init__(workbench)
         self._wb = workbench
-        self.setWindowTitle("同步历史")
+        self.setWindowTitle(translate("CATIACopilot", "同步历史"))
         self.setMinimumSize(700, 420)
         self.resize(820, 500)
         self._build_ui()
@@ -3410,7 +3652,7 @@ class _HistoryDialog(QDialog):
         left_v = QVBoxLayout(left_w)
         left_v.setContentsMargins(0, 0, 0, 0)
         self._tbl = QTableWidget(0, 7)
-        self._tbl.setHorizontalHeaderLabels(["时间", "新建", "更新", "跳过", "失败", "用户名", "同步模式"])
+        self._tbl.setHorizontalHeaderLabels([_history_table_header_display(i) for i in range(7)])
         self._tbl.setAlternatingRowColors(True)
         self._tbl.verticalHeader().setDefaultSectionSize(28)
         self._tbl.verticalHeader().setVisible(False)
@@ -3434,9 +3676,9 @@ class _HistoryDialog(QDialog):
         right_v.setContentsMargins(0, 0, 0, 0)
         self._txt = QPlainTextEdit()
         self._txt.setReadOnly(True)
-        self._txt.setPlaceholderText("— 点击左侧记录查看详情 —")
+        self._txt.setPlaceholderText(translate("CATIACopilot", "— 点击左侧记录查看详情 —"))
         right_v.addWidget(self._txt, 1)
-        btn_clear = QPushButton("清空历史")
+        btn_clear = QPushButton(translate("CATIACopilot", "清空历史"))
         btn_clear.setFixedHeight(24)
         btn_clear.clicked.connect(self._on_clear)
         right_v.addWidget(btn_clear)
@@ -3446,7 +3688,7 @@ class _HistoryDialog(QDialog):
 
         close_row = QHBoxLayout()
         close_row.addStretch()
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(translate("CATIACopilot", "关闭"))
         btn_close.clicked.connect(self.accept)
         close_row.addWidget(btn_close)
         root.addLayout(close_row)
@@ -3473,20 +3715,20 @@ class _HistoryDialog(QDialog):
         if not data:
             return
         lines = [
-            f"时间：{data.get('time', '')}",
-            f"用户：{data.get('username', '—')}",
-            f"模式：{data.get('sync_mode', '—')}",
-            f"新建：{data.get('created', 0)}",
-            f"更新：{data.get('updated', 0)}",
-            f"跳过：{data.get('skipped', 0)}",
-            f"无变化：{data.get('unchanged', 0)}",
-            f"失败：{data.get('failed', 0)}",
+            translate("CATIACopilot", "时间：{0}").format(data.get('time', '')),
+            translate("CATIACopilot", "用户：{0}").format(data.get('username', '—')),
+            translate("CATIACopilot", "模式：{0}").format(data.get('sync_mode', '—')),
+            translate("CATIACopilot", "新建：{0}").format(data.get('created', 0)),
+            translate("CATIACopilot", "更新：{0}").format(data.get('updated', 0)),
+            translate("CATIACopilot", "跳过：{0}").format(data.get('skipped', 0)),
+            translate("CATIACopilot", "无变化：{0}").format(data.get('unchanged', 0)),
+            translate("CATIACopilot", "失败：{0}").format(data.get('failed', 0)),
         ]
         errors = data.get("errors", [])
         if errors:
             lines.append("")
-            lines.append("失败/警告详情：")
-            lines += [f"  · {e}" for e in errors]
+            lines.append(translate("CATIACopilot", "失败/警告详情："))
+            lines += [translate("CATIACopilot", "  · {0}").format(e) for e in errors]
         self._txt.setPlainText("\n".join(lines))
 
     def _on_clear(self) -> None:
@@ -3511,9 +3753,37 @@ _PC_PULL    = 7   # 下载? checkbox
 _PC_HEADERS = ["层级", "零件号", "版本", "迭代", "签出人", "本地文件", "可用文件", "下载?"]
 
 
+def _pc_header_display(col: int) -> str:
+    """Pull BOM 对比表列索引 → 表头文案（仅渲染；_PC_HEADERS 内部列值保持不变）。"""
+    fixed = {
+        _PC_DEPTH:  translate("CATIACopilot", "层级"),
+        _PC_PN:     translate("CATIACopilot", "零件号"),
+        _PC_VER:    translate("CATIACopilot", "版本"),
+        _PC_ITER:   translate("CATIACopilot", "迭代"),
+        _PC_COUT:   translate("CATIACopilot", "签出人"),
+        _PC_LOCAL:  translate("CATIACopilot", "本地文件"),
+        _PC_FILES:  translate("CATIACopilot", "可用文件"),
+        _PC_PULL:   translate("CATIACopilot", "下载?"),
+    }
+    if col in fixed:
+        return fixed[col]
+    if 0 <= col < len(_PC_HEADERS):
+        return _PC_HEADERS[col]
+    return ""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 附件查看对话框
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _attachment_table_header_display(col: int) -> str:
+    """附件对话框表格列索引 → 表头文案（随界面语言翻译；下载图标列（1）保持空串）。"""
+    fixed = {
+        0: translate("CATIACopilot", "文件名"),
+        1: "",
+    }
+    return fixed.get(col, "")
+
 
 class _AttachmentDialog(QDialog):
     """查看并下载某零件迭代的 PLM 附件列表。"""
@@ -3533,7 +3803,7 @@ class _AttachmentDialog(QDialog):
         parent=None,
     ):
         super().__init__(parent)
-        self.setWindowTitle(f"PLM 附件 — {part_number} / {version}")
+        self.setWindowTitle(translate("CATIACopilot", "PLM 附件 — {0} / {1}").format(part_number, version))
         self.setMinimumSize(580, 380)
         self.resize(660, 450)
 
@@ -3561,15 +3831,15 @@ class _AttachmentDialog(QDialog):
 
         # 标题信息行
         info_lbl = QLabel(
-            f"零件号：<b>{self._pn}</b>　版本：<b>{self._version}</b>　"
-            f"迭代：<b>{self._iteration or '最新'}</b>"
+            translate("CATIACopilot", "零件号：<b>{0}</b>　版本：<b>{1}</b>　迭代：<b>{2}</b>")
+            .format(self._pn, self._version, self._iteration or translate("CATIACopilot", "最新"))
         )
         info_lbl.setTextFormat(Qt.TextFormat.RichText)
         root.addWidget(info_lbl)
 
         # 附件列表：文件名列 + 下载图标列
         self._lst = QTableWidget(0, 2)
-        self._lst.setHorizontalHeaderLabels(["文件名", ""])
+        self._lst.setHorizontalHeaderLabels([_attachment_table_header_display(i) for i in range(2)])
         self._lst.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._lst.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self._lst.horizontalHeader().resizeSection(1, 36)
@@ -3582,7 +3852,7 @@ class _AttachmentDialog(QDialog):
 
         # 状态行 + 全部下载图标 + 关闭按钮
         bottom = QHBoxLayout()
-        self._lbl_status = QLabel("正在加载……")
+        self._lbl_status = QLabel(translate("CATIACopilot", "正在加载……"))
         self._lbl_status.setStyleSheet("color: palette(mid);")
         bottom.addWidget(self._lbl_status, 1)
 
@@ -3591,12 +3861,12 @@ class _AttachmentDialog(QDialog):
         self._lbl_dl_all = QLabel(self._FA_DOWNLOAD)
         self._lbl_dl_all.setFont(_fa_f)
         self._lbl_dl_all.setStyleSheet("color: palette(mid);")
-        self._lbl_dl_all.setToolTip("全部下载到工作目录")
+        self._lbl_dl_all.setToolTip(translate("CATIACopilot", "全部下载到工作目录"))
         self._lbl_dl_all.setCursor(Qt.PointingHandCursor)
         self._lbl_dl_all.mousePressEvent = lambda e: self._on_download_all()
         bottom.addWidget(self._lbl_dl_all)
 
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(translate("CATIACopilot", "关闭"))
         btn_close.clicked.connect(self.accept)
         bottom.addWidget(btn_close)
         root.addLayout(bottom)
@@ -3610,7 +3880,7 @@ class _AttachmentDialog(QDialog):
         lbl.setFont(_fa_f)
         lbl.setStyleSheet("color: #4C566A;")
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setToolTip(f"下载 {filename}")
+        lbl.setToolTip(translate("CATIACopilot", "下载 {0}").format(filename))
         lbl.setCursor(Qt.PointingHandCursor)
         lbl.mousePressEvent = lambda e, f=filename, s=sub_type: self._on_download_one(f, s)
         w = QWidget()
@@ -3632,12 +3902,12 @@ class _AttachmentDialog(QDialog):
                 self._workspace, self._pn, self._version, self._iteration
             )
         except Exception as exc:
-            self._lbl_status.setText(f"加载失败：{exc}")
+            self._lbl_status.setText(translate("CATIACopilot", "加载失败：{0}").format(exc))
             return
 
         self._lst.setRowCount(0)
         if not self._files:
-            self._lbl_status.setText("该版本暂无附件。")
+            self._lbl_status.setText(translate("CATIACopilot", "该版本暂无附件。"))
             return
 
         for fname in self._files:
@@ -3648,11 +3918,11 @@ class _AttachmentDialog(QDialog):
             sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
             self._lst.setCellWidget(row, 1, self._make_dl_icon(fname, sub_type))
 
-        self._lbl_status.setText(f"共 {len(self._files)} 个附件")
+        self._lbl_status.setText(translate("CATIACopilot", "共 {0} 个附件").format(len(self._files)))
         if self._work_dir:
             self._lbl_dl_all.setStyleSheet("color: #4C566A;")
         else:
-            self._lbl_dl_all.setToolTip("请先配置工作目录")
+            self._lbl_dl_all.setToolTip(translate("CATIACopilot", "请先配置工作目录"))
 
     # ── 下载 ─────────────────────────────────────────────────────────────────
 
@@ -3666,7 +3936,8 @@ class _AttachmentDialog(QDialog):
 
     def _on_download_one(self, filename: str, sub_type: str) -> None:
         if not self._work_dir:
-            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置本地工作目录。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未设置工作目录"),
+                                translate("CATIACopilot", "请先在设置中配置本地工作目录。"))
             return
         dest = self._resolve_dest(filename)
         try:
@@ -3677,13 +3948,14 @@ class _AttachmentDialog(QDialog):
                 self._workspace, self._pn, self._version,
                 self._iteration, filename, dest, sub_type=sub_type,
             )
-            self._lbl_status.setText(f"已下载：{filename}")
+            self._lbl_status.setText(translate("CATIACopilot", "已下载：{0}").format(filename))
         except Exception as exc:
-            QMessageBox.critical(self, "下载失败", str(exc))
+            QMessageBox.critical(self, translate("CATIACopilot", "下载失败"), str(exc))
 
     def _on_download_all(self) -> None:
         if not self._work_dir:
-            QMessageBox.warning(self, "未设置工作目录", "请先在设置中配置本地工作目录。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未设置工作目录"),
+                                translate("CATIACopilot", "请先在设置中配置本地工作目录。"))
             return
         if not self._files:
             return
@@ -3693,7 +3965,7 @@ class _AttachmentDialog(QDialog):
             client = PlmApiClient(self._base_url)
             client.login(self._login, self._password)
         except Exception as exc:
-            QMessageBox.critical(self, "连接失败", str(exc))
+            QMessageBox.critical(self, translate("CATIACopilot", "连接失败"), str(exc))
             return
 
         self._lbl_dl_all.setStyleSheet("color: palette(mid);")
@@ -3701,7 +3973,8 @@ class _AttachmentDialog(QDialog):
             ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
             sub_type = "nativecad" if ext in ("stp", "step", "igs", "iges", "obj", "stl") else "attachedfiles"
             dest = self._resolve_dest(fname)
-            self._lbl_status.setText(f"下载中 {i+1}/{len(self._files)}：{fname}")
+            self._lbl_status.setText(translate("CATIACopilot", "下载中 {0}/{1}：{2}")
+                                     .format(i + 1, len(self._files), fname))
             QApplication.processEvents()
             try:
                 client.download_attached_file(
@@ -3713,10 +3986,10 @@ class _AttachmentDialog(QDialog):
 
         self._lbl_dl_all.setStyleSheet("color: #4C566A;")
         if errors:
-            QMessageBox.warning(self, "部分下载失败", "\n".join(errors))
-            self._lbl_status.setText(f"完成，{len(errors)} 个失败")
+            QMessageBox.warning(self, translate("CATIACopilot", "部分下载失败"), "\n".join(errors))
+            self._lbl_status.setText(translate("CATIACopilot", "完成，{0} 个失败").format(len(errors)))
         else:
-            self._lbl_status.setText(f"全部下载完成，共 {len(self._files)} 个文件")
+            self._lbl_status.setText(translate("CATIACopilot", "全部下载完成，共 {0} 个文件").format(len(self._files)))
 
 
 class _PullDialog(QDialog):
@@ -3730,7 +4003,7 @@ class _PullDialog(QDialog):
     def __init__(self, base_url: str, login: str, password: str,
                  workspace: str, work_dir: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Pull — 从 PLM 拉取 BOM 树文件")
+        self.setWindowTitle(translate("CATIACopilot", "Pull — 从 PLM 拉取 BOM 树文件"))
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
@@ -3759,17 +4032,17 @@ class _PullDialog(QDialog):
         # ── 顶部：搜索行 ──────────────────────────────────────────────────────
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
-        top_row.addWidget(QLabel("根零件号："))
+        top_row.addWidget(QLabel(translate("CATIACopilot", "根零件号：")))
         self._le_search = QLineEdit()
-        self._le_search.setPlaceholderText("输入顶层零件号，回车或点击展开 BOM 树")
+        self._le_search.setPlaceholderText(translate("CATIACopilot", "输入顶层零件号，回车或点击展开 BOM 树"))
         self._le_search.returnPressed.connect(self._on_expand_bom)
-        self._btn_expand = QPushButton("展开 BOM 树")
+        self._btn_expand = QPushButton(translate("CATIACopilot", "展开 BOM 树"))
         self._btn_expand.setFont(_ef)
         self._btn_expand.clicked.connect(self._on_expand_bom)
 
         # 全选 / 全不选 按钮
-        self._btn_select_all  = QPushButton("全选")
-        self._btn_select_none = QPushButton("全不选")
+        self._btn_select_all  = QPushButton(translate("CATIACopilot", "全选"))
+        self._btn_select_none = QPushButton(translate("CATIACopilot", "全不选"))
         self._btn_select_all.setEnabled(False)
         self._btn_select_none.setEnabled(False)
         self._btn_select_all.clicked.connect(lambda: self._set_all_checked(True))
@@ -3783,7 +4056,7 @@ class _PullDialog(QDialog):
 
         # ── BOM 对比表格 ──────────────────────────────────────────────────────
         self._tbl_bom = QTableWidget(0, len(_PC_HEADERS))
-        self._tbl_bom.setHorizontalHeaderLabels(_PC_HEADERS)
+        self._tbl_bom.setHorizontalHeaderLabels([_pc_header_display(i) for i in range(len(_PC_HEADERS))])
         hdr = self._tbl_bom.horizontalHeader()
         hdr.setSectionResizeMode(_PC_DEPTH,  QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(_PC_PN,     QHeaderView.ResizeMode.Interactive)
@@ -3807,7 +4080,7 @@ class _PullDialog(QDialog):
         layout.addWidget(self._tbl_bom, 1)
 
         # ── 下载目录说明 ───────────────────────────────────────────────────────
-        dir_lbl = QLabel(f"下载到：{self._work_dir}/{{零件号}}/{{文件名}}")
+        dir_lbl = QLabel(translate("CATIACopilot", "下载到：{0}/{{零件号}}/{{文件名}}").format(self._work_dir))
         dir_lbl.setStyleSheet("color: palette(mid);")
         layout.addWidget(dir_lbl)
 
@@ -3828,11 +4101,11 @@ class _PullDialog(QDialog):
         # ── 按钮行 ────────────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._btn_download = QPushButton("⬇  下载勾选文件")
+        self._btn_download = QPushButton(translate("CATIACopilot", "⬇  下载勾选文件"))
         self._btn_download.setFont(_ef)
         self._btn_download.setEnabled(False)
         self._btn_download.clicked.connect(self._on_download)
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(translate("CATIACopilot", "关闭"))
         btn_close.clicked.connect(self.reject)
         btn_row.addWidget(self._btn_download)
         btn_row.addWidget(btn_close)
@@ -3888,7 +4161,7 @@ class _PullDialog(QDialog):
         self._btn_download.setEnabled(False)
         self._tbl_bom.setRowCount(0)
         self._bom_rows = []
-        self._lbl_status.setText(f"正在递归展开 BOM 树：{pn} ……")
+        self._lbl_status.setText(translate("CATIACopilot", "正在递归展开 BOM 树：{0} ……").format(pn))
         w = self._make_worker()
         # 搜索先确认零件号 + 版本
         w.set_search(number=pn)
@@ -3899,13 +4172,14 @@ class _PullDialog(QDialog):
         """搜索完成后取第一个结果展开 BOM 树。"""
         self._btn_expand.setEnabled(True)
         if not parts:
-            self._lbl_status.setText("未找到零件，请检查零件号。")
+            self._lbl_status.setText(translate("CATIACopilot", "未找到零件，请检查零件号。"))
             return
         # 取最新版本（第一条结果）
         p = parts[0]
         pn  = str(p.get("number", ""))
         ver = str(p.get("version", "") or "A")
-        self._lbl_status.setText(f"找到 {len(parts)} 个结果，正在展开 {pn}-{ver} 的 BOM 树……")
+        self._lbl_status.setText(translate("CATIACopilot", "找到 {0} 个结果，正在展开 {1}-{2} 的 BOM 树……")
+                                 .format(len(parts), pn, ver))
         w = self._make_worker()
         w.set_bom(pn, ver)
         self._worker = w
@@ -3920,7 +4194,7 @@ class _PullDialog(QDialog):
         self._bom_rows = rows
 
         if not rows:
-            self._lbl_status.setText("BOM 树为空，可能该零件没有子件。")
+            self._lbl_status.setText(translate("CATIACopilot", "BOM 树为空，可能该零件没有子件。"))
             return
 
         self._tbl_bom.setRowCount(0)
@@ -3941,7 +4215,7 @@ class _PullDialog(QDialog):
 
             # 本地文件状态
             local_set  = self._local_files_for(pn)
-            local_text = "√ 已有" if local_set else "— 无"
+            local_text = translate("CATIACopilot", "√ 已有") if local_set else translate("CATIACopilot", "— 无")
 
             # 层级缩进文本
             indent = "  " * depth + ("└ " if depth > 0 else "")
@@ -3982,7 +4256,7 @@ class _PullDialog(QDialog):
             self._tbl_bom.setItem(row_idx, _PC_LOCAL, local_item)
 
             # 文件列表列（占位，实际下载时动态查询）
-            self._tbl_bom.setItem(row_idx, _PC_FILES, _item("（下载时实时查询）"))
+            self._tbl_bom.setItem(row_idx, _PC_FILES, _item(translate("CATIACopilot", "（下载时实时查询）")))
 
             # 下载? checkbox：默认勾选本地没有文件的行
             chk_w = QWidget()
@@ -4002,7 +4276,8 @@ class _PullDialog(QDialog):
                (c := w.findChild(QCheckBox)) and c.isChecked()
         )
         self._lbl_status.setText(
-            f"BOM 树：{len(rows)} 个零件  |  本地无文件：{checked} 个（已默认勾选）"
+            translate("CATIACopilot", "BOM 树：{0} 个零件  |  本地无文件：{1} 个（已默认勾选）")
+            .format(len(rows), checked)
         )
         self._btn_download.setEnabled(True)
 
@@ -4029,13 +4304,14 @@ class _PullDialog(QDialog):
                 checked_rows.append((i, pn, ver, itr))
 
         if not checked_rows:
-            QMessageBox.warning(self, "未选择", "请至少勾选一个零件行。")
+            QMessageBox.warning(self, translate("CATIACopilot", "未选择"),
+                                translate("CATIACopilot", "请至少勾选一个零件行。"))
             return
 
         # 使用 Worker 线程预查询附件列表，避免阻塞主线程
         self._btn_download.setEnabled(False)
         self._btn_expand.setEnabled(False)
-        self._lbl_status.setText("正在查询各零件附件列表……")
+        self._lbl_status.setText(translate("CATIACopilot", "正在查询各零件附件列表……"))
 
         w = self._make_worker()
         w.set_prequery_attachments(checked_rows)
@@ -4056,7 +4332,7 @@ class _PullDialog(QDialog):
         }
         for row_idx, files in prequery_results:
             # 更新表格文件列显示
-            files_text = ", ".join(files) if files else "（无附件）"
+            files_text = ", ".join(files) if files else translate("CATIACopilot", "（无附件）")
             file_item = QTableWidgetItem(files_text)
             file_item.setFlags(file_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self._tbl_bom.setItem(row_idx, _PC_FILES, file_item)
@@ -4071,7 +4347,8 @@ class _PullDialog(QDialog):
                 dl_items.append((pn, ver, itr, fname))
 
         if not dl_items:
-            QMessageBox.information(self, "无附件", "所有勾选零件均无可下载附件。")
+            QMessageBox.information(self, translate("CATIACopilot", "无附件"),
+                                    translate("CATIACopilot", "所有勾选零件均无可下载附件。"))
             self._btn_download.setEnabled(True)
             self._btn_expand.setEnabled(True)
             return
@@ -4081,7 +4358,7 @@ class _PullDialog(QDialog):
         self._pgb_dl.setMaximum(self._dl_total)
         self._pgb_dl.setValue(0)
         self._pgb_dl.setVisible(True)
-        self._lbl_status.setText(f"开始下载…… (0 / {self._dl_total} 个文件)")
+        self._lbl_status.setText(translate("CATIACopilot", "开始下载…… (0 / {0} 个文件)").format(self._dl_total))
 
         os.makedirs(self._work_dir, exist_ok=True)
         w = self._make_worker()
@@ -4114,7 +4391,8 @@ class _PullDialog(QDialog):
         self._btn_expand.setEnabled(True)
         self._lbl_speed.setText("")
         self._lbl_status.setText(
-            f"下载完成！共 {total} 个文件 → {self._work_dir}/{{零件号}}/{{文件名}}"
+            translate("CATIACopilot", "下载完成！共 {0} 个文件 → {1}/{{零件号}}/{{文件名}}")
+            .format(total, self._work_dir)
         )
         # 刷新本地文件状态列
         for i in range(self._tbl_bom.rowCount()):
@@ -4125,7 +4403,7 @@ class _PullDialog(QDialog):
             if not pn:
                 continue
             local_set = self._local_files_for(pn)
-            local_text = "√ 已有" if local_set else "— 无"
+            local_text = translate("CATIACopilot", "√ 已有") if local_set else translate("CATIACopilot", "— 无")
             local_item = QTableWidgetItem(local_text)
             local_item.setFlags(local_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             palette = _app_palette()
@@ -4137,8 +4415,9 @@ class _PullDialog(QDialog):
                 local_item.setForeground(mid_color)
             self._tbl_bom.setItem(i, _PC_LOCAL, local_item)
         QMessageBox.information(
-            self, "下载完成",
-            f"已下载 {total} 个文件\n保存位置：{self._work_dir}/{{零件号}}/{{文件名}}",
+            self, translate("CATIACopilot", "下载完成"),
+            translate("CATIACopilot", "已下载 {0} 个文件\n保存位置：{1}/{{零件号}}/{{文件名}}")
+            .format(total, self._work_dir),
         )
 
     def _on_failure(self, err: str) -> None:
@@ -4146,5 +4425,5 @@ class _PullDialog(QDialog):
         self._btn_download.setEnabled(True)
         self._pgb_dl.setVisible(False)
         self._lbl_speed.setText("")
-        self._lbl_status.setText(f"失败：{err}")
-        QMessageBox.critical(self, "操作失败", err)
+        self._lbl_status.setText(translate("CATIACopilot", "失败：{0}").format(err))
+        QMessageBox.critical(self, translate("CATIACopilot", "操作失败"), err)

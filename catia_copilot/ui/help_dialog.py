@@ -18,6 +18,7 @@ from catia_copilot.constants import (
     APP_VERSION,
     MAX_INERTIA_INDEX,
 )
+from catia_copilot.i18n import LANG_EN_US, current_ui_language, translate
 from catia_copilot.utils import resource_path
 
 _HELP_HTML = f"""\
@@ -728,12 +729,872 @@ _HELP_HTML = f"""\
 """
 
 
+# 英文帮助文档全量译版：与 _HELP_HTML 保持相同标题层级/表格/图片路径结构；
+# CATIA 真实属性名（惯量包络体.N、质量、密度、Gx、IoxG...）、代码与文件名一律不翻译。
+_HELP_HTML_EN = f"""\
+<h2>{APP_NAME} v{APP_VERSION} - Help Documentation</h2>
+
+<h3>Overview</h3>
+<p>
+  {APP_NAME} is a CATIA V5 assistant tool for engineering teams, designed to streamline daily
+  operations and boost productivity. It supports batch export of drawings and parts, BOM
+  management, mass-properties statistics, quick launch of macro scripts, and one-click
+  deployment of CATIA resource files.
+</p>
+
+<hr />
+<h3>Requirements</h3>
+<ul>
+  <li>Operating system: Windows 10 / 11</li>
+  <li>CATIA V5 R28 installed (file export and other features require CATIA to be running)</li>
+</ul>
+
+<hr />
+<h3>Features</h3>
+
+<h4>1. Export</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>CATDrawing → PDF</b></td>
+    <td>
+      Batch-export CATDrawing files to PDF.<br />
+      Supports a custom file prefix for the output files (default: DR_).<br />
+      <i>Note: for multi-page drawings, enable "Save multi-page documents in the single vector
+      file" in CATIA (Tools → Options → General → Compatibility → Graphic formats → Export).</i>
+    </td>
+  </tr>
+  <tr>
+    <td><b>CATPart / CATProduct → STP</b></td>
+    <td>
+      Batch-export CATPart or CATProduct files to STEP format.<br />
+      Supports a custom file prefix for the output files (default: MD_).
+    </td>
+  </tr>
+  <tr>
+    <td><b>Export BOM from CATProduct</b></td>
+    <td>
+      Extract the complete BOM information from the currently open CATProduct and export it to
+      Excel (.xlsx).<br />
+      You can choose the columns to include, add custom columns, and select the export hierarchy.
+    </td>
+  </tr>
+</table>
+
+<h4>2. Editing</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>BOM attribute completion</b></td>
+    <td>
+      Load the BOM attributes of the current CATProduct into a table, and edit fields such as
+      part number, nomenclature, definition, version, source, as well as custom user attributes
+      (<code>物料编码</code> material code, <code>物料名称</code> material name,
+      <code>规格型号</code> specification, etc.) directly in the table. After editing, write all
+      changes back to CATIA with one click.<br />
+      <i>Attribute changes for the same file are synchronized automatically.</i><br /><br />
+      <b>Main features:</b>
+      <ul>
+        <li><b>Dirty-field highlighting</b>: modified cells are shown in orange bold text;
+        hover to see the original value before the change.</li>
+        <li><b>Undo / redo</b> (Ctrl+Z / Ctrl+Y): up to 10 steps of undo and redo.</li>
+        <li><b>Search filter</b> (Ctrl+F): type keywords in the search box to filter table rows
+        in real time.</li>
+        <li><b>Column-header sorting</b>: click any column header to sort ascending / descending.</li>
+        <li><b>Save and write back</b> (Ctrl+S): write changes back to CATIA with one click.
+        Closing with unsaved changes shows a confirmation prompt.</li>
+        <li><b>Context menu</b>: copy cell content, open the file's containing folder, etc.</li>
+        <li><b>Export Excel</b>: after export, a popup offers "Open file" and "Open containing
+        folder" shortcut buttons.</li>
+        <li><b>Window position memory</b>: the dialog's size and position are saved automatically
+        on close and restored on the next start.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><b>Mass, center of gravity, and inertia statistics</b></td>
+    <td>
+      Traverse the product tree of the current CATProduct, read the mass (weight), center of
+      gravity, and moment of inertia of every part, aggregate them automatically by assembly
+      hierarchy in the root-product coordinate system, and support export to Excel.<br />
+      Two data sources are supported:
+      <ul>
+        <li><b>Analyze mode</b> (default): computes in real time through the CATIA Analyze API;
+        it works as soon as a material is assigned to the part, with no extra preparation.</li>
+        <li><b>Inertia envelope mode</b>: reads the parameters written by the SPA "Measure
+        Inertia + Keep Measure" commands; a keep measure must be performed for every part in
+        advance. See the detailed section below.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><b>New drawing</b></td>
+    <td>
+      Generate a new drawing in CATIA for the currently active CATPart or CATProduct based on
+      the CATDrawing templates in the drawing_templates folder.<br />
+      <i>The target part/product must be open in CATIA, and the *.CATDrawing templates must be
+      placed in the drawing_templates folder.</i>
+    </td>
+  </tr>
+  <tr>
+    <td><b>Refresh drawing</b></td>
+    <td>
+      Refresh the parameters of the currently active CATDrawing in CATIA (part number,
+      nomenclature, version, and custom attributes) to match its associated part/product.<br />
+      <i>Both the target drawing and its associated part/product must be open in CATIA.</i>
+    </td>
+  </tr>
+</table>
+
+<hr />
+<h3>Mass, Center of Gravity, and Inertia Statistics - Detailed Notes</h3>
+
+<h4>1. Overview</h4>
+<p>
+  This feature reads the mass (kg), center-of-gravity coordinates (mm), and moment-of-inertia
+  tensor (kg·m²) of every part from the product tree, transforms all data into the
+  <b>root-product coordinate system</b>, aggregates it level by level along the assembly
+  hierarchy, and finally displays the complete mass properties of the whole product tree, with
+  export to Excel supported.
+</p>
+<p>
+  Two data sources are supported, switched with the <b>"Data source"</b> radio buttons at the
+  top of the dialog:
+</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Analyze</b> (default)</td>
+    <td>
+      Requests mass properties from the CATIA calculation engine in real time through the pycatia
+      Analyze API (<code>product.analyze</code>) - no keep measure needs to be created manually
+      in CATIA.<br />
+      <b>Prerequisite:</b> a material must be assigned to the part (CATIA material library or a
+      manually set density) so that CATIA returns a non-zero mass.<br />
+      When this mode is selected, the "Inertia envelope reading" options are automatically
+      disabled (grayed out).
+    </td>
+  </tr>
+  <tr>
+    <td><b>Inertia envelope</b></td>
+    <td>
+      Reads the keep-measure parameters written into the parameter tree by the CATIA SPA toolbar
+      commands "Measure Inertia + Keep Measure", i.e.
+      <code>惯量包络体.1</code>…<code>惯量包络体.N</code>.<br />
+      <b>Prerequisite:</b> the user must perform the keep-measure operation for every part in
+      advance (see Section 2).<br />
+      Supports multiple envelope read modes (read .1 only / highest number / aggregate all),
+      suitable for multi-material parts.
+    </td>
+  </tr>
+</table>
+<p>
+  All internal calculations use the <b>International System of Units (SI)</b>: mass in kg,
+  coordinates in mm, moment of inertia in kg·mm². Display and export convert to convenient
+  units according to the selected unit (g/kg, mm/m, g·mm²/g·m²/kg·mm²/kg·m²).
+</p>
+
+<h4>2. Data Source: Analyze Mode in Detail</h4>
+<p>
+  Analyze mode calls the CATIA calculation engine directly and does not depend on any manual
+  preparation. The exact mechanism is as follows:
+</p>
+<ul>
+  <li>
+    The program obtains the root Product of the part document
+    (<code>ReferenceProduct.Parent.Product</code>) and calls:
+    <ul>
+      <li><code>analyze.mass</code> → part mass (kg)</li>
+      <li><code>analyze.get_gravity_center()</code> → center of gravity in the part-local
+      coordinate system (mm)</li>
+      <li><code>analyze.get_inertia()</code> → moment-of-inertia tensor about the center of
+      gravity (kg·mm², 9 elements, row-major)</li>
+      <li><code>analyze.volume</code> → volume (mm³), used to derive density (kg/m³)</li>
+    </ul>
+  </li>
+  <li>
+    <b>Coordinate-system semantics</b> are identical to the inertia-envelope mode: the returned
+    values are in the <b>part-local coordinate system</b>, and the program transforms them into
+    the root-product coordinate system before aggregation; assembly placement is fully
+    determined by the CATIA Position matrix.
+  </li>
+  <li>
+    <b>If a part has no material</b>, CATIA returns <code>mass == 0</code>, and the program
+    marks the part as "—" (no mass properties read), the same display as an envelope-mode part
+    with no keep measure found.
+  </li>
+  <li>
+    <b>Density</b> is computed as <code>mass / volume</code>; if volume reading fails, density
+    is displayed as "—" (not editable).
+  </li>
+</ul>
+<p><b>Analyze mode does not support</b> merging multiple inertia envelopes (multiple material
+zones) — each part only gets a single overall mass property. To measure several material zones
+separately and then aggregate them, use the "Aggregate all" read mode of the inertia-envelope
+source.</p>
+
+<h4>3. Data Source: Inertia-Envelope Prerequisite (Keep Measure)</h4>
+<p>
+  <b>Only when using the "Inertia envelope" data source</b> do you need to complete the following
+  operations for every part in the product tree:
+</p>
+<ol>
+  <li>
+    <b>Open the part file by itself</b> (CATPart); do not operate inside the product window.<br />
+    <i>Reason: measures created in the product window use the root-product coordinate system as
+    reference instead of the part's own coordinate system. This feature expects the center of
+    gravity in the part-local coordinate system, which the program then transforms to the
+    root-product coordinate system. If a measure already uses the root-product system, results
+    for parts whose local systems do not coincide will be wrong.</i>
+  </li>
+  <li>Run the menu <b>Measure → Measure Inertia</b>.</li>
+  <li>In the dialog, check <b>"Keep Measure"</b> and confirm.</li>
+  <li>
+    CATIA will create a geometry named <code>惯量包络体.1</code> in the parameter tree,
+    containing the following parameters:<br />
+    <code>质量</code> (kg), <code>密度</code> (kg/m³), <code>Gx / Gy / Gz</code>
+    (center-of-gravity coordinates, mm), <code>IoxG / IoyG / IozG / IxyG / IxzG / IyzG</code>
+    (inertia components, kg·m²)
+  </li>
+  <li>
+    To record several measurements for the same part (for example a body with different
+    materials), repeat the steps above; CATIA will generate
+    <code>惯量包络体.2</code>, <code>惯量包络体.3</code>… in turn. This feature reads kept
+    measures numbered 1 to {MAX_INERTIA_INDEX} at most.
+  </li>
+</ol>
+<p>
+  <b>Important: minimum parameters to check in the custom measurement</b><br />
+  The "Measure Inertia" dialog supports choosing which parameters to save via the "Custom…"
+  button. This feature needs to read the following parameters, so <b>please make sure all of
+  them are checked</b>; otherwise the inertia envelope will lack the required data and reading
+  will fail:
+</p>
+<ul>
+  <li>Density / surface mass</li>
+  <li>Mass</li>
+  <li>Center of gravity (G)</li>
+  <li>Inertia matrix at center of gravity</li>
+</ul>
+<p>The image below shows the minimum required selection in the "Custom measure" dialog
+(checking fewer items than this prevents normal reading):</p>
+<p>
+  <img src="inertia_keep_params.png" alt="Minimum parameters for keeping inertia measure" style="max-width: 480px" />
+</p>
+<p><b>Tip:</b> inertia envelopes created by Measure Inertia must be updated manually; a global
+update does not update them.</p>
+
+<h4>4. How to Open and Data Sources</h4>
+<p>Click the menu <b>Edit → Mass, Weight, and Inertia Statistics</b> to open the statistics
+dialog. There are two ways to load data:</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Load live from CATIA</b></td>
+    <td>
+      <ul>
+        <li>
+          Check <b>"Use the current active CATIA document"</b>: directly reads the CATProduct
+          currently active in CATIA.
+        </li>
+        <li>
+          Or click <b>"Browse…"</b> to pick a CATProduct file on disk and then click
+          <b>"Load"</b>. CATIA opens the file automatically (if not already open) before the
+          traversal.
+        </li>
+      </ul>
+      A progress message is shown while loading; large products may take a few minutes.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Load from saved data</b></td>
+    <td>
+      Click <b>"Load saved data…"</b> and choose a <code>.mpd</code> data file previously saved
+      with the "Save data" button. This requires no running CATIA and is suitable for offline
+      analysis or data sharing.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Append data… / Append active document…</b></td>
+    <td>
+      After a base product has been loaded, you can append and merge additional sub-assembly mass
+      properties; this suits cases where the main product is too large and each sub-assembly
+      needs to be collected separately.
+      <ul>
+        <li>
+          <b>Append data…</b>: appends sub-assembly mass properties from one or more
+          <code>.mpd</code> data files (multiple files can be selected at once).
+        </li>
+        <li>
+          <b>Append active document…</b>: appends the mass properties of the currently active
+          CATIA document (a sub-assembly CATProduct) to the existing data in real time.
+        </li>
+      </ul>
+      <b>Prerequisite: the coordinate systems of all sub-assemblies must match the main product
+      (and each other); the program performs no additional coordinate transformation.</b><br />
+      The two buttons are enabled only after the base data is loaded; if there is no data yet,
+      the operation is blocked with a message.
+    </td>
+  </tr>
+</table>
+
+<h4>5. Reading and Display Options</h4>
+
+<p><b>5.1 Data source</b> (radio buttons at the top of the dialog)</p>
+<p>See Section 1 for the overview; switch between Analyze mode and Inertia envelope mode.
+When Analyze is selected, the "Inertia envelope reading" options below are disabled
+automatically.</p>
+
+<p><b>5.2 Inertia envelope read mode</b> (only effective for the "Inertia envelope" source;
+affects loading performance)</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Read .1 only</b></td>
+    <td>
+      Reads only <code>惯量包络体.1</code> of each part. Fastest: each part requires a single
+      parameter query. Suitable for the usual case where each part has one keep measure.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Highest number</b></td>
+    <td>
+      Scans envelopes numbered 1 to 20 and takes the valid keep measure with the highest number.
+      Suitable when "the latest measurement" should win (for example re-measuring and keeping the
+      last one).<br />
+      Slower: every missing number triggers one COM exception, up to 19 times.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Aggregate all</b> (default)</td>
+    <td>
+      Reads all valid numbers (1–20) and aggregates them into a single mass property at part
+      level using the <b>parallel-axis theorem</b>.<br />
+      Suitable when a part has several separately measured zones (for example each zone of a
+      multi-material part has its own inertia envelope).<br />
+      Same speed as "Highest number" mode.
+    </td>
+  </tr>
+</table>
+
+<p><b>5.3 BOM display mode</b></p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Hierarchical BOM</b> (default)</td>
+    <td>
+      Shows the complete product tree in a tree structure, including parts (leaf nodes) and
+      products/components (intermediate nodes).<br />
+      Product/component rows show the <b>aggregated values</b> of all parts in their subtree (in
+      the root-product coordinate system). Part rows show Weight / CogX/Y/Z / Ixx–Iyz already
+      transformed into the <b>root-product coordinate system</b>, which depends on the assembly
+      placement.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Summary BOM</b></td>
+    <td>
+      Merges identical parts by part number; each unique part number (Part Number) is shown as
+      one row with the quantity (Quantity). Lists parts only (no product or component nodes).
+      Weight / CogX/Y/Z / Ixx–Iyz are shown in the <b>part's own coordinate system</b>,
+      independent of assembly placement.<br />
+      Sorting columns can be selected (part number, nomenclature, revision, file name, quantity,
+      weight, etc.).
+    </td>
+  </tr>
+</table>
+
+<p><b>5.4 Unit settings</b></p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Weight unit</b></td>
+    <td>g or kg (default g).</td>
+  </tr>
+  <tr>
+    <td><b>Length unit (center of gravity)</b></td>
+    <td>mm or m (default mm).</td>
+  </tr>
+  <tr>
+    <td><b>Inertia unit</b></td>
+    <td>g·mm², g·m², kg·mm² or kg·m² (default g·mm²). The inertia unit is selected
+    independently of the weight and length units.</td>
+  </tr>
+</table>
+<p>Switching units updates the table in real time; column headers automatically gain the current
+unit suffix, and all settings persist across sessions.</p>
+
+<p><b>5.5 Optional display columns</b></p>
+<p>Use the checkboxes in the "Display columns" area to show or hide the following columns:</p>
+<ul>
+  <li><b>Filename</b>: the disk file name of the part.</li>
+  <li><b>Part Number</b>: the PartNumber property in CATIA.</li>
+  <li><b>Nomenclature</b>: the Nomenclature property in CATIA.</li>
+  <li><b>Revision</b>: the Revision property in CATIA.</li>
+</ul>
+
+<p><b>5.6 Ignore hidden nodes</b></p>
+<p>
+  When checked: a part in hidden state (invisible) is skipped; a product/component in hidden
+  state is skipped together with all its descendants, and none of them are included in the
+  statistics.
+</p>
+
+<h4>6. Table Operations</h4>
+
+<p>
+  The table supports <b>multi-selection</b> (Ctrl+click or Shift+click). With multiple rows
+  selected, the right-click context menu applies batch operations to all selected rows (batch
+  delete, batch toggle "participate in calculation", batch re-read). If the right-clicked row is
+  not in the current selection set, the program clears the previous selection and selects only
+  that row (degrading to single selection).
+</p>
+
+<p><b>6.1 Editing weight</b></p>
+<p>
+  Double-click a part row's "Weight" cell to enter a value directly (only part rows are
+  editable; product/component summary rows are not). After editing:
+</p>
+<ul>
+  <li>All inertia components of that part are scaled proportionally (keeping the
+  mass–inertia relationship consistent).</li>
+  <li>All other rows with the same part number (Part Number) are updated synchronously.</li>
+  <li>The total product mass properties are recomputed automatically and the "Summary results"
+  panel at the bottom refreshes in real time.</li>
+  <li>The weight change also updates the density proportionally (volume unchanged,
+  density = mass / volume).</li>
+</ul>
+<p>The "Weight" cell does not accept 0 or negative values.</p>
+
+<p><b>6.2 Editing density</b></p>
+<p>
+  Double-click a part row's "Density" cell to edit the density value directly (kg/m³). After an
+  edit, that part's weight and inertia are scaled proportionally (volume unchanged,
+  mass = density × volume). The density column is not editable in these cases:
+</p>
+<ul>
+  <li>The density value is "—" (no density data in the original measure).</li>
+  <li>The density value is -1 (CATIA reports non-uniform material for the part and cannot
+  provide a single density).</li>
+</ul>
+
+<p><b>6.3 Right-click context menu</b></p>
+<p>Right-click any row in the table to see the following menu (items marked "single selection
+only" are unavailable in multi-selection):</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Open path</b></td>
+    <td>(single selection only) Opens the file's containing folder in File Explorer.</td>
+  </tr>
+  <tr>
+    <td><b>Copy path</b></td>
+    <td>(single selection only) Copies the full path of the file for that row to the clipboard.</td>
+  </tr>
+  <tr>
+    <td><b>Open in CATIA</b></td>
+    <td>(single selection only) Opens the part/product file in CATIA through the system
+    associated program.</td>
+  </tr>
+  <tr>
+    <td><b>Re-read mass properties</b></td>
+    <td>
+      (part rows only) Re-reads the kept inertia-envelope measure parameters of that part from
+      CATIA without re-traversing the product tree, and synchronously updates all nodes with the
+      same part number plus the summary results. Suitable for quickly refreshing a single part
+      after its measure was updated in CATIA. In multi-selection it is applied in batch to all
+      selected part rows.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Add mirror part</b></td>
+    <td>
+      (Hierarchical BOM mode, single selection only) Adds a virtual "mirror part" row for the
+      selected row, directly above it, shown with a light-blue background.<br />
+      Mirror rule: symmetric with respect to the ZX plane (CogY, Ixy, Iyz are negated; the
+      remaining components stay unchanged).<br />
+      Mirror rows take part in the summary calculation but their weight/density cannot be edited
+      directly; when the source row is modified or deleted, the mirror row is synchronized or
+      cascaded-deleted automatically. See Section 5.5.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Participate in calculation: √ / ×</b></td>
+    <td>
+      (Hierarchical BOM mode) Toggles whether the row takes part in the mass summary
+      calculation. Excluded rows are shown in gray italic; all instances sharing the same part
+      number are excluded/restored together. Excluded rows are not counted in the bottom summary
+      and do not appear in the Summary BOM.<br />
+      In multi-selection: if all selected rows are already excluded, all of them are restored;
+      otherwise all are marked as excluded.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Delete from list</b></td>
+    <td>
+      (Hierarchical BOM mode) Removes the row and all its descendant rows from the display list
+      (does not affect the CATIA files). A confirmation dialog is shown before deletion to
+      prevent mistakes. If the row has an associated mirror row, the mirror row is cascade-deleted
+      as well.<br />
+      In multi-selection it is applied in batch to all selected rows and their subtrees.
+    </td>
+  </tr>
+</table>
+
+<p><b>6.4 Expand / collapse / auto-fit columns</b></p>
+<p>
+  The bottom button bar provides "Expand all", "Collapse all", and "Auto-fit columns" buttons
+  for browsing large assembly trees. Column widths can be resized manually and are preserved
+  after switching modes. After re-loading or appending data, the expand/collapse state from
+  before the load is restored automatically.
+</p>
+
+<p><b>6.5 Mirror part (virtual rows)</b></p>
+<p>
+  In Hierarchical BOM mode, right-click any row (part, product, or component) and choose
+  <b>"Add mirror part"</b> to insert a <b>virtual mirror row</b> directly above it. Mirror
+  rows are shown with a <b>light-blue background</b> and their type column reads "mirror part".
+</p>
+<p>Mirror rules (mirrored with respect to the ZX plane, i.e. the Y axis is negated):</p>
+<ul>
+  <li>Center of gravity: CogX, CogZ unchanged, CogY → −CogY (root coordinate system)</li>
+  <li>Moment of inertia: Ixx, Iyy, Izz, Ixz unchanged, Ixy → −Ixy, Iyz → −Iyz (root
+  coordinate system)</li>
+  <li>Mass (weight) unchanged</li>
+</ul>
+<p>Usage notes:</p>
+<ul>
+  <li>Mirror rows <b>take part in the summary calculation</b>; their mass-property contribution
+  is treated the same as the source row.</li>
+  <li>Mirror rows <b>cannot be edited directly</b> (weight or density); edit the source row
+  instead and the mirror row updates synchronously.</li>
+  <li><b>Cascade delete</b>: deleting the source row also deletes the associated mirror row.</li>
+  <li>Mirror rows support the "participate in calculation √/×" toggle as well.</li>
+  <li>Mirror rows appear in the exported Excel; their Status column is marked as mirror.</li>
+</ul>
+
+<h4>7. Summary Results Panel</h4>
+<p>
+  The "Summary results (based on the root-product coordinate system)" panel below the table
+  shows the aggregated results, in the root-product coordinate system, of all active (that is,
+  <b>not excluded</b>) valid parts in the current product tree. The panel has three columns:
+</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Left: total weight + center of gravity (G)</b></td>
+    <td>
+      <ul>
+        <li><b>Total weight</b>: shown in the currently selected weight unit (g or kg).</li>
+        <li><b>Center of gravity Gx / Gy / Gz</b>: shown in the currently selected length unit
+        (mm or m).</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><b>Middle: inertia matrix</b></td>
+    <td>
+      Shows the moment-of-inertia tensor about the center of gravity as a full 3×3 matrix:<br />
+      Ixx, Ixy, Ixz<br />
+      Iyx, Iyy, Iyz<br />
+      Izx, Izy, Izz<br />
+      (shown in the currently selected inertia unit; the matrix is symmetric, Ixy=Iyx, etc.)
+    </td>
+  </tr>
+  <tr>
+    <td><b>Right: principal moments + principal axes</b></td>
+    <td>
+      Performs an eigendecomposition of the inertia matrix and gives:
+      <ul>
+        <li><b>Principal moments M1 / M2 / M3</b>: the three principal moments (in ascending
+        order, shown in the current inertia unit).</li>
+        <li>
+          <b>Principal axes A1 / A2 / A3</b>: the unit direction vectors of the corresponding
+          principal moments (each with x / y / z components, dimensionless).
+        </li>
+      </ul>
+    </td>
+  </tr>
+</table>
+<p>The panel refreshes automatically whenever weight/density is edited, the excluded state is
+toggled, or data is appended.</p>
+
+<h4>8. Export and Save</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Export table</b></td>
+    <td>
+      Exports the current table (including the bottom summary rows) to an Excel (.xlsx) file.
+      Export content: all currently visible columns (without the internal index column
+      "#"), with a Status column appended at the end.<br />
+      Excluded rows are marked with a special background color; rows whose measurements failed
+      are marked in orange; all values are exported in the currently selected units.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Save data…</b></td>
+    <td>
+      Saves the current row data as a <code>.mpd</code> compressed binary file (gzip-compressed
+      JSON). The saved data can be reopened at any time via "Load saved data…" without
+      connecting to CATIA.
+    </td>
+  </tr>
+</table>
+
+<h4>9. Common Error States</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>— (dash)</b></td>
+    <td>
+      Mass-property reading failed. The cause depends on the data source mode:<br />
+      <b>Analyze mode:</b> the part has no material or is a surface body, so CATIA returns a
+      mass of 0. Assign a material to the part in CATIA, then right-click and choose
+      "Re-read mass properties".<br />
+      <b>Inertia envelope mode:</b> the part has no "Keep Measure", or no
+      <code>惯量包络体.x</code> was found in the CATIA parameter tree. <b>Open</b> the part
+      <b>by itself</b>, run the measure, and reload.
+    </td>
+  </tr>
+  <tr>
+    <td><b>File not found</b></td>
+    <td>The part file cannot be found on disk; it may have been moved or renamed. Mass
+    properties cannot be read.</td>
+  </tr>
+  <tr>
+    <td><b>Density shows —</b></td>
+    <td>No density parameter was read during the CATIA measure (the part has no material); the
+    cell is not editable.</td>
+  </tr>
+  <tr>
+    <td><b>Density shows -1</b></td>
+    <td>
+      CATIA reports non-uniform materials for the part (multiple materials or conflicting material
+      settings) and cannot give a single density; the cell is not editable.
+    </td>
+  </tr>
+</table>
+
+<h4>10. Technical Background: Coordinate Transformation and Inertia Aggregation</h4>
+<p>This feature uses the following algorithms internally:</p>
+<ul>
+  <li>
+    <b>Center-of-gravity transformation</b> (local → root):<br />
+    r_root = R × r_local + T<br />
+    where R is the rotation matrix of the part relative to the root product and T is the
+    translation vector, both read via CATIA Position.GetComponents().
+  </li>
+  <li>
+    <b>Moment-of-inertia rotation</b> (local → root):<br />
+    I_root = R × I_local × R^T
+  </li>
+  <li>
+    <b>Assembly-level aggregation (parallel-axis theorem)</b>: for one assembly node, move each
+    child part's inertia about its own center of gravity to the root origin, sum them, then use
+    the parallel-axis theorem to move back to the total center of gravity:<br />
+    I_total = Σ(I_i) + Σ m_i (|r_i|²E - r_i ⊗ r_i) − M (|r_c|²E - r_c ⊗ r_c)
+  </li>
+  <li>
+    <b>Part-level multi-envelope aggregation</b>: when a part has several keep measures ("Aggregate
+    all" mode), the same parallel-axis theorem is applied to merge them in the part-local
+    coordinate system into one equivalent mass property, which then undergoes the assembly-level
+    transformation.
+  </li>
+</ul>
+
+<hr />
+<h4>3. Tools</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Copy font file to CATIA directory</b></td>
+    <td>
+      Copies the ChangFangSong.ttf font file to the CATIA TrueType font directory. The program
+      auto-detects the CATIA installation path, or you can choose it manually.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Copy ISO.xml to CATIA directory</b></td>
+    <td>Copies the ISO.xml standard file to the CATIA drafting standards directory, used to set
+    the drafting standard.</td>
+  </tr>
+  <tr>
+    <td><b>Stamp part template</b></td>
+    <td>
+      Batch-adds standard user-defined attributes to the selected CATPart files
+      (<code>物料编码</code> material code, <code>物料名称</code> material name,
+      <code>规格型号</code> specification, <code>物料来源</code> material source,
+      <code>数据状态</code> data status, <code>存货类别</code> inventory category,
+      <code>重量</code> weight, <code>备注</code> remarks).
+    </td>
+  </tr>
+  <tr>
+    <td><b>Run Macro</b></td>
+    <td>
+      Automatically scans .catvbs / .catscript / .catvba files in the macros folder and runs them
+      directly from the menu. Also supports opening the macro folder and refreshing the macro
+      list.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Quick assembly of fasteners</b></td>
+    <td>
+      Uses a VBA macro to quickly batch-assemble fasteners into product holes.<br />
+      Supports automatic alignment to the hole axis, positioning of the fastener center, and
+      flipping the direction immediately after assembly.<br />
+      <i>The fastener CATPart file and the target CATProduct file must be open in CATIA.</i>
+    </td>
+  </tr>
+  <tr>
+    <td><b>Quick assembly of plate nuts</b></td>
+    <td>
+      Uses a VBA macro to quickly batch-assemble plate nuts into product holes.<br />
+      Selects the reference geometry through the plate nut's two rivet holes, then selects the
+      mounting holes one by one to complete the batch assembly; the direction can be flipped
+      immediately.<br />
+      <i>The plate-nut CATPart file and the target CATProduct file must be open in CATIA.</i>
+    </td>
+  </tr>
+</table>
+
+<h4>4. View</h4>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Show Log</b></td>
+    <td>Opens the log window to view operation records and error messages for troubleshooting.</td>
+  </tr>
+</table>
+
+<h4>5. CATIA Connection Indicator (Status Bar)</h4>
+<p>The right side of the main window's status bar shows the CATIA COM connection status,
+refreshed every 5 seconds:</p>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><span style="color: #2a9d2a">● CATIA Connected</span></td>
+    <td>The COM object was acquired successfully and functional tests pass — the connection is
+    fully healthy.</td>
+  </tr>
+  <tr>
+    <td><span style="color: #c97a00">⚠ CATIA Connection Problem</span></td>
+    <td>
+      The COM object can be acquired (CATIA is running) but accessing its properties fails.<br />
+      Usually because CATIA is still initializing, or the ProgID/CLSID registration is abnormal.
+      Retry after a moment.
+    </td>
+  </tr>
+  <tr>
+    <td><span style="color: #cc2222">● CATIA Not Connected</span></td>
+    <td>
+      CATIA V5 is not running or COM is completely unavailable. Please start CATIA V5 R28
+      first.<br />
+      <b>Note:</b> if 3DEXPERIENCE is also installed, the program automatically enumerates the
+      ROT to find the CATIA V5 instance, so no manual intervention is needed. If it still says
+      "not connected", start CATIA V5 R28 manually and retry.
+    </td>
+  </tr>
+</table>
+<p>
+  Use the menu <b>Help → CATIA Connection Diagnostics</b> to view a detailed diagnostic report,
+  including the CATIA version, the number of open documents, the active document name, and
+  recommended actions.
+</p>
+
+<hr />
+<h3>FAQ</h3>
+<table border="0" cellpadding="4">
+  <tr>
+    <td><b>Q: "Unable to connect to CATIA"?</b></td>
+    <td>
+      A: Make sure CATIA V5 is started and running. The program communicates with CATIA through
+      the COM automation interface, so CATIA must be opened first.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Q: What does the orange "⚠ CATIA Connection Problem" in the status bar mean?</b></td>
+    <td>
+      A: It means the CATIA process is indeed running and the COM object can be acquired, but
+      functional calls against it fail.<br />
+      Usually CATIA has not finished starting up or the COM registration is temporarily
+      abnormal; retry after a moment.<br />
+      Use the menu <b>Help → CATIA Connection Diagnostics</b> to see the detailed cause.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Q: CATIA V5 and 3DEXPERIENCE are both installed; the program shows "CATIA not
+    connected" or opens 3DEXPERIENCE when running a command?</b></td>
+    <td>
+      A: This is a conflict caused by the Windows COM registry being overwritten by
+      3DEXPERIENCE.<br />
+      <b>Cause:</b> both products use the "CATIA.Application" COM ProgID; the later installation
+      overwrites the CLSID mapping of that ProgID in the registry, so COM calls no longer find
+      the V5 instance and instead start 3DEXPERIENCE.<br />
+      <b>This program has a built-in automatic solution:</b>
+      <ol>
+        <li>First enumerates the Windows ROT (Running Object Table) to find the CATIA V5
+        instance directly, bypassing the ProgID→CLSID registry mapping.</li>
+        <li>If CATIA V5 is not running, the program automatically detects the CATIA V5
+        installation path from the registry (preferring V5 over 3DE) and starts CNEXT.exe.</li>
+      </ol>
+      <b>If it still fails:</b> start CATIA V5 R28 manually first, then use the program.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Q: "Insufficient permissions" when copying files?</b></td>
+    <td>
+      A: CATIA is usually installed under Program Files, so administrator rights are required to
+      write there. Right-click the program and run it as administrator.
+    </td>
+  </tr>
+  <tr>
+    <td><b>Q: The exported BOM Excel shows garbled text when opened?</b></td>
+    <td>A: Export uses UTF-8 encoding; make sure to open it with a recent version of Excel.</td>
+  </tr>
+  <tr>
+    <td><b>Q: How do I add custom macros?</b></td>
+    <td>
+      A: Click the menu "Run Macro → Open Macro Folder", put your .catvbs or .catscript or
+      .catvba files there (the CATMain function must be located in 'Module1'), then click
+      "Refresh macro list".
+    </td>
+  </tr>
+  <tr>
+    <td><b>Q: Why do some parts show "—" (dash) in the mass-properties statistics?</b></td>
+    <td>
+      A: The cause differs by the current data source mode:<br /><br />
+      <b>In Analyze mode:</b><br />
+      ① The part has no material assigned in CATIA, so CATIA returns a mass of 0;<br />
+      ② The part is a surface body (no closed volume) and CATIA cannot compute a mass;<br />
+      ③ The Analyze API call fails (not supported by some older pycatia versions or special
+      part types).<br />
+      Solution: assign a material in CATIA (or set the density directly), then right-click
+      "Re-read mass properties" to retry.<br /><br />
+      <b>In Inertia envelope mode:</b><br />
+      ① The part has never been measured via "Shape → Measure Inertia → Keep Measure" in CATIA;<br />
+      ② The measure was created in the product window (not in the part file opened by itself), so
+      the parameter-name prefix differs from what is expected;<br />
+      ③ The envelope number exceeds the reading limit (by default numbers 1–20 are read).<br />
+      Solution: <b>open</b> the part file <b>by itself</b>, run the measure, reload, or
+      right-click the row and choose "Re-read mass properties".
+    </td>
+  </tr>
+</table>
+
+<hr />
+<p style="color: #888">
+  Developer: {APP_AUTHOR} | Contact: {APP_CONTACT}<br />
+  For internal use only. Do not distribute.
+</p>
+"""
+
+
+def _help_html() -> str:
+    """按当前界面语言返回帮助文档 HTML。
+
+    - en_US：返回英文全量译版 _HELP_HTML_EN；
+    - 其余（含 zh_CN）一律返回源文档 _HELP_HTML（中文）。
+    两份资源保持相同的图片路径与标题/表格/列表结构；CATIA 真实属性名、
+    代码与文件名在英文版中同样保持原样。
+    """
+    if current_ui_language() == LANG_EN_US:
+        return _HELP_HTML_EN
+    return _HELP_HTML
+
+
 class HelpDialog(QDialog):
     """Scrollable help dialog with rich-text documentation."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"{APP_NAME} — 帮助文档")
+        self.setWindowTitle(translate("CATIACopilot", "{0} — 帮助文档").format(APP_NAME))
         self.resize(700, 560)
         self.setMinimumSize(500, 500)
 
@@ -751,12 +1612,12 @@ class HelpDialog(QDialog):
         browser.setOpenExternalLinks(True)
         # Allow relative <img> paths in the HTML to resolve from the resources folder
         browser.setSearchPaths([str(resource_path("resources"))])
-        browser.setHtml(_HELP_HTML)
+        browser.setHtml(_help_html())
         layout.addWidget(browser)
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        btn_close = QPushButton("关闭")
+        btn_close = QPushButton(translate("CATIACopilot", "关闭"))
         btn_close.clicked.connect(self.accept)
         btn_layout.addWidget(btn_close)
         layout.addLayout(btn_layout)

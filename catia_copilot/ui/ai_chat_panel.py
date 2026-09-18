@@ -80,6 +80,7 @@ from catia_copilot.ai.config import fetch_models_from_api
 from catia_copilot.ai.session import ChatSession
 from catia_copilot.ai.session_manager import SessionManager
 from catia_copilot.ai.tools import DEFAULT_SYSTEM_PROMPT, tools_map
+from catia_copilot.i18n import translate
 from catia_copilot.ui.session_config_dialog import SessionConfigDialog
 from catia_copilot.ui.model_state_dialog import ModelStateDialog
 from catia_copilot.ui.theme_manager import theme_manager, theme_signal
@@ -107,6 +108,40 @@ _PROVIDER_DISPLAY = {
     "github":     "GitHub Copilot",
     "custom":     "自定义端点",
 }
+
+
+def _provider_type_label(ptype: str) -> str:
+    """provider 类型 key → 界面显示名（随界面语言翻译）。
+
+    provider 类型 key / 模型 id / 配置 key 等业务值不翻译；纯英文显示名
+    （Anthropic 等）原样返回。仅作为 UI 显示文案渲染。
+    """
+    labels = {
+        "openai":     translate("CATIACopilot", "OpenAI / 兼容"),
+        "ollama":     translate("CATIACopilot", "Ollama（本地）"),
+        "iflytek":    translate("CATIACopilot", "讯飞星火"),
+        "custom":     translate("CATIACopilot", "自定义端点"),
+        "anthropic":  "Anthropic",
+        "openrouter": "OpenRouter",
+        "deepseek":   "DeepSeek",
+        "bedrock":    "AWS Bedrock",
+        "vertex":     "Google Vertex AI",
+        "github":     "GitHub Copilot",
+    }
+    return labels.get(ptype, ptype)
+
+
+def _cred_placeholder_display(ph: str) -> str:
+    """凭证字段占位文本 → 界面显示（随界面语言翻译；非中文占位原样返回）。"""
+    fixed = {
+        "控制台 > HTTP 服务接口认证信息 > APIPassword":
+            translate("CATIACopilot", "控制台 > HTTP 服务接口认证信息 > APIPassword"),
+        "留空则使用本机 ADC":
+            translate("CATIACopilot", "留空则使用本机 ADC"),
+        "（无需认证时留空）":
+            translate("CATIACopilot", "（无需认证时留空）"),
+    }
+    return fixed.get(ph, ph)
 
 
 def chat_colors():
@@ -505,11 +540,11 @@ class _TypingIndicatorWidget(QWidget):
         sp = self._FRAMES[self._frame_idx]
         if self._state == "tool":
             elapsed_str = f"  {self._elapsed}s" if self._elapsed > 0 else ""
-            text = f"{sp}  执行工具：{self._detail}{elapsed_str}"
+            text = translate("CATIACopilot", "{0}  执行工具：{1}{2}").format(sp, self._detail, elapsed_str)
         elif self._state == "gen":
-            text = f"{sp}  生成回复中…"
+            text = translate("CATIACopilot", "{0}  生成回复中…").format(sp)
         else:
-            text = f"{sp}  AI 思考中…"
+            text = translate("CATIACopilot", "{0}  AI 思考中…").format(sp)
         self._label.setText(text)
         self._label.setStyleSheet(
             f"color: {c.ai_fg}; font-size: {L.SMALL_FONT_SIZE}px;"
@@ -887,7 +922,7 @@ class AISettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI 助手设置")
+        self.setWindowTitle(translate("CATIACopilot", "AI 助手设置"))
         self.setMinimumSize(700, 540)
         self._cfg = ai_config.load()
         self._cred_widgets: list[tuple[str, QLineEdit]] = []
@@ -904,7 +939,7 @@ class AISettingsDialog(QDialog):
         from PySide6.QtWidgets import QGroupBox  # noqa: PLC0415
         root = QVBoxLayout(self); root.setSpacing(8)
 
-        hint = QLabel(f"配置文件：{ai_config.get_config_path()}")
+        hint = QLabel(translate("CATIACopilot", "配置文件：{0}").format(ai_config.get_config_path()))
         hint.setStyleSheet(f"color: gray; font-size: {L.SMALL_FONT_SIZE}px;")
         root.addWidget(hint)
 
@@ -926,22 +961,23 @@ class AISettingsDialog(QDialog):
         right = QVBoxLayout(); right.setSpacing(8)
 
         # 凭证 GroupBox
-        cb = QGroupBox("凭证")
+        cb = QGroupBox(translate("CATIACopilot", "凭证"))
         cbl = QVBoxLayout(cb); cbl.setSpacing(4)
         self._cred_form = QFormLayout()
         self._cred_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._cred_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         cbl.addLayout(self._cred_form)
         cr = QHBoxLayout()
-        self._test_btn = QPushButton("测试连接"); self._test_btn.clicked.connect(self._test)
+        self._test_btn = QPushButton(translate("CATIACopilot", "测试连接")); self._test_btn.clicked.connect(self._test)
         cr.addStretch(); cr.addWidget(self._test_btn); cbl.addLayout(cr)
         right.addWidget(cb)
 
         # 模型 GroupBox
-        mb = QGroupBox("模型"); mbl = QVBoxLayout(mb); mbl.setSpacing(4)
+        mb = QGroupBox(translate("CATIACopilot", "模型")); mbl = QVBoxLayout(mb); mbl.setSpacing(4)
         mt = QHBoxLayout()
-        self._fetch_btn = QPushButton("从 API 获取"); self._fetch_btn.clicked.connect(self._fetch)
-        for (t, fn, w) in [("全选", True, 44), ("全不选", False, 56)]:
+        self._fetch_btn = QPushButton(translate("CATIACopilot", "从 API 获取")); self._fetch_btn.clicked.connect(self._fetch)
+        for (t, fn, w) in [(translate("CATIACopilot", "全选"), True, 44),
+                           (translate("CATIACopilot", "全不选"), False, 56)]:
             b = QPushButton(t); b.setFixedWidth(w); b.clicked.connect(lambda _s, s=t: self._toggle(s)); mt.addWidget(b)
         mt.insertWidget(0, self._fetch_btn); mt.addStretch(); mbl.addLayout(mt)
         self._model_list = QListWidget()
@@ -954,11 +990,11 @@ class AISettingsDialog(QDialog):
         # 运行时参数
         runtime = QFormLayout(); runtime.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._temperature = QDoubleSpinBox(); self._temperature.setRange(0.0, 2.0); self._temperature.setSingleStep(0.1); self._temperature.setDecimals(1); self._temperature.setValue(self._cfg.get("temperature", 0.7)); self._temperature.setMinimumHeight(24)
-        rt = QHBoxLayout(); rt.addWidget(self._temperature); rt.addWidget(QLabel("  (0=最确定  1=平衡  2=最富创造性；建议 0.5–0.7)"), 1); runtime.addRow("Temperature:", rt)
+        rt = QHBoxLayout(); rt.addWidget(self._temperature); rt.addWidget(QLabel(translate("CATIACopilot", "  (0=最确定  1=平衡  2=最富创造性；建议 0.5–0.7)")), 1); runtime.addRow("Temperature:", rt)
         self._max_rounds = QSpinBox(); self._max_rounds.setRange(1, 50); self._max_rounds.setValue(self._cfg.get("max_tool_rounds", 20)); self._max_rounds.setMinimumHeight(24)
-        rr = QHBoxLayout(); rr.addWidget(self._max_rounds); rr.addWidget(QLabel("  (单次回复中 AI 调用工具的最大次数)"), 1); runtime.addRow("最大工具调用轮数:", rr)
-        self._timeout = QSpinBox(); self._timeout.setRange(10, 600); self._timeout.setSuffix(" 秒"); self._timeout.setValue(self._cfg.get("timeout", 120)); self._timeout.setMinimumHeight(24)
-        tor = QHBoxLayout(); tor.addWidget(self._timeout); tor.addWidget(QLabel("  (单次 LLM 请求的最长等待时间)"), 1); runtime.addRow("请求超时:", tor)
+        rr = QHBoxLayout(); rr.addWidget(self._max_rounds); rr.addWidget(QLabel(translate("CATIACopilot", "  (单次回复中 AI 调用工具的最大次数)")), 1); runtime.addRow(translate("CATIACopilot", "最大工具调用轮数:"), rr)
+        self._timeout = QSpinBox(); self._timeout.setRange(10, 600); self._timeout.setSuffix(translate("CATIACopilot", " 秒")); self._timeout.setValue(self._cfg.get("timeout", 120)); self._timeout.setMinimumHeight(24)
+        tor = QHBoxLayout(); tor.addWidget(self._timeout); tor.addWidget(QLabel(translate("CATIACopilot", "  (单次 LLM 请求的最长等待时间)")), 1); runtime.addRow(translate("CATIACopilot", "请求超时:"), tor)
         root.addLayout(runtime)
 
         self._status_label = QLabel("")
@@ -970,7 +1006,7 @@ class AISettingsDialog(QDialog):
     # ── Provider 列表 ──────────────────────────────────────────────────────────
 
     def _display_name(self, ptype, keys, pid):
-        base = self._PROVIDER_FIELDS.get(ptype, (ptype, []))[0]
+        base = _provider_type_label(ptype)
         same = [k for k in keys if self._cfg.get("providers", {}).get(k, {}).get("provider_type") == ptype]
         return f"{base} {same.index(pid)+1}" if len(same) > 1 else base
 
@@ -1007,8 +1043,8 @@ class AISettingsDialog(QDialog):
 
     def _add(self):
         types = list(self._PROVIDER_FIELDS.keys())
-        names = [self._PROVIDER_FIELDS[t][0] for t in types]
-        choice, ok = QInputDialog.getItem(self, "选择 Provider 类型", "类型：", names, 0, False)
+        names = [_provider_type_label(t) for t in types]
+        choice, ok = QInputDialog.getItem(self, translate("CATIACopilot", "选择 Provider 类型"), translate("CATIACopilot", "类型："), names, 0, False)
         if not ok: return
         ptype = types[names.index(choice)]
         provs = self._cfg.setdefault("providers", {})
@@ -1024,8 +1060,9 @@ class AISettingsDialog(QDialog):
         pid = self._current_key()
         if pid is None: return
         ptype = self._cfg.get("providers", {}).get(pid, {}).get("provider_type", "openai")
-        display = self._PROVIDER_FIELDS.get(ptype, (pid, []))[0]
-        if QMessageBox.question(self, "确认删除", f"删除 Provider「{display}」及其所有凭证和模型配置？",
+        display = _provider_type_label(ptype)
+        if QMessageBox.question(self, translate("CATIACopilot", "确认删除"),
+                                 translate("CATIACopilot", "删除 Provider「{0}」及其所有凭证和模型配置？").format(display),
                                  QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
         row = self._provider_list.currentRow(); self._provider_list.takeItem(row)
@@ -1043,7 +1080,7 @@ class AISettingsDialog(QDialog):
         _, defs = self._PROVIDER_FIELDS.get(ptype, ("", []))
         saved = saved or {}
         for label, key, ph, pw in defs:
-            w = QLineEdit(saved.get(key, "")); w.setPlaceholderText(ph)
+            w = QLineEdit(saved.get(key, "")); w.setPlaceholderText(_cred_placeholder_display(ph))
             if pw: w.setEchoMode(QLineEdit.EchoMode.Password)
             self._cred_form.addRow(f"{label}:", w); self._cred_widgets.append((key, w))
 
@@ -1090,10 +1127,10 @@ class AISettingsDialog(QDialog):
 
     def _fetch(self):
         p = self._resolve_params()
-        if not p["api_base"]: self._set_status("未找到 API Base URL", error=True); return
+        if not p["api_base"]: self._set_status(translate("CATIACopilot", "未找到 API Base URL"), error=True); return
         # 不需要 api_key 的 provider (Ollama 本地)
-        self._fetch_btn.setEnabled(False); self._fetch_btn.setText("获取中…")
-        self._set_status("正在拉取模型列表…")
+        self._fetch_btn.setEnabled(False); self._fetch_btn.setText(translate("CATIACopilot", "获取中…"))
+        self._set_status(translate("CATIACopilot", "正在拉取模型列表…"))
 
         class _T(QThread):
             def __init__(self, b, k, parent=None):
@@ -1102,12 +1139,12 @@ class AISettingsDialog(QDialog):
 
         self._ft = _T(p["api_base"], p["api_key"], self)
         def _done():
-            self._fetch_btn.setEnabled(True); self._fetch_btn.setText("从 API 获取")
+            self._fetch_btn.setEnabled(True); self._fetch_btn.setText(translate("CATIACopilot", "从 API 获取"))
             models = self._ft.r
-            if not models: self._set_status("未获取到模型，请检查凭证和 URL", error=True); return
+            if not models: self._set_status(translate("CATIACopilot", "未获取到模型，请检查凭证和 URL"), error=True); return
             ex = {m: c.isChecked() for m, c in self._model_checks}
             for m in models: m["enabled"] = ex.get(m["id"], True)
-            self._set_status(f"已获取 {len(models)} 个模型"); self._rebuild_models(models)
+            self._set_status(translate("CATIACopilot", "已获取 {0} 个模型").format(len(models))); self._rebuild_models(models)
             pid = self._current_key()
             if pid: self._cfg.setdefault("providers", {}).setdefault(pid, {})["models"] = models
         self._ft.finished.connect(_done); self._ft.start()
@@ -1115,10 +1152,10 @@ class AISettingsDialog(QDialog):
     def _test(self):
         p = self._resolve_params(); ptype = p["provider_type"]
         test_model = next((mid for mid, cb in self._model_checks if cb.isChecked()), None)
-        if not test_model: self._set_status("请先在模型列表中勾选至少一个模型", error=True); return
-        if not p["api_base"]: self._set_status("未找到 API Base URL", error=True); return
+        if not test_model: self._set_status(translate("CATIACopilot", "请先在模型列表中勾选至少一个模型"), error=True); return
+        if not p["api_base"]: self._set_status(translate("CATIACopilot", "未找到 API Base URL"), error=True); return
         self._test_btn.setEnabled(False); self._test_btn.setText("…")
-        self._set_status("正在测试…")
+        self._set_status(translate("CATIACopilot", "正在测试…"))
 
         class _T(QThread):
             def __init__(self, base, key, mdl, ptype, parent=None):
@@ -1154,14 +1191,14 @@ class AISettingsDialog(QDialog):
                     else:
                         reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                         tokens = data.get("usage", {}).get("total_tokens", "?")
-                    self.msg = f"✔ 通过  {elapsed:.1f}s  {tokens} tokens  回复：「{reply[:40]}」"
+                    self.msg = translate("CATIACopilot", "✔ 通过  {0}s  {1} tokens  回复：「{2}」").format(f"{elapsed:.1f}", f"{tokens}", reply[:40])
                     self.ok = True
                 except Exception as e:
-                    self.msg = f"✖ 失败  {_t.time()-t0:.1f}s：{str(e)[:120]}"
+                    self.msg = translate("CATIACopilot", "✖ 失败  {0}s：{1}").format(f"{_t.time()-t0:.1f}", str(e)[:120])
 
         self._tt = _T(p["api_base"], p["api_key"], test_model, ptype, self)
         def _done():
-            self._test_btn.setEnabled(True); self._test_btn.setText("测试连接")
+            self._test_btn.setEnabled(True); self._test_btn.setText(translate("CATIACopilot", "测试连接"))
             self._set_status(self._tt.msg, error=not self._tt.ok)
         self._tt.finished.connect(_done); self._tt.start()
 
@@ -1331,7 +1368,7 @@ class SessionSidebar(QWidget):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(*L.SIDEBAR_HEADER_MARGINS)
         header_layout.setSpacing(L.SIDEBAR_HEADER_SPACING)
-        title_lbl = QLabel("会话列表")
+        title_lbl = QLabel(translate("CATIACopilot", "会话列表"))
         title_lbl.setStyleSheet(f"font-weight: bold; font-size: {L.TITLE_FONT_SIZE}px;")
         header_layout.addWidget(title_lbl, 1)
         layout.addWidget(header)
@@ -1367,7 +1404,7 @@ class SessionSidebar(QWidget):
         bottom.setFixedHeight(L.SIDEBAR_BOTTOM_HEIGHT)
         bottom_layout = QHBoxLayout(bottom)
         bottom_layout.setContentsMargins(*L.SIDEBAR_BOTTOM_MARGINS)
-        self._new_btn = QPushButton("新对话")
+        self._new_btn = QPushButton(translate("CATIACopilot", "新对话"))
         self._new_btn.setObjectName("SidebarNewBtn")
         self._new_btn.setFixedHeight(L.SIDEBAR_NEW_BTN_HEIGHT)
         self._new_btn.clicked.connect(self.new_session_requested)
@@ -1428,13 +1465,15 @@ class SessionSidebar(QWidget):
         self._list.clear()
         for entry in entries:
             sid = entry.get("session_id", "")
-            name = entry.get("name", "新对话")
+            name = entry.get("name") or translate("CATIACopilot", "新对话")
             item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, sid)
             item.setToolTip(
-                f"ID: {sid}\n"
-                f"创建：{entry.get('created_at', '')}\n"
-                f"工作空间：{entry.get('workspace') or '不限制'}"
+                translate("CATIACopilot", "ID: {0}\n创建：{1}\n工作空间：{2}").format(
+                    sid,
+                    entry.get("created_at", ""),
+                    entry.get("workspace") or translate("CATIACopilot", "不限制"),
+                )
             )
             self._list.addItem(item)
             if sid == self._current_session_id:
@@ -1467,16 +1506,16 @@ class SessionSidebar(QWidget):
         sid = item.data(Qt.ItemDataRole.UserRole)
         is_current = (sid == self._current_session_id)
         menu = QMenu(self)
-        rename_act = menu.addAction("重命名")
-        cfg_act = menu.addAction("会话设置…")
-        ws_act = menu.addAction("设置工作空间")
+        rename_act = menu.addAction(translate("CATIACopilot", "重命名"))
+        cfg_act = menu.addAction(translate("CATIACopilot", "会话设置…"))
+        ws_act = menu.addAction(translate("CATIACopilot", "设置工作空间"))
         # "清空消息"只对当前活跃会话显示
         clear_act = None
         if is_current:
             menu.addSeparator()
-            clear_act = menu.addAction("清空消息记录")
+            clear_act = menu.addAction(translate("CATIACopilot", "清空消息记录"))
         menu.addSeparator()
-        del_act = menu.addAction("删除")
+        del_act = menu.addAction(translate("CATIACopilot", "删除"))
         action = menu.exec(self._list.mapToGlobal(pos))
         if action == rename_act:
             self._rename_session(sid, item)
@@ -1494,7 +1533,7 @@ class SessionSidebar(QWidget):
     def _rename_session(self, session_id: str, item: QListWidgetItem):
         old_name = item.text()
         new_name, ok = QInputDialog.getText(
-            self, "重命名会话", "新名称：", text=old_name
+            self, translate("CATIACopilot", "重命名会话"), translate("CATIACopilot", "新名称："), text=old_name
         )
         if ok and new_name.strip():
             self._sm.rename_session(session_id, new_name.strip())
@@ -1523,15 +1562,15 @@ class SessionSidebar(QWidget):
                 self.refresh()
 
     def _set_workspace(self, session_id: str):
-        folder = QFileDialog.getExistingDirectory(self, "选择工作空间目录")
+        folder = QFileDialog.getExistingDirectory(self, translate("CATIACopilot", "选择工作空间目录"))
         if folder:
             self._sm.set_workspace(session_id, folder)
             self.refresh()
 
     def _delete_session(self, session_id: str):
         ret = QMessageBox.question(
-            self, "删除会话",
-            "确定要删除这个会话吗？此操作不可撤销。",
+            self, translate("CATIACopilot", "删除会话"),
+            translate("CATIACopilot", "确定要删除这个会话吗？此操作不可撤销。"),
         )
         if ret != QMessageBox.StandardButton.Yes:
             return
@@ -1748,7 +1787,7 @@ class AIChatPanel(QWidget):
         # 铅笔图标（重命名）
         rename_btn = QPushButton("✏")
         rename_btn.setFixedSize(*L.ICON_BTN_SIZE)
-        rename_btn.setToolTip("重命名会话")
+        rename_btn.setToolTip(translate("CATIACopilot", "重命名会话"))
         rename_btn.setStyleSheet(_icon_style)
         rename_btn.setFont(_emoji_font)
         rename_btn.clicked.connect(self._rename_current_session)
@@ -1757,7 +1796,7 @@ class AIChatPanel(QWidget):
         # ⚙ 会话设置按钮
         self._session_cfg_btn = QPushButton("⚙")
         self._session_cfg_btn.setFixedSize(*L.ICON_BTN_SIZE)
-        self._session_cfg_btn.setToolTip("会话设置")
+        self._session_cfg_btn.setToolTip(translate("CATIACopilot", "会话设置"))
         self._session_cfg_btn.setStyleSheet(_icon_style)
         self._session_cfg_btn.setFont(_emoji_font)
         self._session_cfg_btn.clicked.connect(self._open_session_config)
@@ -1766,7 +1805,7 @@ class AIChatPanel(QWidget):
         # 📊 模型状态按钮
         model_state_btn = QPushButton("📊")
         model_state_btn.setFixedSize(*L.ICON_BTN_SIZE)
-        model_state_btn.setToolTip("模型状态 — 查看当前零件的特征树、质量属性和步骤日志")
+        model_state_btn.setToolTip(translate("CATIACopilot", "模型状态 — 查看当前零件的特征树、质量属性和步骤日志"))
         model_state_btn.setStyleSheet(_icon_style)
         model_state_btn.setFont(_emoji_font)
         model_state_btn.clicked.connect(self._toggle_model_state)
@@ -1797,8 +1836,8 @@ class AIChatPanel(QWidget):
         layout.addWidget(self._model_combo)
 
         # ⚙ 全局设置
-        self._settings_btn = QPushButton("⚙ 全局设置")
-        self._settings_btn.setToolTip("全局 AI 设置（API Key、默认模型、Temperature 等）")
+        self._settings_btn = QPushButton(translate("CATIACopilot", "⚙ 全局设置"))
+        self._settings_btn.setToolTip(translate("CATIACopilot", "全局 AI 设置（API Key、默认模型、Temperature 等）"))
         self._settings_btn.clicked.connect(self._open_settings)
         layout.addWidget(self._settings_btn)
 
@@ -1851,11 +1890,11 @@ class AIChatPanel(QWidget):
         self._input_box = QTextEdit()
         self._input_box.setAcceptRichText(False)   # 粘贴时自动剥离格式，只保留纯文本
         self._input_box.setMinimumHeight(60)       # 最小高度，防止拖到消失
-        self._input_box.setPlaceholderText("输入消息... (Ctrl+Enter 发送，Enter 换行)")
+        self._input_box.setPlaceholderText(translate("CATIACopilot", "输入消息... (Ctrl+Enter 发送，Enter 换行)"))
         self._input_box.installEventFilter(self)
         layout.addWidget(self._input_box, 1)
 
-        self._send_btn = QPushButton("发送")
+        self._send_btn = QPushButton(translate("CATIACopilot", "发送"))
         self._send_btn.setFixedSize(*L.SEND_BTN_SIZE)
         self._send_btn.clicked.connect(self._on_send_or_stop)
         layout.addWidget(self._send_btn)
@@ -1966,7 +2005,7 @@ class AIChatPanel(QWidget):
         self._refresh_model_combo_for_session()
         # 按钮恢复为"发送"（草稿无 worker）
         self._send_btn.setEnabled(True)
-        self._send_btn.setText("发送")
+        self._send_btn.setText(translate("CATIACopilot", "发送"))
 
     def _switch_session(self, session_id: str):
         """切换到指定会话（不停止后台 worker，保持后台生成继续运行）。"""
@@ -1998,10 +2037,10 @@ class AIChatPanel(QWidget):
         if session_id in self._workers:
             self._restore_gen_state(session_id)
             self._send_btn.setEnabled(False)
-            self._send_btn.setText("⏹ 停止")
+            self._send_btn.setText(translate("CATIACopilot", "⏹ 停止"))
         else:
             self._send_btn.setEnabled(True)
-            self._send_btn.setText("发送")
+            self._send_btn.setText(translate("CATIACopilot", "发送"))
         self._update_session_title()
         self._refresh_model_combo_for_session()
 
@@ -2010,7 +2049,7 @@ class AIChatPanel(QWidget):
         if self._current_session is None:
             return
         new_name, ok = QInputDialog.getText(
-            self, "重命名会话", "新名称：",
+            self, translate("CATIACopilot", "重命名会话"), translate("CATIACopilot", "新名称："),
             text=self._current_session.name
         )
         if ok and new_name.strip():
@@ -2022,7 +2061,7 @@ class AIChatPanel(QWidget):
     def _update_session_title(self):
         """更新工具栏会话标题（固定宽度 120px，用 elidedText 截断）。"""
         session = self._current_session
-        name = session.name if session else "新对话"
+        name = session.name if session else translate("CATIACopilot", "新对话")
         fm = self._session_title.fontMetrics()
         # 留 4px 内边距余量
         elided = fm.elidedText(name, Qt.TextElideMode.ElideRight, 116)
@@ -2033,20 +2072,21 @@ class AIChatPanel(QWidget):
     def _update_session_title_tooltip(self, name_elided: bool = False):
         """更新会话名和 ⚙ 按钮的 tooltip（含工作空间信息）。"""
         session = self._current_session
-        name = session.name if session else "新对话"
+        name = session.name if session else translate("CATIACopilot", "新对话")
         ws = session.workspace if session else None
-        ws_text = ws if ws else "不限制"
+        ws_text = ws if ws else translate("CATIACopilot", "不限制")
 
         # 会话名 tooltip：省略时显示完整名，始终附上工作空间
         title_tip_parts = []
         if name_elided:
             title_tip_parts.append(name)
-        title_tip_parts.append(f"工作空间：{ws_text}")
+        title_tip_parts.append(translate("CATIACopilot", "工作空间：{0}").format(ws_text))
         self._session_title.setToolTip("\n".join(title_tip_parts))
 
         # ⚙ 会话设置按钮 tooltip
         self._session_cfg_btn.setToolTip(
-            f"会话设置（模型、上下文长度、工作空间）\n当前工作空间：{ws_text}"
+            translate("CATIACopilot",
+                      "会话设置（模型、上下文长度、工作空间）\n当前工作空间：{0}").format(ws_text)
         )
 
     def _refresh_model_combo_for_session(self):
@@ -2190,7 +2230,9 @@ class AIChatPanel(QWidget):
 
             # Provider 标题行（多 provider 时显示）
             if len(groups) > 1:
-                display = _PROVIDER_DISPLAY.get(group["provider_type"], group["provider_name"])
+                display = (_provider_type_label(group["provider_type"])
+                   if group["provider_type"] in _PROVIDER_DISPLAY
+                   else group["provider_name"])
                 header = QStandardItem(f"▶ {display}")
                 header.setEnabled(False)
                 header.setData("__header__", Qt.ItemDataRole.UserRole)
@@ -2393,7 +2435,7 @@ class AIChatPanel(QWidget):
         worker.usage_updated.connect(lambda p, c, s=sid: self._on_usage_updated(s, p, c))
         worker.start()
 
-        self._send_btn.setText("⏹ 停止")
+        self._send_btn.setText(translate("CATIACopilot", "⏹ 停止"))
 
     # ── AgentWorker 信号处理 ──────────────────────────────────────────────────
 
@@ -2410,7 +2452,7 @@ class AIChatPanel(QWidget):
         sid = self._current_session.session_id if self._current_session else None
         if sid and sid in self._workers:
             self._workers[sid].stop()
-            self._send_btn.setText("停止中…")
+            self._send_btn.setText(translate("CATIACopilot", "停止中…"))
             self._send_btn.setEnabled(False)
         else:
             self._send_message()
@@ -2545,7 +2587,7 @@ class AIChatPanel(QWidget):
             self._current_ai_widget = None
             self._remove_typing_indicator()
             self._send_btn.setEnabled(True)
-            self._send_btn.setText("发送")
+            self._send_btn.setText(translate("CATIACopilot", "发送"))
 
         # 写入 assistant 消息 + 保存
         if session is not None:
@@ -2569,13 +2611,13 @@ class AIChatPanel(QWidget):
 
         if is_visible:
             self._remove_typing_indicator()
-            err_widget = _ErrorMessageWidget(f"错误：{error_msg}", self._chat_container)
+            err_widget = _ErrorMessageWidget(translate("CATIACopilot", "错误：{0}").format(error_msg), self._chat_container)
             self._insert_widget(err_widget)
             self._current_ai_widget = None
             self._current_tool_widget = None
             self._pending_tool_call = None
             self._send_btn.setEnabled(True)
-            self._send_btn.setText("发送")
+            self._send_btn.setText(translate("CATIACopilot", "发送"))
 
         if session is not None:
             self._sm.save_session(session)
@@ -2695,7 +2737,7 @@ class AIChatPanel(QWidget):
             self._sm.save_session(self._current_session)
         self._clear_chat_widgets()
         self._send_btn.setEnabled(True)
-        self._send_btn.setText("发送")
+        self._send_btn.setText(translate("CATIACopilot", "发送"))
 
     def stop_agent(self):
         """主窗口关闭时调用：停止所有后台线程，保存所有会话。"""

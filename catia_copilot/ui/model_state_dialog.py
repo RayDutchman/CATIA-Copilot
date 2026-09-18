@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
+from catia_copilot.i18n import translate
+
 _STYLE_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "styles", "native.qss")
 
 
@@ -85,12 +87,12 @@ class ModelStateDialog(QDialog):
         root.setSpacing(6)
 
         # ── 标题行 ───────────────────────────────────────────────
-        self._title_label = QLabel("模型状态")
+        self._title_label = QLabel(translate("CATIACopilot", "模型状态"))
         self._title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         root.addWidget(self._title_label)
 
         # ── 分区：特征树 ──────────────────────────────────────────
-        feat_label = QLabel("特征树")
+        feat_label = QLabel(translate("CATIACopilot", "特征树"))
         feat_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
         root.addWidget(feat_label)
 
@@ -104,7 +106,7 @@ class ModelStateDialog(QDialog):
         root.addWidget(self._feat_tree)
 
         # ── 分区：质量属性 ────────────────────────────────────────
-        mass_label = QLabel("质量属性")
+        mass_label = QLabel(translate("CATIACopilot", "质量属性"))
         mass_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
         root.addWidget(mass_label)
 
@@ -113,15 +115,15 @@ class ModelStateDialog(QDialog):
         mass_form.setSpacing(2)
 
         self._mass_value = QLabel("—")
-        mass_form.addRow("质量：", self._mass_value)
+        mass_form.addRow(translate("CATIACopilot", "质量："), self._mass_value)
 
         self._cog_value = QLabel("—")
-        mass_form.addRow("重心：", self._cog_value)
+        mass_form.addRow(translate("CATIACopilot", "重心："), self._cog_value)
 
         root.addLayout(mass_form)
 
         # ── 分区：步骤日志 ────────────────────────────────────────
-        steps_label = QLabel("步骤日志")
+        steps_label = QLabel(translate("CATIACopilot", "步骤日志"))
         steps_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
         root.addWidget(steps_label)
 
@@ -136,7 +138,7 @@ class ModelStateDialog(QDialog):
         # ── 底部：关闭按钮 ────────────────────────────────────────
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(translate("CATIACopilot", "关闭"))
         close_btn.clicked.connect(self.close)
         btn_layout.addWidget(close_btn)
         root.addLayout(btn_layout)
@@ -146,22 +148,28 @@ class ModelStateDialog(QDialog):
         part_name = state.get("part_name", "—")
         success = state.get("success", None)
         if success is False:
-            self._title_label.setText("模型状态 — 失败")
+            self._title_label.setText(translate("CATIACopilot", "模型状态 — 失败"))
         elif part_name and part_name != "—":
-            self._title_label.setText(f"模型状态 — {part_name}")
+            self._title_label.setText(
+                translate("CATIACopilot", "模型状态 — {0}").format(part_name)
+            )
         else:
-            self._title_label.setText("模型状态 — 无数据")
+            self._title_label.setText(translate("CATIACopilot", "模型状态 — 无数据"))
 
     def _update_features(self, state: dict) -> None:
         self._feat_tree.clear()
         features = state.get("features", [])
         if not features:
-            item = QTreeWidgetItem(self._feat_tree, ["无特征"])
+            item = QTreeWidgetItem(
+                self._feat_tree, [translate("CATIACopilot", "无特征")]
+            )
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             return
 
         # 根节点：零件几何体（CATIA 默认 Body）
-        body = QTreeWidgetItem(self._feat_tree, ["零件几何体"])
+        body = QTreeWidgetItem(
+            self._feat_tree, [translate("CATIACopilot", "零件几何体")]
+        )
         body.setExpanded(True)
         for fn in features:
             child = QTreeWidgetItem(body, [fn])
@@ -175,7 +183,7 @@ class ModelStateDialog(QDialog):
         if mass is not None:
             self._mass_value.setText(f"{mass:.3f} kg")
         else:
-            self._mass_value.setText("—（未赋材料或无数据）")
+            self._mass_value.setText(translate("CATIACopilot", "—（未赋材料或无数据）"))
 
         if cog is not None and len(cog) == 3:
             self._cog_value.setText(f"({cog[0]:.1f}, {cog[1]:.1f}, {cog[2]:.1f}) mm")
@@ -186,7 +194,7 @@ class ModelStateDialog(QDialog):
         self._steps_log.clear()
         steps = state.get("steps", [])
         if not steps:
-            self._steps_log.setPlainText("— 无步骤记录 —")
+            self._steps_log.setPlainText(translate("CATIACopilot", "— 无步骤记录 —"))
             return
 
         lines = []
