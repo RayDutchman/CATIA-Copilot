@@ -1555,6 +1555,9 @@ class MassPropsDialog(QDialog):
                     value = FILENAME_UNSAVED
                 else:
                     value = Path(fp).name if fp else fn
+                    if is_mirror and value == "(虚拟)":
+                        # 镜像行虚拟文件名的数据值保持中文，仅显示层翻译（导出恒中文）
+                        value = translate("CATIACopilot", "(虚拟)")
                 item.setText(col_idx, value)
                 if no_file:
                     pass  # tooltip 由下方 no_file 块统一设置
@@ -1594,7 +1597,11 @@ class MassPropsDialog(QDialog):
                 raw = str(row_data.get("Type", ""))
                 item.setText(col_idx, type_display(raw))
             else:
-                item.setText(col_idx, str(row_data.get(col_name, "")))
+                text = str(row_data.get(col_name, ""))
+                if is_mirror and col_name in ("Part Number", "Instance Name") and text.endswith(" (对称件)"):
+                    # 镜像行数据层保留中文后缀（导出恒中文），仅显示层翻译后缀
+                    text = text[: -len(" (对称件)")] + translate("CATIACopilot", " (对称件)")
+                item.setText(col_idx, text)
 
         # 可编辑性：仅未锁定零件行的 Weight 和 Density（有效值）列可编辑
         if node_type == BomNodeType.PART and not row_locked:

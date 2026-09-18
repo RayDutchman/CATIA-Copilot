@@ -251,3 +251,15 @@
 - 最终审查遗漏已修复：Pull 全选按钮、历史清空确认框、质量特性文件过滤器均已纳入翻译；可达 UI 裸中文 AST 守卫已加入。
 - 阶段测试最终结果：全量 `unittest discover` **242 tests OK，退出码 0**；主包语法与关键模块导入通过。
 - 仍需真实环境验收：CATIA COM、DocDoku PLM、Nuitka 安装包在目标机器上的启动和运行；pytest/PySide6 Python 3.13 的退出阶段原生崩溃曾出现过，标准 unittest 全量退出码已为 0。
+
+## i18n 收尾修复（2026-09-18 下午）
+
+可达 UI 复核遗留三处显示层问题修复；数据层/业务判定不变，未 commit / push / stash / reset。
+
+1. **mass_props 镜像行显示层**（`mass_props_dialog.py` `_make_item`）：镜像 PN / 实例名 ` (对称件)` 后缀与虚拟文件名 `(虚拟)` 改渲染时段 `translate`，数据行（`_rows` 与导出内容）恒中文。
+2. **bom 右键「填充」菜单列名插值**（`bom_edit_dialog_v3.py`：3271）：`_fill_col_display` 由静态 `BOM_COLUMN_DISPLAY_NAMES` 残留改用运行时 `bom_column_display(fill_col_name)`，英文界面下填充菜单不再残留中文列名；`_export_header` 仍走既有映射（导出表头恒中文，不变）。
+3. **session_config 默认模型判定**（`session_config_dialog.py` `_apply_and_accept`）：`text.startswith("使用全局默认")` 中文前缀依赖 → `text == self._model_combo.itemText(0).strip()`，显示文本随语言翻译仍判定正确。
+- **测试**：`test_mass_props_i18n` 新增 `TestMirrorRowDisplayLayer`（zh 回退 / en 显示翻译且数据层不变）并在导出断言加入镜像行恒中文；`test_bom_edit_dialog_i18n` 新增 `TestFillMenuUsesRuntimeDisplay`（源码 AST 守卫 + FakeMenu 行为，zh=首行内容填充（零件编号）/ en=Fill from first row (Part number)）；`test_i18n_ai_dialogs` 判定断言改 `itemText(0)` + 新增默认/自定义模型行为测试。
+- **TS/QM**：`pyside6-lupdate` 18 文件合并新增 2 source（1002→**1007 条**），en_US 补 ` (Mirror)`/`(Virtual)`、zh_CN identity，两侧 0 unfinished / 0 空；`pyside6-lrelease` 各 1007 finished / 0 unfinished。
+- **交接清单同步**：`docs/i18n-phase2-translations.json` +2 键（保持 `test_lupdate_extraction` 双向一致）；`docs/en_phase2_extra.json` +2 键。
+- **验证**：全量 `python -m unittest discover -s catia_copilot/tests -t .` **249 tests OK，退出码 0**；`python scripts/verify_translations.py` **退出码 0**（TS/Lupdate 双向 0 缺 / 0 余）。

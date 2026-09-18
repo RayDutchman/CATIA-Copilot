@@ -1106,14 +1106,14 @@ Make sure CATIA is running.</translation>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="1117"/>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="1194"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2708"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2715"/>
         <source>该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。</source>
         <translation>CATIA could not retrieve the file of this part/product; row content is not editable.</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="1119"/>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="1196"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2714"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2721"/>
         <source>该零件/产品处于轻量化模式，无法读取属性。</source>
         <translation>This part/product is in lightweight mode; attributes cannot be read.</translation>
     </message>
@@ -1365,7 +1365,7 @@ See the status bar and log for details.</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="2575"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2931"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2938"/>
         <source>无 COM 引用</source>
         <translation>No COM reference</translation>
     </message>
@@ -1562,7 +1562,7 @@ Old file: {0}</translation>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="2944"/>
         <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1363"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1993"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2000"/>
         <source>无数据</source>
         <translation>No data</translation>
     </message>
@@ -1585,7 +1585,7 @@ Old file: {0}</translation>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3031"/>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3037"/>
         <location filename="../../catia_copilot/ui/export_bom_dialog.py" line="486"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2033"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2040"/>
         <source>导出失败</source>
         <translation>Export failed</translation>
     </message>
@@ -1598,7 +1598,7 @@ Old file: {0}</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3037"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2033"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2040"/>
         <source>导出时出错：
 {0}</source>
         <translation>Error during export:
@@ -1608,7 +1608,7 @@ Old file: {0}</translation>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3045"/>
         <location filename="../../catia_copilot/ui/export_bom_dialog.py" line="497"/>
         <location filename="../../catia_copilot/ui/export_bom_dialog.py" line="503"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2038"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2045"/>
         <source>导出成功</source>
         <translation>Export successful</translation>
     </message>
@@ -1623,28 +1623,28 @@ Old file: {0}</translation>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3048"/>
         <location filename="../../catia_copilot/ui/export_bom_dialog.py" line="506"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2041"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2048"/>
         <source>打开文件</source>
         <translation>Open file</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3049"/>
         <location filename="../../catia_copilot/ui/export_bom_dialog.py" line="507"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2042"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2049"/>
         <source>打开所在文件夹</source>
         <translation>Open containing folder</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3211"/>
         <location filename="../../catia_copilot/ui/find_deps_dialog.py" line="766"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2770"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2777"/>
         <source>打开路径</source>
         <translation>Open path</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3219"/>
         <location filename="../../catia_copilot/ui/find_deps_dialog.py" line="774"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2780"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2787"/>
         <source>复制路径</source>
         <translation>Copy path</translation>
     </message>
@@ -1656,7 +1656,7 @@ Old file: {0}</translation>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3238"/>
         <location filename="../../catia_copilot/ui/find_deps_dialog.py" line="778"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2784"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2791"/>
         <source>在 CATIA 中打开</source>
         <translation>Open in CATIA</translation>
     </message>
@@ -1721,13 +1721,13 @@ Old file: {0}</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3538"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2913"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2920"/>
         <source>在 CATIA 中打开失败</source>
         <translation>Failed to open in CATIA</translation>
     </message>
     <message>
         <location filename="../../catia_copilot/ui/bom_edit_dialog_v3.py" line="3538"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2913"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2920"/>
         <source>无法在 CATIA 中打开文件：
 {0}</source>
         <translation>Cannot open file in CATIA:
@@ -2696,7 +2696,7 @@ Please verify the copy result manually.</translation>
         <translation>Type:</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2879"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2886"/>
         <location filename="../../catia_copilot/ui/ai_chat_panel.py" line="1064"/>
         <source>确认删除</source>
         <translation>Confirm delete</translation>
@@ -3973,94 +3973,104 @@ Make sure CATIA is running and has an active document.</translation>
         <translation>(ungrouped)</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1572"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2612"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3207"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1560"/>
+        <source>(虚拟)</source>
+        <translation>(Virtual)</translation>
+    </message>
+    <message>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1575"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2619"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3214"/>
         <source>不统一</source>
         <translation>Not identical</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1619"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2674"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1603"/>
+        <source> (对称件)</source>
+        <translation> (Mirror)</translation>
+    </message>
+    <message>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1626"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2681"/>
         <source>该行已被排除，不参与计算。</source>
         <translation>This row is excluded and does not participate in the calculation.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1696"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1703"/>
         <source>重量不合法</source>
         <translation>Illegal weight</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1697"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1704"/>
         <source>重量必须为正数，请输入大于 0 的值。</source>
         <translation>Weight must be a positive number; enter a value greater than 0.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1729"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1736"/>
         <source>密度不合法</source>
         <translation>Illegal density</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1730"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1737"/>
         <source>密度必须为正数，请输入大于 0 的值。</source>
         <translation>Density must be a positive number; enter a value greater than 0.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1897"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1904"/>
         <source>计算失败</source>
         <translation>Calculation failed</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1897"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1904"/>
         <source>计算总质量特性时出错：
 {0}</source>
         <translation>Error computing total mass properties:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="1993"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2000"/>
         <source>请先加载产品树数据。</source>
         <translation>Load the product tree data first.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2010"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2017"/>
         <source>导出质量特性表格</source>
         <translation>Export mass property table</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2012"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2019"/>
         <source>Excel 文件 (*.xlsx);;CSV 文件 (*.csv)</source>
         <translation>Excel File (*.xlsx);;CSV File (*.csv)</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2039"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2046"/>
         <source>文件已成功导出：
 {0}</source>
         <translation>File exported successfully:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2711"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2718"/>
         <source>该零件的质量特性测量失败，行内容不可编辑。</source>
         <translation>Mass property measurement failed for this part; row content is not editable.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2720"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2727"/>
         <source>该零件尚未保存到磁盘，质量特性数据可能不完整。</source>
         <translation>This part has not been saved to disk; mass property data may be incomplete.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2800"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2807"/>
         <source>刷新质量特性（子树范围）</source>
         <translation>Refresh mass properties (subtree scope)</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2800"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2807"/>
         <source>刷新质量特性</source>
         <translation>Refresh mass properties</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2810"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2817"/>
         <source>通过 CATIA COM 引用直接重新测量选中节点及其子树内所有零件的质量特性。
 按当前面板选择的「Analyze」或「惯量包络体」方式执行。
 无需零件文件已保存到磁盘，适用于尚未保存的新建零件。</source>
@@ -4069,7 +4079,7 @@ Executed with the “Analyze” or “Inertia Envelope” method selected on the
 The part files need not be saved to disk; suitable for newly created unsaved parts.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2816"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2823"/>
         <source>通过 CATIA COM 引用重新测量当前零件的质量特性。
 按当前面板选择的「Analyze」或「惯量包络体」方式执行。
 无需零件文件已保存到磁盘。</source>
@@ -4078,88 +4088,88 @@ Executed with the “Analyze” or “Inertia Envelope” method selected on the
 The part file need not be saved to disk.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2832"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2839"/>
         <source>参与计算：×</source>
         <translation>In calculation: ×</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2834"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2841"/>
         <source>参与计算：切换</source>
         <translation>In calculation: toggle</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2836"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2843"/>
         <source>参与计算：√</source>
         <translation>In calculation: √</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2838"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2845"/>
         <source>删除本行</source>
         <translation>Delete this row</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2838"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2845"/>
         <source>删除选中 {0} 行</source>
         <translation>Delete {0} selected row(s)</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2841"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2848"/>
         <source>增加对称件</source>
         <translation>Add mirror</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2874"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2881"/>
         <source>确定要删除「{0}」及其子节点吗？
 此操作不可撤销。</source>
         <translation>Delete “{0}” and its child nodes?
 This action cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2876"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2883"/>
         <source>确定要删除选中的 {0} 行（及各自的子节点）吗？
 此操作不可撤销。</source>
         <translation>Delete the {0} selected row(s) (and their child nodes)?
 This action cannot be undone.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2932"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2939"/>
         <source>零件「{0}」没有有效的 COM 引用（可能来自载入文件），无法刷新。</source>
         <translation>Part “{0}” has no valid COM reference (possibly from a loaded file); cannot refresh.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2951"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3121"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2958"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3128"/>
         <source>刷新失败</source>
         <translation>Refresh failed</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2951"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2958"/>
         <source>零件「{0}」质量特性测量失败。</source>
         <translation>Mass property measurement failed for part “{0}”.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2982"/>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3171"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2989"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3178"/>
         <source>刷新完成</source>
         <translation>Refresh complete</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2982"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="2989"/>
         <source>零件「{0}」质量特性已刷新。</source>
         <translation>Mass properties of part “{0}” refreshed.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3050"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3057"/>
         <source>无零件行</source>
         <translation>No part rows</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3051"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3058"/>
         <source>选中节点及其子树内没有可刷新的零件行。</source>
         <translation>No refreshable part rows under the selected node and its subtree.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3122"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3129"/>
         <source>子树内所有零件均未能重新测量。
 
 失败零件：
@@ -4170,22 +4180,22 @@ Failed parts:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3163"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3170"/>
         <source>已刷新 {0} 个子树内零件节点</source>
         <translation>Refreshed {0} part node(s) inside the subtree</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3165"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3172"/>
         <source>，另同步 {0} 个子树外同零件实例</source>
         <translation>, and {0} instance(s) of the same part outside the subtree were synchronized</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3166"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3173"/>
         <source>。</source>
         <translation>.</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3168"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3175"/>
         <source>
 
 以下零件刷新失败：
@@ -4196,7 +4206,7 @@ The following parts failed to refresh:
 {0}</translation>
     </message>
     <message>
-        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3169"/>
+        <location filename="../../catia_copilot/ui/mass_props_dialog.py" line="3176"/>
         <source>部分刷新失败</source>
         <translation>Partial refresh failure</translation>
     </message>

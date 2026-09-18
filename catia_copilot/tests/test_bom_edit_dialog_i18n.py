@@ -8,13 +8,18 @@
 4. _read_source_raw / _set_combo_value 的行为。
 """
 import os
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QPoint, QTranslator, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QComboBox, QTreeWidgetItem  # noqa: E402
 
+import catia_copilot.ui.bom_edit_dialog_v3 as bed3  # noqa: E402
 from catia_copilot.ui.bom_edit_dialog_v3 import (  # noqa: E402
     BomEditDialogV3,
     _build_source_combo,
@@ -183,6 +188,115 @@ class TestHeaders(_BomI18nTestCase):
         self.assertEqual(dlg._export_header("Source"), "源")
         dlg._show_filepath_col = True
         self.assertEqual(dlg._export_header("Filename"), "完整路径")
+
+
+class _FakeAction:
+    """上下文菜单 action 替身：仅收集插值后的菜单文本。"""
+
+    def __init__(self, text):
+        self.text = text
+
+    def setEnabled(self, *a, **k):
+        pass
+
+    def setToolTip(self, *a, **k):
+        pass
+
+
+class _FakeMenu:
+    """QMenu 替身：addAction 记录插值后文本，exec 立即返回 None 结束菜单流程。"""
+
+    def __init__(self, *a, **k):
+        self.actions = []
+
+    def addAction(self, text=None, *a, **k):
+        self.actions.append(text)
+        return _FakeAction(text)
+
+    def addSeparator(self):
+        self.actions.append("SEP")
+
+    def exec(self, *a, **k):
+        return None
+
+
+def _build_tmp_en_qm() -> Path:
+    """真实 pyside6-lrelease 编译仅含填充菜单词条的临时 en_US qm。"""
+    entries = [
+        ("零件编号", "Part number"),
+        ("首行内容填充（{0}）", "Fill from first row ({0})"),
+        ("序列填充（{0}）", "Sequence fill ({0})"),
+    ]
+    d = Path(tempfile.mkdtemp())
+    ts = d / "tmp_bom_fill_en.ts"
+    msgs = "".join(
+        f"<message><source>{src}</source><translation>{tr}</translation></message>\n"
+        for src, tr in entries
+    )
+    ts.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<TS version="2.1" language="en_US">\n'
+        '<context><name>CATIACopilot</name>\n'
+        f"{msgs}"
+        "</context></TS>",
+        encoding="utf-8",
+    )
+    subprocess.run(["pyside6-lrelease", str(ts)], check=True, capture_output=True)
+    return d / "tmp_bom_fill_en.qm"
+
+
+class TestFillMenuUsesRuntimeDisplay(_BomI18nTestCase):
+    """右键“填充”菜单的列名插值必须来自运行时 bom_column_display 工厂。"""
+
+    def test_source_uses_runtime_factory_not_static_dict(self) -> None:
+        code = Path(bed3.__file__).read_text(encoding="utf-8")
+        self.assertIn("_fill_col_display = bom_column_display(fill_col_name)",
+                      code, "填充菜单列名必须改用运行时工厂 bom_column_display")
+        self.assertNotIn("_fill_col_display = BOM_COLUMN_DISPLAY_NAMES", code,
+                         "填充菜单不得再走静态 BOM_COLUMN_DISPLAY_NAMES")
+
+    def _two_row_dialog(self):
+        dlg = self._make_dialog()
+        dlg._columns = ["#", "Part Number"]
+        dlg._rows = [{"_inst_key": 1, "_pm_key": "pm1", "Source": "1"},
+                     {"_inst_key": 2, "_pm_key": "pm2", "Source": "1"}]
+        dlg._bom_loaded = True
+        items = [QTreeWidgetItem(dlg._table, ["#", "P1"]),
+                 QTreeWidgetItem(dlg._table, ["#", "P2"])]
+        for it, i in zip(items, (0, 1)):
+            it.setData(0, Qt.ItemDataRole.UserRole, i)
+        return dlg, items
+
+    def _run_ctx_menu(self, dlg, items) -> _FakeMenu:
+        fake = _FakeMenu()
+        with patch.object(dlg._table, "itemAt", return_value=items[0]), \
+                patch.object(dlg._table, "columnAt", return_value=1), \
+                patch.object(dlg._table, "selectedItems", return_value=items), \
+                patch.object(bed3, "QMenu", return_value=fake):
+            dlg._on_tree_context_menu(QPoint(0, 0))
+        return fake
+
+    def test_zh_inserts_chinese_column_name(self) -> None:
+        dlg, items = self._two_row_dialog()
+        fake = self._run_ctx_menu(dlg, items)
+        self.assertIn("首行内容填充（零件编号）", fake.actions)
+
+    def test_en_inserts_translated_column_name(self) -> None:
+        try:
+            qm = _build_tmp_en_qm()
+        except Exception as exc:
+            self.skipTest(f"pyside6-lrelease 不可用：{exc}")
+        tr = QTranslator(_QAPP)
+        try:
+            self.assertTrue(tr.load(str(qm)), "临时 qm 加载失败")
+            _QAPP.installTranslator(tr)
+            dlg, items = self._two_row_dialog()
+            fake = self._run_ctx_menu(dlg, items)
+            self.assertIn("Fill from first row (Part number)", fake.actions)
+            self.assertNotIn("首行内容填充（零件编号）", fake.actions)
+        finally:
+            _QAPP.removeTranslator(tr)
+            tr.deleteLater()
 
 
 if __name__ == "__main__":

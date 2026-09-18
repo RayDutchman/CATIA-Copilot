@@ -281,11 +281,13 @@ class TestJsonHandoffTable(unittest.TestCase):
         self.assertIn('symbol = "\u2713" if status == "ok" else "\u2717"', code,
                       "✓/✗ 符号映射不应被改动")
 
-    def test_session_config_default_judgment_preserved(self) -> None:
-        """_apply_and_accept 对“使用全局默认”的判定保持中文原值（不改业务逻辑）。"""
+    def test_session_config_default_judgment_not_chinese(self) -> None:
+        """_apply_and_accept 对“使用全局默认”的判定与下拉第 0 项显示文本比较（随语言）。"""
         code = _FILES["session_config"].read_text(encoding="utf-8")
-        self.assertIn('text.startswith("使用全局默认")', code,
-                      "默认模型判定必须保持中文原值")
+        self.assertIn("itemText(0)", code,
+                      "默认模型判定必须与下拉第 0 项显示文本比较")
+        self.assertNotIn('startswith("使用全局默认")', code,
+                         "判定不得再依赖中文字面量")
 
 
 class TestRealLupdateExtraction(unittest.TestCase):
@@ -417,6 +419,40 @@ class TestSessionConfigDialogTexts(unittest.TestCase):
             self.assertIsNone(sess.config["temperature"])
             self.assertEqual(sess.config["max_context_messages"], 42)
             self.assertEqual(sess.workspace, "D:/ws")
+        finally:
+            _cleanup(dlg)
+
+    def test_apply_typed_global_default_text_maps_to_empty(self) -> None:
+        """手动输入与第 0 项（使用全局默认）显示文本一致 → 写回全局默认（""）。
+
+        中英文各跑一遍：判定必须与随语言的 itemText(0) 比较，而非中文字面量。
+        """
+        for en, sid in ((False, "s1"), (True, "s2")):
+            with _session_config_env(en=en):
+                sess = ChatSession(session_id=sid,
+                                   name="Test Session" if en else "测试会话")
+                dlg = sd.SessionConfigDialog(sess)
+            try:
+                combo = dlg._model_combo
+                combo.setCurrentIndex(-1)  # 取消选择 → currentData() 为 None（手工输入态）
+                combo.setEditText(combo.itemText(0))
+                dlg._apply_and_accept()
+                self.assertEqual(sess.model, "",
+                                 f"en={en}：等于第 0 项文本应写回全局默认")
+            finally:
+                _cleanup(dlg)
+
+    def test_apply_typed_custom_model_id_written_back(self) -> None:
+        """英文界面手动输入自定义模型 ID → 原样写回（不再按中文前缀过滤）。"""
+        with _session_config_env(en=True):
+            sess = ChatSession(session_id="s3", name="Test Session")
+            dlg = sd.SessionConfigDialog(sess)
+        try:
+            combo = dlg._model_combo
+            combo.setCurrentIndex(-1)
+            combo.setEditText("claude-sonnet-4")
+            dlg._apply_and_accept()
+            self.assertEqual(sess.model, "claude-sonnet-4")
         finally:
             _cleanup(dlg)
 

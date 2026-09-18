@@ -741,7 +741,7 @@ rg -n "TYPE_DISPLAY_NAMES|BOM_COLUMN_DISPLAY_NAMES|MASS_PROPS_COLUMN_DISPLAY_NAM
 - `BomNodeType`、`BOM_READONLY_COLUMNS`、`BOM_COLUMN_MIN_WIDTHS`、`BOM_EDIT_DELETED_ROW_PAD_TOP`、`PRESET_USER_REF_PROPERTIES`、`PRESET_USER_REF_PROPERTY_OPTIONS`、`PLM_MEMBER_TABLE_COLUMNS`、`FILENAME_NOT_FOUND`、`FILENAME_UNSAVED`、`BOM_TABLE_DEFAULT_WIDTH`、`CATIA_COPILOT_MODULES`、column key 常量、`SOURCE_*` 的 `'0'/'1'/'2'` **保留原样不译不改**。
 - 仅显示用字面量（`"物料编码"`、`"设计状态"`、`"草稿/冻结/发布/废弃"` 等 USER_PROP 的值）**若被写入 CATIA 则不改**；确认哪些仅 UI 展示。
 
-- [ ] **Step 3: 提供运行时等价物**（在 `constants.py` 内或就近新增函数，**不得在 import 期执行 translate**；采用固定 label 工厂，函数体内逐 key 直接写 `translate("CATIACopilot", "原中文字面量")` **字面量调用**，使 lupdate 可提取）：
+- [x] **Step 3: 提供运行时等价物**（在 `constants.py` 内或就近新增函数，**不得在 import 期执行 translate**；采用固定 label 工厂，函数体内逐 key 直接写 `translate("CATIACopilot", "原中文字面量")` **字面量调用**，使 lupdate 可提取）：
 
 ```python
 # 删除原 TYPE_DISPLAY_NAMES 等导入期中文字典；提供：
@@ -765,7 +765,7 @@ rg -n "SOURCE_FROM_DISPLAY|SOURCE_TO_DISPLAY" catia_copilot/ui/bom_edit_dialog_v
 ```
 对每个引用：展示走 `translate`，反查删除，回写走 itemData。`ABOUT_TEXT` 改为 `build_about_text()`（内用 `translate(...).format(APP_NAME, version, ...)`），帮助对话框与关于弹窗改用该函数。
 
-- [ ] **Step 5: 回归测试**（新增/更新断言）
+- [x] **Step 5: 回归测试**（新增/更新断言）
 
 `catia_copilot/tests/test_constants_i18n.py`：
 
@@ -884,11 +884,11 @@ Expected: 断言失败（当前文本反查 / 哨兵直接进行数据）。
 - 单元格/树项显示用 `translate("CATIACopilot", "未保存"/"未检索到")`，但 `_rows`、`bom_write`、`bom_collect` 写入/比对值仍用 `FILENAME_UNSAVED`/`FILENAME_NOT_FOUND` 常量。
 - 检查 ~L1029-1042、~L1069、~L1098、~L1174、~L2557 处：凡是**比对**用常量，凡是**显示**用 translate，核对无混淆。
 
-- [ ] **Step 5: 窗口其余文案**
+- [x] **Step 5: 窗口其余文案**（右键「填充」菜单列名插值已改用运行时 `bom_column_display({0})`，静态 `BOM_COLUMN_DISPLAY_NAMES` 残留已消除）
 
 `rg -n "[\u4e00-\u9fff]" catia_copilot/ui/bom_edit_dialog_v3.py` 列出全部中文；除业务值与类名外，按钮/标题/提示/列显头/右键菜单/校验消息全部改 `translate("CATIACopilot", "...")`；**不可变内容**（属性名 demo `PartNumber`、真实 UserProp 名）外提常量仍不译。
 
-- [ ] **Step 6: 回归测试 + 冒烟**
+- [x] **Step 6: 回归测试 + 冒烟**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_bom_edit_dialog_i18n -v
@@ -923,7 +923,7 @@ git commit -m "feat(i18n): BOM V3 对话框文案翻译，Source 回写改 itemD
 rg -n "[\u4e00-\u9fff]" catia_copilot/ui/mass_props_dialog.py
 ```
 
-- [ ] **Step 2: 界面文案翻译**
+- [x] **Step 2: 界面文案翻译**（镜像行 ` (对称件)`/`(虚拟)` 显示层随语言，数据层保持中文）
 
 质量特性列显头（来自 `MASS_PROPS_COLUMN_DISPLAY_NAMES` 的展示位置）在渲染处 `translate`；状态行（`计算质量特性中…` 等）翻译；单位/换算标签保留数值。**列内部 key 与 `bom_collect` 写入值不变。**
 
@@ -931,7 +931,7 @@ rg -n "[\u4e00-\u9fff]" catia_copilot/ui/mass_props_dialog.py
 
 导出分支**不接入界面翻译**：`mass_props_dialog.py` 导出段的表头/Sheet 名保持现有中文字面量工厂值原样；英文界面下导出仍中文，由 Task 2.4 回归断言锁定。
 
-- [ ] **Step 4: 测试**
+- [x] **Step 4: 测试**（`TestMirrorRowDisplayLayer`：zh 回退中文 / en 显示翻译与数据层不变；导出测试镜像行恒中文）
 
 ```python
 def test_columns_translate_and_keys_stable(self):
@@ -998,7 +998,7 @@ if __name__ == "__main__":
 
 （首版导出恒中文：无导出语言设置、无导出语言下拉框、无 `export_i18n` 模块。表头/Sheet 名保持现有中文字面量工厂值，本测试锁定「英文 UI 下导出仍中文」。）
 
-- [ ] **Step 2: 运行确认通过**
+- [x] **Step 2: 运行确认通过**（导出恒中文由 `test_mass_props_i18n.TestExportKeepsChineseUnderEnTranslator` 覆盖，含镜像行数据，实时 en 翻译器下导出仍中文）
 
 ```powershell
 python -m unittest catia_copilot.tests.test_export_chinese -v
@@ -1034,7 +1034,7 @@ rg -n "[\u4e00-\u9fff]" catia_copilot/ui/<目标文件>.py
 ```
 逐条标注：界面文案 / 业务值（不译）/ 配置 key（不译）/ 文件名（不译）。
 
-- [ ] **Step 2: 界面文案替换**
+- [x] **Step 2: 界面文案替换**（`session_config_dialog` 默认模型判定已改 `== itemText(0)`，不再依赖中文前缀）
 
 除业务值外所有 `QPushButton/QLabel/QGroupBox/QToolTip/消息框/联动警告` 的文本改为 `translate("CATIACopilot", "原中文字面量")`；**动态内容用 `.format()` 占位符**保持占位符数量中英一致。
 
@@ -1042,7 +1042,7 @@ rg -n "[\u4e00-\u9fff]" catia_copilot/ui/<目标文件>.py
 
 `bom_file_rename_dialog`：文件名模板、`SV_*.CATPART`；`convert_dialog`：文件扩展名、宏选择列表；`model_state_dialog`：属性名与选项值（真实 CATIA 值）；`session_config_dialog`：模块名、`QSettings` key、宏模块名；`template_dialog`：模板项值；`log_window`：日志文本（首轮不译，仅窗口装饰文案可译）。
 
-- [ ] **Step 4: 测试**
+- [x] **Step 4: 测试**（`test_i18n_ai_dialogs.TestSessionConfigDialogTexts` 新增默认模型与自定义模型写回行为断言）
 
 - 对无事件循环依赖的纯文案函数做直译断言（镜像 `test_i18n` 模式）。
 - 有 UI 的对话框：`translation` 检查 `findChildren(QLabel/QPushButton)` 文本不再含中文（业务值字段除外），或断言其等于对应 `translate` 结果。
@@ -1070,7 +1070,7 @@ class TestMigration(unittest.TestCase):
         pass  # 由该文件具体断言替换
 ```
 
-- [ ] **Step 5: 运行**
+- [x] **Step 5: 运行**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_<模块>_i18n -v

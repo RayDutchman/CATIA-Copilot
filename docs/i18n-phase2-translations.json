@@ -658,4 +658,7 @@
  "请选择一个 CATProduct 文件。": "Please select a CATProduct file.",
  "质量特性数据文件 (*.mpd)": "Mass Properties Data File (*.mpd)",
  "Excel 文件 (*.xlsx);;CSV 文件 (*.csv)": "Excel File (*.xlsx);;CSV File (*.csv)"
+,
+ " (对称件)": " (Mirror)",
+ "(虚拟)": "(Virtual)"
 }

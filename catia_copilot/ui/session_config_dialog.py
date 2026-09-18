@@ -266,10 +266,9 @@ class SessionConfigDialog(QDialog):
         if model_data is not None:
             self._session.model = model_data  # "" = 使用全局默认
         else:
-            # 用户手动输入了模型 ID
+            # 用户手动输入了模型 ID；若与第 0 项（使用全局默认）显示文本一致则视为全局默认
             text = self._model_combo.currentText().strip()
-            # 过滤掉"使用全局默认（...）"这种显示文字
-            if text.startswith("使用全局默认"):
+            if text == self._model_combo.itemText(0).strip():
                 self._session.model = ""
             else:
                 self._session.model = text

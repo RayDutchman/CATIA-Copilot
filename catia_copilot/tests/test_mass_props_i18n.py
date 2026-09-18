@@ -33,6 +33,8 @@ _EN_QM_ENTRIES = [
     ("密度 (kg/m³)", "Density (kg/m3)"),
     ("不统一", "Inconsistent"),
     ("总计 (根产品)", "Total (root product)"),
+    (" (对称件)", " (Mirror)"),
+    ("(虚拟)", "(Virtual)"),
 ]
 
 
@@ -127,6 +129,9 @@ class TestExportKeepsChineseUnderEnTranslator(unittest.TestCase):
         ]
         dlg._get_hierarchy_rows = lambda: [  # noqa: E731
             {"Part Number": "P1", "Type": "零件", "Density": -1.0, "Weight": 1.2},
+            # 镜像行（对称件）：数据层持中文后缀，导出必须保持中文
+            {"Part Number": "M1 (对称件)", "Type": "MIRROR",
+             "Density": 1.0, "Weight": 1.0},
         ]
         dlg._unit_factor = 1.0
         dlg._inertia_unit_factor = 1.0
@@ -152,6 +157,8 @@ class TestExportKeepsChineseUnderEnTranslator(unittest.TestCase):
                 self.assertIn("重量 (g)", content)
                 self.assertIn("不统一", content)
                 self.assertIn("总计 (根产品)", content)
+                # 镜像行 PN 数据层保持中文后缀（_make_item 显示翻译不得污染导出）
+                self.assertIn("M1 (对称件)", content)
                 # 若导出误走了 _column_header，英文下会落盘英文
                 self.assertNotIn("Part No.", content)
                 self.assertNotIn("Inconsistent", content)
@@ -172,12 +179,83 @@ class TestExportKeepsChineseUnderEnTranslator(unittest.TestCase):
                           for ci in range(1, 6)]
                 self.assertEqual(header,
                                  ["零件编号", "类型", "密度 (kg/m³)", "重量 (g)", "状态"])
-                # 数据行 Density<0 恒 "不统一"；汇总行恒 "总计 (根产品)"
+                # 数据行 Density<0 恒 "不统一"；镜像行 PN 数据层保持中文后缀；
+                # 汇总行恒 "总计 (根产品)"
                 self.assertEqual(ws.cell(row=2, column=3).value, "不统一")
-                self.assertEqual(ws.cell(row=3, column=1).value, "总计 (根产品)")
+                self.assertEqual(ws.cell(row=3, column=1).value, "M1 (对称件)")
+                # Type 列导出沿用既有 TYPE_DISPLAY_NAMES 映射（MIRROR 未收录回退英文 key）
+                self.assertEqual(ws.cell(row=3, column=2).value, "MIRROR")
+                self.assertEqual(ws.cell(row=4, column=1).value, "总计 (根产品)")
                 self.assertNotIn("Part No.", str(header))
             finally:
                 dest.unlink(missing_ok=True)
+
+
+class TestMirrorRowDisplayLayer(unittest.TestCase):
+    """镜像行（对称件）：数据层保持中文后缀，仅显示层随语言翻译。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        try:
+            cls._qm = _build_tmp_en_qm()
+        except Exception as exc:  # lrelease 缺失等情况
+            raise unittest.SkipTest(f"pyside6-lrelease 不可用：{exc}")
+
+    @staticmethod
+    def _mirror_row() -> dict:
+        return {
+            "Part Number":   "P1 (对称件)",
+            "Instance Name": "INST-1 (对称件)",
+            "Filename":      "(虚拟)",
+            "Type":          "MIRROR",
+            "_is_mirror":    True,
+            "_filepath":     "",
+            "_not_found":    False,
+            "_no_file":      False,
+            "_unreadable":   False,
+            "_meas_failed":  False,
+        }
+
+    def _make_item(self, dlg: MassPropsDialog, row: dict):
+        dlg._columns = ["Part Number", "Instance Name", "Filename", "Type"]
+        dlg._pn_to_items = {}
+        dlg._item_by_row = []
+        return dlg._make_item(0, row)
+
+    def test_zh_fallback_keeps_chinese(self) -> None:
+        dlg = MassPropsDialog()
+        row = self._mirror_row()
+        item = self._make_item(dlg, row)
+        # 显示层：无翻译器时回退中文后缀
+        self.assertEqual(item.text(0), "P1 (对称件)")
+        self.assertEqual(item.text(1), "INST-1 (对称件)")
+        self.assertEqual(item.text(2), "(虚拟)")
+        # 数据层不被视图渲染改动（导出恒中文依赖）
+        self.assertEqual(row["Part Number"], "P1 (对称件)")
+        self.assertEqual(row["Filename"], "(虚拟)")
+
+    def test_en_translates_display_only(self) -> None:
+        row = self._mirror_row()
+        tr = QTranslator(_QAPP)
+        try:
+            self.assertTrue(tr.load(str(self._qm)), "临时 qm 加载失败")
+            _QAPP.installTranslator(tr)
+            dlg = MassPropsDialog()
+            item = self._make_item(dlg, row)
+            # 显示层：英文界面下后缀被翻译
+            self.assertEqual(item.text(0), "P1 (Mirror)")
+            self.assertEqual(item.text(1), "INST-1 (Mirror)")
+            self.assertEqual(item.text(2), "(Virtual)")
+            self.assertNotIn("(对称件)", [item.text(0), item.text(1)],
+                             "英文界面不得残留中文镜像后缀")
+            self.assertNotIn("(虚拟)", [item.text(2)],
+                             "英文界面不得残留中文虚拟文件名")
+        finally:
+            _QAPP.removeTranslator(tr)
+            tr.deleteLater()
+        # 数据层保持中文后缀（显示翻译不得污染 row_data）
+        self.assertEqual(row["Part Number"], "P1 (对称件)")
+        self.assertEqual(row["Filename"], "(虚拟)")
 
 
 if __name__ == "__main__":

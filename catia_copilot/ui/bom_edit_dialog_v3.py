@@ -3268,7 +3268,7 @@ class BomEditDialogV3(QDialog):
         )
         fill_seq_enabled = fill_enabled and fill_col_name not in PRESET_USER_REF_PROPERTY_OPTIONS and fill_col_name != "Source"
 
-        _fill_col_display = BOM_COLUMN_DISPLAY_NAMES.get(fill_col_name, fill_col_name) if fill_col_name else ""
+        _fill_col_display = bom_column_display(fill_col_name) if fill_col_name else ""
 
         act_fill_same = menu.addAction(
             translate("CATIACopilot", "首行内容填充（{0}）").format(_fill_col_display) if fill_enabled else translate("CATIACopilot", "首行内容填充")
