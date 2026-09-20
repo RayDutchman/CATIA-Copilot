@@ -24,8 +24,8 @@ python catia_copilot/tests/catia_manual/s2_geometry_query_bench.py --fail-check
 | B4 | 矩形 Pad 顶面 Pocket 深度 10 | Pocket 底/侧面；开口楞 4 条；Pocket 侧面法向与 Pad 对应外法向反向；开口圆角 R2 | **PASS**：5 面、开口圆角和反向法向通过 |
 | B5 | `axis=z` 旋转圆筒 | Shaft 面 `geometry_type=unknown`、`normal=None`、`origin=None`；相邻边圆角 R2 | **PASS**：4 面、未知语义和圆角通过 |
 | B6 | `axis=y` 旋转体 | 对比契约中的 XY 映射、`add_shaft` 文档中的 YZ 映射与实际轴向；不能只以“能生成”判定 | **PASS**：实际重心沿 Y 轴，当前实现采用 XY/V(Y) 映射 |
-| B7 | 纯逻辑读失败路径 | `GeometryQueryError` 消息可定位；查询不产生 `failed_step`；CLI 无 CATIA 为 BLOCKED/2，`--fail-check` 为 FAIL/1 | 纯测试已覆盖；CLI 待运行 |
-| B8 | 正式回归 | `catia_copilot/tests` 全量通过；不把特征名作为唯一几何断言 | 待回归 |
+| B7 | 纯逻辑读失败路径 | `GeometryQueryError` 消息可定位；查询不产生 `failed_step`；CLI 无 CATIA 为 BLOCKED/2，`--fail-check` 为 FAIL/1 | **PASS**：`--fail-check` 返回 1；注入 CATIA 不可用路径返回 BLOCKED/2；纯测试覆盖查询错误不产生 `failed_step` |
+| B8 | 正式回归 | `catia_copilot/tests` 全量通过；不把特征名作为唯一几何断言 | **PASS**：`python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -q`，363 tests OK |
 
 ## 实机结论补充
 
@@ -51,3 +51,11 @@ $env:QT_QPA_PLATFORM='offscreen'
 python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { throw "回归失败" }
 ```
+
+## 2026-09-20 执行记录
+
+- B1-B5：完整 CLI 基准运行，`PASS=5 FAIL=0 BLOCKED=0`。
+- B6：`--b6` 运行，`PASS=1 FAIL=0 BLOCKED=0`。
+- B7：故障退出码与无 CATIA 阻断路径均符合约定（1 / 2）。
+- B8：正式 `unittest` 回归 363 项全部通过。
+- 以上基准脚本仅创建未保存试验零件；未保存、关闭或删除 CATIA 文档。

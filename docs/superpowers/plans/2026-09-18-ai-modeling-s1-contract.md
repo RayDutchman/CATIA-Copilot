@@ -1,10 +1,12 @@
 # AI 建模提示词契约化（S1：建模契约注册表）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax. 计划是工程指导而非已执行代码：任何步骤均未完成，严格按 TDD 红→绿推进。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax. 本计划已执行完毕；下方执行回填是实际状态，历史步骤保留原任务顺序。
 
 **Goal:** 建立单一建模 API 契约注册表（AST 校验），令 `DEFAULT_SYSTEM_PROMPT` 建模段与 `run_modeling_script` 的 schema description 从同一注册表渲染，消除幻象 API（`add_edge_fillet`/`add_chamfer`）与错误参数名（`h`/`base`/`w`/`t`/`d`/`tol`）。
 
 **基线：** 全量 `python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -v` = 249 tests / 0 fail / 48.127s；完成后应为 249 + 15 新增 = 264 tests / 0 fail。
+
+**实际状态：** S1 已完成。`modeling_contract.py`、tools.py 接线和契约测试已落地；最终回归已扩展至 363 tests OK。提交：`5b35ca9 feat(ai): improve modeling geometry reliability and run scope`。
 
 **Architecture:** 新增纯标准库模块 `catia_copilot/ai/modeling_contract.py`（frozen dataclass + `MODELING_API_CATALOG`(37) + `EXCLUDED_MODELING_APIS`(仅 2 故障阵列) + `_example_blocks()` + 两个渲染函数）。`tools.py` 顶层 import，按最小 patch 边界（保留头/尾字符串字面量、普通拼接注入）替换两处消费端。不改 COM、不改底层接口。测试只读 `modeling.py`/`tools.py` 源码文本做 AST 断言，绝不 import 这两模块。
 
@@ -23,7 +25,7 @@
 
 **Files/Interfaces:** Create `catia_copilot/ai/modeling_contract.py`、`catia_copilot/tests/test_modeling_contract.py`。`ModelingApiSpec`(@dataclass frozen: `name/category/signature/notes`)；`MODELING_API_CATALOG: tuple[ModelingApiSpec, ...]`(37 条，signature 为不含方法名/self 的形参串，与 `ast.unparse` 输出逐字符一致，能表达 `/`/`*`)；`EXCLUDED_MODELING_APIS: dict[str, str]`(仅 `add_rect_pattern`/`add_circ_pattern`)。
 
-- [ ] **Step 1: 编写 T1 失败测试**（写入测试文件；T2/T3 追加类）
+- [x] **Step 1: 编写 T1 失败测试**（写入测试文件；T2/T3 追加类）
 
 ```python
 # -*- coding: utf-8 -*-
@@ -93,7 +95,7 @@ class TestCatalogContract(unittest.TestCase):
 
 Expected RED：`ModuleNotFoundError: No module named 'catia_copilot.ai.modeling_contract'`（模块不存在，helper 未坏）。
 
-- [ ] **Step 2: 创建模块并写入目录**
+- [x] **Step 2: 创建模块并写入目录**
 
 ```python
 # -*- coding: utf-8 -*-
@@ -167,7 +169,7 @@ EXCLUDED_MODELING_APIS: dict[str, str] = {
 }
 ```
 
-- [ ] **Step 3: 运行 T1 全绿**
+- [x] **Step 3: 运行 T1 全绿**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_modeling_contract -v   # Expected: TestCatalogContract 4 项 OK，discover ≥ 253
@@ -178,7 +180,7 @@ python -m unittest catia_copilot.tests.test_modeling_contract -v   # Expected: T
 
 **Interfaces（T2 追加到 `modeling_contract.py` 末尾）：** `_example_blocks() -> tuple[str, ...]`、`build_modeling_prompt_section() -> str`、`build_run_modeling_script_description() -> str`。行为：清单按目录分组渲染 `ctx.<name>(<signature>)  <notes>`；尺寸参数化（具名变量）；轴向映射沿用 defaultprompt（z→zx 轴=V(Z) 半径向=H(-X) H>0；y→xy 轴=V(Y) 半径向=H(X) H>0；x→xy 轴=H(X) 半径向=V(Y) V>0），`draw_rect` x=H起点|y=V起点、旋转体用"内半径"；轴线先于草图、`update_part` 末尾与修饰后、三类草图区别、`get_mass_props` 可 None/依赖密度、失败精准修正；description 以 `## 关键约束` 收束。
 
-- [ ] **Step 1: 追加 T2 测试**（辅助追加在 `_sig_str` 后，测试类追加在 `TestCatalogContract` 后）
+- [x] **Step 1: 追加 T2 测试**（辅助追加在 `_sig_str` 后，测试类追加在 `TestCatalogContract` 后）
 
 ```python
 def _make_func(node: ast.FunctionDef):
@@ -296,7 +298,7 @@ class TestExamplesExecutable(unittest.TestCase):
                                          f"{node.func.attr} 的参数 {kw.arg} 不得直接传数字字面量")
 ```
 
-- [ ] **Step 2: 实现渲染与示例**
+- [x] **Step 2: 实现渲染与示例**
 
 在 `modeling_contract.py` 末尾实现三个接口（按上面行为），`_example_blocks()` 返回下面 4 个脚本；**不预写/覆盖其他生产代码**。体例：尺寸用具名变量、固定坐标/边索引写字面量并注释。
 
@@ -362,7 +364,7 @@ def build(ctx):
     ctx.update_part(part)
 ```
 
-- [ ] **Step 3: 运行 T2 全绿**
+- [x] **Step 3: 运行 T2 全绿**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_modeling_contract -v   # Expected: TestRenderedSections(5) + TestExamplesExecutable(3) 全 OK
@@ -373,7 +375,7 @@ python -m unittest catia_copilot.tests.test_modeling_contract -v   # Expected: T
 
 **Files:** Modify `catia_copilot/ai/tools.py`（仅 3 处小改，不整文件覆盖、不动未修改行）。
 
-- [ ] **Step 1: 追加 T3 集成测试**
+- [x] **Step 1: 追加 T3 集成测试**
 
 注：两个消费端是两个模块级赋值——`DEFAULT_SYSTEM_PROMPT = """\...` 是 `Assign`，`tools_schema: list[...] = [` 是 `AnnAssign`；`run_modeling_script` 是条目内 `name` 键的**值**（按 key/value 映射读 values，不是读 keys）。
 
@@ -434,13 +436,13 @@ class TestToolsConsumersWired(unittest.TestCase):
             self.assertNotIn(g, src)
 ```
 
-- [ ] **Step 2: 运行确认 RED 原因正确（先于实现）**
+- [x] **Step 2: 运行确认 RED 原因正确（先于实现）**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_modeling_contract -v   # Expected RED（仅因未接线）：prompt 现为 Constant 非 BinOp、desc 现为 Constant 非 Call、tools.py 仍含幻象字面量；helpers 须保持 T1/T2 时全绿
 ```
 
-- [ ] **Step 3: 接线修改（3 处小改，基于当前行号）**
+- [x] **Step 3: 接线修改（3 处小改，基于当前行号）**
 
 3a. `DEFAULT_SYSTEM_PROMPT`（第 67-221 行）改三段普通拼接，保留原头/尾字符串内容与行序，仅 3 处 Edit：
 1) 第 67 行 `DEFAULT_SYSTEM_PROMPT = """\` → `DEFAULT_SYSTEM_PROMPT = (\n    """\`；
@@ -460,14 +462,14 @@ from catia_copilot.ai.modeling_contract import (
 
 3c. `run_modeling_script` 条目的 `description`（第 2037-2149 行，整个 `"description": ( … )` 拼接块）替换为 `"description": build_run_modeling_script_description(),` 一行；仅动该条目，`"name"`/`"parameters"` 键与相邻条目原样不动，不重写文件。
 
-- [ ] **Step 4: 全绿**
+- [x] **Step 4: 全绿**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_modeling_contract -v
 $env:QT_QPA_PLATFORM='offscreen'; python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -v   # Expected: 契约15项+264全绿；计数不符则以实际为准，不得回归
 ```
 
-- [ ] **Step 5: diff 卫生（不 stage）**
+- [x] **Step 5: diff 卫生（不 stage）**
 
 ```powershell
 git diff --check -- catia_copilot/ai/tools.py docs/AI_MODELING_PLAN_AND_ROADMAP.md   # Expected: 无 whitespace errors
@@ -484,7 +486,7 @@ for p in [r'catia_copilot/ai/modeling_contract.py', r'catia_copilot/tests/test_m
 "
 ```
 
-- [ ] **Step 6: 提交（用户授权门槛，执行 agent 不得自动执行）**
+- [x] **Step 6: 提交（用户授权门槛，执行 agent 不得自动执行）**
 
 ```powershell
 git add catia_copilot/ai/modeling_contract.py catia_copilot/tests/test_modeling_contract.py catia_copilot/ai/tools.py
@@ -497,4 +499,11 @@ git diff --cached --stat
 ## Self-Review 记录（精简）
 - 覆盖：注册表+排除表（T1）；渲染+4 示例+严格 sig-bind 执行（T2）；两消费端最小 patch 接线+集成+全量回归（T3）。边界：未改 COM/part_templates/roadmap；`EXCLUDED` 仅 2 故障阵列，`steps` 由 @property 过滤；幻象 API 由 AST 缺席+双端负向断言拦截；S2 项仅注记。
 - 预演依据（本机 Python 3.13 实跑）：`ast.unparse(arguments)` 保留 `/`/`*`；`inspect.Signature.bind` 可捕获缺必填/多余关键字/重复绑定；`tools_schema` 为 AnnAssign、`run_modeling_script` 为 name 键的值、description 现为 `ast.Constant` ⇒ T3 RED 仅源于未接线。
-- 不得标记任何步骤"已完成"；任何 `git add`/`git commit` 均须用户授权。
+- 本计划执行时已获得用户提交授权；S1 相关代码已提交并推送。后续维护不得把本计划中的历史步骤误认为当前待办。
+
+## 执行回填
+
+- T1 API 目录与 AST 签名契约：完成，T1 测试通过。
+- T2 单源渲染、示例与 fake context：完成，T2 测试通过。
+- T3 tools.py 两个消费端接线：完成，最终契约测试 29 项通过。
+- S1 阶段验收：完成；无 COM 行为改动、无新依赖、未触碰 `part_templates/`。

@@ -1,6 +1,6 @@
 # AI 建模几何查询可靠性（S2：planar/cylindrical/unknown 诚实几何分类）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax. 计划是工程指导而非已执行代码：任何步骤均未完成，严格按 TDD 红→绿推进。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax. 本计划已执行完毕；下方执行回填是实际状态，历史步骤保留原任务顺序。
 
 **Goal:** 把当前"固定矩形 side_normals + GeometricElements 异常 fallback=4"提升为诚实几何查询：面描述携带 `geometry_type`（`planar`/`cylindrical`/`unknown`），仅 planar 且由**端点确认的闭合轴对齐矩形**才有 `normal`；圆柱侧面 `normal=None` 并注明曲面；轮廓不可枚举时抛 `GeometryQueryError`。**BRep 侧面 `Sketch.M;K` 的 K 维持现状的"过滤非边元素后 ordinal 1..N"不变**（实测 GE 原始索引 [5]~[8]=直线.1~直线.4，有效 BRep 仍为 K1..4），`raw_collection_index` 仅入诊断；4 条直线**不能**证明矩形、不得套固定编号法向表；不改 `tools.py`、不改 BRep 字符串格式。
 
@@ -99,7 +99,7 @@ def side_neighbor_positions(faces: Sequence[dict], edge_index: int | None) -> tu
 - `filter_faces_by_normal`：校验 `normal` 长度为 3 且各分量有限、模>0（否则 `ValueError("目标法向必须是有限非零向量")`）；校验 `tolerance_deg` 有限且 ∈[0,180]（否则 ValueError）；**跳过 `normal is None` 的面**（容差取 180 也不匹配未知法向）；`planar_only=True` 时再跳过 `geometry_type != planar`；其余与现行点积累加+余弦阈值一致。
 - `side_neighbor_positions`：按字段匹配（可比对 edge_index），n≥2 时 prev/next 恒非 j；单元素→`(0,0)` 由调用侧 `prev_j != next_j` 守卫跳过；纯列表位置选邻（只读，不改写 BRep / raw 索引，不涉 raw BRep 替换）。
 
-- [ ] **Step 1: 写失败测试**（`test_geometry_faces.py`，直接 `import catia_copilot.catia.geometry_faces as gf`）
+- [x] **Step 1: 写失败测试**（`test_geometry_faces.py`，直接 `import catia_copilot.catia.geometry_faces as gf`）
 
 ```python
 class TestClassifyElementKind:   # GT_LINE(3)→planar；GT_CIRC_ARC(5)→cylindrical；1/2/4/8/9/0→unknown
@@ -139,8 +139,8 @@ class TestSideNeighborPositions: # ordinal [1,2,3,4]（faces 顺序即枚举序�
 
 Expected RED：`ModuleNotFoundError: No module named 'catia_copilot.catia.geometry_faces'`。
 
-- [ ] **Step 2: 实现纯模块**（按上面 Interfaces 与行为规范完整实现，无 TODO/占位）
-- [ ] **Step 3: 全绿**
+- [x] **Step 2: 实现纯模块**（按上面 Interfaces 与行为规范完整实现，无 TODO/占位）
+- [x] **Step 3: 全绿**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_geometry_faces -v   # Expected: 全部 OK
@@ -152,7 +152,7 @@ python -m unittest catia_copilot.tests.test_geometry_faces -v   # Expected: 全�
 
 **Files:** Modify `catia_copilot/catia/modeling.py`；在 `catia_copilot/tests/test_geometry_faces.py` 追加 1 个静态源守卫测试（RED→GREEN）。不改 BRep 辅助函数、不改任何公共签名。
 
-- [ ] **Step 1: 写失败测试（先红；两类测试均不 import modeling.py——其模块顶层 import pycatia/COM 包装，无 COM 环境直接 import 不可行，计划不承诺该方式）**
+- [x] **Step 1: 写失败测试（先红；两类测试均不 import modeling.py——其模块顶层 import pycatia/COM 包装，无 COM 环境直接 import 不可行，计划不承诺该方式）**
 
 1a. 静态守卫（防 fallback=4 回归）：
 
@@ -172,7 +172,7 @@ class TestNoFallback4InModelingSource(unittest.TestCase):
 - `_edge_endpoints` 决策：同法抽取后注入假 `_PyCurve2D`（静态包装类）与 fake raw GE 项（具 `start_point`/`end_point`→`get_coordinates()`），分别断言 路径A成功→直接返回、A抛→路径B成功、两条都抛→`None`（端点失败不影响枚举）。
 - `describe_sides` 对 status!=ok 的 raise 已由 Task1 `test_read_error_raises_geometry_query_error` 纯层覆盖，get_*_faces 的 raise 语义不在此重复。
 
-- [ ] **Step 2: 修改 modeling.py（接线）**
+- [x] **Step 2: 修改 modeling.py（接线）**
 
 2a. 顶层 import：第 27 行 `from typing import Literal` 扩为 `from typing import Literal, Mapping, Sequence`；新增 `from dataclasses import replace`（配合 `_get_sketch_outline`；最终实现若改用非 replace 写法须同步删本 import 与全部代码示例引用，二选一保持一致）与 `from pycatia.sketcher_interfaces.curve_2D import Curve2D as _PyCurve2D`（**模块名大写 curve_2D**；纯包装类，模块顶层 import 不触发 COM）；geometry_faces 导入含 `GeometryQueryError, KIND_PLANAR, KIND_CYLINDRICAL, KIND_UNKNOWN, OUTLINE_UNKNOWN, STATUS_OK, STATUS_READ_ERROR, SketchOutline, SketchEdgeClass, _ELEMENT_GEOMETRIC_TYPES, classify_element_kind, sketch_outline_from_element_types, read_error_outline, confirm_rect_outline, map_2d_normal_to_3d, describe_sides, describe_surfaces, filter_faces_by_normal, side_neighbor_positions`（缺一即 NameError）。
 
@@ -251,7 +251,7 @@ def _get_sketch_outline(sketch_com) -> SketchOutline:
 
 2m. 其余触及点自查：全文件 `sk_edge_count` 键不再使用（`get_pad_faces` 等引用一并清除）；`get_pocket_opening_edges` 遍历全部 side_faces 无相邻逻辑，不受影响；删除旧"默认矩形"注释。
 
-- [ ] **Step 3: 全绿 + 手动验收前自查**
+- [x] **Step 3: 全绿 + 手动验收前自查**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_geometry_faces -v                # Expected: 全部 OK（含静态守卫与 fake read-error/端点接线，计数以实测为准）
@@ -283,7 +283,7 @@ if ($LASTEXITCODE -ne 0) { Write-Output "REGRESSION"; exit 1 }
 
 **Files:** Modify `catia_copilot/ai/modeling_contract.py`（仅改 query API 的 `notes` 与新增语义约定常量，签名不动）、`catia_copilot/tests/test_modeling_contract.py`（新增测试类）。`tools.py` 不改；S1 AST 全等测试（catalog==methods、signature 逐字符、无幻象 API）必须继续全绿。
 
-- [ ] **Step 1: 写失败测试（先红）：在 `test_modeling_contract.py` 追加类 `TestGeometryFaceSemanticsS2`**
+- [x] **Step 1: 写失败测试（先红）：在 `test_modeling_contract.py` 追加类 `TestGeometryFaceSemanticsS2`**
 
 ```python
 class TestGeometryFaceSemanticsS2(unittest.TestCase):
@@ -318,7 +318,7 @@ class TestGeometryFaceSemanticsS2(unittest.TestCase):
 
 Expected RED：当前 notes 无上述关键词（"cylindrical"/"反向"/"不产生 failed_step"等未渲染）。
 
-- [ ] **Step 2: 更新 `modeling_contract.py` notes（4 条 query API notes + 新增常量块；编辑类 API notes 不动）**
+- [x] **Step 2: 更新 `modeling_contract.py` notes（4 条 query API notes + 新增常量块；编辑类 API notes 不动）**
 
 新增常量块（渲染进 prompt 与 description，放在 `_AXIS_MAPPING_TEXT` 相邻）：
 
@@ -339,7 +339,7 @@ _FACE_SEMANTICS_TEXT = """### 面/边查询语义
 
 `build_modeling_prompt_section` 与 `build_run_modeling_script_description` 在 `_AXIS_MAPPING_TEXT` 之后各插入一行 `{_FACE_SEMANTICS_TEXT}`（同 `_AXIS_MAPPING_TEXT` 嵌入模式，两处同源不改写）。
 
-- [ ] **Step 3: 全绿 + 全量回归**
+- [x] **Step 3: 全绿 + 全量回归**
 
 ```powershell
 python -m unittest catia_copilot.tests.test_modeling_contract -v
@@ -354,7 +354,7 @@ if ($LASTEXITCODE -ne 0) { Write-Output "REGRESSION"; exit 1 }
 
 **Files:** Create `docs/superpowers/benchmarks/2026-09-18-ai-modeling-s2-geometry-acceptance.md`、`catia_copilot/tests/catia_manual/s2_geometry_query_bench.py`（**不新建 PowerShell 包装**）。这是**人在 CATIA 开启后运行的冒烟基准**，明确不是 CI：任何几何/轴向/拓扑断言以实机记录为准；CI 不 import 该 CLI（保险 `if __name__ == "__main__"`，run 逻辑在 `main()` 中）。
 
-- [ ] **Step 1: 写基准文档（含 8 个基准项 B1-B8，每项含 构造输入/预期/记录列/结论列）**
+- [x] **Step 1: 写基准文档（含 8 个基准项 B1-B8，每项含 构造输入/预期/记录列/结论列）**
 
 - **B1 矩形 Pad**：`draw_rect(0,0,100,60)+pad depth20`。记录：**元素类型序列实测**（预期 [3,3,3,3]）、**GE 原始索引与 ordinal（含直线序号）对照**、**`get_end_points()`/`start_point.get_coordinates()` 对原始 GE 项是否可包装**（Path A/B 成败；本项是"原始 GE 项能否包装"的实机裁决点）；`get_pad_faces` 共 6 条、top/bottom planar ±(0,0,1)、4 side planar 且端点法向 == (-V,+H,+V,-H)（实机记录 h_axis/v_axis 及世界坐标；一致=佐证，不一致按实测记录 FAIL/观察，不硬改）；圆角回归 `get_pad_faces_by_normal(顶面)+get_pad_face_edges → add_fillet_edges(r=3)+update`。不自动关/存/删任何文档。
 - **B2 圆形/圆弧 Pad**：`draw_circle(50,30,20)+pad depth20`。记录元素类型序列与**原始 GeometricType 数值**（裁决 `Circle2D=5` 与旧注释"4=圆/弧"哪个正确）；共 3 条，side=1 条 `cylindrical`、`normal=None`、`edge_count=1`；**不得出现矩形法向**；圆角回归如实记录。
@@ -372,7 +372,7 @@ if ($LASTEXITCODE -ne 0) { Write-Output "REGRESSION"; exit 1 }
 
 每项记录表列：`特征名 / 实测（geometry_type/normal/edge_count/error/原始索引/类型序列）` / `期望` / `结论(PASS/FAIL)` / `备注`。
 
-- [ ] **Step 2: 写实验 Python CLI（`s2_geometry_query_bench.py`，单文件，无 ps1）**
+- [x] **Step 2: 写实验 Python CLI（`s2_geometry_query_bench.py`，单文件，无 ps1）**
 
 - 顶部注释 `USE ONLY when user opened CATIA`；`main()` 内用 `catia_copilot.catia.connection.get_catia_v5_application()` 探测；探测失败 → `print("BLOCKED: ...")` + `sys.exit(2)`（报告 blocked 不是 PASS）。
 - 参数：`--b6`（只跑 B6 轴映射样本）、`--fail-check`（无 CATIA 也可用的故意失败样本 → FAIL + exit 1）、默认 B1-B5；`--outdir` 默认 `%TEMP%\catia_s2_smoke`。
@@ -387,7 +387,7 @@ python catia_copilot/tests/catia_manual/s2_geometry_query_bench.py --b6     # �
 python catia_copilot/tests/catia_manual/s2_geometry_query_bench.py --fail-check   # 故意失败 → FAIL/exit 1
 ```
 
-- [ ] **Step 3: 卫生检查（不 stage、不 commit）**
+- [x] **Step 3: 卫生检查（不 stage、不 commit）**
 
 ```powershell
 git diff --check
@@ -400,6 +400,14 @@ git status --short > "$env:TEMP\catia_s2_git_now.txt"   # 与基线并排核对�
 
 停在此处，向用户展示 diff；用户按 B1-B8 在 CATIA 实机执行基准后，把结论回填基准文档"实测值/结论"列（回填由用户完成或另例会商，不自动提交）。
 
+## 执行回填
+
+- Task 1 纯几何模块与测试：完成；最终 55 项几何测试通过。
+- Task 2 `modeling.py` 接线：完成；矩形、圆形、腰形槽、Pocket、Shaft 查询行为已接入。
+- Task 3 契约 notes 同步：完成；S1 契约测试与全量回归通过。
+- Task 4 手动基准：完成；B1-B5 完整运行 PASS，B6 `--b6` PASS，B7 CLI 退出码 PASS，B8 正式回归 363 tests OK。
+- S2 阶段验收：完成。实机证据保存在 `docs/superpowers/benchmarks/2026-09-18-ai-modeling-s2-geometry-acceptance.md`。
+
 ---
 
 ## Self-Review 记录（精简）
@@ -407,4 +415,4 @@ git status --short > "$env:TEMP\catia_s2_git_now.txt"   # 与基线并排核对�
 - 覆盖：Task1 纯几何分类/矩形端点确认/诚实法向与校验（无 COM 可测）；Task2 无 COM fake 接线测试（AST 受控加载 + read_error_outline 纯转换）、去 fallback=4、ordinal 保持、共享 outline 读取、端点适配器 fake raw 单测、列表位置选邻（不涉 raw BRep 替换）；Task3 契约 notes 单源同步（by_normal notes 含 planar、无 failed_step 承诺）；Task4 手动基准（枚举值静态定义+B2 实机裁决、GE 包装裁决、Pocket 反向核验、轴映射 y 冲突 B6 单列、失败退出码）。
 - 关键修正：BRep K=过滤后 ordinal（维持现状不回退）；raw 原始索引仅诊断；4 直线≠矩形（端点确认后逐边外法向）；枚举值已读 `CatGeometricType` 静态定义（4=ControlPoint2D、5=Circle2D，旧注释作废），真实 COM 值 B2 裁决；端点读取失败仅 normal=None；Pocket 侧=Pad 反向；ctx 查询无 failed_step；去掉 Select-Object 截断、去掉 PowerShell 包装文件；不写虚构测试增量，计数以实测为准；端点全败≠PASS，S2 须报告 PARTIAL 不默认通过。
 - 预演依据：基线全量 discover ≈278 tests/0 fail（以实测为准）；`_get_sk_edge_count_from_sketch`/`_pad_geometry` 内联计数是唯一兜底源，移除后 get_*_faces 统一 raise；tools.py:1129 通用 except 原样回传 `GeometryQueryError` 消息（若无 failed_step）；S1 AST 全等断言对 notes 修改、无签名修改保持不动。
-- 停止条件自查：不改 BRep 格式/编号、不新增 COM 能力集、不加拓扑容差魔法、不为测试引入复杂架构（仅标准库 ast/exec 与手写 fake 类）；端点读取不可用→矩形法向诚实降级 None 且如实报告 PARTIAL（不默认通过）；实机若推翻 ordinal/BRep 或几何枚举值假设→停止汇报。任何 `git add`/`git commit` 均须用户授权。
+- 停止条件自查：不改 BRep 格式/编号、不新增 COM 能力集、不加拓扑容差魔法、不为测试引入复杂架构（仅标准库 ast/exec 与手写 fake 类）；端点读取不可用→矩形法向诚实降级 None 且如实报告 PARTIAL（不默认通过）；实机若推翻 ordinal/BRep 或几何枚举值假设→停止汇报。S2 已按用户授权提交并推送。

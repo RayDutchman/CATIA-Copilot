@@ -26,10 +26,10 @@ AI 作为"规划者"，**一次性生成完整的 Python 脚本**，程序直接
 
 ## API 设计原则
 
-### 语义化几何查询（核心未解决问题）
+### 语义化几何查询（后续扩展方向）
 
 AI 能建多复杂的零件，取决于能否定位几何元素（面、边）。
-这是**当前最关键的未完成功能**，优先级高于阵列、倒角等。
+S1-S4 已完成特征级候选面查询与验证闭环；以下是后续将查询能力提升到全模型语义层的独立扩展方向，优先级仍高于阵列、倒角等。
 
 目标 API：
 ```python
@@ -110,7 +110,7 @@ API：`ctx.add_sketch_on_pad_top/bottom/side(part, pad)`
 
 ---
 
-### 阶段三：脚本生成与执行 ✅（进行中）
+### 阶段三：脚本生成与执行 ✅（已完成）
 
 已实现 `ModelingContext`（`build(ctx)` 签名）、结构化反馈、步骤记录。
 
@@ -131,12 +131,12 @@ API：`ctx.add_sketch_on_pad_top/bottom/side(part, pad)`
 
 | 阶段 | 名称 | 主题 | 状态 | 文档 |
 |---|---|---|---|---|
-| S1 | 能力契约统一 | 单一来源建模描述 + 契约测试 | 待执行 | **[S1 精细计划](superpowers/plans/2026-09-18-ai-modeling-s1-contract.md)** |
-| S2 | 几何查询可靠性 | planar/cylindrical/unknown 分类，不伪造法向 | 未启动 | 见设计规格 |
-| S3 | 文档绑定与运行记录 | 目标文档绑定、每 run 记录、状态分层 | 未启动 | 见设计规格 |
-| S4 | 无 CATIA 测试与手动基准 | 单元测试 + 有限手动基准 | 未启动 | 见设计规格 |
+| S1 | 能力契约统一 | 单一来源建模描述 + 契约测试 | **已完成** | **[S1 精细计划](superpowers/plans/2026-09-18-ai-modeling-s1-contract.md)** |
+| S2 | 几何查询可靠性 | planar/cylindrical/unknown 分类，不伪造法向 | **已完成** | **[S2 精细计划](superpowers/plans/2026-09-18-ai-modeling-s2-geometry.md)** / [验收记录](superpowers/benchmarks/2026-09-18-ai-modeling-s2-geometry-acceptance.md) |
+| S3 | 文档绑定与运行记录 | 目标文档绑定、每 run 记录、状态分层 | **已完成** | **[S3 精细计划](superpowers/plans/2026-09-18-ai-modeling-s3-run-scope.md)** |
+| S4 | 无 CATIA 测试与手动基准 | 单元测试 + 有限手动基准 | **已完成** | **[S4 精细计划](superpowers/plans/2026-09-18-ai-modeling-s4-verification.md)** / [S2 基准记录](superpowers/benchmarks/2026-09-18-ai-modeling-s2-geometry-acceptance.md) |
 
-后阶段进入前单独写精细计划（同 `superpowers/plans/`），不留 TBD 占位。
+S1-S4 均已完成并有对应精细计划；后续独立功能进入前仍须在 `superpowers/plans/` 编写新计划，不留 TBD 占位。
 
 **本次独立立项，不做：** 参数增量修改、草图约束、阵列/倒角/MirrorShell、图片观察、Responses 协议。
 
@@ -185,4 +185,4 @@ API：`ctx.add_sketch_on_pad_top/bottom/side(part, pad)`
 
 ---
 
-*最后更新：2026-06-11（方向A/B完成，方向C待验证）；2026-09-18 补 AI 建模可靠性复盘与新阶段索引*
+*最后更新：2026-09-20（S1-S4 可靠性阶段完成；方向 C 的更复杂 AI 场景与语义化全模型查询仍作为后续扩展）*
