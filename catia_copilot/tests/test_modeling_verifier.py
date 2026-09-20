@@ -36,3 +36,41 @@ class TestModelingVerifier(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertFalse(result["passed"])
         self.assertFalse(all(check["passed"] for check in result["checks"]))
+
+    def test_malformed_expectations_fail_without_raising(self):
+        malformed_cases = [
+            {"required_features": "孔"},
+            {"required_features": None},
+            {"required_features": 5},
+            {"feature_count": True},
+            {"feature_count": 2.0},
+            {"mass_kg": {"min": "10"}},
+            {"mass_kg": {"max": True}},
+            {"cog_mm": {"min": [0.0, 0.0]}},
+            {"cog_mm": {"max": [1.0, 1.0, 1.0, 1.0]}},
+            {"cog_mm": {"min": 0}},
+        ]
+
+        for expectations in malformed_cases:
+            with self.subTest(expectations=expectations):
+                result = verify_model_state(
+                    ["凸台.1"],
+                    {"mass": 2.5, "cog": [0.0, 0.0, 0.0]},
+                    expectations,
+                )
+                self.assertEqual(result["status"], "failed")
+                self.assertFalse(result["passed"])
+
+    def test_malformed_expectations_with_missing_mass_are_still_structured(self):
+        result = verify_model_state(
+            ["凸台.1"],
+            None,
+            {
+                "mass_kg": {"min": None},
+                "cog_mm": {"max": [1.0, 2.0]},
+            },
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["passed"])
+        self.assertTrue(all("name" in check and "passed" in check for check in result["checks"]))
