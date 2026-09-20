@@ -116,6 +116,32 @@ API：`ctx.add_sketch_on_pad_top/bottom/side(part, pad)`
 
 ---
 
+## 2026-09-18 复盘：AI 建模可靠性设计
+
+上一轮（阶段一 ~ 阶段三）已完成后，对 AI 建模链路做可靠性复盘，
+结论归档在 **[AI 建模可靠性架构复盘与设计规格](superpowers/specs/2026-09-18-ai-modeling-reliability-design.md)**。
+
+- 历史阶段（一、补充 A/B、二、三）为**当时已完成/进行中的事实**，适用范围为所记录的当时验证结果，继续有效。
+- 架构内核保留：脚本 `build(ctx)`、`ModelingContext`、主线程 COM、后台 LLM。
+- 已确认缺口：prompt/schema API 漂移、矩形侧面法向被错误套圆柱/槽、失败默认 4 边、
+  `ActiveDocument` 与 part 目标不一致、固定 `generated_model.py` 覆盖、`success` 仅指脚本未抛异常、
+  无结果验证、脚本变量尚非 CATIA 参数绑定。
+
+### 新阶段索引（2026-09-18）
+
+| 阶段 | 名称 | 主题 | 状态 | 文档 |
+|---|---|---|---|---|
+| S1 | 能力契约统一 | 单一来源建模描述 + 契约测试 | 待执行 | **[S1 精细计划](superpowers/plans/2026-09-18-ai-modeling-s1-contract.md)** |
+| S2 | 几何查询可靠性 | planar/cylindrical/unknown 分类，不伪造法向 | 未启动 | 见设计规格 |
+| S3 | 文档绑定与运行记录 | 目标文档绑定、每 run 记录、状态分层 | 未启动 | 见设计规格 |
+| S4 | 无 CATIA 测试与手动基准 | 单元测试 + 有限手动基准 | 未启动 | 见设计规格 |
+
+后阶段进入前单独写精细计划（同 `superpowers/plans/`），不留 TBD 占位。
+
+**本次独立立项，不做：** 参数增量修改、草图约束、阵列/倒角/MirrorShell、图片观察、Responses 协议。
+
+---
+
 ## 后续计划
 
 ### 方向 C：AI 端到端建模验证（下一步）
@@ -159,4 +185,4 @@ API：`ctx.add_sketch_on_pad_top/bottom/side(part, pad)`
 
 ---
 
-*最后更新：2026-06-11（方向A/B完成，方向C待验证）*
+*最后更新：2026-06-11（方向A/B完成，方向C待验证）；2026-09-18 补 AI 建模可靠性复盘与新阶段索引*

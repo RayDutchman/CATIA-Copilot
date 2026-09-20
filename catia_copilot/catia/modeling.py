@@ -23,16 +23,31 @@ CATIA V5 建模操作模块。
 """
 
 import logging
+import math
 import traceback as _tb
+from dataclasses import replace
 from typing import Literal
 
 from pycatia.in_interfaces.reference import Reference as PyRef
 from pycatia.mec_mod_interfaces.part_document import PartDocument
+from pycatia.sketcher_interfaces.curve_2D import Curve2D as _PyCurve2D
 
 from catia_copilot.catia.connection import (
     get_catia_v5_application,
     wrap_application,
     wrap_product,
+)
+from catia_copilot.catia.geometry_faces import (
+    GeometryQueryError,
+    KIND_PLANAR,
+    STATUS_OK,
+    SketchOutline,
+    sketch_outline_from_element_types,
+    read_error_outline,
+    describe_sides,
+    describe_surfaces,
+    filter_faces_by_normal,
+    side_neighbor_positions,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,6 +128,25 @@ def _plane_ref(part, plane: str):
     else:
         raise ValueError(f"不支持的平面: {plane!r}，可选值为 'xy' / 'yz' / 'zx'")
     return part.create_reference_from_object(plane_obj)
+
+
+# CATIA 手工“草图定位”在三个基准面上的默认局部坐标方向。
+# 每组数据依次为：原点、H 轴、V 轴；法向由 H×V 决定。
+_BASE_PLANE_AXIS_DATA = {
+    "xy": (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+    "yz": (0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+    "zx": (0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+}
+
+
+def _set_base_plane_sketch_axis(sketch, plane: str) -> None:
+    """复现 CATIA 手工选择基准面后创建“定位草图”的默认 H/V 方向。"""
+    plane_lower = plane.lower()
+    try:
+        axis_data = _BASE_PLANE_AXIS_DATA[plane_lower]
+    except KeyError as exc:
+        raise ValueError(f"不支持的草图基准面: {plane!r}") from exc
+    sketch.set_absolute_axis_data(axis_data)
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +237,7 @@ def add_sketch(part, plane: Literal["xy", "yz", "zx"] = "xy"):
     """
     ref    = _plane_ref(part, plane)
     sketch = part.main_body.sketches.add(ref)
+    _set_base_plane_sketch_axis(sketch, plane)
     logger.debug(f"[MODELING] add_sketch: {sketch.name} on {plane}")
     return sketch
 
@@ -368,6 +403,7 @@ def add_sketch_at_height(part, height: float, base_plane: Literal["xy", "yz", "z
 
     off_ref = part.create_reference_from_object(off_plane)
     sketch  = part.main_body.sketches.add(off_ref)
+    _set_base_plane_sketch_axis(sketch, base_plane)
     logger.debug(f"[MODELING] add_sketch_at_height: {sketch.name} on {base_plane} offset={height}")
     return sketch
 
@@ -643,7 +679,7 @@ def add_shaft(part, sketch, axis: str = "z"):
     part   : pycatia Part 对象
     sketch : ZX / YZ / XY 平面上的闭合轮廓草图
     axis   : 旋转轴，"x" / "y" / "z"（默认 "z"）
-             - axis="z"：草图须在 ZX 平面，轮廓在 H>0 侧
+             - axis="z"：草图须在 ZX 平面，轴向为 V(Z)，轮廓在 H>0 侧
              - axis="x"：草图须在 XY 平面，轮廓在 H>0 侧
              - axis="y"：草图须在 YZ 平面，轮廓在 H>0 侧
 
@@ -1086,18 +1122,52 @@ def get_mass_props(part) -> dict | None:
 
 # --- 通用辅助 ---
 
-def _get_sk_edge_count_from_sketch(sketch_com) -> int:
-    """从草图 COM 对象统计草图边数（直线/弧/圆等，不含点和轴系）。"""
+def _get_sk_edge_count_from_sketch(sketch_com) -> int | None:
+    """兼容保留的旧计数接口：返回过滤后的草图边数；读失败返回 None（不再默认 4）。内部不再使用。"""
+    return _get_sketch_outline(sketch_com).edge_count
+
+
+def _edge_endpoints(sketch_com, raw_i) -> tuple | None:
+    """尽力读取 GE 项的 (x0, y0, x1, y1)；失败返回 None。
+    路径 A：_PyCurve2D 包装原始 GE 项 + get_end_points()（Line2D 继承 Curve2D）；
+    路径 B：start_point/end_point.get_coordinates()。两路径方法存在性已静态读 pycatia 定义确认
+    （pycatia.sketcher_interfaces.curve_2D：get_end_points / start_point / end_point；Point2D.get_coordinates），
+    但原始 GE 项能否成功包装与真实 COM 值由 Task4 B1/B2 实机裁决。端点读取失败只影响 normal，不影响枚举。"""
+    def valid(values):
+        values = tuple(float(value) for value in values)
+        if len(values) != 4 or not all(math.isfinite(value) for value in values):
+            raise ValueError("曲线端点须包含四个有限坐标")
+        return values
+
+    try:
+        return valid(_PyCurve2D(sketch_com.GeometricElements.Item(raw_i)).get_end_points())
+    except Exception:
+        pass
+    try:
+        cu = _PyCurve2D(sketch_com.GeometricElements.Item(raw_i))
+        return valid((*cu.start_point.get_coordinates(), *cu.end_point.get_coordinates()))
+    except Exception:
+        return None
+
+
+def _get_sketch_outline(sketch_com) -> SketchOutline:
+    """枚举草图轮廓：GeometricType + 原始索引 + 尽力端点。
+    GE 整体枚举失败 → 经 read_error_outline 构造 status=READ_ERROR，不抛、不作任何默认（原返回 4 的兜底移除）。
+    GeometricType（CatGeometricType 静态枚举定义，真实 COM 值由 Task4 B2 复核）：1=Axis2D,2=Point2D,
+    3=Line2D,4=ControlPoint2D,5=Circle2D（整圆与圆弧）,8=Ellipse2D,9=Spline2D。3D 类型(10..12)、
+    unknown(0)与控制点(4)不录入。"""
     try:
         ge = sketch_com.GeometricElements
-        count = 0
-        for i in range(1, ge.Count + 1):
-            gt = ge.Item(i).GeometricType
-            if gt not in (1, 2):   # 1=坐标轴, 2=点
-                count += 1
-        return count
-    except Exception:
-        return 4   # 默认矩形
+        types = [ge.Item(i).GeometricType for i in range(1, ge.Count + 1)]
+    except Exception as exc:
+        return read_error_outline(f"GeometricElements 枚举失败: {exc}")
+    outline = sketch_outline_from_element_types(types)   # 纯模块：ordinal/raw/kind/status=ok
+    filled = []
+    for edge in outline.edges:
+        ep = _edge_endpoints(sketch_com, edge.raw_collection_index)
+        st, en = ((ep[0], ep[1]), (ep[2], ep[3])) if ep else (None, None)
+        filled.append(replace(edge, start=st, end=en))   # from dataclasses import replace
+    return replace(outline, edges=tuple(filled))
 
 
 def _make_feature_edge_ref(part, feature, face_a_brep: str, face_b_brep: str):
@@ -1131,7 +1201,8 @@ def _pad_geometry(pad) -> dict:
       bottom_origin : 底面原点坐标
       en_pad    : Pad 英文内部名（如 "Pad.1"）
       en_sk     : 草图英文内部名（如 "Sketch.1"）
-      sk_edge_count : 草图边数（矩形=4，圆=1，...）
+      outline         : 草图轮廓推断（SketchOutline，GUI 读取失败为 READ_ERROR 状态，不 raise）
+      profile_edge_count : 候选侧面数（=过滤后草图边数；读失败为 None，非最终拓扑面数）
     """
     import math
 
@@ -1159,18 +1230,7 @@ def _pad_geometry(pad) -> dict:
     en_pad   = _get_feature_en_name(part_com, pad.name)
     en_sk    = "Sketch." + pad.sketch.name.split(".")[-1]
 
-    # 草图边数：通过草图 GeometricElements 计数直线/曲线（type≠1=坐标轴,≠2=点）
-    # GeometricType: 1=轴系, 2=点, 3=直线, 4=圆/弧, 5=椭圆, 6=样条...
-    # 侧面数 = 非点非轴系的几何元素数量
-    sk_edge_count = 0
-    try:
-        ge = pad.sketch.com_object.GeometricElements
-        for i in range(1, ge.Count + 1):
-            gt = ge.Item(i).GeometricType
-            if gt not in (1, 2):   # 排除坐标轴(1)和点(2)
-                sk_edge_count += 1
-    except Exception:
-        sk_edge_count = 4   # 默认矩形
+    outline = _get_sketch_outline(pad.sketch.com_object)
 
     return {
         "normal":        normal,
@@ -1183,7 +1243,8 @@ def _pad_geometry(pad) -> dict:
         "bottom_origin": _vadd(sk_origin, _vmul(normal, -depth2)),
         "en_pad":        en_pad,
         "en_sk":         en_sk,
-        "sk_edge_count": sk_edge_count,
+        "outline":       outline,
+        "profile_edge_count": outline.edge_count,
     }
 
 
@@ -1193,10 +1254,15 @@ def get_pad_faces(part, pad) -> list[dict]:
     每项包含：
 
     - ``type``        : ``"top"`` / ``"bottom"`` / ``"side"``
-    - ``normal``      : 面法向单位向量 (nx, ny, nz)，朝向实体外侧
-    - ``origin``      : 面上一点坐标（顶/底面为草图原点偏移，侧面为草图角点）
+    - ``source``      : ``"feature_inference"``（特征+草图推断的候选面，非最终拓扑枚举）
+    - ``geometry_type`` : ``"planar"`` / ``"cylindrical"`` / ``"unknown"``（按草图边类型归类）
+    - ``normal``      : 面法向单位向量 (nx, ny, nz)，朝向实体外侧；圆柱/未解析时可能为 None
+    - ``normal_unresolved`` : normal 为 None 时的中文原因；已解析为 None
+    - ``origin``      : 面上一点坐标（顶/底面为草图原点偏移，侧面有端点时为真实 3D 点）
     - ``face_brep``   : 面的 BRep 字符串，传给 ``make_pad_edge_ref``
     - ``edge_index``  : 仅 side 时有效，草图边索引（1 起）
+    - ``edge_count``  : 候选侧面数（outline.edge_count 语义）
+    - ``error``       : 恒 None（读失败改为抛 GeometryQueryError）
 
     参数
     ----
@@ -1206,6 +1272,10 @@ def get_pad_faces(part, pad) -> list[dict]:
     返回
     ----
     list[dict]，顺序：顶面、底面、侧面 1…N
+
+    异常
+    ----
+    草图轮廓不可枚举时抛 GeometryQueryError（不再静默返回 4 边）。
     """
 
     def _neg(v): return tuple(-x for x in v)
@@ -1214,55 +1284,46 @@ def get_pad_faces(part, pad) -> list[dict]:
     n   = geo["normal"]
     en  = geo["en_pad"]
     es  = geo["en_sk"]
+    outline = geo["outline"]
+    if outline.status != STATUS_OK:
+        raise GeometryQueryError(
+            f"get_pad_faces 无法枚举 {pad.name} 草图轮廓：{outline.note}；"
+            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
 
     faces = []
 
     # 顶面
     faces.append({
-        "type":       "top",
-        "normal":     n,
-        "origin":     geo["top_origin"],
-        "face_brep":  _brep_face_top(en),
-        "edge_index": None,
+        "type":              "top",
+        "source":            "feature_inference",
+        "geometry_type":     KIND_PLANAR,
+        "normal":            n,
+        "normal_unresolved": None,
+        "origin":            geo["top_origin"],
+        "face_brep":         _brep_face_top(en),
+        "edge_index":        None,
+        "edge_count":        outline.edge_count,
+        "error":             None,
     })
 
     # 底面（法向朝下 = -normal）
     faces.append({
-        "type":       "bottom",
-        "normal":     _neg(n),
-        "origin":     geo["bottom_origin"],
-        "face_brep":  _brep_face_bottom(en),
-        "edge_index": None,
+        "type":              "bottom",
+        "source":            "feature_inference",
+        "geometry_type":     KIND_PLANAR,
+        "normal":            _neg(n),
+        "normal_unresolved": None,
+        "origin":            geo["bottom_origin"],
+        "face_brep":         _brep_face_bottom(en),
+        "edge_index":        None,
+        "edge_count":        outline.edge_count,
+        "error":             None,
     })
 
-    # 侧面：法向 = 草图边方向旋转 90° 向外
-    # 草图坐标系：H = h_axis，V = v_axis
-    # 边 n 的法向：从草图内部往外，垂直于该边
-    # draw_rect 四边方向：1=+H, 2=+V, 3=-H, 4=-V（底/右/顶/左）
-    # 对应侧面法向：1=-V方向的法向=朝外, 即对每条边取"向外"的法向
-    h = geo["h_axis"]
-    v = geo["v_axis"]
-    # 四条边的外法向（基于 draw_rect 绘制顺序）
-    # 底边(1): 沿+H，外法向=-V
-    # 右边(2): 沿+V，外法向=+H
-    # 顶边(3): 沿-H，外法向=+V
-    # 左边(4): 沿-V，外法向=-H
-    side_normals = {
-        1: tuple(-x for x in v),  # -V
-        2: h,                      # +H
-        3: v,                      # +V
-        4: tuple(-x for x in h),  # -H
-    }
-
-    for idx in range(1, geo["sk_edge_count"] + 1):
-        side_n = side_normals.get(idx, (0, 0, 0))
-        faces.append({
-            "type":       "side",
-            "normal":     side_n,
-            "origin":     geo["sk_origin"],   # 近似，足够用于筛选
-            "face_brep":  _brep_face_side(en, es, idx),
-            "edge_index": idx,
-        })
+    # 侧面：纯几何规则（geometry_faces.describe_sides）逐边推导外法向与真实面上 3D 点
+    brep_map = {e.index: _brep_face_side(en, es, e.index) for e in outline.edges}
+    faces += describe_sides(outline, brep_map, geo["h_axis"], geo["v_axis"],
+                            origin=geo["sk_origin"], outward=True)
 
     logger.debug(f"[MODELING] get_pad_faces: {pad.name}, {len(faces)} faces")
     return faces
@@ -1270,7 +1331,7 @@ def get_pad_faces(part, pad) -> list[dict]:
 
 def get_pad_faces_by_normal(part, pad, normal: tuple,
                             tolerance_deg: float = 5.0) -> list[dict]:
-    """按法向筛选 Pad 的面。
+    """按法向筛选 Pad 的面（纯过滤，无零向量兜底）。
 
     参数
     ----
@@ -1281,24 +1342,15 @@ def get_pad_faces_by_normal(part, pad, normal: tuple,
 
     返回
     ----
-    符合条件的面描述列表（可能有多个）
+    符合条件的面描述列表（可能有多个）。
+
+    异常
+    ----
+    目标法向非法（非有限向量/零向量）或容差越界抛 ValueError；
+    草图轮廓不可枚举时抛 GeometryQueryError（经 get_pad_faces 传导）；
+    face["normal"] 为 None 的面自动跳过（圆柱/未解析/未知法向不参与筛选）。
     """
-    import math
-
-    def _normalize(v):
-        m = math.sqrt(sum(x*x for x in v))
-        return tuple(x/m for x in v) if m > 1e-9 else v
-    def _dot(a, b): return sum(x*y for x,y in zip(a,b))
-
-    tgt = _normalize(normal)
-    cos_tol = math.cos(math.radians(tolerance_deg))
-
-    result = []
-    for face in get_pad_faces(part, pad):
-        fn = _normalize(face["normal"])
-        if _dot(fn, tgt) >= cos_tol:
-            result.append(face)
-    return result
+    return filter_faces_by_normal(get_pad_faces(part, pad), normal, tolerance_deg, planar_only=True)
 
 
 def get_pad_face_edges(part, pad, face_info: dict) -> list:
@@ -1340,21 +1392,19 @@ def get_pad_face_edges(part, pad, face_info: dict) -> list:
             edges.append(make_pad_edge_ref(part, pad, fa_brep, sf["face_brep"]))
 
     elif ftype == "side":
-        idx = face_info["edge_index"]
-        n   = len(side_faces)
+        # 相邻面按列表位置（side_neighbor_positions），不再把 ordinal 当列表 rank
+        neighbors = side_neighbor_positions(side_faces, face_info["edge_index"])
         # 侧面的边：与顶面、底面、相邻两侧面
         if top_faces:
             edges.append(make_pad_edge_ref(part, pad, fa_brep, top_faces[0]["face_brep"]))
         if bottom_faces:
             edges.append(make_pad_edge_ref(part, pad, fa_brep, bottom_faces[0]["face_brep"]))
-        # 相邻侧面（idx-1 和 idx+1，循环）
-        prev_idx = ((idx - 2) % n)
-        next_idx = (idx % n)
-        if prev_idx != next_idx:
+        if neighbors is not None and neighbors[0] != neighbors[1]:
+            prev_j, next_j = neighbors
             edges.append(make_pad_edge_ref(part, pad, fa_brep,
-                                           side_faces[prev_idx]["face_brep"]))
+                                           side_faces[prev_j]["face_brep"]))
             edges.append(make_pad_edge_ref(part, pad, fa_brep,
-                                           side_faces[next_idx]["face_brep"]))
+                                           side_faces[next_j]["face_brep"]))
 
     logger.debug(
         f"[MODELING] get_pad_face_edges: {pad.name} {ftype}, {len(edges)} edges"
@@ -1378,10 +1428,12 @@ def _pocket_geometry(pocket) -> dict:
     返回 dict：
       en_pocket     : Pocket 英文内部名（如 "Pocket.1"）
       en_sk         : 草图英文内部名（如 "Sketch.2"）
-      sk_edge_count : 草图边数
+      outline       : 草图轮廓推断（SketchOutline，GUI 读取失败为 READ_ERROR 状态，不 raise）
+      profile_edge_count : 候选侧面数（读失败为 None）
       normal        : 法向（草图 H×V，指向开口方向）
       h_axis        : 草图 H 轴
       v_axis        : 草图 V 轴
+      sk_origin     : 草图原点 (ox,oy,oz)
       depth         : 挖槽深度
     """
     import math
@@ -1405,7 +1457,7 @@ def _pocket_geometry(pocket) -> dict:
     part_com = app_com.ActiveDocument.Part
     en_pocket = _get_feature_en_name(part_com, pocket.name)
     en_sk     = "Sketch." + pocket.sketch.name.split(".")[-1]
-    sk_edge_count = _get_sk_edge_count_from_sketch(pocket.sketch.com_object)
+    outline = _get_sketch_outline(pocket.sketch.com_object)
 
     try:
         depth = pocket.first_limit.dimension.value
@@ -1415,10 +1467,12 @@ def _pocket_geometry(pocket) -> dict:
     return {
         "en_pocket":     en_pocket,
         "en_sk":         en_sk,
-        "sk_edge_count": sk_edge_count,
+        "outline":       outline,
+        "profile_edge_count": outline.edge_count,
         "normal":        normal,
         "h_axis":        h_axis,
         "v_axis":        v_axis,
+        "sk_origin":     tuple(ax[0:3]),
         "depth":         depth,
     }
 
@@ -1428,47 +1482,57 @@ def get_pocket_faces(part, pocket) -> list[dict]:
 
     每项 dict 包含：
       type       : "bottom"（挖槽底面）或 "side"（侧面）
-      normal     : 面法向单位向量，朝向实体内侧（槽内朝外）
+      source     : "feature_inference"（特征+草图推断的候选面，非最终拓扑枚举）
+      geometry_type : "planar" / "cylindrical" / "unknown"（按草图边类型归类）
+      normal     : 面法向单位向量，朝向实体内侧（槽内朝外）；圆柱/未解析时可能为 None
+      normal_unresolved : normal 为 None 时的中文原因；已解析为 None
       face_brep  : BRep 字符串，传给 make_feature_edge_ref
       edge_index : 仅 side 时有效（1 起）
+      edge_count : 候选侧面数（outline.edge_count 语义）
+      error      : 恒 None（读失败改为抛 GeometryQueryError）
 
     注意：Pocket 开口面 = 下层 Pad 的顶面（用 get_pad_faces_by_normal 查询）。
+
+    异常
+    ----
+    草图轮廓不可枚举时抛 GeometryQueryError（不再静默返回 4 边）。
+    Pocket 侧面法向 = Pad 外法向反向（B4 实机核验）。
     """
     geo = _pocket_geometry(pocket)
     en  = geo["en_pocket"]
     es  = geo["en_sk"]
     h   = geo["h_axis"]
     v   = geo["v_axis"]
+    outline = geo["outline"]
+    if outline.status != STATUS_OK:
+        raise GeometryQueryError(
+            f"get_pocket_faces 无法枚举 {pocket.name} 草图轮廓：{outline.note}；"
+            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
     # Pocket 法向指向开口，底面法向 = 开口方向（从底面朝外指向槽口）
-    n   = geo["normal"]
-
-    # 侧面外法向（与 Pad 相同规律，基于 draw_rect 绘制顺序）
-    side_normals = {
-        1: tuple(-x for x in v),  # 边1=-V
-        2: h,                      # 边2=+H
-        3: v,                      # 边3=+V
-        4: tuple(-x for x in h),  # 边4=-H
-    }
+    n = geo["normal"]
 
     faces = []
 
     # 底面（挖槽最深处，idx=2）
     # 底面法向朝向槽内开口方向（= +normal，即从底面指向开口）
     faces.append({
-        "type":       "bottom",
-        "normal":     n,
-        "face_brep":  f"Face:(Brp:({en};2);None:();Cf14:())",
-        "edge_index": None,
+        "type":              "bottom",
+        "source":            "feature_inference",
+        "geometry_type":     KIND_PLANAR,
+        "normal":            n,
+        "normal_unresolved": None,
+        "origin":            None,
+        "face_brep":         f"Face:(Brp:({en};2);None:();Cf14:())",
+        "edge_index":        None,
+        "edge_count":        outline.edge_count,
+        "error":             None,
     })
 
-    # 侧面
-    for idx in range(1, geo["sk_edge_count"] + 1):
-        faces.append({
-            "type":       "side",
-            "normal":     side_normals.get(idx, (0, 0, 0)),
-            "face_brep":  f"Face:(Brp:({en};0:(Brp:({es};{idx})));None:();Cf14:())",
-            "edge_index": idx,
-        })
+    # 侧面：纯几何规则推导；Pocket 侧面法向 = Pad 外法向反向（outward=False）
+    brep_map = {e.index: f"Face:(Brp:({en};0:(Brp:({es};{e.index})));None:();Cf14:())"
+                for e in outline.edges}
+    faces += describe_sides(outline, brep_map, h, v,
+                            origin=geo["sk_origin"], outward=False)
 
     logger.debug(f"[MODELING] get_pocket_faces: {pocket.name}, {len(faces)} faces")
     return faces
@@ -1507,17 +1571,16 @@ def get_pocket_face_edges(part, pocket, face_info: dict,
             edges.append(_make_feature_edge_ref(part, pocket, fa_brep, sf["face_brep"]))
 
     elif ftype == "side":
-        idx = face_info["edge_index"]
-        n   = len(side_faces)
+        # 相邻面按列表位置（side_neighbor_positions），不再把 ordinal 当列表 rank
+        neighbors = side_neighbor_positions(side_faces, face_info["edge_index"])
         if bot_faces:
             edges.append(_make_feature_edge_ref(part, pocket, fa_brep, bot_faces[0]["face_brep"]))
-        prev_idx = ((idx - 2) % n)
-        next_idx = (idx % n)
-        if prev_idx != next_idx:
+        if neighbors is not None and neighbors[0] != neighbors[1]:
+            prev_j, next_j = neighbors
             edges.append(_make_feature_edge_ref(part, pocket, fa_brep,
-                                                side_faces[prev_idx]["face_brep"]))
+                                                side_faces[prev_j]["face_brep"]))
             edges.append(_make_feature_edge_ref(part, pocket, fa_brep,
-                                                side_faces[next_idx]["face_brep"]))
+                                                side_faces[next_j]["face_brep"]))
 
     logger.debug(
         f"[MODELING] get_pocket_face_edges: {pocket.name} {ftype}, {len(edges)} edges"
@@ -1577,18 +1640,20 @@ def _shaft_geometry(shaft) -> dict:
     返回 dict：
       en_shaft      : Shaft 英文内部名（如 "Shaft.1"）
       en_sk         : 草图英文内部名（如 "Sketch.1"）
-      sk_edge_count : 草图边数（决定面数）
+       outline       : 草图轮廓推断
+       profile_edge_count : 候选旋转面数（读取失败为 None）
     """
     app_com  = get_catia_v5_application()
     part_com = app_com.ActiveDocument.Part
     en_shaft = _get_feature_en_name(part_com, shaft.name)
     en_sk    = "Sketch." + shaft.sketch.name.split(".")[-1]
-    sk_edge_count = _get_sk_edge_count_from_sketch(shaft.sketch.com_object)
+    outline = _get_sketch_outline(shaft.sketch.com_object)
 
     return {
         "en_shaft":      en_shaft,
         "en_sk":         en_sk,
-        "sk_edge_count": sk_edge_count,
+        "outline":       outline,
+        "profile_edge_count": outline.edge_count,
     }
 
 
@@ -1597,23 +1662,30 @@ def get_shaft_faces(part, shaft) -> list[dict]:
 
     每项 dict 包含：
       type       : "surface"（Shaft 无顶/底概念，统一用 surface）
+      source     : "feature_inference"（候选面，不是最终拓扑枚举）
+      geometry_type / normal / normal_unresolved : S2 暂不解析，分别为 unknown / None / 原因
+      origin     : None（当前无可靠坐标依据）
       face_brep  : BRep 字符串，传给 make_feature_edge_ref
-      edge_index : 草图边索引（1 起）
+      edge_index : 过滤后草图边序号（1 起）
+      edge_count : 候选旋转面数
 
-    注意：草图边与面的对应关系取决于旋转轮廓绘制顺序，
-    使用 get_shaft_face_edges 可自动枚举相邻边的交线。
+    注意：旋转面类型依赖轮廓边相对旋转轴的方向，当前不伪造平面/圆柱分类。
+    使用 get_shaft_face_edges 可自动枚举相邻面的交线。
     """
     geo = _shaft_geometry(shaft)
     en  = geo["en_shaft"]
     es  = geo["en_sk"]
+    outline = geo["outline"]
+    if outline.status != STATUS_OK:
+        raise GeometryQueryError(
+            f"get_shaft_faces 无法枚举 {shaft.name} 草图轮廓：{outline.note}；"
+            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
 
-    faces = []
-    for idx in range(1, geo["sk_edge_count"] + 1):
-        faces.append({
-            "type":       "surface",
-            "face_brep":  f"Face:(Brp:({en};0:(Brp:({es};{idx})));None:();Cf14:())",
-            "edge_index": idx,
-        })
+    brep_map = {
+        edge.index: f"Face:(Brp:({en};0:(Brp:({es};{edge.index})));None:();Cf14:())"
+        for edge in outline.edges
+    }
+    faces = describe_surfaces(outline, brep_map)
 
     logger.debug(f"[MODELING] get_shaft_faces: {shaft.name}, {len(faces)} faces")
     return faces
@@ -1632,27 +1704,22 @@ def get_shaft_face_edges(part, shaft, face_info: dict) -> list:
     ----
     边引用 COM 对象列表（该面与所有相邻面的交线）
 
-    原理：Shaft 面按草图边索引排列，每面与 idx-1 和 idx+1 两个相邻面有交线。
+    原理：按返回面列表中的循环位置寻找相邻面，不把原始草图集合索引当作 BRep 编号。
     """
     all_faces = get_shaft_faces(part, shaft)
-    n         = len(all_faces)
-    idx       = face_info["edge_index"]   # 1-起
     fa_brep   = face_info["face_brep"]
 
     edges = []
-    # 相邻两面（循环，1-起转0-起：idx-1 → (idx-1)-1=(idx-2) mod n）
-    prev_i = (idx - 2) % n   # 0-起
-    next_i = idx % n          # 0-起
-
-    if n > 1:
+    neighbors = side_neighbor_positions(all_faces, face_info["edge_index"])
+    if neighbors is not None and neighbors[0] != neighbors[1]:
+        prev_i, next_i = neighbors
         edges.append(_make_feature_edge_ref(
             part, shaft, fa_brep, all_faces[prev_i]["face_brep"]))
-        if prev_i != next_i:
-            edges.append(_make_feature_edge_ref(
-                part, shaft, fa_brep, all_faces[next_i]["face_brep"]))
+        edges.append(_make_feature_edge_ref(
+            part, shaft, fa_brep, all_faces[next_i]["face_brep"]))
 
     logger.debug(
-        f"[MODELING] get_shaft_face_edges: {shaft.name} ei={idx}, {len(edges)} edges"
+        f"[MODELING] get_shaft_face_edges: {shaft.name} ei={face_info['edge_index']}, {len(edges)} edges"
     )
     return edges
 
@@ -2102,10 +2169,15 @@ class ModelingContext:
 
         每项 dict 包含：
           type       : "top" / "bottom" / "side"
-          normal     : 面法向单位向量 (nx,ny,nz)，朝外
-          origin     : 面上一点坐标 (ox,oy,oz)
+          source     : "feature_inference"（特征+草图推断的候选面）
+          geometry_type : planar / cylindrical / unknown
+          normal     : 仅已确认的 planar 面有法向；其他情况为 None
+          origin     : 面上一点坐标；无法确认时为 None
           face_brep  : BRep 字符串，传给 make_pad_edge_ref
           edge_index : 仅 side 时有效，草图边索引（1 起）
+          edge_count : 候选侧面数，不代表最终拓扑面数
+
+        轮廓无法枚举时抛出 GeometryQueryError，不再按矩形默认四边。
         """
         return get_pad_faces(part, pad)
 
@@ -2114,7 +2186,9 @@ class ModelingContext:
         """按法向筛选 Pad 的面（不计入步骤记录）。
 
         normal        : 目标法向 (nx,ny,nz)，如 (0,0,1) 表示朝上
-        tolerance_deg : 角度容差，度（默认 5°）
+        tolerance_deg : 角度容差，度（默认 5°），必须在 0~180°
+
+        仅匹配有 normal 的 planar 面；圆柱面和未解析面自动跳过。
 
         示例——找顶面::
 
@@ -2149,11 +2223,14 @@ class ModelingContext:
     def get_pocket_faces(self, part, pocket) -> list[dict]:
         """返回 Pocket 自身面的描述列表（不含开口面）。
 
-        每项：{type, normal, face_brep, edge_index}
+        每项：{type, source, geometry_type, normal, normal_unresolved,
+        origin, face_brep, edge_index, edge_count, error}
           type="bottom" : 挖槽底面（idx=2）
           type="side"   : 侧面（idx=草图边索引）
 
         开口面不属于 Pocket 自身，而是下层 Pad 的顶面。
+        Pocket 侧面法向按槽内语义取对应 Pad 外侧法向的反向值；
+        圆柱/未解析面不伪造法向。轮廓无法枚举时抛 GeometryQueryError。
         """
         return get_pocket_faces(part, pocket)
 
@@ -2189,10 +2266,14 @@ class ModelingContext:
     def get_shaft_faces(self, part, shaft) -> list[dict]:
         """返回 Shaft（旋转体）所有面的描述列表。
 
-        每项：{type="surface", face_brep, edge_index}
+        每项：{type="surface", source, geometry_type="unknown",
+        normal=None, normal_unresolved, origin=None, face_brep, edge_index,
+        edge_count, error}
         edge_index 对应草图轮廓边索引（1 起）。
 
-        注意：Shaft 所有面均用侧面格式，无独立的 top/bottom 编号。
+        注意：Shaft 所有面均用侧面格式，无独立的 top/bottom 编号；
+        当前不对旋转面类型和全局法向作未经拓扑解析的推断。
+        轮廓无法枚举时抛 GeometryQueryError。
         """
         return get_shaft_faces(part, shaft)
 

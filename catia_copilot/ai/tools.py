@@ -19,9 +19,14 @@ import logging
 import sys
 import tempfile
 import traceback
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from catia_copilot.ai.modeling_contract import (
+    build_modeling_prompt_section,
+    build_run_modeling_script_description,
+)
 from catia_copilot.catia.bom_collect import (
     collect_bom_rows_archive,
     flatten_bom_to_summary,
@@ -41,6 +46,8 @@ from catia_copilot.catia.document import (
     set_document_properties,
 )
 from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
+from catia_copilot.catia.connection import get_catia_v5_application
+from catia_copilot.catia.document_scope import describe_document, matches_document
 from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
 from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
 from catia_copilot.catia.template import apply_part_template
@@ -64,7 +71,8 @@ logger = logging.getLogger(__name__)
 # 用户可在配置文件中填写自定义 system_prompt 覆盖此默认值。
 # ---------------------------------------------------------------------------
 
-DEFAULT_SYSTEM_PROMPT = """\
+DEFAULT_SYSTEM_PROMPT = (
+    """\
 你是 CATIA Copilot，一个运行在 Windows 上的 CATIA V5 工程助手。
 你通过工具调用与 CATIA 交互，帮助工程师完成 BOM 采集、图纸导出、属性写回、依赖查询等任务。
 
@@ -94,101 +102,9 @@ DEFAULT_SYSTEM_PROMPT = """\
   - "keep_inertia"：读取 CATIA SPA"测量惯量 + 保持测量"写入的"惯量包络体"参数，需用户预先在零件文档中建立保持测量；若未建立，Weight 等字段为 null。
 - 只需要总重量和重心时，传 summary_only=true 减少返回数据量。
 
-**建模**
-- 使用 run_modeling_script 工具在 CATIA 中建模。
-- 调用前如遇 CATIA 连接错误才检查连接（check_catia_connection），平时无需预先调用。
-- 脚本必须包含 `def build(ctx):` 函数（注意：参数是 ctx，不是无参）。
-- 通过 ctx 调用所有建模 API，不需要 import 任何模块。
-- 所有几何参数单位为 mm。
-- build(ctx) 末尾必须调用 ctx.update_part(part) 刷新模型，否则特征不会显示。
-- 用 ctx.step("描述") 在关键节点打里程碑标记，便于调试定位。
-
-**build(ctx) 可用 API 清单**
-
-  文档与零件：
-    ctx.create_part(name)           → Part    新建 CATPart
-    ctx.get_active_part()           → Part    获取当前活动文档的 Part
-    ctx.update_part(part)                     刷新模型（必须在末尾调用）
-    ctx.save_part(part, path)                 另存为
-
-  草图：
-    ctx.add_sketch(part, plane)     → Sketch  plane: "xy"/"yz"/"zx"
-    ctx.draw_rect(sk, x, y, w, h)            画矩形（左下角坐标+宽高，mm）
-    ctx.draw_circle(sk, cx, cy, r)           画圆（圆心+半径，mm）
-    ctx.draw_point(sk, x, y)        → Point2D 画定位点（用于孔定位）
-
-  特征：
-    ctx.add_pad(part, sk, depth)    → Pad     拉伸
-    ctx.add_pocket(part, sk, depth) → Pocket  挖槽（目前仅支持基准面草图）
-    ctx.add_shaft(part, sk, axis="z") → Shaft   旋转体（360°），axis 默认 "z"
-    ctx.add_groove(part, sk, axis="z")→ Groove  环形槽（旋转切除，需已有实体），axis 默认 "z"
-    ctx.add_hole_from_sketch(part, sk, diameter, depth) → Hole  打孔
-    ctx.prepare_revolute_axis(part, axis="z")   提前创建旋转轴线（必须在 add_sketch 之前调用！）
-
-  草图创建：
-    ctx.add_sketch(part, plane)              → 在基准平面（"xy"/"yz"/"zx"）上建草图
-    ctx.add_sketch_at_height(part, h, base)  → 在距基准平面 h mm 处建偏移草图
-      **在已有凸台顶面继续建模时，必须用 add_sketch_at_height，不能用 add_sketch！**
-      示例：底层 Pad 高 20mm → ctx.add_sketch_at_height(part, 20, "xy")
-
-  旋转体 / 环形槽约束（重要）：
-
-    【草图平面与旋转轴对应关系】
-    - axis="z"：草图在 ZX 平面（plane="zx"）；旋转轴=V(Z)；半径方向=H(-X)；约束 H>0
-    - axis="y"：草图在 XY 平面（plane="xy"）；旋转轴=V(Y)；半径方向=H(X)；约束 H>0
-    - axis="x"：草图在 XY 平面（plane="xy"）；旋转轴=H(X)；半径方向=V(Y)；约束 V>0
-
-    【draw_rect 坐标说明】
-    draw_rect(sk, x, y, w, h) 中 x=H起点, y=V起点, w=H方向宽度, h=V方向高度
-    - axis="z"/"y"：x=内径（半径起点，H方向），y=轴向起点（V方向），w=壁厚，h=轴向长度
-    - axis="x"：x=轴向起点（H方向），y=内径（半径起点，V方向），w=轴向长度，h=壁厚
-
-    【必须先建轴线再建草图】
-    旋转体特征树要求轴线节点在草图节点之前，必须严格按以下顺序：
-      1. ctx.prepare_revolute_axis(part, axis)   ← 先建轴线
-      2. ctx.add_sketch(part, plane)             ← 再建草图
-      3. ctx.draw_rect / ctx.draw_circle ...
-      4. ctx.add_shaft(part, sk, axis)
-      5. ctx.update_part(part)
-
-    - add_groove 前提：Part 已有实体且已 update_part；环形槽轮廓需位于实体内部
-
-    【示例：外径100 内径50 高度80 绕Y轴旋转圆筒】
-        ctx.prepare_revolute_axis(part, "y")
-        sk = ctx.add_sketch(part, "xy")
-        ctx.draw_rect(sk, 25, 0, 25, 80)  # x=H起=内径25, y=V起=0, w=壁厚25, h=高度80
-        shaft = ctx.add_shaft(part, sk, axis="y")
-
-  修饰（当前需要 edge_ref，暂不可用，后续版本开放）：
-    ctx.add_edge_fillet(part, edge_ref, radius)
-    ctx.add_chamfer(part, edge_ref, length, angle=45)
-
-  阵列（当前方向参数有 bug，暂不推荐使用）：
-    ctx.add_rect_pattern(part, feature, nx, ny, dx, dy)
-    ctx.add_circ_pattern(part, feature, count, total_angle=360)
-
-  查询（不计入步骤记录）：
-    ctx.list_features(part)         → list[str]
-    ctx.list_sketches(part)         → list[str]
-    ctx.get_mass_props(part)        → dict | None
-
-  里程碑：
-    ctx.step("描述")                           打标记，不执行 CATIA 操作
-
-**脚本模板**::
-
-    def build(ctx):
-        part = ctx.create_part("零件名")
-        sk   = ctx.add_sketch(part, "xy")
-        ctx.draw_rect(sk, 0, 0, 100, 50)
-        pad  = ctx.add_pad(part, sk, 20)
-        ctx.step("主体完成")
-        ctx.update_part(part)
-
-**失败处理**
-- 执行失败时返回 failed_step（哪步失败）、error（错误信息）、steps（完整步骤记录）。
-- 根据 failed_step 和 error 定位问题，修正后重新调用，不要重写无关步骤。
-
+"""
+    + build_modeling_prompt_section()
+    + """\
 **文档属性**
 - get_document_properties：读取单个文档的标准属性（Part Number / Revision / Nomenclature 等）和用户自定义属性。file_path 传 null 读取活动文档。
 - set_document_properties：写入单个文档的属性。standard 支持 Part Number / Nomenclature / Revision / Definition / Source / Description（Description 通过 DescriptionRef 写入，经实测可写）；user_defined 只能使用预设字段（见下方约束）。
@@ -217,8 +133,8 @@ DEFAULT_SYSTEM_PROMPT = """\
 
 - 用中文回复。
 - 操作完成后简洁说明结果，不要重复罗列工具的返回 JSON。
-- 遇到错误时，解释可能的原因并给出下一步建议。
-"""
+- 遇到错误时，解释可能的原因并给出下一步建议。"""
+)
 
 # ---------------------------------------------------------------------------
 # 进度回调工厂
@@ -1094,6 +1010,7 @@ def tool_write_file(
 
 def tool_run_modeling_script(
     script: str,
+    target_document_id: str | None = None,
     progress_signal=None,
     **_kwargs,
 ) -> str:
@@ -1152,30 +1069,65 @@ def tool_run_modeling_script(
             ctx.update_part(part)
     """
 
+    run_id = uuid.uuid4().hex
+    status_base = {
+        "execution": "not_started",
+        "model_update": "not_started",
+        "verification": "not_run",
+    }
+    try:
+        document_before = describe_document(get_catia_v5_application().ActiveDocument)
+    except Exception as exc:
+        return json.dumps(
+            {"success": False, "run_id": run_id, "status": status_base,
+             "error": f"无法确定 CATIA 活动文档：{exc}"},
+            ensure_ascii=False,
+        )
+
+    if not matches_document(document_before, target_document_id):
+        return json.dumps(
+            {
+                "success": False,
+                "run_id": run_id,
+                "status": status_base,
+                "error": "目标文档与当前活动文档不匹配，已拒绝执行建模脚本",
+                "target_document": document_before.to_dict(),
+                "requested_document_id": target_document_id,
+            },
+            ensure_ascii=False,
+        )
+
     if progress_signal:
         progress_signal.emit("正在执行建模脚本...")
 
     # 将脚本写入临时文件（importlib 需要文件路径；同时保留供调试）
     tmp_dir = Path(tempfile.gettempdir()) / "catia_copilot_modeling"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    script_path = tmp_dir / "generated_model.py"
+    script_path = tmp_dir / f"generated_model_{run_id}.py"
+    module_name = f"_catia_generated_model_{run_id}"
 
     try:
         script_path.write_text(script, encoding="utf-8")
     except Exception as e:
-        return json.dumps({"error": f"写入脚本失败: {e}"}, ensure_ascii=False)
+        return json.dumps(
+            {"success": False, "run_id": run_id, "status": status_base,
+             "error": f"写入脚本失败: {e}", "script_path": str(script_path)},
+            ensure_ascii=False,
+        )
 
     # 检查脚本中是否定义了 build()
     if "def build(" not in script and "def build (" not in script:
         return json.dumps(
-            {"error": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ..."},
+            {"success": False, "run_id": run_id, "status": status_base,
+             "error": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ...",
+             "script_path": str(script_path)},
             ensure_ascii=False,
         )
 
     # 加载模块
     try:
-        sys.modules.pop("_catia_generated_model", None)
-        spec   = importlib.util.spec_from_file_location("_catia_generated_model", script_path)
+        sys.modules.pop(module_name, None)
+        spec   = importlib.util.spec_from_file_location(module_name, script_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"无法为 {script_path} 创建 ModuleSpec")
         module = importlib.util.module_from_spec(spec)
@@ -1184,7 +1136,8 @@ def tool_run_modeling_script(
         err = traceback.format_exc()
         logger.error(f"[MODELING] 脚本加载失败:\n{err}")
         return json.dumps(
-            {"error": "脚本语法错误或 import 失败", "traceback": err,
+            {"success": False, "run_id": run_id, "status": status_base,
+             "error": "脚本语法错误或 import 失败", "traceback": err,
              "script_path": str(script_path)},
             ensure_ascii=False,
         )
@@ -1203,6 +1156,9 @@ def tool_run_modeling_script(
         return json.dumps(
             {
                 "success":             False,
+                "run_id":              run_id,
+                "status":              {**status_base, "execution": "failed"},
+                "target_document":    document_before.to_dict(),
                 "failed_step":         mse.step_name,
                 "error":               str(mse.original_error),
                 "traceback":           mse.traceback_str,
@@ -1220,6 +1176,9 @@ def tool_run_modeling_script(
         return json.dumps(
             {
                 "success":     False,
+                "run_id":      run_id,
+                "status":      {**status_base, "execution": "failed"},
+                "target_document": document_before.to_dict(),
                 "error":       "build() 执行失败（非建模步骤异常）",
                 "traceback":   err,
                 "steps":       ctx.steps,
@@ -1241,8 +1200,27 @@ def tool_run_modeling_script(
         part     = get_active_part()
         features = list_features(part)
         mp       = get_mass_props(part)
+        document_after = describe_document(get_catia_v5_application().ActiveDocument)
+        created_new_document = any(
+            step.get("step", "").startswith("create_part(") for step in ctx.steps
+        )
+        if document_before.key == document_after.key:
+            binding_status = "same_document"
+        elif created_new_document:
+            binding_status = "created_document"
+        else:
+            binding_status = "document_changed"
         result: dict = {
             "success":     True,
+            "run_id":      run_id,
+            "status": {
+                "execution": "succeeded",
+                "model_update": "succeeded",
+                "verification": "not_run",
+            },
+            "document_binding": binding_status,
+            "document_before": document_before.to_dict(),
+            "document_after": document_after.to_dict(),
             "part_name":   part.name,
             "features":    features,
             "steps":       ctx.steps,
@@ -1254,6 +1232,13 @@ def tool_run_modeling_script(
     except Exception as e:
         result = {
             "success":     True,
+            "run_id":      run_id,
+            "status": {
+                "execution": "succeeded",
+                "model_update": "unknown",
+                "verification": "not_run",
+            },
+            "document_before": document_before.to_dict(),
             "steps":       ctx.steps,
             "script_path": str(script_path),
             "note":        f"build(ctx) 已执行，但读取模型状态失败: {e}",
@@ -2034,119 +2019,7 @@ tools_schema: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "run_modeling_script",
-            "description": (
-                "在 CATIA 中执行 AI 生成的 Python 建模脚本，完成零件建模。\n\n"
-                "脚本必须包含 def build(ctx): 函数（注意：参数是 ctx，不是无参）。\n"
-                "通过 ctx 调用所有建模 API，不需要任何 import 语句。\n\n"
-                "可用 API（通过 ctx 调用）：\n"
-                "  ctx.create_part(name, nomenclature='')                   新建零件，返回 Part\n"
-                "                                                             name=零件号(PartNumber)，显示在特征树节点\n"
-                "                                                             nomenclature=命名(Nomenclature)，描述用途如'底座'\n"
-                "                                                             用户说的'命名/叫xxx'→ nomenclature；'零件号/件号'→ name\n"
-                "  ctx.get_active_part()                                     获取活动文档的 Part\n"
-                "  ctx.update_part(part)                                     刷新模型（必须在末尾调用）\n"
-                "  ctx.save_part(part, path)                                 另存为\n"
-                "  ctx.add_sketch(part, plane)                               新建草图，plane='xy'/'yz'/'zx'\n"
-                "  ctx.add_sketch_at_height(part, h, base='xy')              在距基准平面 h mm 处建草图（已知高度时用）\n"
-                "  ctx.add_sketch_on_pad_top(part, pad)                      在 Pad 顶面直接建草图（B-Rep 面支撑，关联 Pad 深度，推荐用于叠加建模）\n"
-                "  ctx.add_sketch_on_pad_side(part, pad, edge_index)          在 Pad 侧面直接建草图（B-Rep 面支撑，真正关联）\n"
-                "                                                              edge_index=草图边索引(1起)，对 draw_rect(x,y,w,h)：\n"
-                "                                                              1=Y=y面, 2=X=x+w面, 3=Y=y+h面, 4=X=x面\n"
-                "                                                              侧面草图坐标系：H沿面宽，V=Z+（高度方向）\n"
-                "  ctx.add_sketch_on_pad_bottom(part, pad)                    在 Pad 底面直接建草图（B-Rep 面支撑，关联）\n"
-                "  ctx.draw_rect(sk, x, y, w, h)                             画矩形（左下角+宽高，mm）\n"
-                "  ctx.draw_circle(sk, cx, cy, r)                            画圆（圆心+半径，mm）\n"
-                "  ctx.draw_arc(sk, cx, cy, r, start°, end°)                 画圆弧（度，逆时针，0°=水平右）\n"
-                "  ctx.draw_line(sk, x1, y1, x2, y2)                         画直线段，mm\n"
-                "  ctx.draw_slot(sk, x1, y1, x2, y2, r)                      画腰形槽（中轴两端点+半圆半径，mm）\n"
-                "  ctx.draw_point(sk, x, y)                                  画定位点\n"
-                "  ctx.add_pad(part, sk, depth,                              拉伸，mm\n"
-                "              symmetric=False, second_depth=None)           symmetric=True：对称（总厚2×depth）\n"
-                "                                                             second_depth=N：双向非对称（反向Nmm）\n"
-                "  ctx.add_pocket(part, sk, depth)                           挖槽，mm（仅基准面草图）\n"
-                "  ctx.add_hole_from_sketch(part, sk, d, depth)              打孔\n"
-                "  ctx.list_features(part)                                   查询特征列表\n"
-                "  ctx.list_sketches(part)                                   查询草图列表\n"
-                "  ctx.get_mass_props(part)                                  查询质量特性\n"
-                "  ctx.step('描述')                                           可选里程碑标记\n\n"
-                "几何查询（面 / 边，不计入步骤记录）：\n"
-                "  === Pad ===\n"
-                "  ctx.get_pad_faces(part, pad)                              所有面列表（type=top/bottom/side）\n"
-                "  ctx.get_pad_faces_by_normal(part, pad, normal, tol=5.0)  按法向筛选面\n"
-                "                                                             normal=(nx,ny,nz) 如(0,0,1)=朝上\n"
-                "  ctx.get_pad_face_edges(part, pad, face_info)             某面的所有边引用列表\n"
-                "  === Pocket ===\n"
-                "  ctx.get_pocket_faces(part, pocket)                        Pocket 自身面列表（type=bottom/side）\n"
-                "                                                             注意：开口面属于下层 Pad，不在此列表内\n"
-                "  ctx.get_pocket_face_edges(part, pocket, face_info)       Pocket 某面的所有边引用列表\n"
-                "  ctx.get_pocket_opening_edges(part, pocket, pad)          Pocket 开口楞（=Pad 顶面×Pocket 侧面）\n"
-                "  === Shaft ===\n"
-                "  ctx.get_shaft_faces(part, shaft)                          Shaft 所有面列表（type=surface, edge_index=草图边索引）\n"
-                "  ctx.get_shaft_face_edges(part, shaft, face_info)         Shaft 某面与相邻面的交线边引用列表\n\n"
-                "倒圆角：\n"
-                "  ctx.add_auto_fillet(part, radius, inner_radius=None)       自动圆角：对所有适合的边圆角（无需指定边）\n"
-                "                                                               inner_radius 不传时与 radius 相同（需 update_part）\n"
-                "  ctx.add_fillet_edges(part, edge_refs, radius)               精确圆角：对指定边引用列表圆角（需 update_part）\n"
-                "  ctx.make_pad_edge_ref(part, pad, face_a_brep, face_b_brep)  低层：由两面 BRep 构造 Pad 边引用\n"
-                "  ctx.get_pad_face_brep(pad, face, edge_index=1)              低层：获取 Pad 面 BRep 字符串\n\n"
-                "自动圆角示例（最简）：\n"
-                "  ctx.add_auto_fillet(part, 3.0)\n"
-                "  ctx.update_part(part)\n\n"
-                "精确圆角示例——Pad 顶面所有楞：\n"
-                "  top   = ctx.get_pad_faces_by_normal(part, pad, (0,0,1))[0]\n"
-                "  edges = ctx.get_pad_face_edges(part, pad, top)\n"
-                "  ctx.add_fillet_edges(part, edges, 3.0)\n"
-                "  ctx.update_part(part)\n\n"
-                "倒圆角示例——Pocket 开口楞 + 底楞：\n"
-                "  # 开口楞（需要 pad 对象）\n"
-                "  edges = ctx.get_pocket_opening_edges(part, pocket, pad)\n"
-                "  ctx.add_fillet_edges(part, edges, 2.0)\n"
-                "  # 底楞\n"
-                "  bot   = [f for f in ctx.get_pocket_faces(part, pocket) if f['type']=='bottom'][0]\n"
-                "  edges = ctx.get_pocket_face_edges(part, pocket, bot)\n"
-                "  ctx.add_fillet_edges(part, edges, 2.0)\n"
-                "  ctx.update_part(part)\n\n"
-                "倒圆角示例——Shaft 某面的楞：\n"
-                "  faces = ctx.get_shaft_faces(part, shaft)\n"
-                "  edges = ctx.get_shaft_face_edges(part, shaft, faces[0])\n"
-                "  ctx.add_fillet_edges(part, edges, 3.0)\n"
-                "  ctx.update_part(part)\n\n"
-                "## 关键约束\n\n"
-                "- 所有关键尺寸（长、宽、高、半径、深度、孔径、壁厚）必须在 build(ctx)\n"
-                "  开头声明为具名变量，如：\n"
-                "    length = 100.0   # 长度（X向）\n"
-                "    width  = 60.0    # 宽度（Y向）\n"
-                "    height = 30.0    # 高度（Z向）\n"
-                "    radius = 10.0    # 圆角半径\n"
-                "  后续 ctx.draw_rect(...) / ctx.add_pad(...) 等调用只能引用变量名，\n"
-                "  不得硬编码数字。\n"
-                "- 用户说\"把某个尺寸改成 N\"时，只需修改变量声明行，不要重写整段几何代码。\n"
-                "- 如果用户使用的变量名不符合其语义（如用 length 表示宽度），需修正变量名。\n\n"
-                "暂不可用：\n"
-                "  ctx.add_rect_pattern / ctx.add_circ_pattern    方向参数有 bug\n\n"
-                "脚本模板（单层）：\n"
-                "  def build(ctx):\n"
-                "      part = ctx.create_part('零件名')\n"
-                "      sk   = ctx.add_sketch(part, 'xy')\n"
-                "      ctx.draw_rect(sk, 0, 0, 100, 50)\n"
-                "      pad  = ctx.add_pad(part, sk, 20)\n"
-                "      ctx.step('主体完成')\n"
-                "      ctx.update_part(part)\n\n"
-                "脚本模板（多层叠加）：\n"
-                "  def build(ctx):\n"
-                "      part = ctx.create_part('零件名')\n"
-                "      sk1  = ctx.add_sketch(part, 'xy')\n"
-                "      ctx.draw_rect(sk1, 0, 0, 100, 60)\n"
-                "      pad1 = ctx.add_pad(part, sk1, 30)\n"
-                "      ctx.update_part(part)              # 每层 pad 后需 update\n"
-                "      sk2  = ctx.add_sketch_on_pad_top(part, pad1)  # 在顶面继续\n"
-                "      ctx.draw_circle(sk2, 50, 30, 20)\n"
-                "      pad2 = ctx.add_pad(part, sk2, 15)\n"
-                "      ctx.update_part(part)\n\n"
-                "成功：返回 success=true、零件名、特征列表、步骤记录。\n"
-                "失败：返回 success=false、failed_step（哪步失败）、error、完整步骤记录。\n"
-                "根据 failed_step 和 error 定位并修正，不要重写无关步骤。"
-            ),
+            "description": build_run_modeling_script_description(),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2155,6 +2028,13 @@ tools_schema: list[dict[str, Any]] = [
                         "description": (
                             "完整的 Python 脚本字符串，必须包含 def build(ctx): 函数。"
                             "通过 ctx 调用所有建模 API，不需要任何 import 语句。"
+                        ),
+                    },
+                    "target_document_id": {
+                        "type": "string",
+                        "description": (
+                            "可选。目标 CATIA 文档标识，可传 get_open_documents 返回的文档名、"
+                            "完整路径或 PartNumber。若与当前活动文档不匹配，工具拒绝执行。"
                         ),
                     },
                 },
