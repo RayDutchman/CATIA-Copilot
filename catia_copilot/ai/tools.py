@@ -48,6 +48,7 @@ from catia_copilot.catia.document import (
 from catia_copilot.catia.drawing_operations import generate_drawing, refresh_drawing
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document_scope import describe_document, matches_document
+from catia_copilot.catia.modeling_verifier import verify_model_state
 from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
 from catia_copilot.catia.modeling import (
     ModelingCancelledError,
@@ -1015,6 +1016,7 @@ def tool_write_file(
 def tool_run_modeling_script(
     script: str,
     target_document_id: str | None = None,
+    verification: dict | None = None,
     progress_signal=None,
     cancel_check=None,
     **_kwargs,
@@ -1256,6 +1258,9 @@ def tool_run_modeling_script(
         if mp:
             result["mass_kg"] = round(mp["mass"], 6)
             result["cog_mm"]  = [round(v, 3) for v in mp["cog"]]
+        verification_result = verify_model_state(features, mp, verification)
+        result["verification"] = verification_result
+        result["status"]["verification"] = verification_result["status"]
     except Exception as e:
         result = {
             "success":     True,
@@ -2063,6 +2068,25 @@ tools_schema: list[dict[str, Any]] = [
                             "可选。目标 CATIA 文档标识，可传 get_open_documents 返回的文档名、"
                             "完整路径或 PartNumber。若与当前活动文档不匹配，工具拒绝执行。"
                         ),
+                    },
+                    "verification": {
+                        "type": "object",
+                        "description": "可选的模型验收条件，支持 required_features、feature_count、mass_kg、cog_mm。",
+                        "properties": {
+                            "required_features": {"type": "array", "items": {"type": "string"}},
+                            "feature_count": {"type": "integer"},
+                            "mass_kg": {
+                                "type": "object",
+                                "properties": {"min": {"type": "number"}, "max": {"type": "number"}},
+                            },
+                            "cog_mm": {
+                                "type": "object",
+                                "properties": {
+                                    "min": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                                    "max": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+                                },
+                            },
+                        },
                     },
                 },
                 "required": ["script"],

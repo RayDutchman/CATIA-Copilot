@@ -422,3 +422,4 @@ class TestGeometryFaceSemanticsS2(unittest.TestCase):
         self.assertIn("target_document_id", desc)
         for token in ("execution", "model_update", "verification"):
             self.assertIn(token, desc)
+        self.assertIn("required_features", desc)

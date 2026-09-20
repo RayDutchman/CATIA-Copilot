@@ -166,6 +166,7 @@ def build_run_modeling_script_description() -> str:
             "",
             "### 执行目标与状态",
             "可选参数 target_document_id 可传当前 CATIA 文档名、完整路径或 PartNumber；与活动文档不匹配时工具拒绝执行。",
+            "可选参数 verification 可验收 required_features、feature_count、mass_kg、cog_mm；验收失败会明确标记 verification=failed。",
             "返回结果区分 execution、model_update、verification 三层状态；查询状态失败时不得把模型验证说成通过。",
         ]
     )
