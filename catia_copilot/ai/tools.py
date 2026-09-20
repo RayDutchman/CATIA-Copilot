@@ -49,7 +49,11 @@ from catia_copilot.catia.drawing_operations import generate_drawing, refresh_dra
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document_scope import describe_document, matches_document
 from catia_copilot.catia.mass_props_collect import collect_mass_props_rows
-from catia_copilot.catia.modeling import ModelingContext, ModelingStepError
+from catia_copilot.catia.modeling import (
+    ModelingCancelledError,
+    ModelingContext,
+    ModelingStepError,
+)
 from catia_copilot.catia.template import apply_part_template
 from catia_copilot.constants import (
     BOM_DEFAULT_COLUMNS,
@@ -1012,6 +1016,7 @@ def tool_run_modeling_script(
     script: str,
     target_document_id: str | None = None,
     progress_signal=None,
+    cancel_check=None,
     **_kwargs,
 ) -> str:
     """在 CATIA 中执行 AI 生成的建模脚本（逐步执行 + 结构化反馈）。
@@ -1157,9 +1162,22 @@ def tool_run_modeling_script(
         progress_signal.emit("脚本已加载，正在调用 build(ctx)...")
 
     # 创建执行上下文并调用 build(ctx)
-    ctx = ModelingContext()
+    ctx = ModelingContext(cancel_check=cancel_check)
     try:
         module.build(ctx)
+
+    except ModelingCancelledError as mce:
+        logger.info("[MODELING] %s", mce)
+        return finish(
+            {
+                "success": False,
+                "run_id": run_id,
+                "status": {**status_base, "execution": "cancelled"},
+                "target_document": document_before.to_dict(),
+                "error": str(mce),
+                "steps": ctx.steps,
+            }
+        )
 
     except ModelingStepError as mse:
         # 步骤级失败：有精确的步骤定位信息

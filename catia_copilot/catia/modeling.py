@@ -26,7 +26,7 @@ import logging
 import math
 import traceback as _tb
 from dataclasses import replace
-from typing import Literal
+from typing import Callable, Literal
 
 from pycatia.in_interfaces.reference import Reference as PyRef
 from pycatia.mec_mod_interfaces.part_document import PartDocument
@@ -1750,6 +1750,10 @@ class ModelingStepError(Exception):
         self.traceback_str      = traceback_str      # 完整 traceback 字符串
 
 
+class ModelingCancelledError(Exception):
+    """建模在步骤边界收到取消请求；不承诺打断正在执行的 COM 调用。"""
+
+
 class ModelingContext:
     """建模执行上下文，供 AI 生成的脚本通过 build(ctx) 调用。
 
@@ -1780,9 +1784,10 @@ class ModelingContext:
             ctx.update_part(part)
     """
 
-    def __init__(self):
+    def __init__(self, cancel_check: Callable[[], bool] | None = None):
         self._steps: list[dict] = []  # 步骤记录列表
         self._part = None             # 最后一次操作的 Part，用于 features 快照
+        self._cancel_check = cancel_check
 
     # ------------------------------------------------------------------
     # 内部辅助
@@ -1792,6 +1797,11 @@ class ModelingContext:
         """安全地读取当前特征树快照，失败时返回空列表。"""
         if self._part is None:
             return []
+
+    def _raise_if_cancelled(self) -> None:
+        """仅在下一步开始前检查取消，不在 COM 调用中轮询。"""
+        if self._cancel_check is not None and self._cancel_check():
+            raise ModelingCancelledError("建模已取消；已停止继续执行后续步骤")
         try:
             return list_features(self._part)
         except Exception:
@@ -1807,6 +1817,7 @@ class ModelingContext:
         *args/**kwargs : 传给 fn 的参数
         """
         try:
+            self._raise_if_cancelled()
             result = fn(*args, **kwargs)
             # 成功：记录步骤
             self._steps.append({
@@ -1815,6 +1826,9 @@ class ModelingContext:
                 "features_after": self._snapshot(),
             })
             return result
+        except ModelingCancelledError:
+            # 取消不是建模失败，不包装成 ModelingStepError；工具层负责上报 cancelled。
+            raise
         except Exception as exc:
             tb_str = _tb.format_exc()
             feats  = self._snapshot()
@@ -1843,6 +1857,7 @@ class ModelingContext:
 
         不执行任何 CATIA 操作，纯粹用于给 AI 的反馈结构加注语义标签。
         """
+        self._raise_if_cancelled()
         self._steps.append({
             "step":           name,
             "status":         "ok",

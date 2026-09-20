@@ -80,6 +80,11 @@ class AgentWorker(QThread):
             except Exception:
                 pass
 
+    @property
+    def stop_requested(self) -> bool:
+        """返回停止请求状态，供主线程工具在步骤边界读取。"""
+        return self._stop
+
     def receive_tool_result(self, result: str) -> None:
         """主线程执行完工具后调用，将结果传回 AgentWorker。"""
         self._tool_result_value = result

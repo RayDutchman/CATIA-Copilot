@@ -2681,6 +2681,9 @@ class AIChatPanel(QWidget):
 
         # 注入 progress_signal
         args["progress_signal"] = worker.tool_progress
+        if tool_name == "run_modeling_script":
+            # 只在 ModelingContext 下一步开始前检查，不承诺打断当前 COM 调用。
+            args["cancel_check"] = lambda w=worker: w.stop_requested
 
         try:
             result = tool_fn(**args)
