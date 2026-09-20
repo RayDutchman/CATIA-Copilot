@@ -1070,6 +1070,25 @@ def tool_run_modeling_script(
     """
 
     run_id = uuid.uuid4().hex
+    tmp_dir = Path(tempfile.gettempdir()) / "catia_copilot_modeling"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    script_path = tmp_dir / f"generated_model_{run_id}.py"
+    run_record_path = tmp_dir / f"modeling_run_{run_id}.json"
+
+    def finish(payload: dict) -> str:
+        """写入本次运行记录，并返回给 Agent 的 JSON。"""
+        payload.setdefault("run_id", run_id)
+        payload.setdefault("script_path", str(script_path))
+        payload["run_record_path"] = str(run_record_path)
+        try:
+            run_record_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("[MODELING] 写入运行记录失败：%s", exc)
+        return json.dumps(payload, ensure_ascii=False)
+
     status_base = {
         "execution": "not_started",
         "model_update": "not_started",
@@ -1078,14 +1097,13 @@ def tool_run_modeling_script(
     try:
         document_before = describe_document(get_catia_v5_application().ActiveDocument)
     except Exception as exc:
-        return json.dumps(
+        return finish(
             {"success": False, "run_id": run_id, "status": status_base,
              "error": f"无法确定 CATIA 活动文档：{exc}"},
-            ensure_ascii=False,
         )
 
     if not matches_document(document_before, target_document_id):
-        return json.dumps(
+        return finish(
             {
                 "success": False,
                 "run_id": run_id,
@@ -1094,34 +1112,28 @@ def tool_run_modeling_script(
                 "target_document": document_before.to_dict(),
                 "requested_document_id": target_document_id,
             },
-            ensure_ascii=False,
         )
 
     if progress_signal:
         progress_signal.emit("正在执行建模脚本...")
 
-    # 将脚本写入临时文件（importlib 需要文件路径；同时保留供调试）
-    tmp_dir = Path(tempfile.gettempdir()) / "catia_copilot_modeling"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    script_path = tmp_dir / f"generated_model_{run_id}.py"
+    # 将脚本写入临时文件（每次运行独立保留，便于调试）
     module_name = f"_catia_generated_model_{run_id}"
 
     try:
         script_path.write_text(script, encoding="utf-8")
     except Exception as e:
-        return json.dumps(
+        return finish(
             {"success": False, "run_id": run_id, "status": status_base,
              "error": f"写入脚本失败: {e}", "script_path": str(script_path)},
-            ensure_ascii=False,
         )
 
     # 检查脚本中是否定义了 build()
     if "def build(" not in script and "def build (" not in script:
-        return json.dumps(
+        return finish(
             {"success": False, "run_id": run_id, "status": status_base,
              "error": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ...",
              "script_path": str(script_path)},
-            ensure_ascii=False,
         )
 
     # 加载模块
@@ -1135,11 +1147,10 @@ def tool_run_modeling_script(
     except Exception:
         err = traceback.format_exc()
         logger.error(f"[MODELING] 脚本加载失败:\n{err}")
-        return json.dumps(
+        return finish(
             {"success": False, "run_id": run_id, "status": status_base,
              "error": "脚本语法错误或 import 失败", "traceback": err,
              "script_path": str(script_path)},
-            ensure_ascii=False,
         )
 
     if progress_signal:
@@ -1153,7 +1164,7 @@ def tool_run_modeling_script(
     except ModelingStepError as mse:
         # 步骤级失败：有精确的步骤定位信息
         logger.error(f"[MODELING] 步骤 [{mse.step_name}] 失败:\n{mse.traceback_str}")
-        return json.dumps(
+        return finish(
             {
                 "success":             False,
                 "run_id":              run_id,
@@ -1166,14 +1177,13 @@ def tool_run_modeling_script(
                 "features_at_failure": mse.features_at_failure,
                 "script_path":         str(script_path),
             },
-            ensure_ascii=False,
         )
 
     except Exception:
         # build() 本身（非 _run 包裹的代码）抛出的异常
         err = traceback.format_exc()
         logger.error(f"[MODELING] build() 执行失败:\n{err}")
-        return json.dumps(
+        return finish(
             {
                 "success":     False,
                 "run_id":      run_id,
@@ -1184,7 +1194,6 @@ def tool_run_modeling_script(
                 "steps":       ctx.steps,
                 "script_path": str(script_path),
             },
-            ensure_ascii=False,
         )
 
     # 执行成功，读取当前零件状态
@@ -1244,7 +1253,7 @@ def tool_run_modeling_script(
             "note":        f"build(ctx) 已执行，但读取模型状态失败: {e}",
         }
 
-    return json.dumps(result, ensure_ascii=False)
+    return finish(result)
 
 
 # ---------------------------------------------------------------------------
