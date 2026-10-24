@@ -74,7 +74,6 @@ from catia_copilot.constants import (
 )
 from catia_copilot.i18n import read_language, translate, write_language
 from catia_copilot.logging_setup import LOG_FILE, log_signal_emitter
-# AIChatPanel 懒加载：首次切到 AI 助手 Tab 时才 import，避免拖慢启动
 from catia_copilot.ui.bom_edit_dialog_v3 import BomEditDialogV3
 from catia_copilot.ui.catia_embed import (
     DEFAULT_ANCHOR,
@@ -85,6 +84,7 @@ from catia_copilot.ui.catia_embed import (
 from catia_copilot.ui.catia_sidebar import CATIASidebarManager
 from catia_copilot.ui.convert_dialog import FileConvertDialog
 from catia_copilot.ui.export_bom_dialog import ExportBomDialog
+from catia_copilot.ui.file_interactions import install_file_interactions
 from catia_copilot.ui.find_deps_dialog import FindDependenciesDialog
 from catia_copilot.ui.help_dialog import HelpDialog
 from catia_copilot.ui.mass_props_dialog import MassPropsDialog
@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        install_file_interactions()
         self.setWindowTitle(APP_NAME)
         self.resize(MAIN_WINDOW_DEFAULT_WIDTH, MAIN_WINDOW_DEFAULT_HEIGHT)
         self.setMinimumSize(600, 600)
@@ -511,15 +512,7 @@ class MainWindow(QMainWindow):
             self._build_tools_page(), translate("CATIACopilot", "工具")
         )  # 3
 
-        # AI 助手 Tab：占位符，首次切到时懒加载
-        self._ai_chat_panel = None
-        self._ai_tab_placeholder = QWidget()
-        self._tab_widget.addTab(
-            self._ai_tab_placeholder, translate("CATIACopilot", "AI 助手")
-        )  # 4
-        self._tab_widget.currentChanged.connect(self._on_tab_changed)
-
-        self._tab_widget.addTab(self._build_more_page(),      "≡")       # 5
+        self._tab_widget.addTab(self._build_more_page(), "≡")  # 4
 
         # ── 嵌入式日志面板（位于 Tab 下方、状态栏上方）─────────────────────
         self._log_panel = self._build_log_panel()
@@ -534,18 +527,6 @@ class MainWindow(QMainWindow):
 
         # 隐藏默认菜单栏
         self.menuBar().hide()
-
-    def _on_tab_changed(self, index: int) -> None:
-        """首次切换到 AI 助手 Tab 时懒加载 AIChatPanel。"""
-        AI_TAB_INDEX = 4
-        if index == AI_TAB_INDEX and self._ai_chat_panel is None:
-            from catia_copilot.ui.ai_chat_panel import AIChatPanel  # noqa: PLC0415
-            self._ai_chat_panel = AIChatPanel()
-            self._tab_widget.removeTab(AI_TAB_INDEX)
-            self._tab_widget.insertTab(
-                AI_TAB_INDEX, self._ai_chat_panel, translate("CATIACopilot", "AI 助手")
-            )
-            self._tab_widget.setCurrentIndex(AI_TAB_INDEX)
 
     def _build_log_panel(self) -> QWidget:
         """构建嵌入在主窗口底部的日志面板（默认隐藏）。
@@ -1519,10 +1500,6 @@ class MainWindow(QMainWindow):
 
         # 停止 CATIA 状态监听定时器
         self._stop_catia_monitor()
-
-        # 停止 AI Agent（如果正在运行；懒加载时可能为 None）
-        if self._ai_chat_panel is not None:
-            self._ai_chat_panel.stop_agent()
 
         # 关闭所有对话框和子窗口（包括 QDialog 和 QMainWindow）
         for attr, value in list(vars(self).items()):

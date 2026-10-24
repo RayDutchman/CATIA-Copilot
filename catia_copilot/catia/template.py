@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import PRESET_USER_REF_PROPERTIES
+from catia_copilot.constants_data import PRESET_USER_REF_PROPERTIES
 
 logger = logging.getLogger(__name__)
 

@@ -19,8 +19,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 _LUPDATE = which("pyside6-lupdate")
 _SKIP_REASON = "pyside6-lupdate 不在 PATH 中，跳过真实提取回归"
 
-# 显式源文件枚举清单（与 docs/i18n-design.md §2.4 生产命令一致，phase2 全量）
+# 显式源文件枚举清单（当前生产源码，AI UI 已退役）
 _PROBE_SOURCES = [
+    "main.py",
     "catia_copilot/i18n.py",
     "catia_copilot/constants.py",
     "catia_copilot/ui/main_window.py",
@@ -32,6 +33,9 @@ _PROBE_SOURCES = [
     "catia_copilot/ui/find_deps_dialog.py",
     "catia_copilot/ui/mass_props_dialog.py",
     "catia_copilot/ui/template_dialog.py",
+    "catia_copilot/ui/plm_workbench.py",
+    "catia_copilot/ui/help_dialog.py",
+    "catia_copilot/ui/log_window.py",
 ]
 
 
@@ -105,7 +109,7 @@ class TestLupdateExtraction(unittest.TestCase):
             self.assertTrue(sources, f"生产清单提取不应为空（{len(sources)} 条）")
 
     def test_extraction_matches_handoff_json(self) -> None:
-        """生产清单（phase2 全量 11 文件）提取结果须与 docs/i18n-phase2-translations.json 键双向一致。
+        """当前生产源提取结果须与 docs/i18n-phase2-translations.json 键双向一致。
 
         该断言正是为捕获「_T 别名包裹 translate、lupdate 漏提取」这类回归而生：
         新增加 UI 词条时若不更新交接清单，或将词条包进 lupdate 不识别的别名，

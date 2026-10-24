@@ -12,7 +12,7 @@ import logging
 from typing import Any
 
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import PRODUCT_ATTR_READ_MAP, PRODUCT_ATTR_WRITE_MAP
+from catia_copilot.constants_data import PRODUCT_ATTR_READ_MAP, PRODUCT_ATTR_WRITE_MAP
 
 logger = logging.getLogger(__name__)
 

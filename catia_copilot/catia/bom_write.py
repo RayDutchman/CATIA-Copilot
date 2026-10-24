@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     BOM_INSTANCE_NAME_COLUMN,
     BOM_READONLY_COLUMNS,
     CATIA_DESIGN_MODE,

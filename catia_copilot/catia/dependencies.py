@@ -40,7 +40,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     DRAWING_SEARCH_STRATEGIES,
     PART_TO_DRAWING_STRATEGIES,
     SEARCH_MAX_LEVELS,

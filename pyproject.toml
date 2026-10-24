@@ -16,6 +16,7 @@ dependencies = [
     "pycatia>=0.9.6",
     "requests>=2.31.0",
     "pywin32>=306",
+    "pywinauto==0.6.9",
 ]
 
 [tool.setuptools.package-data]
@@ -23,3 +24,4 @@ dependencies = [
 
 [project.scripts]
 catia-copilot = "main:main"
+catkit = "catia_copilot.cli.__main__:entrypoint"

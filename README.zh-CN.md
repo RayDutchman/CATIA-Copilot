@@ -12,13 +12,20 @@
 
 ## 功能一览
 
-### AI Copilot
+### 外部 AI：Catkit
 
-| 功能 | 说明 |
-|------|------|
-| **AI 对话助手** | 流式对话面板，支持多会话管理、Markdown 渲染、工具调用卡片；AI 可直接操作 CATIA（读写属性、BOM、导出、建模等） |
-| **多 Provider 支持** | 支持 OpenAI、Anthropic、Gemini 等多家服务商；Settings 对话框可配置 API key、base URL、模型 |
-| **AI 驱动建模** | AI 生成 Python 建模脚本并动态执行，支持草图、拉伸、旋转、倒角、阵列等特征；失败自动返回 traceback 供 AI 自纠正 |
+GUI 不再内置聊天和模型配置；外部 AI 宿主通过 Windows CLI 与 [Skill](skills/catkit/SKILL.md) 使用 CATIA。
+CLI 保留原有 21 个 CATIA 工具：文档、属性、BOM、导出、模板、质量特性与 `build(ctx)` 脚本执行。
+
+```powershell
+python -m catia_copilot.cli --help
+python -m catia_copilot.cli schema bom export
+python -m catia_copilot.cli run --file D:/scripts/build.py
+```
+
+使用 `python scripts/build_catkit.py` 构建 Windows standalone 分发包。
+安装器目前通过[本地入口](packages/catkit/README.md)使用，尚未发布 npm 包。
+真实 CATIA 验收待集中执行；离线测试通过不等于 COM 实机已验证。
 
 ### 工作台
 

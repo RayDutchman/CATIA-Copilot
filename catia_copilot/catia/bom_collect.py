@@ -18,7 +18,7 @@ from typing import Any
 
 from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document import get_bom_node_type
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     BOM_INSTANCE_NAME_COLUMN,
     CATIA_DESIGN_MODE,
     FILENAME_NOT_FOUND,

@@ -1797,15 +1797,15 @@ class ModelingContext:
         """安全地读取当前特征树快照，失败时返回空列表。"""
         if self._part is None:
             return []
+        try:
+            return list_features(self._part)
+        except Exception:
+            return []
 
     def _raise_if_cancelled(self) -> None:
         """仅在下一步开始前检查取消，不在 COM 调用中轮询。"""
         if self._cancel_check is not None and self._cancel_check():
             raise ModelingCancelledError("建模已取消；已停止继续执行后续步骤")
-        try:
-            return list_features(self._part)
-        except Exception:
-            return []
 
     def _run(self, func_label: str, fn, *args, **kwargs):
         """执行一个建模函数，记录结果，失败时抛出 ModelingStepError。

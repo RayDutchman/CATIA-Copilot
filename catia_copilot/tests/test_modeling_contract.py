@@ -6,11 +6,11 @@ import inspect
 import pathlib
 import unittest
 
-import catia_copilot.ai.modeling_contract as mc
+import catia_copilot.catia.modeling_contract as mc
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 _MODELING_SRC = _ROOT / "catia_copilot" / "catia" / "modeling.py"
-_TOOLS_SRC = _ROOT / "catia_copilot" / "ai" / "tools.py"
+_TOOLS_SRC = _ROOT / "catia_copilot" / "catia" / "tool_schema.py"
 
 
 def _ctx_public_methods() -> dict[str, ast.FunctionDef]:
@@ -279,121 +279,6 @@ class TestExamplesExecutable(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # T3: tools.py 消费端接线验证（AST 抽取，绝不 import tools/modeling）
-# ---------------------------------------------------------------------------
-
-def _module_value(tree: ast.Module, name: str) -> ast.AST | None:
-    """取模块级赋值（Assign/AnnAssign）中指定目标名的值表达式。"""
-    for node in tree.body:
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if any(getattr(t, "id", "") == name for t in targets if isinstance(t, ast.Name)):
-                return node.value
-    return None
-
-
-def _schema_description(tree: ast.Module) -> ast.AST:
-    """在 tools_schema 中按 name 键的"值"定位条目，取 description 表达式结点。"""
-    schema = _module_value(tree, "tools_schema")
-    assert schema is not None, "未找到 tools_schema"
-    for elt in schema.elts:
-        if not isinstance(elt, ast.Dict):
-            continue
-        kv: dict[object, ast.AST] = {}
-        for k, v in zip(elt.keys, elt.values):
-            if isinstance(k, ast.Constant):
-                kv[k.value] = v
-        fn = kv.get("function")
-        if not isinstance(fn, ast.Dict):
-            continue
-        fkv: dict[object, ast.AST] = {}
-        for k, v in zip(fn.keys, fn.values):
-            if isinstance(k, ast.Constant):
-                fkv[k.value] = v
-        name = fkv.get("name")
-        if isinstance(name, ast.Constant) and name.value == "run_modeling_script":
-            return fkv["description"]
-    raise AssertionError("tools_schema 中未找到 run_modeling_script 条目")
-
-
-class TestToolsConsumersWired(unittest.TestCase):
-    def test_prompt_is_assembled_via_generator(self):
-        tree = ast.parse(_TOOLS_SRC.read_text(encoding="utf-8"))
-        value = _module_value(tree, "DEFAULT_SYSTEM_PROMPT")
-        self.assertIsInstance(value, ast.BinOp,
-                              "DEFAULT_SYSTEM_PROMPT 应为 头字面量+生成器+尾字面量 拼接")
-        self.assertTrue(
-            any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "build_modeling_prompt_section"
-                for n in ast.walk(value)),
-            "建模段未接入 build_modeling_prompt_section")
-
-    def test_description_is_generator_call(self):
-        desc = _schema_description(ast.parse(_TOOLS_SRC.read_text(encoding="utf-8")))
-        self.assertIsInstance(desc, ast.Call, "run_modeling_script 的 description 应为生成器调用")
-        self.assertEqual(getattr(desc.func, "id", ""), "build_run_modeling_script_description")
-
-    def test_tools_source_has_no_ghost_apis(self):
-        src = _TOOLS_SRC.read_text(encoding="utf-8")
-        for g in ("add_edge_fillet", "add_chamfer", "add_rect_pattern", "add_circ_pattern"):
-            self.assertNotIn(g, src)
-
-
-class TestAssembledConsumerBehavior(unittest.TestCase):
-    """AST 抽取真实 consumer 表达式，在仅注入 renderer 的受控环境求值，验证最终行为。"""
-
-    def _eval_expr(self, name: str, inject: dict) -> str:
-        tree = ast.parse(_TOOLS_SRC.read_text(encoding="utf-8"))
-        expr = _module_value(tree, name)
-        self.assertIsNotNone(expr)
-        return eval(compile(ast.Expression(expr), "<tools.py>", "eval"), inject)
-
-    def test_prompt_head_tail_preserved_and_renderer_embedded(self):
-        prompt = self._eval_expr(
-            "DEFAULT_SYSTEM_PROMPT",
-            {"build_modeling_prompt_section": mc.build_modeling_prompt_section},
-        )
-        # defaultprompt 头尾原文保留
-        self.assertTrue(prompt.startswith("你是 CATIA Copilot"))
-        self.assertIn("传 summary_only=true 减少返回数据量。", prompt)
-        self.assertIn("**文档属性**", prompt)
-        self.assertTrue(
-            prompt.endswith("遇到错误时，解释可能的原因并给出下一步建议。"),
-            "defaultprompt 尾部原文应保留（不使用 strip 掩盖，确定收尾无多余空白）")
-        # 渲染段与模板实际出现
-        self.assertIn("**建模**", prompt)
-        self.assertIn("def build(ctx):", prompt)
-        self.assertIn("create_part", prompt)
-        # 旧 ghost API 与错误 keyword 消失
-        for g in ("add_edge_fillet", "add_chamfer", "add_rect_pattern", "add_circ_pattern",
-                  "add_sketch_at_height(part, h, base", "add_hole_from_sketch(part, sk, d"):
-            self.assertNotIn(g, prompt, g)
-
-    def test_prompt_titles_at_line_start_no_leading_spaces(self):
-        """回归：**建模**/**文档属性**/**回复风格** 标题必须顶格，前无 4 空格缩进污染；
-        API 目录末行与 **文档属性** 之间须有空行。"""
-        prompt = self._eval_expr(
-            "DEFAULT_SYSTEM_PROMPT",
-            {"build_modeling_prompt_section": mc.build_modeling_prompt_section},
-        )
-        for frag in ("**建模**", "**文档属性**", "## 回复风格"):
-            idx = prompt.find(frag)
-            self.assertGreaterEqual(idx, 0, f"缺 {frag}")
-            self.assertEqual(prompt[idx - 1], "\n", f"{frag} 前应为换行而非空格")
-        self.assertIn("\n\n**文档属性**", prompt, "建模段与文档属性段之间应相隔一空行")
-        # 非建模旧头尾字符原样保留且无多余收尾空白
-        self.assertTrue(prompt.startswith("你是 CATIA Copilot"))
-        self.assertTrue(prompt.endswith("遇到错误时，解释可能的原因并给出下一步建议。"))
-
-    def test_schema_description_is_the_contract(self):
-        tree = ast.parse(_TOOLS_SRC.read_text(encoding="utf-8"))
-        desc = eval(
-            compile(ast.Expression(_schema_description(tree)), "<tools.py>", "eval"),
-            {"build_run_modeling_script_description": mc.build_run_modeling_script_description},
-        )
-        self.assertIsInstance(desc, str)
-        self.assertTrue(desc.startswith("这是建模脚本的完整契约"), "description 应以契约单源渲染")
-        self.assertIn("def build(ctx):", desc)
-
-
 class TestGeometryFaceSemanticsS2(unittest.TestCase):
     def test_face_query_notes_carry_geometry_semantics(self):
         notes = {s.name: s.notes for s in mc.MODELING_API_CATALOG}

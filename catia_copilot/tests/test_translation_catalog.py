@@ -5,7 +5,7 @@
 
 1. en_US / zh_CN TS 均为合法 XML、无空 translation、无 unfinished、占位符集合一致；
 2. 两份 TS 的 source 集合双向一致；
-3. 生产 18 文件清单（docs/i18n-phase5-report.md §二）真实存在；
+3. 生产 15 文件清单真实存在且与当前源文件集合一致；
 4. 真实 pyside6-lupdate 按生产清单提取的 source 与 TS 双向一致（覆盖率）；
 5. 真实 pyside6-lrelease 构建 QM 可被 QTranslator 加载并译出期望英文。
 
@@ -65,7 +65,7 @@ class TestCatalogWellFormed(unittest.TestCase):
     def test_catalog_entries_source_count(self) -> None:
         en = vt.catalog_entries(vt.TS_EN)
         zh = vt.catalog_entries(vt.TS_ZH)
-        self.assertGreaterEqual(len(en), 1000, "phase5 合并后词条数应不低于 1000")
+        self.assertGreaterEqual(len(en), 900, "当前生产源提取词条数应不低于 900")
         self.assertEqual(len(en), len(zh), "两份 TS 词条数应一致")
 
 
@@ -92,12 +92,22 @@ class TestCatalogIntegrity(unittest.TestCase):
 
 
 class TestProductionManifest(unittest.TestCase):
-    """docs/i18n-phase5-report.md §二 生产 18 文件清单必须全部存在。"""
+    """生产 15 文件清单必须与当前生产源文件集合一致且全部存在。"""
 
     def test_all_manifest_files_exist(self) -> None:
         missing = [p for p in vt.PRODUCTION_FILES if not (_REPO_ROOT / p).is_file()]
         self.assertEqual(missing, [], "生产文件清单中的源文件必须存在")
-        self.assertEqual(len(vt.PRODUCTION_FILES), 18, "生产清单应为 18 个文件")
+        expected = {
+            "main.py", "catia_copilot/constants.py", "catia_copilot/i18n.py",
+            "catia_copilot/ui/main_window.py", "catia_copilot/ui/catia_embed.py",
+            "catia_copilot/ui/bom_edit_dialog_v3.py", "catia_copilot/ui/bom_file_rename_dialog.py",
+            "catia_copilot/ui/convert_dialog.py", "catia_copilot/ui/export_bom_dialog.py",
+            "catia_copilot/ui/find_deps_dialog.py", "catia_copilot/ui/mass_props_dialog.py",
+            "catia_copilot/ui/template_dialog.py", "catia_copilot/ui/plm_workbench.py",
+            "catia_copilot/ui/help_dialog.py", "catia_copilot/ui/log_window.py",
+        }
+        self.assertEqual(set(vt.PRODUCTION_FILES), expected, "生产清单须对应当前实际生产源文件集合")
+        self.assertEqual(len(vt.PRODUCTION_FILES), 15, "生产清单应为 15 个文件")
 
 
 @unittest.skipUnless(_LUPDATE, _SKIP_REASON)

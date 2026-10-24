@@ -2,11 +2,20 @@
 """ModelingContext 步骤边界取消语义测试。"""
 
 import unittest
+from unittest.mock import patch
 
 from catia_copilot.catia.modeling import ModelingCancelledError, ModelingContext
 
 
 class TestModelingCancellation(unittest.TestCase):
+    def test_existing_part_snapshot_is_recorded_once(self):
+        ctx = ModelingContext()
+        ctx._part = object()
+        with patch('catia_copilot.catia.modeling.list_features', return_value=['凸台.1']) as snapshot:
+            ctx._run('probe', lambda: None)
+        self.assertEqual(ctx.steps[-1]['features_after'], ['凸台.1'])
+        snapshot.assert_called_once()
+
     def test_cancelled_before_next_step_does_not_call_com_function(self):
         called = []
         ctx = ModelingContext(cancel_check=lambda: True)

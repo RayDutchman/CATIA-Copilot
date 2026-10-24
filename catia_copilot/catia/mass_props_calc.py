@@ -9,7 +9,7 @@
 
 import math
 
-from catia_copilot.constants import BomNodeType
+from catia_copilot.constants_data import BomNodeType
 
 
 def _mat3_mul(A: list[list[float]], B: list[list[float]]) -> list[list[float]]:

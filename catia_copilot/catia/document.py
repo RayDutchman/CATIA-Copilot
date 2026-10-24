@@ -22,7 +22,7 @@ from pathlib import Path
 import pywintypes
 
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     DOC_EXT_TYPE_MAP,
     PRODUCT_ATTR_READ_MAP,
     PRODUCT_ATTR_WRITE_MAP,

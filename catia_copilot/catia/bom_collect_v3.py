@@ -70,7 +70,7 @@ from pathlib import Path
 
 from catia_copilot.catia.connection import get_catia_v5_application, wrap_product
 from catia_copilot.catia.document import get_bom_node_type
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     CATIA_DESIGN_MODE,
     FILENAME_NOT_FOUND,
     FILENAME_UNSAVED,

@@ -12,13 +12,20 @@
 
 ## Features
 
-### AI Copilot
+### External AI integration: Catkit
 
-| Feature | Description |
-|---------|-------------|
-| **AI Chat Assistant** | Streaming chat panel with multi-session management, Markdown rendering, and tool-call cards; AI can directly operate CATIA (read/write attributes, BOM, export, modeling, etc.) |
-| **Multi-Provider Support** | Supports OpenAI, Anthropic, Gemini, and more; Settings dialog allows configuring API keys, base URLs, and models |
-| **AI-Driven Modeling** | AI generates Python modeling scripts and executes them dynamically; supports sketches, extrusions, rotations, chamfers, patterns, and other features; failures automatically return tracebacks for AI self-correction |
+The desktop application no longer includes AI chat or provider configuration. External AI hosts use the Windows Catkit CLI and its [Skill](skills/catkit/SKILL.md).
+The CLI preserves the existing 21 CATIA tools: documents, properties, BOM, exports, templates, mass properties and `build(ctx)` scripts.
+
+```powershell
+python -m catia_copilot.cli --help
+python -m catia_copilot.cli schema bom export
+python -m catia_copilot.cli run --file D:/scripts/build.py
+```
+
+Build a Windows standalone distribution with `python scripts/build_catkit.py`.
+See [local installer instructions](packages/catkit/README.md); the npm package has not been published.
+CATIA integration acceptance is pending; offline tests do not establish live COM compatibility.
 
 ### Workbenches
 

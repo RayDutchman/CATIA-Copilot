@@ -17,7 +17,7 @@ from catia_copilot.catia.connection import get_catia_v5_application
 from catia_copilot.catia.document import (
     get_document_type,  # noqa: F401 — re-exported for callers
 )
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     DRAWING_FILENAME_PREFIX,
     DRAWING_SYNC_STANDARD_PARAMS,
     DRAWING_SYNC_USER_PROPS,

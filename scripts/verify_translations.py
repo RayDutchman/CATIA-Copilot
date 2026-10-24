@@ -59,10 +59,7 @@ PRODUCTION_FILES: list[str] = [
     "catia_copilot/ui/mass_props_dialog.py",
     "catia_copilot/ui/template_dialog.py",
     "catia_copilot/ui/plm_workbench.py",
-    "catia_copilot/ui/ai_chat_panel.py",
     "catia_copilot/ui/help_dialog.py",
-    "catia_copilot/ui/session_config_dialog.py",
-    "catia_copilot/ui/model_state_dialog.py",
     "catia_copilot/ui/log_window.py",
 ]
 

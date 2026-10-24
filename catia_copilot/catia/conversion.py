@@ -10,46 +10,25 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtWidgets import QMessageBox
+from catia_copilot.catia.file_interaction import prompt_overwrite as _prompt_overwrite
 
 from catia_copilot.catia.connection import get_catia_v5_application
 
 logger = logging.getLogger(__name__)
 
 
-def _prompt_overwrite(dest: Path) -> str:
-    """显示 *dest* 的覆盖冲突对话框。
+def _document_for_export(documents, file_path: str):
+    """优先复用已打开文档，返回文档及是否由本次导出打开。"""
+    for index in range(1, documents.Count + 1):
+        try:
+            document = documents.Item(index)
+            if document.FullName == file_path:
+                return document, False
+        except Exception:
+            continue
+    return documents.Open(file_path), True
 
-    返回以下之一：``"skip"``、``"skip_all"``、``"overwrite"``、
-    ``"overwrite_all"`` 或 ``"cancel"``。
 
-    参数：
-        dest: 目标文件路径
-
-    返回：
-        用户选择的操作
-    """
-    msg = QMessageBox()
-    msg.setWindowTitle("文件已存在")
-    msg.setText(f'"{dest.name}" 已存在于输出文件夹中。')
-    msg.setInformativeText(str(dest.parent))
-    msg.setIcon(QMessageBox.Icon.Warning)
-    skip_btn          = msg.addButton("跳过",     QMessageBox.ButtonRole.RejectRole)
-    skip_all_btn      = msg.addButton("全部跳过", QMessageBox.ButtonRole.RejectRole)
-    _overwrite_btn    = msg.addButton("覆盖",     QMessageBox.ButtonRole.AcceptRole)
-    overwrite_all_btn = msg.addButton("全部覆盖", QMessageBox.ButtonRole.AcceptRole)
-    cancel_btn        = msg.addButton("取消",     QMessageBox.ButtonRole.DestructiveRole)
-    msg.exec()
-    clicked = msg.clickedButton()
-    if clicked is cancel_btn:
-        return "cancel"
-    if clicked is skip_all_btn:
-        return "skip_all"
-    if clicked is skip_btn:
-        return "skip"
-    if clicked is overwrite_all_btn:
-        return "overwrite_all"
-    return "overwrite"
 
 
 def _resolve_overwrite(
@@ -146,8 +125,7 @@ def convert_drawing_to_pdf(
                 continue
 
         try:
-            documents.Open(str(src))
-            drawing_doc = application.ActiveDocument
+            drawing_doc, opened_here = _document_for_export(documents, str(src))
             sheet_count = drawing_doc.DrawingRoot.Sheets.Count
 
             if update_before_export:
@@ -161,7 +139,8 @@ def convert_drawing_to_pdf(
             else:
                 logger.info(f"  Exported {sheet_count} sheet(s) -> {dest}")
 
-            drawing_doc.Close()
+            if opened_here:
+                drawing_doc.Close()
             logger.info(f"Done: {src.name}\n")
             if dest.exists():
                 success_count += 1
@@ -230,11 +209,11 @@ def convert_part_to_step(
                 continue
 
         try:
-            documents.Open(str(src))
-            doc = application.ActiveDocument
+            doc, opened_here = _document_for_export(documents, str(src))
             doc.ExportData(str(dest), "stp")
             logger.info(f"  Exported -> {dest}")
-            doc.Close()
+            if opened_here:
+                doc.Close()
             logger.info(f"Done: {src.name}\n")
             success_count += 1
         except Exception as e:

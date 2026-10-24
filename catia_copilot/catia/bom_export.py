@@ -12,14 +12,14 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from PySide6.QtWidgets import QMessageBox
+from catia_copilot.catia.file_interaction import retry_locked, report_locked
 
 from catia_copilot.catia.bom_collect import (
     collect_bom_rows_archive,
     flatten_bom_to_summary,
 )
 from catia_copilot.catia.connection import get_catia_v5_application
-from catia_copilot.constants import (
+from catia_copilot.constants_data import (
     BOM_COLUMN_DISPLAY_NAMES,
     BOM_COLUMN_MIN_WIDTHS,
     BOM_DEFAULT_COLUMNS,
@@ -206,22 +206,13 @@ def export_bom_to_excel(
                 with open(dest, "a+b"):
                     pass
             except PermissionError:
-                reply = QMessageBox.question(
-                    None, "文件正在使用",
-                    f"该文件当前在 Excel 中已打开：\n{dest}\n\n"
-                    "请在 Excel 中关闭该文件，然后点击【重试】，或点击【取消】以中止。",
-                    QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel,
-                )
-                if reply == QMessageBox.StandardButton.Cancel:
+                if not retry_locked(dest):
                     continue
                 try:
                     with open(dest, "a+b"):
                         pass
                 except PermissionError:
-                    QMessageBox.critical(
-                        None, "文件仍在使用中",
-                        f"文件仍处于打开状态，请关闭后重试。\n{dest}",
-                    )
+                    report_locked(dest)
                     continue
 
         # Track already-open documents to avoid closing files we did not open
