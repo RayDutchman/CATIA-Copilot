@@ -214,14 +214,14 @@ class TestConfirmRectOutline(unittest.TestCase):
         edges[1] = _line_edge(2, start=None, end=(10.0, 5.0))
         n2s, reason = gf.confirm_rect_outline(edges)
         self.assertIsNone(n2s)
-        self.assertIn("端点", reason)
+        self.assertIn("Endpoint coordinates are unavailable", reason)
 
     def test_not_closed(self):
         edges = _rect_edges(_CORNERS)
         edges[2] = _line_edge(3, start=(10.0, 5.0), end=(9.0, 5.0))
         n2s, reason = gf.confirm_rect_outline(edges)
         self.assertIsNone(n2s)
-        self.assertIn("未闭合", reason)
+        self.assertIn("edge chain is not closed", reason)
 
     def test_closure_beyond_tolerance_fails(self):
         edges = _rect_edges(_CORNERS)
@@ -229,19 +229,19 @@ class TestConfirmRectOutline(unittest.TestCase):
         edges[0] = _line_edge(1, start=(0.0, 0.0), end=(10.0 + 1e-4, 0.0))
         n2s, reason = gf.confirm_rect_outline(edges)
         self.assertIsNone(n2s)
-        self.assertIn("未闭合", reason)
+        self.assertIn("edge chain is not closed", reason)
 
     def test_degenerate_zero_height(self):
         corners = [(0.0, 0.0), (10.0, 0.0), (10.0, 0.0), (0.0, 0.0)]
         n2s, reason = gf.confirm_rect_outline(_rect_edges(corners))
         self.assertIsNone(n2s)
-        self.assertIn("退化", reason)
+        self.assertIn("degenerate edge", reason)
 
     def test_not_axis_aligned_45deg(self):
         corners = [(0.0, 0.0), (1.0, 1.0), (2.0, 0.0), (1.0, -1.0)]
         n2s, reason = gf.confirm_rect_outline(_rect_edges(corners))
         self.assertIsNone(n2s)
-        self.assertIn("轴对齐", reason)
+        self.assertIn("not aligned with sketch H/V axes", reason)
 
     def test_collinear_zero_area_rejected(self):
         # 四条非零共线线段首尾闭合（沿 x 轴往返），对边反向平行且轴对齐，
@@ -249,8 +249,8 @@ class TestConfirmRectOutline(unittest.TestCase):
         corners = [(0.0, 0.0), (10.0, 0.0), (20.0, 0.0), (10.0, 0.0)]
         n2s, reason = gf.confirm_rect_outline(_rect_edges(corners))
         self.assertIsNone(n2s)
-        self.assertIn("退化", reason)
-        self.assertIn("面积", reason)
+        self.assertIn("degenerate outline", reason)
+        self.assertIn("zero area", reason)
 
     def test_wrong_edge_count(self):
         n2s, reason = gf.confirm_rect_outline(_rect_edges(_CORNERS)[:3])
@@ -263,7 +263,7 @@ class TestConfirmRectOutline(unittest.TestCase):
                          start=(10.0, 0.0), end=(10.0, 5.0))
         n2s, reason = gf.confirm_rect_outline(edges)
         self.assertIsNone(n2s)
-        self.assertIn("平面", reason)
+        self.assertIn("not all edges are planar lines", reason)
 
     def test_noise_within_tolerance_confirmed(self):
         corners = [(x + 1e-9 * (i + 1), y - 1e-9 * (i + 2))
@@ -326,7 +326,7 @@ class TestDescribeSides(unittest.TestCase):
         self.assertTrue(all(f["normal"] is None for f in faces))
         for f in faces:
             self.assertIsNotNone(f["normal_unresolved"])
-            self.assertIn("端点", f["normal_unresolved"])
+            self.assertIn("Endpoint coordinates are unavailable", f["normal_unresolved"])
 
     def test_circular_cylindrical_none(self):
         edges = [_edge(gf.GT_CIRC_ARC, gf.KIND_CYLINDRICAL, 1)]
@@ -337,7 +337,7 @@ class TestDescribeSides(unittest.TestCase):
         self.assertEqual(f["type"], "side")
         self.assertEqual(f["geometry_type"], gf.KIND_CYLINDRICAL)
         self.assertIsNone(f["normal"])
-        self.assertIn("圆柱", f["normal_unresolved"])
+        self.assertIn("cylindrical surface", f["normal_unresolved"])
         self.assertEqual(f["edge_count"], 1)
         self.assertIsNone(f["origin"], "无端点坐标时必须返回 None，不给假点")
 
@@ -355,7 +355,7 @@ class TestDescribeSides(unittest.TestCase):
         for f in faces[:2]:
             self.assertIsNotNone(f["normal_unresolved"], "planar 侧面必须带未解析原因")
         for f in faces[2:]:
-            self.assertIn("圆柱", f["normal_unresolved"])
+            self.assertIn("cylindrical surface", f["normal_unresolved"])
 
     def test_mixed_unknown_kind_fields(self):
         edges = [
@@ -368,9 +368,9 @@ class TestDescribeSides(unittest.TestCase):
         spline_face = next(f for f in faces if f["edge_index"] == 3)
         self.assertEqual(spline_face["geometry_type"], gf.KIND_UNKNOWN)
         self.assertIsNone(spline_face["normal"])
-        self.assertIn("无法归类", spline_face["normal_unresolved"])
+        self.assertIn("cannot be classified", spline_face["normal_unresolved"])
         arc_face = next(f for f in faces if f["edge_index"] == 2)
-        self.assertIn("圆柱", arc_face["normal_unresolved"])
+        self.assertIn("cylindrical surface", arc_face["normal_unresolved"])
 
     def test_brep_passthrough_by_ordinal_index(self):
         edges = _rect_edges(_CORNERS, raw_base=5)   # raw 位移 5..8，ordinal 仍 1..4
@@ -412,7 +412,7 @@ class TestDescribeSurfaces(unittest.TestCase):
             self.assertEqual(f["source"], "feature_inference")
             self.assertEqual(f["geometry_type"], gf.KIND_UNKNOWN)
             self.assertIsNone(f["normal"])
-            self.assertIn("旋转面", f["normal_unresolved"])
+            self.assertIn("Revolved-surface type depends on edge direction", f["normal_unresolved"])
             self.assertIsNone(f["origin"])
             self.assertIsNone(f["error"])
             self.assertEqual(f["edge_count"], 3)

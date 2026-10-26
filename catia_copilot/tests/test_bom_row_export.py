@@ -32,7 +32,7 @@ class TestBomRowExport(unittest.TestCase):
         workbook = openpyxl.load_workbook(output, data_only=True)
         sheet = workbook.active
         self.assertEqual(list(sheet.values), [
-            ("零件编号", "数量", "Custom"),
+            ("Part Number", "Quantity", "Custom"),
             ("零件-甲", 3, "中文值"),
             ("零件-乙", 1, None),
         ])
@@ -46,7 +46,7 @@ class TestBomRowExport(unittest.TestCase):
         self.assertTrue(output.read_bytes().startswith(b"\xef\xbb\xbf"))
         with output.open(encoding="utf-8-sig", newline="") as stream:
             self.assertEqual(list(csv.reader(stream)), [
-                ["零件编号", "数量", "Custom"],
+                ["Part Number", "Quantity", "Custom"],
                 ["零件-甲", "3", "中文值"],
                 ["零件-乙", "1", ""],
             ])
@@ -56,7 +56,16 @@ class TestBomRowExport(unittest.TestCase):
         result = bom_export.export_bom_rows([], ["Part Number"], output)
         self.assertEqual(result["row_count"], 0)
         with output.open(encoding="utf-8-sig", newline="") as stream:
-            self.assertEqual(list(csv.reader(stream)), [["零件编号"]])
+            self.assertEqual(list(csv.reader(stream)), [["Part Number"]])
+
+    def test_cli_xlsx_preserves_source_code_and_custom_chinese_data(self):
+        output = self.output('source.xlsx')
+        bom_export.export_bom_rows([{'Source': '2', '备注': '外购说明'}], ['Source', '备注'], output)
+        workbook = openpyxl.load_workbook(output, read_only=True)
+        try:
+            self.assertEqual(list(workbook.active.values), [('Source', '备注'), ('2', '外购说明')])
+        finally:
+            workbook.close()
 
     def test_rejects_other_extensions(self) -> None:
         with self.assertRaises(ValueError):

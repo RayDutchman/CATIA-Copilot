@@ -163,7 +163,7 @@ def _position_to_mat4(product) -> list[list[float]]:
     try:
         arr = wrap_product(product).position.get_components()
     except Exception as e:
-        logger.debug(f"[MAT4] {product_name}: get_components 失败: {e}，返回单位矩阵")
+        logger.debug(f"[MAT4] {product_name}: get_components failed: {e}; returning identity matrix")
         return _identity_4x4()
 
     if arr is None or len(arr) < 12:
@@ -290,7 +290,7 @@ def _read_keep_inertia_params(
             if any(v is None for v in (gx_si, gy_si, gz_si,
                                        ixx_si, iyy_si, izz_si,
                                        ixy_si, ixz_si, iyz_si)):
-                logger.debug(f"{tag}{envelope_name} 部分参数缺失，跳过该测量")
+                logger.debug(f"{tag}{envelope_name} has missing parameters; skipping this measurement")
                 continue
 
             # 密度（可选参数）：CATIA 原始单位 kg/m³，不一致时返回 -1
@@ -310,7 +310,7 @@ def _read_keep_inertia_params(
             })
 
         if not measurements:
-            logger.debug(f"{tag}未找到任何有效的惯量包络体参数，返回 None")
+            logger.debug(f"{tag} no valid inertia-envelope parameters found; returning None")
             return None
 
         # "last" 模式：仅保留编号最大的有效测量（已按升序扫描，取最后一个）
@@ -382,7 +382,7 @@ def _read_keep_inertia_params(
         return {"weight": M_total, "cog": cog_total, "inertia": I_final, "density": agg_density}
 
     except Exception as e:
-        logger.debug(f"{tag}惯量包络体参数读取异常: {e}")
+        logger.debug(f"{tag} exception while reading inertia-envelope parameters: {e}")
         return None
 
 
@@ -471,7 +471,7 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
             if volume_mm3 and volume_mm3 > 0.0:
                 density = mass / volume_mm3 * 1e9  # kg/m³
         except Exception as ve:
-            logger.debug(f"[ANALYZE] 读取 volume 失败，密度置为 None: {ve}")
+            logger.debug(f"[ANALYZE] failed to read volume; density set to None: {ve}")
 
         return {
             "weight":  mass,
@@ -480,7 +480,7 @@ def _measure_part_mass_props_analyze(product_com) -> dict | None:
             "density": density,
         }
     except Exception as e:
-        logger.debug(f"[ANALYZE] get_inertia/get_gravity_center 失败: {e}")
+        logger.debug(f"[ANALYZE] get_inertia/get_gravity_center failed: {e}")
         return None
 
 
@@ -890,13 +890,13 @@ def remeasure_part_mass_props(
                 pass
 
         if target_doc is None:
-            logger.debug(f"[REMEAS] 找不到已打开的文档: {filepath}")
+            logger.debug(f"[REMEAS] open document not found: {filepath}")
             return None
 
         part_com = target_doc.Part
         return _measure_part_mass_props(part_com, part_number, read_mode=read_mode)
     except Exception as e:
-        logger.debug(f"[REMEAS] 重新读取质量特性失败 ({filepath}): {e}")
+        logger.debug(f"[REMEAS] failed to re-read mass properties ({filepath}): {e}")
         return None
 
 
@@ -996,7 +996,7 @@ def collect_mass_props_rows(
             logger.debug(f"[VIS] {tag}: Selection.VisProperties.GetShow()={show_val} → hidden={hidden}")
             return hidden
         except Exception as e:
-            logger.debug(f"[VIS] {tag}: Selection.VisProperties.GetShow() 不可用 ({e})，视为可见")
+            logger.debug(f"[VIS] {tag}: Selection.VisProperties.GetShow() unavailable ({e}); assuming visible")
         finally:
             try:
                 if sel is not None:
@@ -1107,7 +1107,7 @@ def collect_mass_props_rows(
                         part_com     = part_doc_com.Part
                         mass_props   = _measure_part_mass_props(part_com, pn, read_mode=read_mode)
                 except Exception as e:
-                    logger.debug(f"无法测量零件 {filepath}: {e}")
+                    logger.debug(f"Unable to measure part {filepath}: {e}")
                     mass_props  = None
                     meas_failed = True
 
@@ -1119,7 +1119,7 @@ def collect_mass_props_rows(
                         f"Ixx={mass_props.get('inertia',[[0]])[0][0]:.3g}kg·mm²"
                     )
                 else:
-                    logger.debug(f"[TRAV] {pn} 质量特性读取失败或未赋材料 (source={source})")
+                    logger.debug(f"[TRAV] failed to read mass properties for {pn} or no material is assigned (source={source})")
 
                 # 写入缓存（即使测量失败也缓存 None，防止重复尝试）
                 _mass_cache[filepath] = mass_props
@@ -1184,7 +1184,7 @@ def collect_mass_props_rows(
                               parent_filepath=filepath,
                               parent_mat4=abs_mat4)
                 except Exception as e:
-                    logger.debug(f"遍历子节点 {i} 失败: {e}")
+                    logger.debug(f"Failed to traverse child node {i}: {e}")
         except Exception:
             pass
 
@@ -1205,7 +1205,7 @@ def collect_mass_props_rows(
         try:
             application.ActiveDocument.Activate()
         except Exception as e:
-            logger.debug(f"恢复根文档激活状态失败（无害）: {e}")
+            logger.debug(f"Failed to reactivate root document (harmless): {e}")
         return rows
 
     src = file_path
@@ -1223,5 +1223,5 @@ def collect_mass_props_rows(
     try:
         target_doc.Activate()
     except Exception as e:
-        logger.debug(f"恢复根文档激活状态失败（无害）: {e}")
+        logger.debug(f"Failed to reactivate root document (harmless): {e}")
     return rows

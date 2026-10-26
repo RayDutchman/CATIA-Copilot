@@ -4,37 +4,37 @@ from .inspection_schema import schema
 
 VIEW_FIELDS = {
     'view': {'type': 'string', 'enum': ['full', 'hierarchical', 'summary'], 'default': 'hierarchical',
-             'description': '完整实例/层级合并/汇总视图；默认 hierarchical，不读取 GUI 偏好'},
+             'description': 'Full instance, hierarchical, or summary view; defaults to hierarchical and does not read GUI preferences'},
     'columns': {'type': 'array', 'items': {'type': 'string'},
-                'description': '标准列列表，省略使用 BOM 默认列'},
+                'description': 'List of standard columns; omit to use the BOM default columns'},
     'custom_columns': {'type': 'array', 'items': {'type': 'string'},
-                       'description': '用户自定义属性列列表'},
+                       'description': 'When omitted, enumerate custom properties across the assembly and merge them as columns; an explicit list reads only those columns, and [] disables custom-property reads'},
     'include_assemblies': {'type': 'boolean', 'default': False,
-                          'description': 'summary 视图是否包含装配件，默认 false'},
-    'sort_column': {'type': 'string', 'description': 'summary 视图排序列，省略按 Part Number'},
+                           'description': 'Whether the summary view includes assemblies; defaults to false'},
+    'sort_column': {'type': 'string', 'description': 'Sort column for the summary view; defaults to Part Number'},
 }
 
 bom_schema = [
-    schema('collect_bom', '采集已打开文档的 BOM，默认层级视图；返回列数据和当前装配节点定位信息。'
-           '节点路径随装配结构变化失效；不打开、关闭或保存文档。', VIEW_FIELDS),
-    schema('export_bom_to_excel', '采集已打开文档的指定 BOM 视图并导出，内容与 collect 的同视图一致。'
-           '文件扩展名决定 XLSX/CSV；不使用 GUI 当前筛选状态，不保存 CATIA 文档。', {
+    schema('collect_bom', 'Collect a BOM from an open document; defaults to the hierarchical view. Returns row data and current assembly-node locators. '
+           'Node paths become invalid when the assembly structure changes. Does not open, close, or save documents.', VIEW_FIELDS),
+    schema('export_bom_to_excel', 'Collect and export the selected BOM view from an open document; exported content matches collect for the same view. '
+           'The file extension selects XLSX or CSV. Does not use GUI filters or save the CATIA document.', {
         **VIEW_FIELDS,
-        'output_file': {'type': 'string', 'description': '输出 .xlsx 或 .csv 文件完整路径'},
+         'output_file': {'type': 'string', 'description': 'Full path to the output .xlsx or .csv file'},
         'overwrite': {'type': 'string', 'enum': ['error', 'skip', 'replace'], 'default': 'error',
-                      'description': '已有输出文件的处理策略'},
+                       'description': 'Policy for an existing output file'},
     }, ['output_file']),
-    schema('edit_bom', '按顺序编辑 BOM 字段，master 表示共享主数据，instance 表示实例定义。'
-           '复用子装配中的实例定义可能在多个出现路径联动。逐项返回成功或失败；成功项不回滚，不自动保存。', {
-        'changes': {'type': 'array', 'description': '有序变更数组或 @UTF-8 JSON文件；node 来自 collect 或 product tree',
+    schema('edit_bom', 'Edit BOM fields in order. master refers to shared master data; instance refers to an occurrence. '
+           'Reused subassembly occurrences may be linked across multiple paths. Returns success or failure for each change; successful changes are not rolled back and are not saved automatically.', {
+        'changes': {'type': 'array', 'description': 'Ordered change array or @UTF-8 JSON file; node comes from collect or product_tree',
                     'items': {'type': 'object', 'required': ['node', 'scope', 'column', 'value'],
                               'properties': {
                                   'node': {'type': 'string'},
                                   'scope': {'type': 'string', 'enum': ['master', 'instance']},
-                                  'column': {'type': 'string', 'description': 'master 使用可写标准列或声明的自定义列；instance 仅支持 Instance Name'},
+                                   'column': {'type': 'string', 'description': 'For master, use a writable standard or declared custom column; instance supports only Instance Name'},
                                   'value': {'type': 'string'},
                               }}},
         'custom_columns': {'type': 'array', 'items': {'type': 'string'},
-                           'description': '本次允许写入的自定义属性列；结构字段和实例描述不可冒充自定义属性'},
+                            'description': 'Custom property columns allowed for this request; declare them explicitly. Existing properties are updated and missing ones are created as string properties. Structural fields and instance descriptions are not custom properties'},
     }, ['changes']),
 ]

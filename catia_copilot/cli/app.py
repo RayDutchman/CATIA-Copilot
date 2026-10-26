@@ -52,12 +52,12 @@ CONTROL_SCHEMAS = {
     name: {'type': 'function', 'function': {'name': name, 'description': description,
           'parameters': {'type': 'object', 'properties': properties, 'required': ['task']}}}
     for name, description, properties in (
-        ('_task_status', '读取原任务状态与当前弹窗，不重新执行业务', {'task': {'type': 'string'}}),
-        ('_task_wait', '等待原任务完成或出现弹窗；超时返回 running，不取消任务',
-         {'task': {'type': 'string'}, 'timeout': {'type': 'number', 'description': '等待秒数，默认30'}}),
-        ('_dialog_respond', '处理上次返回的弹窗并继续原任务；button/control 使用返回的控件 id',
+        ('_task_status', 'Read the original task status and current dialog without rerunning the operation', {'task': {'type': 'string'}}),
+        ('_task_wait', 'Wait for the original task to complete or show a dialog; timeout returns running and does not cancel the task',
+         {'task': {'type': 'string'}, 'timeout': {'type': 'number', 'description': 'Wait time in seconds (default: 30)'}}),
+        ('_dialog_respond', 'Respond to the last dialog and resume the original task; use returned control IDs for button/control',
          {'task': {'type': 'string'}, 'button': {'type': 'string'}, 'control': {'type': 'string'},
-          'text': {'type': 'string'}, 'timeout': {'type': 'number', 'description': '继续等待秒数，默认30'}}),
+          'text': {'type': 'string'}, 'timeout': {'type': 'number', 'description': 'Additional wait time in seconds (default: 30)'}}),
     )
 }
 
@@ -84,12 +84,12 @@ class UniqueFiles(argparse.Action):
     """文件数组别名只接受一次，避免后一个参数静默覆盖前一个。"""
     def __call__(self, parser, namespace, values, option_string=None):
         if hasattr(namespace, self.dest):
-            raise argparse.ArgumentError(self, '文件数组不能重复指定（含 --files 别名）')
+            raise argparse.ArgumentError(self, 'File arrays can only be specified once, including the --files alias')
         setattr(namespace, self.dest, values)
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog='catkit', description='CATIA 工具命令行')
+    parser = argparse.ArgumentParser(prog='catkit', description='CATIA command-line tools')
     parser.add_argument('--version', action='version', version=version_text())
     parsers = {(): parser}
     groups = {}
@@ -140,10 +140,10 @@ def build_parser():
             leaf.add_argument('--diagnose', action='store_true')
         if name in ('convert_to_pdf', 'convert_to_step'):
             leaf.add_argument('--overwrite', choices=['error', 'skip', 'replace'], default=argparse.SUPPRESS)
-    schema = groups[()].add_parser('schema', help='查询工具参数契约',
-        description='路径按命令逐词填写，例如 catkit schema bom export 或 catkit schema drawing export pdf；不填路径列出全部命令。')
-    schema.add_argument('path', nargs='*', help='空格分隔的命令路径，不使用点号或原工具函数名')
-    schema.add_argument('--diagnose', action='store_true', help='查询 status 的详细诊断契约')
+    schema = groups[()].add_parser('schema', help='Inspect tool parameter schemas',
+        description='Enter command paths as separate words, such as catkit schema bom export or catkit schema drawing export pdf. Omit the path to list all commands.')
+    schema.add_argument('path', nargs='*', help='Space-separated command path; do not use dots or tool function names')
+    schema.add_argument('--diagnose', action='store_true', help='Inspect the detailed schema for status diagnostics')
     schema.set_defaults(_tool='_schema', pretty=True, verbose=False)
     return parser
 
@@ -181,7 +181,7 @@ def main(argv=None, *, executor=None):
                 payload = SCHEMAS['diagnose_catia_connection']
             elif path:
                 if path not in COMMANDS and path not in CONTROL_COMMANDS:
-                    print(json.dumps({'error': '未知命令路径：'+' '.join(path)}, ensure_ascii=False))
+                    print(json.dumps({'error': 'Unknown command path: '+' '.join(path)}, ensure_ascii=False))
                     return 2
                 payload = (SCHEMAS | CONTROL_SCHEMAS)[(COMMANDS | CONTROL_COMMANDS)[path]]
             else:
@@ -197,7 +197,7 @@ def main(argv=None, *, executor=None):
             if args.get('script', object()) is None:
                 args.pop('script')
             if executor is None:
-                raise RuntimeError('请使用 python -m catia_copilot.cli 或 catkit 入口')
+                raise RuntimeError('Use the python -m catia_copilot.cli or catkit entry point')
             # 业务函数中偶发 print 也不能污染 JSON。
             with redirect_stdout(sys.stderr):
                 result = executor(name, args)

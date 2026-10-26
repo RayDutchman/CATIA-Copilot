@@ -113,8 +113,8 @@ class TestRenderedSections(unittest.TestCase):
     def test_sections_render_all_notes_single_source(self):
         prompt = mc.build_modeling_prompt_section()
         desc = mc.build_run_modeling_script_description()
-        self.assertTrue(prompt.startswith("**建模**"))
-        self.assertIn("参数化", prompt)
+        self.assertTrue(prompt.startswith("**Modeling**"))
+        self.assertIn("Parameterizing Dimensions", prompt)
         self.assertIn("def build(ctx):", desc)
         for spec in mc.MODELING_API_CATALOG:
             self.assertIn(spec.notes, prompt, f"prompt 缺 {spec.name}.notes")
@@ -132,10 +132,10 @@ class TestRenderedSections(unittest.TestCase):
     def test_failure_guidance_and_units_rendered(self):
         prompt = mc.build_modeling_prompt_section()
         self.assertIn("failed_step", prompt)
-        self.assertIn("不盲目重跑 create_part", prompt)
+        self.assertIn("do not blindly rerun create_part", prompt)
         self.assertIn("update_part", prompt)
         self.assertIn("mm", prompt)
-        self.assertIn("度", prompt)
+        self.assertIn("degrees", prompt)
 
     def test_no_ghost_or_broken_apis_in_outputs(self):
         for out in (mc.build_modeling_prompt_section(), mc.build_run_modeling_script_description()):
@@ -153,35 +153,35 @@ class TestRenderedSections(unittest.TestCase):
     def test_mass_none_and_density_caveat_renderable(self):
         desc = mc.build_run_modeling_script_description()
         self.assertIn("None", desc)
-        self.assertIn("未指定材料", desc)
-        self.assertIn("密度", desc)
-        self.assertNotIn("保持测量", desc, "Analyze 实时测量不依赖保持测量")
+        self.assertIn("no material is assigned", desc)
+        self.assertIn("density", desc)
+        self.assertNotIn("keep measure", desc, "Analyze live measurements do not depend on kept measures")
 
     def test_mass_notes_field_specific(self):
         """回归：get_mass_props 应说明读取失败/质量无效返回 None，而非笼统的保持测量缺失。"""
         notes = {s.notes for s in mc.MODELING_API_CATALOG if s.name == "get_mass_props"}
         text = " ".join(notes)
-        self.assertIn("读取失败或质量无效", text)
-        self.assertIn("取决于密度", text)
-        self.assertIn("未指定材料", text)
-        self.assertIn("不代表真实材料", text)
-        self.assertNotIn("测量缺失", text)
+        self.assertIn("unavailable or invalid", text)
+        self.assertIn("depends on density", text)
+        self.assertIn("no material is assigned", text)
+        self.assertIn("does not represent the real material", text)
+        self.assertNotIn("measurement missing", text)
         # 两个消费端都应渲染该 notes 原文（单源）
         for out in (mc.build_modeling_prompt_section(), mc.build_run_modeling_script_description()):
-            self.assertIn("读取失败或质量无效", out)
+            self.assertIn("unavailable or invalid", out)
 
     def test_axis_mapping_matches_used_prompt(self):
         prompt = mc.build_modeling_prompt_section()
-        for frag in ('axis="z"', 'plane="zx"', 'axis="y"', 'plane="xy"', 'axis="x"', "内半径"):
+        for frag in ('axis="z"', 'plane="zx"', 'axis="y"', 'plane="xy"', 'axis="x"', "inner radius"):
             self.assertIn(frag, prompt, frag)
 
     def test_axis_mapping_embedded_in_both_outputs(self):
         """回归：两个消费端都必须嵌入同源轴向映射表，不能只引用不呈现。"""
         table = mc._AXIS_MAPPING_TEXT
         for out in (mc.build_modeling_prompt_section(), mc.build_run_modeling_script_description()):
-            self.assertIn("旋转体轴向映射", out)
+            self.assertIn("Revolved Profile Axis Mapping", out)
             self.assertIn(table, out, "输出应整体嵌入 _AXIS_MAPPING_TEXT（同源不复制）")
-            self.assertEqual(out.count("轴=V(Z)"), 1, "映射表不得重复渲染")
+            self.assertEqual(out.count("axis=V(Z)"), 1, "The mapping table must not be rendered more than once")
 
     def test_axis_mapping_no_stage_leak(self):
         """回归：轴向映射应以中性场景说明，不向 LLM 泄漏 S1/S2 阶段编号。"""
@@ -191,31 +191,32 @@ class TestRenderedSections(unittest.TestCase):
 
     def test_axis_plane_phrase_accurate(self):
         """回归：旋转轮廓草图所在平面包含旋转轴，而非"画在法向平面上"。"""
-        self.assertIn("旋转轮廓草图所在平面包含旋转轴", mc._AXIS_MAPPING_TEXT)
-        self.assertNotIn("法向平面", mc._AXIS_MAPPING_TEXT)
+        self.assertIn("The sketch plane contains the revolution axis", mc._AXIS_MAPPING_TEXT)
+        self.assertNotIn("normal plane", mc._AXIS_MAPPING_TEXT)
 
     def test_draw_rect_axis_roles_clarified(self):
         """回归：draw_rect 旋转场景注明 x/width 半径向、y/height 轴向，避免内径半径混称。"""
         notes = {s.notes for s in mc.MODELING_API_CATALOG if s.name == "draw_rect"}
         text = " ".join(notes)
-        self.assertIn("半径向起点", text)
-        self.assertIn("壁厚", text)
-        self.assertIn("轴向起点", text)
-        self.assertIn("轴向长度", text)
+        self.assertIn("inner radius", text)
+        self.assertIn("wall thickness", text)
+        self.assertIn("axial start", text)
+        self.assertIn("axial length", text)
 
     def test_pad_side_sketch_xy_context_restored(self):
         """回归：add_sketch_on_pad_side 应补回旧 H/V 说明并标注适用场景，不推广到任意旋转面。"""
         notes = {s.notes for s in mc.MODELING_API_CATALOG if s.name == "add_sketch_on_pad_side"}
         text = " ".join(notes)
-        self.assertIn("H 沿面宽", text)
+        self.assertIn("H follows face width", text)
         self.assertIn("V=Z+", text)
-        self.assertIn("XY矩形Pad侧面场景", text)
-        self.assertIn("不能推广到任意旋转面", text)
+        self.assertIn("XY rectangular Pads", text)
+        self.assertIn("do not generalize to rotated faces", text)
 
     def test_description_trailing_no_extra_whitespace(self):
         """回归：description 末尾不凭空多空格（收尾缩进不能进入字符串）。"""
         desc = mc.build_run_modeling_script_description()
-        self.assertTrue(desc.endswith("模型验证说成通过。"), "description 应以状态语义收尾")
+        self.assertTrue(desc.endswith("A failed state query must not be reported as successful model verification."),
+                        "description must end with the status semantics")
         self.assertNotIn(" \n", desc.rstrip() + "\n")
         for line in desc.splitlines():
             self.assertEqual(line, line.rstrip(), f"行尾不得有多余空格: {line!r}")
@@ -282,24 +283,25 @@ class TestExamplesExecutable(unittest.TestCase):
 class TestGeometryFaceSemanticsS2(unittest.TestCase):
     def test_face_query_notes_carry_geometry_semantics(self):
         notes = {s.name: s.notes for s in mc.MODELING_API_CATALOG}
-        for token in ("cylindrical", "unknown", "normal=None", "不再默认4边"):
+        for token in ("cylindrical", "unknown", "normal is available only", "rather than assuming four edges"):
             self.assertIn(token, notes["get_pad_faces"])
 
     def test_pocket_and_shaft_notes_synced(self):
         notes = {s.name: s.notes for s in mc.MODELING_API_CATALOG}
-        self.assertIn("反向", notes["get_pocket_faces"])
-        self.assertIn("normal=None", notes["get_shaft_faces"])
+        self.assertIn("underlying Pad", notes["get_pocket_faces"])
+        self.assertIn("opposite the corresponding Pad outward normals", mc._FACE_SEMANTICS_TEXT)
+        self.assertIn("null normal/origin", notes["get_shaft_faces"])
         self.assertIn("unknown", notes["get_shaft_faces"])
 
     def test_by_normal_validation_and_skip_none(self):
         notes = {s.name: s.notes for s in mc.MODELING_API_CATALOG}
         self.assertIn("planar", notes["get_pad_faces_by_normal"])
-        self.assertIn("跳过", notes["get_pad_faces_by_normal"])
+        self.assertIn("only known planar normals match", notes["get_pad_faces_by_normal"])
 
     def test_query_error_is_not_a_step_error(self):
         for out in (mc.build_modeling_prompt_section(), mc.build_run_modeling_script_description()):
-            self.assertIn("不产生 failed_step", out)
-            self.assertIn("不再默认4边", out)
+            self.assertIn("do not create failed_step records", out)
+            self.assertIn("instead of assuming four edges", out)
             self.assertIn("feature_inference", out)
 
     def test_run_description_documents_scope_and_status_layers(self):

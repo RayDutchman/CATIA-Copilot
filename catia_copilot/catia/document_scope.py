@@ -77,24 +77,24 @@ def resolve_document(app, doc=None, active=False, expected_type=None):
     """解析已打开文档，不通过激活文档改变调用目标。"""
     from .document import get_document_type
     if doc is not None and active:
-        raise ValueError('--doc 与 --active 互斥')
+        raise ValueError('--doc and --active are mutually exclusive')
     documents = app.Documents
     if not documents.Count:
-        raise ValueError('没有已打开的文档')
+        raise ValueError('No documents are open')
     if doc is None:
         target = app.ActiveDocument
         if target is None:
-            raise ValueError('没有活动文档')
+            raise ValueError('There is no active document')
     else:
         if not str(doc).strip():
-            raise ValueError('文档标识不能为空')
+            raise ValueError('Document identifier must not be empty')
         candidates = [documents.Item(i) for i in range(1, documents.Count + 1)]
         matches = [item for item in candidates if matches_document(describe_document(item), doc)]
         if not matches:
-            raise ValueError(f'文档不存在或未打开：{doc}')
+            raise ValueError(f'Document does not exist or is not open: {doc}')
         if len(matches) != 1:
-            raise ValueError(f'文档标识歧义：{[describe_document(item).to_dict() for item in matches]}')
+            raise ValueError(f'Document identifier is ambiguous: {[describe_document(item).to_dict() for item in matches]}')
         target = matches[0]
     if expected_type and get_document_type(target) != expected_type:
-        raise ValueError(f'目标必须为 {expected_type}')
+        raise ValueError(f'Target must be of type {expected_type}')
     return target

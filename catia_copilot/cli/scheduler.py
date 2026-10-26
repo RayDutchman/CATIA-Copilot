@@ -26,7 +26,7 @@ class SchedulerLaunch:
         folder = service.GetFolder('\\')
         name = 'Catkit-' + task_id
         definition = service.NewTask(0)
-        definition.RegistrationInfo.Description = 'Catkit 临时操作 worker'
+        definition.RegistrationInfo.Description = 'Catkit temporary operation worker'
         definition.Principal.UserId = win32api.GetUserName()
         definition.Principal.LogonType = 3  # TASK_LOGON_INTERACTIVE_TOKEN
         definition.Principal.RunLevel = 0  # TASK_RUNLEVEL_LUA

@@ -100,7 +100,7 @@ def task_guard(root):
     acquired = win32event.WaitForSingleObject(mutex, 5000)
     if acquired not in (win32event.WAIT_OBJECT_0, win32event.WAIT_ABANDONED):
         mutex.Close()
-        raise RuntimeError('任务状态正在被另一进程更新，请稍后重试')
+        raise RuntimeError('Task state is being updated by another process. Please try again.')
     try:
         yield
     finally:
@@ -119,10 +119,10 @@ class TaskManager:
 
     def directory(self, task_id):
         if not re.fullmatch(r'[0-9a-f]{32}', task_id):
-            raise ValueError('无效 task_id')
+            raise ValueError('Invalid task_id')
         directory = self.root / task_id
         if not (directory / 'request.json').is_file():
-            raise ValueError('任务不存在：' + task_id)
+            raise ValueError('Task not found: ' + task_id)
         return directory
 
     def _cleanup_scheduler(self, task_id, directory):
@@ -204,7 +204,7 @@ class TaskManager:
                     return self._state(task_id)
                 self._cleanup_scheduler(task_id, directory)
                 return {'status': 'worker_lost', 'task_id': task_id,
-                        'error': '计划任务不存在且无 worker 握手/结果；不会重复派发'}
+                        'error': 'Scheduled task is missing and no worker handshake or result was found; it will not be dispatched again'}
             if (isinstance(state, dict) and state.get('state') == 3 and
                     state.get('last_run_time') is not None and not state.get('instances') and
                     state.get('last_task_result', 0) != 0):
@@ -215,7 +215,7 @@ class TaskManager:
                     if active.get('task_id') == task_id:
                         (self.root / 'active.json').unlink(missing_ok=True)
                     return {'status': 'launch_failed', 'task_id': task_id,
-                            'error': '计划任务已尝试运行但失败；不会重复派发'}
+                            'error': 'Scheduled task was attempted but failed; it will not be dispatched again'}
             terminal = read_json(directory / 'result.json')
             identity = read_json(directory / 'worker.json')
             if terminal is not None:
@@ -234,7 +234,7 @@ class TaskManager:
                 return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
             self._cleanup_scheduler(task_id, directory)
             return {'status': 'worker_lost', 'task_id': task_id,
-                    'error': '操作进程已退出且未留下结果；不会自动重复执行，CATIA 状态需另行确认'}
+                    'error': 'The worker exited without recording a result. The operation will not be retried automatically; verify the CATIA state separately.'}
         scope = read_json(directory / 'catia.json')
         if scope is None:
             pids = self.pid_provider()
@@ -288,7 +288,7 @@ class TaskManager:
             if snapshot is None:
                 if terminal is not None:
                     return terminal['result']
-                raise ValueError('任务尚无弹窗快照；先执行 task status 或 task wait')
+                raise ValueError('No dialog snapshot is available. Run task status or task wait first.')
             identity = read_json(directory / 'worker.json')
             if terminal is None and identity and not self.alive(identity):
                 return self._state(task_id)

@@ -9,17 +9,17 @@ locked_error_handler: Callable[[Path], None] | None = None
 
 def prompt_overwrite(dest: Path) -> str:
     if overwrite_handler is None:
-        raise FileExistsError(f"输出文件已存在：{dest}；请通过 --overwrite 指定 replace 或 skip")
+        raise FileExistsError(f"Output file already exists: {dest}; use --overwrite to specify replace or skip")
     return overwrite_handler(dest)
 
 
 def retry_locked(dest: Path) -> bool:
     if locked_handler is None:
-        raise PermissionError(f"文件正在使用，请关闭后重试：{dest}")
+        raise PermissionError(f"File is in use; close it and try again: {dest}")
     return locked_handler(dest)
 
 
 def report_locked(dest: Path) -> None:
     if locked_error_handler is None:
-        raise PermissionError(f"文件仍在使用：{dest}")
+        raise PermissionError(f"File is still in use: {dest}")
     locked_error_handler(dest)

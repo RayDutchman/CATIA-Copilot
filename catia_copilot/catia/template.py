@@ -112,7 +112,7 @@ def apply_part_template(
                         added.append(prop_name)
                         logger.info(f"  Added property: '{prop_name}'")
                     except Exception as ce:
-                        logger.warning(f"  CreateString('{prop_name}') 失败: {ce}")
+                        logger.warning(f"  CreateString('{prop_name}') failed: {ce}")
                 else:
                     logger.info(f"  Skipped (already exists): '{prop_name}'")
 

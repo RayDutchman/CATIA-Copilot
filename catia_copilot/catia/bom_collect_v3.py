@@ -292,11 +292,11 @@ def _local_position_to_mat4(product) -> list[list[float]]:
     try:
         arr = wrap_product(product).position.get_components()
     except Exception as exc:
-        logger.debug("_local_position_to_mat4: get_components 失败（%s），返回单位矩阵", exc)
+        logger.debug("_local_position_to_mat4: get_components failed (%s); returning identity matrix", exc)
         return _identity_4x4()
 
     if arr is None or len(arr) < 12:
-        logger.debug("_local_position_to_mat4: arr 无效（len=%s），返回单位矩阵",
+        logger.debug("_local_position_to_mat4: invalid array (len=%s); returning identity matrix",
                      len(arr) if arr is not None else None)
         return _identity_4x4()
 
@@ -563,7 +563,7 @@ def collect_bom_part_masters(
                         )
                         inst_products = None
                 except Exception as exc:
-                    logger.debug("_traverse: 无法获取 inst_products（%s），回退文件视角", exc)
+                    logger.debug("_traverse: unable to get inst_products (%s); falling back to file view", exc)
                     inst_products = None
 
                 child_host = host_file_pn if is_embedded else pn
@@ -903,7 +903,7 @@ def set_part_master_attr(
     if col_name in _READONLY_PM_COLS:
         return False
     if col_name == "Part Number":
-        logger.warning("set_part_master_attr: PN 修改请使用 rename_part_master()")
+        logger.warning("set_part_master_attr: use rename_part_master() to change PN")
         return False
     key = _COL_TO_PM_KEY.get(col_name, col_name)
     pm[key] = value
@@ -923,7 +923,7 @@ def rename_part_master(
     """
     pm = part_masters.get(pm_key)
     if pm is None:
-        logger.warning("rename_part_master: pm_key=%r 不存在", pm_key)
+        logger.warning("rename_part_master: pm_key=%r does not exist", pm_key)
         return False
 
     old_pn = pm["part_number"]

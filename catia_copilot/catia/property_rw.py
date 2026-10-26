@@ -29,7 +29,7 @@ def _resolve_product_by_path(product, path: str):
     try:
         indices = [int(s) for s in path.split(".")]
     except ValueError:
-        logger.warning(f"无效路径格式: {path}")
+        logger.warning(f"Invalid path format: {path}")
         return None, None
 
     current = product
@@ -43,12 +43,12 @@ def _resolve_product_by_path(product, path: str):
         try:
             products = current.Products
             if products is None or products.Count <= idx:
-                logger.debug(f"路径 {path}: 索引 {idx} 超出子节点范围 "
+                logger.debug(f"Path {path}: index {idx} is outside the child-node range "
                              f"({products.Count if products else 0})")
                 return None, None
             current = products.Item(idx + 1)  # COM 是 1-based
         except Exception as e:
-            logger.debug(f"路径 {path}: 定位第 {idx} 个子节点失败: {e}")
+            logger.debug(f"Path {path}: failed to locate child node {idx}: {e}")
             return None, None
 
     return current, parent
@@ -64,7 +64,7 @@ def read_properties(path: str, product_doc=None) -> dict[str, str] | None:
             app = get_catia_v5_application()
             product_doc = app.ActiveDocument.Product if app.ActiveDocument else None
         except Exception as e:
-            logger.warning(f"获取 CATIA 活动文档失败: {e}")
+            logger.warning(f"Failed to get the active CATIA document: {e}")
             return None
 
     if product_doc is None:
@@ -72,7 +72,7 @@ def read_properties(path: str, product_doc=None) -> dict[str, str] | None:
 
     prod, _parent = _resolve_product_by_path(product_doc, path)
     if prod is None:
-        logger.warning(f"路径 {path} 找不到对应实例")
+        logger.warning(f"No instance found at path {path}")
         return None
 
     result: dict[str, str] = {}
@@ -114,7 +114,7 @@ def write_property(path: str, product_doc, prop_name: str, value: Any) -> bool:
     """
     prod, _parent = _resolve_product_by_path(product_doc, path)
     if prod is None:
-        logger.warning(f"write_property: 路径 {path} 找不到实例")
+        logger.warning(f"write_property: no instance found at path {path}")
         return False
 
     write_map = PRODUCT_ATTR_WRITE_MAP
@@ -123,10 +123,10 @@ def write_property(path: str, product_doc, prop_name: str, value: Any) -> bool:
     if com_name is not None:
         try:
             setattr(prod, com_name, str(value))
-            logger.debug(f"写入内置属性: {path}.{com_name} = {value}")
+            logger.debug(f"Writing built-in property: {path}.{com_name} = {value}")
             return True
         except Exception as e:
-            logger.warning(f"写入内置属性失败 {path}.{com_name}: {e}")
+            logger.warning(f"Failed to write built-in property {path}.{com_name}: {e}")
             return False
 
     try:
@@ -139,6 +139,6 @@ def write_property(path: str, product_doc, prop_name: str, value: Any) -> bool:
             prop.Value = str(value)
         except Exception:
             user_props.Add(prop_name, str(value))
-        logger.debug(f"写入用户属性: {path}.{prop_name} = {value}")
+        logger.debug(f"Writing user property: {path}.{prop_name} = {value}")
         return True
     return False

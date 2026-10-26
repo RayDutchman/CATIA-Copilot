@@ -24,9 +24,15 @@ class _UserProperties:
         self.values = dict(values or {})
 
     def Item(self, name):
+        if isinstance(name, int):
+            name = list(self.values)[name - 1]
         if name not in self.values:
             raise KeyError(name)
-        return type("Property", (), {"Value": self.values[name]})()
+        return type("Property", (), {"Name": name, "Value": self.values[name]})()
+
+    @property
+    def Count(self):
+        return len(self.values)
 
     def CreateString(self, name, value):
         self.values[name] = value
@@ -63,6 +69,66 @@ class _Application:
 
 
 class TestBomCollection(unittest.TestCase):
+    def test_qualified_property_names_merge_across_products(self):
+        class QualifiedProperties(_UserProperties):
+            def Item(self, name):
+                result = super().Item(name)
+                result.Name = '装配\\任意产品\\Properties\\' + result.Name
+                return result
+        child = _Product('PN', filepath='C:/pn.CATPart', user_properties={'备注': '零件'})
+        root = _Product('ROOT', children=[child], filepath='C:/root.CATProduct')
+        root.UserRefProperties = QualifiedProperties({'备注': '总成'})
+        document = _Document('root.CATProduct', root)
+        with patch.object(bom_service, 'get_catia_v5_application', return_value=_Application([document], document)):
+            data = bom_service.collect_bom()
+        self.assertEqual(data['custom_columns'], ['备注'])
+        self.assertEqual([r['备注'] for r in data['rows']], ['总成', '零件'])
+
+    def test_automatic_custom_columns_union_in_all_views_and_export(self):
+        import csv
+        import tempfile
+        from pathlib import Path
+        from catia_copilot.catia.bom_output import export_bom
+        child = _Product('PN', filepath='C:/cad/pn.CATPart', user_properties={'物料编码': 'A001', '备注': '中文'})
+        root = _Product('ROOT', children=[child, child], filepath='C:/cad/root.CATProduct', user_properties={'项目': 'GD50'})
+        document = _Document('root.CATProduct', root)
+        app = _Application([document], document)
+        with patch.object(bom_service, 'get_catia_v5_application', return_value=app):
+            for view in ('full', 'hierarchical', 'summary'):
+                data = bom_service.collect_bom(view=view)
+                self.assertEqual(data['custom_columns'], ['项目', '物料编码', '备注'])
+                row = next(r for r in data['rows'] if r['Part Number'] == 'PN')
+                self.assertEqual(row['备注'], '中文')
+                self.assertEqual(row.get('项目', ''), '')
+                if view == 'summary':
+                    self.assertEqual(row['Quantity'], 2)
+            self.assertEqual(bom_service.collect_bom(custom_columns=[])['custom_columns'], [])
+            self.assertEqual(bom_service.collect_bom(custom_columns=['备注'])['custom_columns'], ['备注'])
+            with tempfile.TemporaryDirectory() as temp:
+                path = Path(temp) / 'bom.csv'
+                self.assertTrue(export_bom(str(path), view='summary')['success'])
+                with path.open(encoding='utf-8-sig', newline='') as stream:
+                    rows = list(csv.reader(stream))
+                self.assertEqual(rows[0][-3:], ['项目', '物料编码', '备注'])
+                self.assertEqual(rows[1][-3:], ['', 'A001', '中文'])
+
+    def test_auto_enumeration_failure_is_explicit_but_explicit_empty_bypasses_it(self):
+        root = _Product('ROOT', filepath='C:/root.CATProduct')
+        root.UserRefProperties = _Collection([], error=RuntimeError('属性无法读取'))
+        root.UserRefProperties.Count = 1
+        document = _Document('root.CATProduct', root)
+        with patch.object(bom_service, 'get_catia_v5_application', return_value=_Application([document], document)):
+            with self.assertRaisesRegex(ValueError, 'custom properties.*0'):
+                bom_service.collect_bom()
+            self.assertTrue(bom_service.collect_bom(custom_columns=[])['success'])
+
+    def test_auto_enumeration_reserved_name_cannot_overwrite_quantity(self):
+        root = _Product('ROOT', filepath='C:/root.CATProduct', user_properties={'Quantity': '999'})
+        document = _Document('root.CATProduct', root)
+        with patch.object(bom_service, 'get_catia_v5_application', return_value=_Application([document], document)):
+            with self.assertRaisesRegex(ValueError, 'reserved fields'):
+                bom_service.collect_bom()
+
     def test_part_number_reuses_existing_workbench_character_rules(self):
         child = _Product('PN', filepath='C:/cad/pn.CATPart')
         root = _Product('ROOT', children=[child], filepath='C:/cad/root.CATProduct')
@@ -139,7 +205,7 @@ class TestBomCollection(unittest.TestCase):
         document = _Document("root.CATProduct", root)
         app = _Application([document], document)
         with patch("catia_copilot.catia.bom_service.get_catia_v5_application", return_value=app):
-            with self.assertRaisesRegex(ValueError, "保留字段"):
+            with self.assertRaisesRegex(ValueError, "reserved fields"):
                 bom_service.collect_bom(custom_columns=["Quantity"])
 
     def test_duplicate_references_have_distinct_full_paths_and_grouped_hierarchical_targets(self):
@@ -230,7 +296,7 @@ class TestBomCollection(unittest.TestCase):
         self.assertEqual(result["row_count"], 3)
         self.assertEqual([row["targets"][0]["node"] for row in result["rows"]], ["0", "0.0", "0.1"])
         self.assertEqual(result["rows"][1]["Note"], "steel")
-        self.assertIn("进度", errors.getvalue())
+        self.assertIn("Progress", errors.getvalue())
 
         with patch("catia_copilot.catia.bom_service.get_catia_v5_application", return_value=app), \
              patch.object(backend.pythoncom, "CoInitialize"), \
@@ -267,7 +333,7 @@ class TestBomCollection(unittest.TestCase):
         doc = _Document("ROOT.CATProduct", root)
         app = _Application([doc], doc)
         with patch("catia_copilot.catia.bom_service.get_catia_v5_application", return_value=app):
-            with self.assertRaisesRegex(ValueError, "歧义"):
+            with self.assertRaisesRegex(ValueError, "ambiguous"):
                 bom_service.collect_bom()
 
     def test_collector_options_reject_legacy_keywords(self):
@@ -314,9 +380,9 @@ class TestBomCollection(unittest.TestCase):
         b = _Document("same.CATProduct", _Product("SAME"))
         app = _Application([a, b], a)
         with patch("catia_copilot.catia.bom_service.get_catia_v5_application", return_value=app):
-            with self.assertRaisesRegex(ValueError, "歧义"):
+            with self.assertRaisesRegex(ValueError, "ambiguous"):
                 bom_service.collect_bom(doc="same.CATProduct")
-            with self.assertRaisesRegex(ValueError, "不存在"):
+            with self.assertRaisesRegex(ValueError, "does not exist"):
                 bom_service.collect_bom(doc="missing")
 
 
@@ -365,7 +431,7 @@ class TestBomEditing(unittest.TestCase):
                 {"node": "", "scope": "instance", "column": "Instance Name", "value": "Alias"},
             ])
         self.assertEqual(result["failed_count"], 2)
-        self.assertIn("根节点", result["results"][0]["error"])
+        self.assertIn("root node", result["results"][0]["error"])
         self.assertIn("node", result["results"][1]["error"])
         writer.assert_not_called()
 
@@ -418,7 +484,7 @@ class TestBomEditing(unittest.TestCase):
                 {"node": "0", "scope": "master", "column": "Part Number", "value": "PN"}
             ])
         self.assertEqual(result["failed_count"], 1)
-        self.assertIn("冲突", result["results"][0]["error"])
+        self.assertIn("conflict", result["results"][0]["error"])
         writer.assert_not_called()
 
     def test_failed_part_master_rename_stops_before_com_write(self):
@@ -428,7 +494,7 @@ class TestBomEditing(unittest.TestCase):
                 {"node": "0.0", "scope": "master", "column": "Part Number", "value": "NEW"}
             ])
         self.assertEqual(result["failed_count"], 1)
-        self.assertIn("缓存", result["results"][0]["error"])
+        self.assertIn("cache", result["results"][0]["error"])
         writer.assert_not_called()
 
     def test_same_part_number_in_different_files_is_ambiguous_for_master_edit(self):
@@ -439,7 +505,7 @@ class TestBomEditing(unittest.TestCase):
                 {"node": "0.0", "scope": "master", "column": "Revision", "value": "B"}
             ])
         self.assertEqual(result["failed_count"], 1)
-        self.assertIn("歧义", result["results"][0]["error"])
+        self.assertIn("ambiguous", result["results"][0]["error"])
         writer.assert_not_called()
 
 

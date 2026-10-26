@@ -46,7 +46,7 @@ const windowsUserPath = {
 };
 
 function ensureUserPath(directory, store = windowsUserPath) {
-  if (directory.includes(';')) throw new Error('安装目录含分号，无法加入 PATH；可用 --no-path 安装。');
+  if (directory.includes(';')) throw new Error('The install directory contains a semicolon and cannot be added to PATH. Use --no-path to install.');
   const before = store.read();
   const after = appendPath(before, directory);
   if (after !== before) store.write(after);

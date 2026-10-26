@@ -69,7 +69,7 @@ def sync_to_drawing_parameters(
             nomenclature = part_doc.Product.Nomenclature
             revision = part_doc.Product.Revision
         except Exception as e:
-            logger.warning(f"读取零件标准属性失败: {e}")
+            logger.warning(f"Failed to read standard part properties: {e}")
             
         # 2. 获取零件用户自定义属性集合
         part_user_props = None
@@ -79,7 +79,7 @@ def sync_to_drawing_parameters(
             pass
             
         if part_user_props is None:
-            log_details.append("零件无用户自定义属性集合")
+            log_details.append("The part has no custom property collection")
             
         # 3. 获取图纸参数集合
         params = drawing_doc.Parameters
@@ -94,10 +94,10 @@ def sync_to_drawing_parameters(
             try:
                 param = params.Item(param_name)
                 param.Value = value
-                log_details.append(f"已同步：{param_name} = {value}")
+                log_details.append(f"Synchronized: {param_name} = {value}")
             except Exception:
                 # 图纸中不存在该参数，跳过（不新建）
-                log_details.append(f"图纸中无参数 {param_name}，已跳过")
+                log_details.append(f"Parameter {param_name} is not present in the drawing; skipped")
                 
         # 5. 批量同步自定义属性
         for prop_name in property_names:
@@ -129,41 +129,41 @@ def sync_to_drawing_parameters(
                                     part_user_props = part_doc.Product.UserRefProperties
                                 if part_user_props is not None:
                                     part_user_props.CreateString(prop_name, prop_value)
-                                    log_details.append(f"已创建零件属性：{prop_name} = {prop_value}")
+                                    log_details.append(f"Created part property: {prop_name} = {prop_value}")
                             except Exception as e:
-                                logger.warning(f"创建零件属性 {prop_name} 失败: {e}")
+                                logger.warning(f"Failed to create part property {prop_name}: {e}")
                     else:
-                        log_details.append(f"用户取消输入属性：{prop_name}")
+                        log_details.append(f"User canceled property input: {prop_name}")
                 else:
-                    log_details.append(f"属性 {prop_name} 不存在，以空值写入")
+                    log_details.append(f"Property {prop_name} does not exist; writing an empty value")
                     
             # 写入图纸参数（图纸中不存在该参数则跳过，不新建）
             try:
                 param = params.Item(prop_name)
                 param.Value = prop_value
-                log_details.append(f"已同步：{prop_name} = {prop_value}")
+                log_details.append(f"Synchronized: {prop_name} = {prop_value}")
             except Exception:
-                log_details.append(f"图纸中无参数 {prop_name}，已跳过")
+                log_details.append(f"Parameter {prop_name} is not present in the drawing; skipped")
                 
         # 6. 更新图纸显示
         try:
             drawing_doc.Update()
-            log_details.append("图纸已更新")
+            log_details.append("Drawing updated")
         except Exception as e:
-            logger.warning(f"更新图纸失败: {e}")
+            logger.warning(f"Failed to update drawing: {e}")
             
         return {
             "success": True,
-            "message": "同步完成",
+            "message": "Synchronization completed",
             "details": log_details,
             "part_number": part_number,
         }
         
     except Exception as e:
-        logger.error(f"同步属性到图纸参数失败: {e}", exc_info=True)
+        logger.error(f"Failed to synchronize properties to drawing parameters: {e}", exc_info=True)
         return {
             "success": False,
-            "message": f"同步失败: {e}",
+            "message": f"Synchronization failed: {e}",
             "details": log_details,
             "part_number": "",
         }
@@ -202,8 +202,8 @@ def generate_drawing(
         
         if doc_type not in ("PartDocument", "ProductDocument"):
             raise RuntimeError(
-                f"请先激活一个 CATPart 或 CATProduct 文档！\n"
-                f"当前文档类型: {doc_type}"
+                f"Activate a CATPart or CATProduct document first.\n"
+                f"Current document type: {doc_type}"
             )
             
         part_doc = active_doc
@@ -211,18 +211,18 @@ def generate_drawing(
         # 2. 验证模板文件存在
         template_path_obj = Path(template_path)
         if not template_path_obj.exists():
-            raise RuntimeError(f"图纸模板文件不存在: {template_path}")
+            raise RuntimeError(f"Drawing template does not exist: {template_path}")
             
         # 3. 从模板创建新图纸
-        logger.info(f"正在从模板创建图纸: {template_path}")
+        logger.info(f"Creating drawing from template: {template_path}")
         drawing_doc = app.Documents.NewFrom(str(template_path))
         
         # 4. 验证返回类型
         drawing_type = get_document_type(drawing_doc)
         if drawing_type != "DrawingDocument":
             raise RuntimeError(
-                f"NewFrom 返回类型错误: {drawing_type}\n"
-                f"期望: DrawingDocument"
+                f"NewFrom returned an unexpected document type: {drawing_type}\n"
+                f"Expected: DrawingDocument"
             )
             
         # 5. 同步零件属性到图纸参数
@@ -242,18 +242,18 @@ def generate_drawing(
         try:
             drawing_sheet = drawing_doc.Sheets.Item(1)
             drawing_sheet.Activate()
-            sync_result["details"].append("已激活第一张图纸页")
+            sync_result["details"].append("Activated the first drawing sheet")
         except Exception as e:
-            logger.warning(f"激活图纸页失败: {e}")
+            logger.warning(f"Failed to activate drawing sheet: {e}")
             
         sync_result["drawing_doc"] = drawing_doc
         return sync_result
         
     except Exception as e:
-        logger.error(f"生成图纸失败: {e}", exc_info=True)
+        logger.error(f"Failed to generate drawing: {e}", exc_info=True)
         return {
             "success": False,
-            "message": f"生成图纸失败: {e}",
+            "message": f"Failed to generate drawing: {e}",
             "details": [],
         }
 
@@ -291,8 +291,8 @@ def refresh_drawing(
         
         if doc_type != "DrawingDocument":
             raise RuntimeError(
-                f"请先激活一个 CATDrawing 图纸文档！\n"
-                f"当前文档类型: {doc_type}"
+                f"Activate a CATDrawing document first.\n"
+                f"Current document type: {doc_type}"
             )
             
         drawing_doc = active_doc
@@ -306,16 +306,16 @@ def refresh_drawing(
             
         if pn_param is None:
             raise RuntimeError(
-                '图纸参数中未找到 "PartNumber"，无法自动匹配零件。\n'
-                '请确保图纸模板中包含 PartNumber 参数。'
+                'The drawing has no "PartNumber" parameter, so the part cannot be matched automatically.\n'
+                'Ensure the drawing template contains a PartNumber parameter.'
             )
             
         target_pn = pn_param.Value
         
         if not target_pn or not target_pn.strip():
             raise RuntimeError(
-                "图纸参数 PartNumber 为空，无法自动匹配零件。\n"
-                "请先手动设置图纸的 PartNumber 参数。"
+                "The drawing PartNumber parameter is empty, so the part cannot be matched automatically.\n"
+                "Set the drawing PartNumber parameter first."
             )
             
         # 3. 在所有已打开文档中查找匹配零件编号的零件或产品
@@ -340,8 +340,8 @@ def refresh_drawing(
                 
         if found_doc is None:
             raise RuntimeError(
-                f'未找到零件编号为 "{target_pn}" 的零件或产品文档。\n'
-                f'请确保对应文档已在 CATIA 中打开。'
+                f'No part or product document with PartNumber "{target_pn}" was found.\n'
+                f'Ensure the corresponding document is open in CATIA.'
             )
             
         # 4. 同步零件属性到图纸参数
@@ -355,9 +355,9 @@ def refresh_drawing(
         return sync_result
         
     except Exception as e:
-        logger.error(f"刷新图纸失败: {e}", exc_info=True)
+        logger.error(f"Failed to refresh drawing: {e}", exc_info=True)
         return {
             "success": False,
-            "message": f"刷新图纸失败: {e}",
+            "message": f"Failed to refresh drawing: {e}",
             "details": [],
         }

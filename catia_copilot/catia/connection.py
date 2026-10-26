@@ -80,16 +80,16 @@ def _launch_catia_v5() -> bool:
     cnext_exe = _get_cnext_exe()
     if cnext_exe is None:
         logger.error(
-            "找不到 CATIA V5 可执行文件（CNEXT.exe）。"
-            "请确认 CATIA V5 已正确安装。"
+            "CATIA V5 executable (CNEXT.exe) was not found. "
+            "Verify that CATIA V5 is installed correctly."
         )
         return False
 
-    logger.info(f"正在启动 CATIA V5：{cnext_exe}")
+    logger.info(f"Starting CATIA V5: {cnext_exe}")
     try:
         subprocess.Popen([str(cnext_exe)])
     except Exception as exc:
-        logger.error(f"启动 CATIA V5 失败：{exc}")
+        logger.error(f"Failed to start CATIA V5: {exc}")
         return False
 
     # 等待 CATIA V5 注册到 COM ROT
@@ -97,10 +97,10 @@ def _launch_catia_v5() -> bool:
     while time.time() < deadline:
         time.sleep(_CATIA_V5_POLL_INTERVAL)
         if _get_v5_com_object() is not None:
-            logger.info("CATIA V5 已启动，COM 连接就绪。")
+            logger.info("CATIA V5 started; COM connection is ready.")
             return True
 
-    logger.error("CATIA V5 在超时时间内未能注册到 COM。")
+    logger.error("CATIA V5 did not register with COM before the timeout.")
     return False
 
 
@@ -132,23 +132,22 @@ def get_catia_v5_application():
         if _is_catia_process_running():
             # 进程存在但 COM 连不上（通常是权限不匹配），不要新建实例
             raise RuntimeError(
-                "检测到 CATIA V5 正在运行，但无法通过 COM 连接。\n\n"
-                "最常见原因：CATIA 以管理员权限运行，而本程序以普通用户权限运行。\n"
-                "解决方法：将 CATIA 改为普通用户权限运行（取消「以管理员身份运行」），"
-                "使两侧权限级别一致。"
+                "CATIA V5 is running, but a COM connection could not be established.\n\n"
+                "The most common cause is that CATIA is running as administrator while this application is running as a standard user.\n"
+                "Run CATIA as a standard user (disable Run as administrator) so both processes use the same privilege level."
             )
         # 进程不存在，尝试自动启动
-        logger.info("CATIA V5 未运行，尝试自动启动……")
+        logger.info("CATIA V5 is not running; attempting to start it...")
         success = _launch_catia_v5()
         if success:
             com_obj = _get_v5_com_object()
         if com_obj is None:
             raise RuntimeError(
-                "无法连接到 CATIA V5 R28。\n\n"
-                "可能原因：\n"
-                "  • CATIA V5 未安装或无法找到启动程序（CNEXT.exe）\n"
-                "  • CATIA V5 启动超时\n\n"
-                "请手动启动 CATIA V5 R28 后重试。"
+                "Unable to connect to CATIA V5 R28.\n\n"
+                "Possible causes:\n"
+                "  • CATIA V5 is not installed or CNEXT.exe could not be found\n"
+                "  • CATIA V5 startup timed out\n\n"
+                "Start CATIA V5 R28 manually and try again."
             )
 
     return com_obj

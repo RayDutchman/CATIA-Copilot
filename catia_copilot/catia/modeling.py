@@ -99,7 +99,7 @@ def _get_feature_en_name(part_com, feature_cn_name: str) -> str:
     for cn, en in known.items():
         if feature_cn_name.startswith(cn + "."):
             return en + feature_cn_name[len(cn):]
-    raise RuntimeError(f"无法推导特征英文内部名：{feature_cn_name!r}")
+    raise RuntimeError(f"Unable to derive the feature's internal English name: {feature_cn_name!r}")
 
 
 def _plane_ref(part, plane: str):
@@ -126,7 +126,7 @@ def _plane_ref(part, plane: str):
     elif plane_lower == "zx":
         plane_obj = origin.plane_zx
     else:
-        raise ValueError(f"不支持的平面: {plane!r}，可选值为 'xy' / 'yz' / 'zx'")
+        raise ValueError(f"Unsupported plane: {plane!r}; expected 'xy', 'yz', or 'zx'")
     return part.create_reference_from_object(plane_obj)
 
 
@@ -145,7 +145,7 @@ def _set_base_plane_sketch_axis(sketch, plane: str) -> None:
     try:
         axis_data = _BASE_PLANE_AXIS_DATA[plane_lower]
     except KeyError as exc:
-        raise ValueError(f"不支持的草图基准面: {plane!r}") from exc
+        raise ValueError(f"Unsupported sketch reference plane: {plane!r}") from exc
     sketch.set_absolute_axis_data(axis_data)
 
 
@@ -196,7 +196,7 @@ def get_active_part():
         return part_doc.part
     except Exception as e:
         raise RuntimeError(
-            f"当前活动文档不是 CATPart，无法获取 Part 对象: {e}"
+            f"The active document is not a CATPart; unable to get the Part object: {e}"
         )
 
 
@@ -519,7 +519,7 @@ def draw_slot(sketch, x1: float, y1: float, x2: float, y2: float,
     dy = y2 - y1
     length = math.hypot(dx, dy)
     if length < 1e-9:
-        raise ValueError("draw_slot: 起点与终点不能重合")
+        raise ValueError("draw_slot: start and end points must not coincide")
     ux, uy = dx / length, dy / length   # 沿中轴方向单位向量
     nx, ny = -uy, ux                    # 法向量（垂直中轴，左侧）
 
@@ -668,7 +668,7 @@ def _get_named_axis_ref(part_doc_com, axis: str):
     elif a == "z":
         return _get_z_axis_ref(part_doc_com)
     else:
-        raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
+        raise ValueError(f"Unsupported revolution axis: {axis!r}; expected 'x', 'y', or 'z'")
 
 
 def add_shaft(part, sketch, axis: str = "z"):
@@ -763,7 +763,7 @@ def ensure_revolute_axis(part, axis: str = "z"):
     elif a == "z":
         return _get_z_axis_ref(part_doc_com)
     else:
-        raise ValueError(f"不支持的旋转轴: {axis!r}，可选值为 'x' / 'y' / 'z'")
+        raise ValueError(f"Unsupported revolution axis: {axis!r}; expected 'x', 'y', or 'z'")
 
 
 def add_pad(part, sketch, depth: float,
@@ -1075,7 +1075,7 @@ def list_features(part) -> list[str]:
         shapes = part.main_body.shapes
         return [shapes.item(i + 1).name for i in range(shapes.count)]
     except Exception as e:
-        logger.debug(f"[MODELING] list_features 失败: {e}")
+        logger.debug(f"[MODELING] list_features failed: {e}")
         return []
 
 
@@ -1085,7 +1085,7 @@ def list_sketches(part) -> list[str]:
         sketches = part.main_body.sketches
         return [sketches.item(i + 1).name for i in range(sketches.count)]
     except Exception as e:
-        logger.debug(f"[MODELING] list_sketches 失败: {e}")
+        logger.debug(f"[MODELING] list_sketches failed: {e}")
         return []
 
 
@@ -1113,7 +1113,7 @@ def get_mass_props(part, *, document=None) -> dict | None:
         inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]
         return {"mass": mass, "cog": cog, "inertia": inertia}
     except Exception as e:
-        logger.debug(f"[MODELING] get_mass_props 失败: {e}")
+        logger.debug(f"[MODELING] get_mass_props failed: {e}")
         return None
 
 
@@ -1137,7 +1137,7 @@ def _edge_endpoints(sketch_com, raw_i) -> tuple | None:
     def valid(values):
         values = tuple(float(value) for value in values)
         if len(values) != 4 or not all(math.isfinite(value) for value in values):
-            raise ValueError("曲线端点须包含四个有限坐标")
+            raise ValueError("Curve endpoints must contain four finite coordinates")
         return values
 
     try:
@@ -1161,7 +1161,7 @@ def _get_sketch_outline(sketch_com) -> SketchOutline:
         ge = sketch_com.GeometricElements
         types = [ge.Item(i).GeometricType for i in range(1, ge.Count + 1)]
     except Exception as exc:
-        return read_error_outline(f"GeometricElements 枚举失败: {exc}")
+        return read_error_outline(f"GeometricElements enumeration failed: {exc}")
     outline = sketch_outline_from_element_types(types)   # 纯模块：ordinal/raw/kind/status=ok
     filled = []
     for edge in outline.edges:
@@ -1288,8 +1288,8 @@ def get_pad_faces(part, pad) -> list[dict]:
     outline = geo["outline"]
     if outline.status != STATUS_OK:
         raise GeometryQueryError(
-            f"get_pad_faces 无法枚举 {pad.name} 草图轮廓：{outline.note}；"
-            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
+            f"get_pad_faces could not enumerate the sketch outline for {pad.name}: {outline.note}. "
+            "Stopped without assuming four edges; use list_features to inspect the feature or rebuild the sketch")
 
     faces = []
 
@@ -1507,8 +1507,8 @@ def get_pocket_faces(part, pocket) -> list[dict]:
     outline = geo["outline"]
     if outline.status != STATUS_OK:
         raise GeometryQueryError(
-            f"get_pocket_faces 无法枚举 {pocket.name} 草图轮廓：{outline.note}；"
-            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
+            f"get_pocket_faces could not enumerate the sketch outline for {pocket.name}: {outline.note}. "
+            "Stopped without assuming four edges; use list_features to inspect the feature or rebuild the sketch")
     # Pocket 法向指向开口，底面法向 = 开口方向（从底面朝外指向槽口）
     n = geo["normal"]
 
@@ -1679,8 +1679,8 @@ def get_shaft_faces(part, shaft) -> list[dict]:
     outline = geo["outline"]
     if outline.status != STATUS_OK:
         raise GeometryQueryError(
-            f"get_shaft_faces 无法枚举 {shaft.name} 草图轮廓：{outline.note}；"
-            "已停止，不再默认4边；请用 list_features 确认特征状态或重建草图")
+            f"get_shaft_faces could not enumerate the sketch outline for {shaft.name}: {outline.note}. "
+            "Stopped without assuming four edges; use list_features to inspect the feature or rebuild the sketch")
 
     brep_map = {
         edge.index: f"Face:(Brp:({en};0:(Brp:({es};{edge.index})));None:();Cf14:())"
@@ -1806,7 +1806,7 @@ class ModelingContext:
     def _raise_if_cancelled(self) -> None:
         """仅在下一步开始前检查取消，不在 COM 调用中轮询。"""
         if self._cancel_check is not None and self._cancel_check():
-            raise ModelingCancelledError("建模已取消；已停止继续执行后续步骤")
+            raise ModelingCancelledError("Modeling was canceled; remaining steps have been stopped")
 
     def _run(self, func_label: str, fn, *args, **kwargs):
         """执行一个建模函数，记录结果，失败时抛出 ModelingStepError。
@@ -2071,7 +2071,7 @@ class ModelingContext:
         elif face == "side":
             return _brep_face_side(en_pad, en_sk, edge_index)
         else:
-            raise ValueError(f"face 必须是 'top'/'bottom'/'side'，收到: {face!r}")
+            raise ValueError(f"face must be 'top', 'bottom', or 'side'; received {face!r}")
 
     def make_pad_edge_ref(self, part, pad, face_a_brep: str, face_b_brep: str):
         """由两个面 BRep 字符串构造 Pad 上的边引用（两面交线）。

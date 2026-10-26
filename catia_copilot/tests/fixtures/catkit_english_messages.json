@@ -1,0 +1,644 @@
+{
+  "tool_open_catia_file": [
+    {
+      "path": [
+        "body",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "CATIA 未连接",
+      "english": "CATIA is not connected"
+    }
+  ],
+  "tool_write_bom_to_catia": [
+    {
+      "path": [
+        "body",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "pn_data 不能为空",
+      "english": "pn_data must not be empty"
+    }
+  ],
+  "tool_apply_part_template": [
+    {
+      "path": [
+        "body",
+        1,
+        "body",
+        0,
+        "value",
+        "values",
+        0,
+        "value"
+      ],
+      "original": "进度：",
+      "english": "Progress: "
+    }
+  ],
+  "tool_get_open_documents": [
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "CATIA 未连接",
+      "english": "CATIA is not connected"
+    }
+  ],
+  "tool_save_catia_document": [
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "CATIA 未连接",
+      "english": "CATIA is not connected"
+    },
+    {
+      "path": [
+        "body",
+        3,
+        "body",
+        0,
+        "orelse",
+        4,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "文档未在 CATIA 中打开：",
+      "english": "Document is not open in CATIA: "
+    }
+  ],
+  "tool_get_document_properties": [
+    {
+      "path": [
+        "body",
+        1,
+        "body",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "CATIA 未连接",
+      "english": "CATIA is not connected"
+    },
+    {
+      "path": [
+        "body",
+        1,
+        "body",
+        2,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "当前没有活动文档",
+      "english": "There is no active document"
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "handlers",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "读取属性失败：",
+      "english": "Failed to read properties: "
+    }
+  ],
+  "tool_set_document_properties": [
+    {
+      "path": [
+        "body",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "standard 和 user_defined 不能同时为空，请至少提供一个要写入的属性",
+      "english": "standard and user_defined cannot both be empty; provide at least one property to write"
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "user_defined 包含不在预设列表中的字段名：",
+      "english": "user_defined contains field names outside the preset list: "
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        2,
+        "value"
+      ],
+      "original": "。允许的字段名：",
+      "english": ". Allowed field names: "
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        4,
+        "value"
+      ],
+      "original": "。请告知用户该字段不在预设范围内，并询问确认后再执行。",
+      "english": ". Inform the user that these fields are not preset and ask for confirmation before proceeding."
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        5,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "user_defined 包含不合法的枚举值：",
+      "english": "user_defined contains invalid enum values: "
+    },
+    {
+      "path": [
+        "body",
+        2,
+        "body",
+        5,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        2,
+        "value"
+      ],
+      "original": "。请使用 allowed 列表中的值。",
+      "english": ". Use values from the allowed list."
+    },
+    {
+      "path": [
+        "body",
+        3,
+        "body",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "CATIA 未连接",
+      "english": "CATIA is not connected"
+    },
+    {
+      "path": [
+        "body",
+        3,
+        "body",
+        2,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "当前没有活动文档",
+      "english": "There is no active document"
+    },
+    {
+      "path": [
+        "body",
+        4,
+        "handlers",
+        2,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "写入属性失败：",
+      "english": "Failed to write properties: "
+    }
+  ],
+  "tool_run_modeling_script": [
+    {
+      "path": [
+        "body",
+        6,
+        "body",
+        4,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "value"
+      ],
+      "original": "[MODELING] 写入运行记录失败：%s",
+      "english": "[MODELING] Failed to write run record: %s"
+    },
+    {
+      "path": [
+        "body",
+        8,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        3,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "无法确定 CATIA 活动文档：",
+      "english": "Unable to identify the active CATIA document: "
+    },
+    {
+      "path": [
+        "body",
+        9,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        3,
+        "value"
+      ],
+      "original": "目标文档与当前活动文档不匹配，已拒绝执行建模脚本",
+      "english": "The target document does not match the active document; modeling script execution was rejected"
+    },
+    {
+      "path": [
+        "body",
+        10,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "value"
+      ],
+      "original": "正在执行建模脚本...",
+      "english": "Executing modeling script..."
+    },
+    {
+      "path": [
+        "body",
+        12,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        3,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "写入脚本失败: ",
+      "english": "Failed to write script: "
+    },
+    {
+      "path": [
+        "body",
+        13,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        3,
+        "value"
+      ],
+      "original": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ...",
+      "english": "No build(ctx) function was found. Ensure the script defines def build(ctx): ..."
+    },
+    {
+      "path": [
+        "body",
+        14,
+        "body",
+        2,
+        "body",
+        0,
+        "exc",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "无法为 ",
+      "english": "Unable to create a ModuleSpec for "
+    },
+    {
+      "path": [
+        "body",
+        14,
+        "body",
+        2,
+        "body",
+        0,
+        "exc",
+        "args",
+        0,
+        "values",
+        2,
+        "value"
+      ],
+      "original": " 创建 ModuleSpec",
+      "english": "."
+    },
+    {
+      "path": [
+        "body",
+        14,
+        "handlers",
+        0,
+        "body",
+        1,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "[MODELING] 脚本加载失败:\n",
+      "english": "[MODELING] Script load failed:\n"
+    },
+    {
+      "path": [
+        "body",
+        14,
+        "handlers",
+        0,
+        "body",
+        2,
+        "value",
+        "args",
+        0,
+        "values",
+        3,
+        "value"
+      ],
+      "original": "脚本语法错误或 import 失败",
+      "english": "Script syntax error or import failure"
+    },
+    {
+      "path": [
+        "body",
+        15,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "value"
+      ],
+      "original": "脚本已加载，正在调用 build(ctx)...",
+      "english": "Script loaded; calling build(ctx)..."
+    },
+    {
+      "path": [
+        "body",
+        17,
+        "handlers",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "[MODELING] 步骤 [",
+      "english": "[MODELING] Step ["
+    },
+    {
+      "path": [
+        "body",
+        17,
+        "handlers",
+        1,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "values",
+        2,
+        "value"
+      ],
+      "original": "] 失败:\n",
+      "english": "] failed:\n"
+    },
+    {
+      "path": [
+        "body",
+        17,
+        "handlers",
+        2,
+        "body",
+        1,
+        "value",
+        "args",
+        0,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "[MODELING] build() 执行失败:\n",
+      "english": "[MODELING] build() failed:\n"
+    },
+    {
+      "path": [
+        "body",
+        17,
+        "handlers",
+        2,
+        "body",
+        2,
+        "value",
+        "args",
+        0,
+        "values",
+        4,
+        "value"
+      ],
+      "original": "build() 执行失败（非建模步骤异常）",
+      "english": "build() failed outside a modeling step"
+    },
+    {
+      "path": [
+        "body",
+        18,
+        "body",
+        0,
+        "value",
+        "args",
+        0,
+        "value"
+      ],
+      "original": "build(ctx) 执行完成，正在读取模型状态...",
+      "english": "build(ctx) completed; reading model state..."
+    },
+    {
+      "path": [
+        "body",
+        19,
+        "handlers",
+        0,
+        "body",
+        0,
+        "value",
+        "values",
+        6,
+        "values",
+        0,
+        "value"
+      ],
+      "original": "build(ctx) 已执行，但读取模型状态失败: ",
+      "english": "build(ctx) ran, but model state could not be read: "
+    }
+  ]
+}

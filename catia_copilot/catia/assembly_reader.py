@@ -169,7 +169,7 @@ def detect_catia_status() -> dict:
         except Exception:
             pass
     except Exception as e:
-        logger.debug(f"检测 CATIA 状态失败: {e}")
+        logger.debug(f"Failed to detect CATIA status: {e}")
     return result
 
 
@@ -179,10 +179,10 @@ def read_assembly_tree(catia_app=None, document=None, errors=None) -> dict | Non
 
     doc = document if document is not None else catia_app.ActiveDocument
     if doc is None:
-        logger.warning("CATIA 活动文档为空")
+        logger.warning("The active CATIA document is empty")
         return None
     if not hasattr(doc, "Product") or doc.Product is None:
-        logger.warning("活动文档不是装配体（无 Product 对象）")
+        logger.warning("The active document is not an assembly (no Product object)")
         return None
 
     return _read_product_recursive(doc.Product, [], "", errors)
@@ -239,11 +239,11 @@ def _read_product_recursive(
                     except Exception as e:
                         if errors is not None:
                             errors.append({'path': f'{path_str}.{i - 1}', 'error': str(e)})
-                        logger.debug(f"读取子节点 {i} 失败: {e}")
+                        logger.debug(f"Failed to read child node {i}: {e}")
                         continue
         except Exception as e:
             if errors is not None:
                 errors.append({'path': path_str, 'error': str(e)})
-            logger.debug(f"获取子产品集合失败: {e}")
+            logger.debug(f"Failed to get child product collection: {e}")
 
     return node

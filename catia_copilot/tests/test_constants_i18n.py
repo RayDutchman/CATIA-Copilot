@@ -38,9 +38,9 @@ class TestBusinessInvariants(unittest.TestCase):
         self.assertEqual(C.BomNodeType.COMPONENT, "Component")
         self.assertEqual(C.BomNodeType.MIRROR, "Mirror")
 
-    def test_filename_sentinels_unchanged(self) -> None:
-        self.assertEqual(C.FILENAME_NOT_FOUND, "未检索到")
-        self.assertEqual(C.FILENAME_UNSAVED, "未保存")
+    def test_generated_filename_sentinels_are_english(self) -> None:
+        self.assertEqual(C.FILENAME_NOT_FOUND, "Not found")
+        self.assertEqual(C.FILENAME_UNSAVED, "Unsaved")
 
     def test_preset_user_ref_property_value_unchanged(self) -> None:
         self.assertIn("零件类型", C.PRESET_USER_REF_PROPERTIES)

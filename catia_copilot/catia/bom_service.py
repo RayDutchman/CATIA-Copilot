@@ -71,23 +71,23 @@ def _tree_targets(root_product) -> list[dict]:
         marker = id(product)
         if marker in ancestors:
             node = ".".join(map(str, path))
-            raise ValueError(f"Product tree 在 node {node} 存在循环引用")
+            raise ValueError(f"Cycle detected in the product tree at node {node}")
         next_ancestors = ancestors | {marker}
         node = ".".join(map(str, path))
         try:
             products = product.Products
             count = products.Count
         except Exception as exc:
-            raise ValueError(f"无法读取 Product tree node {node} 的 Products collection: {exc}") from exc
+            raise ValueError(f"Unable to read Products collection at product tree node {node}: {exc}") from exc
         for index in range(count):
             try:
                 child = products.Item(index + 1)
             except Exception as exc:
                 raise ValueError(
-                    f"无法读取 Product tree node {node}.{index} 的子节点: {exc}"
+                    f"Unable to read child at Product tree node {node}.{index}: {exc}"
                 ) from exc
             if child is None:
-                raise ValueError(f"Product tree node {node}.{index} 返回空子节点")
+                raise ValueError(f"Product tree node {node}.{index} returned an empty child node")
             visit(child, path + (index,), level + 1, next_ancestors,
                   filepath, current_host_pn)
 
@@ -122,11 +122,11 @@ def _validate_custom_columns(custom_columns):
     if not isinstance(custom_columns, (list, tuple)) or not all(
         isinstance(column, str) for column in custom_columns
     ):
-        raise TypeError("custom_columns 必须是字符串列表")
+        raise TypeError("custom_columns must be a list of strings")
     invalid = [column for column in custom_columns
                if column in _RESERVED_COLUMNS or column.startswith("_")]
     if invalid:
-        raise ValueError(f"自定义列不能覆盖保留字段：{invalid}")
+        raise ValueError(f"Custom columns cannot override reserved fields: {invalid}")
     return list(dict.fromkeys(custom_columns))
 
 
@@ -135,20 +135,20 @@ def _collector_options(kwargs):
     signal = options.pop("progress_signal", None)
     callback = options.pop("progress_callback", None)
     if callback is not None and not callable(callback):
-        raise TypeError("progress_callback 必须可调用")
+        raise TypeError("progress_callback must be callable")
     unknown = sorted(set(options) - {"config", "max_depth"})
     if unknown:
-        raise TypeError(f"不支持的 BOM 采集参数：{', '.join(unknown)}")
+        raise TypeError(f"Unsupported BOM collection options: {', '.join(unknown)}")
     if signal is not None:
         emit = getattr(signal, "emit", None)
         if not callable(emit):
-            raise TypeError("progress_signal 必须提供 emit(message)")
+            raise TypeError("progress_signal must provide emit(message)")
         original_callback = callback
 
         def report_progress(count):
             if original_callback is not None:
                 original_callback(count)
-            emit(f"进度：{count}")
+            emit(f"Progress: {count}")
 
         callback = report_progress
     if callback is not None:
@@ -163,17 +163,60 @@ def _assert_unambiguous_part_masters(targets):
     collisions = {key: sorted(paths) for key, paths in files_by_key.items() if len(paths) > 1}
     if collisions:
         key, paths = next(iter(collisions.items()))
-        raise ValueError(f"主数据键 {key!r} 对应多个引用文件，BOM 目标歧义：{paths}")
+        raise ValueError(f"Master-data key {key!r} refers to multiple files; BOM target is ambiguous: {paths}")
+
+
+def _discover_custom_columns(targets):
+    """沿用 UserRefProperties 的索引枚举方式，按主数据去重，不读取几何参数。"""
+    names = {}
+    visited = set()
+    for target in targets:
+        key = target['_pm_key']
+        if key in visited:
+            continue
+        visited.add(key)
+        product = target['_product']
+        candidates = []
+        try:
+            candidates.append(product.ReferenceProduct)
+        except Exception:
+            pass
+        candidates.append(product)
+        failures = []
+        for candidate in candidates:
+            try:
+                properties = candidate.UserRefProperties
+                count = properties.Count
+            except Exception as exc:
+                failures.append(str(exc))
+                continue
+            try:
+                for index in range(1, count + 1):
+                    name = str(properties.Item(index).Name)
+                    # 自定义属性名不含反斜杠，取末段即可兼容语言及对象路径层数。
+                    name = name.rsplit('\\', 1)[-1]
+                    if not name:
+                        raise ValueError('Property name is empty')
+                    names[name] = None
+            except Exception as exc:
+                raise ValueError(f"Failed to enumerate custom properties at node {target['node']}: {exc}") from exc
+            break
+        else:
+            raise ValueError(f"Failed to enumerate custom properties at node {target['node']}: {'; '.join(failures)}")
+    return _validate_custom_columns(list(names))
 
 
 def _collect(document, view, columns, custom_columns, include_assemblies, sort_column, kwargs):
     product = document.Product
     if view not in {"full", "hierarchical", "summary"}:
-        raise ValueError("view 必须为 full、hierarchical 或 summary")
+        raise ValueError("view must be full, hierarchical, or summary")
     if columns is not None and (not isinstance(columns, (list, tuple))
                                 or not all(isinstance(column, str) for column in columns)):
-        raise TypeError("columns 必须是字符串列表")
-    requested_custom = _validate_custom_columns(custom_columns)
+        raise TypeError("columns must be a list of strings")
+    targets = _tree_targets(product)
+    _assert_unambiguous_part_masters(targets)
+    requested_custom = (_discover_custom_columns(targets) if custom_columns is None
+                        else _validate_custom_columns(custom_columns))
     requested_columns = list(dict.fromkeys(
         list(BOM_DEFAULT_COLUMNS if columns is None else columns) + requested_custom
     ))
@@ -184,9 +227,9 @@ def _collect(document, view, columns, custom_columns, include_assemblies, sort_c
         "columns", "custom_columns", "rows",
     }
     if hidden_columns.intersection(requested_columns):
-        raise ValueError("columns 只能包含业务字段，不能包含定位或结果元数据")
+        raise ValueError("columns may contain only business fields, not locator or result metadata")
     if any(column.startswith("_") for column in requested_columns):
-        raise ValueError("columns 不能包含内部字段")
+        raise ValueError("columns cannot contain internal fields")
     collector_kwargs = _collector_options(kwargs)
     root_key, part_masters, inst_index = collect_bom_part_masters(
         None,
@@ -195,8 +238,6 @@ def _collect(document, view, columns, custom_columns, include_assemblies, sort_c
         root_product=product,
         **collector_kwargs,
     )
-    targets = _tree_targets(product)
-    _assert_unambiguous_part_masters(targets)
     if view == "full":
         rows = iter_full_rows(root_key, part_masters)
     elif view == "hierarchical":
@@ -230,7 +271,7 @@ def _collect(document, view, columns, custom_columns, include_assemblies, sort_c
                 matches = available[:1]
                 used_full_paths.add(matches[0]["node"])
         if not matches:
-            raise ValueError(f"无法将 BOM 行可靠映射到 Product tree：{pn!r}")
+            raise ValueError(f"Unable to reliably map BOM row to product tree: {pn!r}")
         if view != "summary":
             row_paths_by_level[level] = [
                 tuple(int(part) for part in target["node"].split(".")) if target["node"] else ()
@@ -276,14 +317,14 @@ def collect_bom(
 
 def _path_key(node) -> tuple[int, ...]:
     if not isinstance(node, str) or not node:
-        raise ValueError("node 必须是以 0 开始的零基路径字符串")
+        raise ValueError("node must be a zero-based path string starting with 0")
     try:
         tokens = node.split(".")
         parts = tuple(int(part) for part in tokens)
     except (TypeError, ValueError):
-        raise ValueError(f"无效 node 路径：{node!r}") from None
+        raise ValueError(f"Invalid node path: {node!r}") from None
     if any(part < 0 or str(part) != token for part, token in zip(parts, tokens)) or parts[0] != 0:
-        raise ValueError(f"无效 node 路径：{node!r}")
+        raise ValueError(f"Invalid node path: {node!r}")
     return parts
 
 
@@ -364,40 +405,40 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
         pm_key = ""
         try:
             if not isinstance(change, dict):
-                raise ValueError("change 必须是对象")
+                raise ValueError("change must be an object")
             node = _path_key(change.get("node"))
             scope, column, value = change.get("scope"), change.get("column"), change.get("value")
             if not all(isinstance(item, str) for item in (scope, column, value)):
-                raise ValueError("scope、column、value 必须是字符串")
+                raise ValueError("scope, column, and value must be strings")
             target = target_by_path.get(node)
             if target is None:
-                raise ValueError("node 路径不存在")
+                raise ValueError("Node path does not exist")
             product = target["_product"]
             pn = target["part_number"]
             pm_key = target.get("_pm_key", pn)
             if scope == "instance":
                 if column != BOM_INSTANCE_NAME_COLUMN:
-                    raise ValueError("instance scope 仅支持 Instance Name")
+                    raise ValueError("Instance scope supports only Instance Name")
                 if target["level"] == 0:
-                    raise ValueError("根节点没有 Instance Name，不能编辑")
+                    raise ValueError("The root node has no Instance Name and cannot be edited")
             elif scope == "master":
                 if (column in BOM_READONLY_COLUMNS
                         or column in {BOM_INSTANCE_NAME_COLUMN, "description_inst"}
                         or column.startswith("_")):
-                    raise ValueError(f"master 字段不可写：{column}")
+                    raise ValueError(f"Master field is read-only: {column}")
                 if column not in {"Part Number", "Nomenclature", "Revision", "Definition", "Source", "Description"} and column not in custom:
-                    raise ValueError(f"未知或只读字段：{column}")
+                    raise ValueError(f"Unknown or read-only field: {column}")
                 if pm_key not in part_masters:
-                    raise ValueError("无法唯一定位主数据")
+                    raise ValueError("Unable to uniquely identify master data")
                 if _ambiguous_pm_key(targets, pm_key):
-                    raise ValueError(f"主数据键 {pm_key!r} 对应多个引用文件，目标歧义")
+                    raise ValueError(f"Master-data key {pm_key!r} refers to multiple files; target is ambiguous")
                 if column == "Part Number":
                     if not value.strip() or not PART_NUMBER_VALID_PATTERN.fullmatch(value):
-                        raise ValueError('Part Number 不能为空或包含工作台不允许的字符')
+                        raise ValueError('Part Number must not be empty or contain characters forbidden by the workbench')
                     if _pn_conflicts(part_masters, pm_key, value):
-                        raise ValueError(f"Part Number 冲突：{value}")
+                        raise ValueError(f"Part Number conflict: {value}")
             else:
-                raise ValueError("scope 必须为 master 或 instance")
+                raise ValueError("scope must be master or instance")
 
             old_value = _read_current(product, column, custom)
             result["old_value"] = old_value
@@ -405,21 +446,21 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
             if scope == "master" and successful_assignments.get(assignment_key) == value:
                 result["new_value"] = value
                 result["status"] = "success"
-                result["message"] = "相同主数据字段和值已在本次请求中写入"
+                result["message"] = "The same master field and value were already written in this request"
                 results.append(result)
                 continue
             if scope == "master" and column == "Part Number":
                 cached_pn = _text(part_masters[pm_key].get("part_number"))
                 if not rename_part_master(part_masters, pm_key_to_inst_keys, pm_key, value):
-                    raise ValueError(f"无法更新 Part Number 主数据缓存：{pm_key}")
+                    raise ValueError(f"Unable to update Part Number master-data cache: {pm_key}")
                 cache_renamed = True
             if not write_cell(product, column, value, custom):
                 if cache_renamed:
                     restored = rename_part_master(part_masters, pm_key_to_inst_keys, pm_key, cached_pn)
                     cache_renamed = False
                     if not restored:
-                        raise RuntimeError(f"CATIA 写入失败且无法恢复 PN 缓存：{pm_key}")
-                raise ValueError("CATIA 字段写入失败或字段只读")
+                        raise RuntimeError(f"CATIA write failed and the PN cache could not be restored: {pm_key}")
+                raise ValueError("CATIA field write failed or the field is read-only")
             cache_renamed = False
             result["new_value"] = value
             result["status"] = "success"
@@ -432,7 +473,7 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
         except Exception as exc:
             if cache_renamed and pm_key in part_masters:
                 if not rename_part_master(part_masters, pm_key_to_inst_keys, pm_key, cached_pn):
-                    exc = RuntimeError(f"{exc}；同时无法恢复 PN 缓存：{pm_key}")
+                    exc = RuntimeError(f"{exc}; the PN cache could not be restored: {pm_key}")
             result["status"] = "failed"
             result["error"] = str(exc)
         results.append(result)

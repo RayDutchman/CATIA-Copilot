@@ -12,7 +12,7 @@ async function main() {
     await install(args.slice(1));
     return;
   }
-  if (process.platform !== 'win32') throw new Error('请在 Windows 中运行 Catkit。');
+  if (process.platform !== 'win32') throw new Error('Run Catkit on Windows.');
   const result = spawnSync(selectedExecutable(), args, { stdio: 'inherit', windowsHide: false });
   if (result.error) throw result.error;
   process.exitCode = result.status === null ? 1 : result.status;

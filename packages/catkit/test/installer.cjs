@@ -65,6 +65,14 @@ test('invalid bundle does not replace existing selection', () => {
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 
+test('invalid bundle error is English', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'catkit-invalid-language-'));
+  try {
+    assert.throws(() => installDirectory(temp, path.join(temp, 'home'), path.join(temp, 'skills'), '2.2.0'),
+      /ZIP must contain catkit\.exe and skills\/catkit\/SKILL\.md/);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
 test('Windows ZIP install works without touching user installation', { skip: process.platform !== 'win32' }, () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'catkit zip test '));
   try {

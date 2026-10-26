@@ -110,7 +110,7 @@ def get_document_type(doc) -> str:
     except Exception:
         pass
 
-    logger.debug("get_document_type: 无法判断文档类型 %s", getattr(doc, "Name", "?"))
+    logger.debug("get_document_type: unable to determine document type %s", getattr(doc, "Name", "?"))
     return "Unknown"
 
 
@@ -186,7 +186,7 @@ def find_open_document(file_path: str):
             except Exception:
                 pass
     except Exception as e:
-        logger.debug("find_open_document: 无法访问 CATIA Documents：%s", e)
+        logger.debug("find_open_document: unable to access CATIA Documents: %s", e)
     return None
 
 
@@ -279,8 +279,8 @@ def rename_document(
 
     if target_doc is None:
         raise FileNotFoundError(
-            f"无法在 CATIA 中找到或打开文档：{file_path}\n"
-            "请确认该文件已在 CATIA 中打开。"
+            f"Unable to find or open document in CATIA: {file_path}\n"
+            "Ensure the file is open in CATIA."
         )
 
     try:
@@ -304,7 +304,7 @@ def rename_document(
         try:
             os.remove(file_path)
         except Exception as del_err:
-            logger.warning("rename_document: 删除旧文件失败 %s: %s", file_path, del_err)
+            logger.warning("rename_document: failed to delete old file %s: %s", file_path, del_err)
 
     logger.info("rename_document: %s -> %s", src.name, Path(new_fp).name)
     return new_fp, False  # was_skipped_by_user = False
@@ -377,8 +377,8 @@ def get_document_properties(
     doc = find_open_document(file_path)
     if doc is None:
         raise FileNotFoundError(
-            f"文档未在 CATIA 中打开：{file_path}\n"
-            "请先用 open_catia_file 打开该文档。"
+            f"Document is not open in CATIA: {file_path}\n"
+            "Open it first with open_catia_file."
         )
 
     full_name = doc.FullName
@@ -387,7 +387,7 @@ def get_document_properties(
     product = _get_product_from_doc(doc)
     if product is None:
         raise RuntimeError(
-            f"文档类型 {doc_type} 不支持属性读取（无 Product 对象）。"
+            f"Document type {doc_type} does not support property reads (no Product object)."
         )
 
     # --- 读取标准属性 ---
@@ -504,14 +504,14 @@ def set_document_properties(
     doc = find_open_document(file_path)
     if doc is None:
         raise FileNotFoundError(
-            f"文档未在 CATIA 中打开：{file_path}\n"
-            "请先用 open_catia_file 打开该文档。"
+            f"Document is not open in CATIA: {file_path}\n"
+            "Open it first with open_catia_file."
         )
 
     product = _get_product_from_doc(doc)
     if product is None:
         raise RuntimeError(
-            "文档类型不支持属性写入（无 Product 对象）。"
+            "Document type does not support property writes (no Product object)."
         )
 
     written_standard:     list[str] = []
@@ -522,7 +522,7 @@ def set_document_properties(
     for name, value in (standard or {}).items():
         com_attr = PRODUCT_ATTR_WRITE_MAP.get(name)
         if com_attr is None:
-            logger.warning("set_document_properties: 未知标准属性 %s，已跳过", name)
+            logger.warning("set_document_properties: unknown standard property %s; skipped", name)
             skipped.append(name)
             continue
 
@@ -552,7 +552,7 @@ def set_document_properties(
                 written = True
                 break
             except Exception as e:
-                logger.debug("set_document_properties: 写 %s 到 %s 失败: %s", name, target, e)
+                logger.debug("set_document_properties: failed to write %s to %s: %s", name, target, e)
 
         if written:
             written_standard.append(name)
@@ -591,7 +591,7 @@ def set_document_properties(
             written_user_defined.append(name)
         else:
             skipped.append(name)
-            logger.warning("set_document_properties: 无法写入用户属性 %s", name)
+            logger.warning("set_document_properties: unable to write user property %s", name)
 
     # --- 可选保存 ---
     saved = False
@@ -599,9 +599,9 @@ def set_document_properties(
         try:
             doc.Save()
             saved = True
-            logger.info("set_document_properties: 已保存 %s", Path(file_path).name)
+            logger.info("set_document_properties: saved %s", Path(file_path).name)
         except Exception as e:
-            logger.warning("set_document_properties: 保存失败 %s: %s", file_path, e)
+            logger.warning("set_document_properties: failed to save %s: %s", file_path, e)
 
     logger.info(
         "set_document_properties: %s — standard=%s, user_defined=%s, skipped=%s",

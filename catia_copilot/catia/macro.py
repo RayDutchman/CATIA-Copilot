@@ -63,7 +63,7 @@ def run_macro(
     :raises Exception:         CATIA 执行宏失败时抛出。
     """
     if not macro_path.exists():
-        raise FileNotFoundError(f"宏文件不存在：{macro_path}")
+        raise FileNotFoundError(f"Macro file does not exist: {macro_path}")
 
     _params = params or []
     app = get_catia_v5_application()
@@ -96,4 +96,4 @@ def run_macro(
             macro_path.name, "CATMain", _params,
         )
 
-    logger.info("宏执行成功：%s", macro_path.name)
+    logger.info("Macro executed successfully: %s", macro_path.name)

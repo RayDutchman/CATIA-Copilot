@@ -68,7 +68,7 @@ def create_part_from_template(
     try:
         app = get_catia_v5_application()
 
-        details.append(f"模板路径：{template_path}")
+        details.append(f"Template path: {template_path}")
 
         # ── 1. 先请求用户输入 PartNumber ─────────────────────────────────
         default_pn = _next_available_part_number(app)
@@ -77,22 +77,22 @@ def create_part_from_template(
         if not ok:
             return {
                 "success": False,
-                "message": "用户取消操作。",
+                "message": "Operation canceled by user.",
                 "details": details,
             }
 
         # 用户输入为空时使用自动生成的默认值
         new_part_number = part_number.strip() if part_number.strip() else default_pn
-        details.append(f"新零件号：{new_part_number}")
+        details.append(f"New part number: {new_part_number}")
 
         # ── 2. NewFrom 创建新文档 ─────────────────────────────────────────
         try:
             new_doc = app.Documents.NewFrom(template_path)
-            details.append("NewFrom 调用成功，新文档已创建。")
+            details.append("NewFrom succeeded; the new document was created.")
         except Exception as e:
             return {
                 "success": False,
-                "message": f"Documents.NewFrom() 调用失败：{e}",
+                "message": f"Documents.NewFrom() failed: {e}",
                 "details": details,
             }
 
@@ -102,8 +102,8 @@ def create_part_from_template(
             return {
                 "success": False,
                 "message": (
-                    f"NewFrom 返回的文档类型不是 PartDocument（实际：{new_doc_type}），"
-                    "请检查模板文件是否为有效的 CATPart。"
+                    f"NewFrom returned document type {new_doc_type}, not PartDocument. "
+                    "Check that the template is a valid CATPart file."
                 ),
                 "details": details,
             }
@@ -111,29 +111,29 @@ def create_part_from_template(
         # ── 3. 写入 PartNumber ────────────────────────────────────────────
         try:
             new_doc.Product.PartNumber = new_part_number
-            details.append(f"PartNumber 已设置为：{new_part_number}")
+            details.append(f"PartNumber set to: {new_part_number}")
         except Exception as e:
-            logger.warning(f"设置 PartNumber 失败：{e}")
-            details.append(f"警告：PartNumber 设置失败（{e}）。")
+            logger.warning(f"Failed to set PartNumber: {e}")
+            details.append(f"Warning: failed to set PartNumber ({e}).")
 
         # ── 4. 更新零件 ───────────────────────────────────────────────────
         try:
             new_doc.Part.Update()
-            details.append("零件更新完成。")
+            details.append("Part update completed.")
         except Exception as e:
-            logger.warning(f"零件更新失败：{e}")
-            details.append(f"警告：零件更新失败（{e}）。")
+            logger.warning(f"Part update failed: {e}")
+            details.append(f"Warning: part update failed ({e}).")
 
         return {
             "success": True,
-            "message": "新零件创建成功。",
+            "message": "Part created successfully.",
             "details": details,
         }
 
     except Exception as e:
-        logger.error(f"从模板新建零件失败：{e}", exc_info=True)
+        logger.error(f"Failed to create part from template: {e}", exc_info=True)
         return {
             "success": False,
-            "message": f"从模板新建零件时发生意外错误：{e}",
+            "message": f"Unexpected error while creating part from template: {e}",
             "details": details,
         }

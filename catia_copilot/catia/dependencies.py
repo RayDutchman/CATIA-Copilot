@@ -97,7 +97,7 @@ def find_dependencies(
     if activate:
         logger.info(f"find_dependencies: opening target {target_path}")
         if progress_callback:
-            progress_callback("正在打开文件，请稍候…")
+            progress_callback("Opening file, please wait...")
         open_catia_file(documents, target_path)  # 已打开则 Activate，未打开则 Open
     else:
         # 不激活：检查文档是否已打开，未打开则无法读取依赖，直接返回空列表
@@ -106,14 +106,14 @@ def find_dependencies(
             for i in range(1, documents.Count + 1)
         )
         if not is_open:
-            logger.debug(f"find_dependencies(activate=False): 文档未打开，跳过：{Path(target_path).name}")
+            logger.debug(f"find_dependencies(activate=False): document is not open; skipping {Path(target_path).name}")
             return []
-        logger.debug(f"find_dependencies(activate=False): 文档已打开，读取依赖：{Path(target_path).name}")
+        logger.debug(f"find_dependencies(activate=False): reading dependencies for open document {Path(target_path).name}")
 
     # ── CATProduct：只读直接子层（一级）─────────────────────────────
     if ext_lower == ".catproduct":
         if progress_callback:
-            progress_callback("正在读取产品直接子件…")
+            progress_callback("Reading direct product children...")
         # 找到目标文档对象
         target_doc = None
         for i in range(1, documents.Count + 1):
@@ -125,7 +125,7 @@ def find_dependencies(
             except Exception:
                 continue
         if target_doc is None:
-            logger.warning("find_dependencies: 无法在 Documents 中定位目标 CATProduct")
+            logger.warning("find_dependencies: unable to locate the target CATProduct in Documents")
             return []
 
         results: list[str] = []
@@ -139,9 +139,9 @@ def find_dependencies(
                     if ref_lower != target_lower:
                         results.append(ref_name)
                 except Exception as e:
-                    logger.debug(f"find_dependencies: 子件 {j} 读取失败：{e}")
+                    logger.debug(f"find_dependencies: failed to read child {j}: {e}")
         except Exception as e:
-            logger.debug(f"find_dependencies: Product.Products 访问失败：{e}")
+            logger.debug(f"find_dependencies: failed to access Product.Products: {e}")
 
         result = list(dict.fromkeys(results))  # 去重保序
         logger.info(
@@ -153,7 +153,7 @@ def find_dependencies(
     # ── CATDrawing：遍历生成式视图链接 ────────────────────────────────
     elif ext_lower == ".catdrawing":
         if progress_callback:
-            progress_callback("正在读取图纸视图链接…")
+            progress_callback("Reading drawing view links...")
         results = _find_parts_via_file_links(target_path)
         logger.info(
             f"find_dependencies (CATDrawing): {len(results)} dep(s) for "
@@ -164,7 +164,7 @@ def find_dependencies(
     # ── 其他格式：不支持 ──────────────────────────────────────────────
     else:
         logger.debug(
-            f"find_dependencies: 不支持的文档格式，返回空列表：{Path(target_path).name}"
+            f"find_dependencies: unsupported document format; returning an empty list: {Path(target_path).name}"
         )
         return []
 
@@ -214,11 +214,11 @@ def find_reverse_dependencies(
 
             # 跳过系统库、材料库等非用户文档（.CATfct / .catalog / .cgr 等）
             if not fn_lower.endswith(_QUERYABLE_EXTS):
-                logger.debug(f"find_reverse_dependencies: 跳过非查询格式：{Path(full_name).name}")
+                logger.debug(f"find_reverse_dependencies: skipping unsupported format: {Path(full_name).name}")
                 continue
 
             if progress_callback:
-                progress_callback(f"反向查询 {i}/{total}：{Path(full_name).name}")
+                progress_callback(f"Reverse lookup {i}/{total}: {Path(full_name).name}")
 
             # 调用 find_dependencies 取该文档的直接依赖列表，检查 target 是否在其中
             # activate=False：不切换前台，仅读取已打开文档的依赖
@@ -227,7 +227,7 @@ def find_reverse_dependencies(
                 results.append(full_name)
 
         except Exception as e:
-            logger.debug(f"find_reverse_dependencies: 文档 {i} 读取失败：{e}")
+            logger.debug(f"find_reverse_dependencies: failed to read document {i}: {e}")
 
     result = list(dict.fromkeys(results))  # 去重保序
     logger.info(
@@ -350,7 +350,7 @@ def _part_strategy(
             return []
 
     else:
-        logger.warning(f"find_part_for_drawing: 未知策略 '{strategy}'，已跳过。")
+        logger.warning(f"find_part_for_drawing: unknown strategy '{strategy}'; skipped")
         return []
 
 
@@ -414,7 +414,7 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
             continue
 
     if doc is None:
-        logger.debug(f"doc_file_links: 图纸未在 CATIA 中打开：{Path(drawing_path).name}")
+        logger.debug(f"doc_file_links: drawing is not open in CATIA: {Path(drawing_path).name}")
         return []
 
     results: list[str] = []
@@ -438,7 +438,7 @@ def _find_parts_via_file_links(drawing_path: str) -> list[str]:
                     # 视图无关联文档（CATIA 正常情况），静默跳过
                     continue
     except Exception as e:
-        logger.debug(f"doc_file_links: 遍历图纸结构失败：{e}")
+        logger.debug(f"doc_file_links: failed to traverse drawing structure: {e}")
 
     # 去重（保序）
     return list(dict.fromkeys(results))
@@ -632,7 +632,7 @@ def _drawing_strategy(
             return []
 
     else:
-        logger.warning(f"find_drawing_for_part: 未知策略 '{strategy}'，已跳过。")
+        logger.warning(f"find_drawing_for_part: unknown strategy '{strategy}'; skipped")
         return []
 
 

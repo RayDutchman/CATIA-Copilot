@@ -31,7 +31,7 @@ from catia_copilot.utils import estimate_column_width
 logger = logging.getLogger(__name__)
 
 
-def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
+def _write_sheet(ws, rows: list[dict], columns: list[str], *, raw_columns=False) -> None:
     center = Alignment(horizontal="center", vertical="center")
     header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
     thin_side = Side(style="thin")
@@ -41,7 +41,7 @@ def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
 
     for col_idx, col_name in enumerate(columns, start=1):
         cell = ws.cell(row=1, column=col_idx,
-                       value=BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
+                       value=col_name if raw_columns else BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
         cell.font = Font(bold=True)
         cell.fill = header_fill
         cell.border = thin_border
@@ -57,7 +57,7 @@ def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
                 value = row.get("Type", "")
             elif col_name == "Source":
                 raw = str(row.get("Source", ""))
-                value = SOURCE_TO_DISPLAY.get(raw, raw)
+                value = raw if raw_columns else SOURCE_TO_DISPLAY.get(raw, raw)
             else:
                 value = row.get(col_name, "")
 
@@ -71,7 +71,7 @@ def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
 
     for col_idx, col_name in enumerate(columns, start=1):
         col_letter = ws.cell(row=1, column=col_idx).column_letter
-        header = BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name)
+        header = col_name if raw_columns else BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name)
         min_w = BOM_COLUMN_MIN_WIDTHS.get(col_name, 10)
         max_width = max(estimate_column_width(header), min_w)
         for row_idx in range(2, ws.max_row + 1):
@@ -81,8 +81,8 @@ def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
         ws.column_dimensions[col_letter].width = max_width + 2
 
 
-def _write_csv_file(dest: Path, rows: list[dict], columns: list[str]) -> None:
-    headers = [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
+def _write_csv_file(dest: Path, rows: list[dict], columns: list[str], *, raw_columns=False) -> None:
+    headers = list(columns) if raw_columns else [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
     with open(dest, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
         writer.writerow(headers)
@@ -95,7 +95,7 @@ def export_bom_rows(rows, columns, output_file) -> dict:
     dest = Path(output_file)
     extension = dest.suffix.lower()
     if extension not in {".xlsx", ".csv"}:
-        raise ValueError(f"不支持的 BOM 导出格式：{dest.suffix}")
+        raise ValueError(f"Unsupported BOM export format: {dest.suffix}")
 
     if dest.exists():
         action = file_interaction.prompt_overwrite(dest)
@@ -109,20 +109,20 @@ def export_bom_rows(rows, columns, output_file) -> dict:
         if action == "cancel":
             return {"success": False, "cancelled": True, "output_file": str(dest)}
         if action not in {"overwrite", "overwrite_all"}:
-            raise ValueError(f"无效的覆盖操作：{action}")
+            raise ValueError(f"Invalid overwrite action: {action}")
 
     rows = list(rows)
     columns = list(columns)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if extension == ".csv":
-        _write_csv_file(dest, rows, columns)
+        _write_csv_file(dest, rows, columns, raw_columns=True)
     else:
         workbook = openpyxl.Workbook()
         try:
             worksheet = workbook.active
             assert worksheet is not None
             worksheet.title = "BOM"
-            _write_sheet(worksheet, rows, columns)
+            _write_sheet(worksheet, rows, columns, raw_columns=True)
             workbook.save(dest)
         finally:
             workbook.close()
@@ -161,7 +161,7 @@ def export_bom_to_excel(
     summarize:
         When ``True`` the hierarchical BOM is collapsed into a flat summary
         (unique parts with cumulative quantities) before writing.
-        The output filename will have the suffix ``_汇总 BOM`` instead of
+        The output filename will have the suffix ``_Summary BOM`` instead of
         ``_BOM``.
     summary_include_assemblies:
         Passed to :func:`~catia_copilot.catia.bom_collect.flatten_bom_to_summary`.
@@ -187,7 +187,7 @@ def export_bom_to_excel(
     if summarize:
         columns = [c for c in columns if c != "Level"]
 
-    bom_suffix = "_汇总 BOM" if summarize else "_BOM"
+    bom_suffix = "_Summary BOM" if summarize else "_BOM"
     use_csv = output_format.lower() == "csv"
 
     caa         = get_catia_v5_application()
@@ -204,7 +204,7 @@ def export_bom_to_excel(
                 active_full = application.ActiveDocument.FullName
             except Exception as e:
                 raise RuntimeError(
-                    "无法获取当前 CATIA 活动文档，请确保 CATIA 已启动且有活动文档。"
+                    "Unable to get the active CATIA document. Ensure CATIA is running and a document is active."
                 ) from e
             src_name = Path(active_full)
             dest_dir = Path(output_folder).resolve() if output_folder else src_name.parent
@@ -226,7 +226,7 @@ def export_bom_to_excel(
                 wb   = openpyxl.Workbook()
                 ws   = wb.active
                 assert ws is not None
-                ws.title = "汇总 BOM" if summarize else "BOM"
+                ws.title = "Summary BOM" if summarize else "BOM"
                 _write_sheet(ws, rows, columns)
                 wb.save(dest)
             written_paths.append(dest)
@@ -276,7 +276,7 @@ def export_bom_to_excel(
             wb       = openpyxl.Workbook()
             ws       = wb.active
             assert ws is not None
-            ws.title = "汇总 BOM" if summarize else "BOM"
+            ws.title = "Summary BOM" if summarize else "BOM"
             _write_sheet(ws, rows, columns)
             wb.save(dest)
         written_paths.append(dest)

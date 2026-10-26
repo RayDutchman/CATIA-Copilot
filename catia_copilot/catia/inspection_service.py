@@ -46,7 +46,7 @@ def save_document_as(file_path, doc=None, active=False, **_kwargs):
     # CATIA 错误提示关闭后 FullName 也可能已改变，不能据此声称文件已经生成。
     if (str(Path(document.FullName).resolve()).casefold() != path.casefold()
             or not Path(path).is_file()):
-        raise RuntimeError('另存未完成或被取消')
+        raise RuntimeError('Save As did not complete or was canceled')
     return {'success': True, 'saved_path': document.FullName, 'document': _info(document, app)}
 
 
@@ -57,7 +57,7 @@ def close_document(doc=None, active=False, **_kwargs):
     document.Close()
     for index in range(1, app.Documents.Count + 1):
         if app.Documents.Item(index) == document:
-            raise RuntimeError('关闭未完成或被取消')
+            raise RuntimeError('Close did not complete or was canceled')
     return {'success': True, 'closed': identity}
 
 
@@ -85,7 +85,7 @@ def part_mass(doc=None, active=False, **_kwargs):
     app, document = _target(doc, active, 'PartDocument')
     result = get_mass_props(Part(document.Part), document=document)
     if result is None:
-        raise RuntimeError('读取零件质量失败，请检查实体及材料')
+        raise RuntimeError('Failed to read part mass; check the solid and material')
     return {**result, 'document': _info(document, app),
             'units': {'mass': 'kg', 'cog': 'mm', 'inertia': 'kg*mm^2'}}
 
@@ -121,7 +121,7 @@ def part_tree(doc=None, active=False, **_kwargs):
 
     tree = walk(document.Part, 'Part', 'Part')
     return {'document': _info(document, app), 'tree': tree, 'complete': not errors,
-            'scope': 'Bodies/Shapes/Sketches/HybridBodies/HybridShapes/OrderedGeometricalSets；不展开特征内部参数与布尔操作吸收体',
+            'scope': 'Bodies/Shapes/Sketches/HybridBodies/HybridShapes/OrderedGeometricalSets; feature parameters and Boolean-absorbed bodies are not expanded',
             'errors': errors}
 
 
@@ -139,7 +139,7 @@ def _linked_document(link):
             current = current.Parent
         except Exception:
             break
-    raise RuntimeError('生成链接无法解析到关联文档')
+    raise RuntimeError('The generative link could not be resolved to a referenced document')
 
 
 def drawing_info(doc=None, active=False, **_kwargs):
@@ -177,7 +177,7 @@ def product_tree(doc=None, active=False, node=None, **_kwargs):
     errors = []
     tree = read_assembly_tree(app, document=document, errors=errors)
     if tree is None:
-        raise RuntimeError('读取装配树失败')
+        raise RuntimeError('Failed to read the product tree')
     if node is not None:
         pending, found = [tree], None
         while pending:
@@ -187,11 +187,11 @@ def product_tree(doc=None, active=False, node=None, **_kwargs):
                 break
             pending.extend(candidate.get('children', []))
         if found is None:
-            raise ValueError(f'装配节点不存在：{node}；请重新查询 tree')
+            raise ValueError(f'Product tree node does not exist: {node}; query the tree again')
         tree = found
     return {'document': _info(document, app), 'tree': tree,
             'complete': not errors, 'errors': errors,
-            'node_path_note': '零基索引路径；装配树变化后须重新查询'}
+            'node_path_note': 'Zero-based index path; query again after the product tree changes'}
 
 
 def product_info(doc=None, active=False, **_kwargs):
@@ -205,13 +205,13 @@ def product_info(doc=None, active=False, **_kwargs):
 def merge_mass_files(files, output_file, overwrite='error', **_kwargs):
     from .mass_props_collect import load_rows, merge_rows, save_rows
     if not isinstance(files, list) or not files:
-        raise ValueError('files 必须为非空 MPD 路径数组')
+        raise ValueError('files must be a non-empty array of MPD paths')
     target = Path(output_file).resolve()
     if overwrite not in ('error', 'skip', 'replace'):
-        raise ValueError('无效覆盖策略')
+        raise ValueError('Invalid overwrite policy')
     if target.exists():
         if overwrite == 'error':
-            raise FileExistsError(f'输出文件已存在：{target}')
+            raise FileExistsError(f'Output file already exists: {target}')
         if overwrite == 'skip':
             return {'success': True, 'skipped': True, 'output_file': str(target)}
     rows = []
@@ -219,14 +219,14 @@ def merge_mass_files(files, output_file, overwrite='error', **_kwargs):
         rows = merge_rows(rows, load_rows(file))
     save_rows(rows, str(target))
     return {'success': True, 'row_count': len(rows), 'output_file': str(target),
-            'coordinate_system': '输入数据沿用同一根坐标系，不执行额外变换'}
+            'coordinate_system': 'Input data uses the same root coordinate system; no additional transform is applied'}
 
 
 def remeasure_product_part(file_path, part_number='', read_mode='all', **_kwargs):
     from .mass_props_collect import remeasure_part_mass_props
     result = remeasure_part_mass_props(file_path, part_number, read_mode)
     if result is None:
-        raise RuntimeError('保持测量读取失败：请确认目标零件已打开且包含测量参数')
+        raise RuntimeError('Failed to read the saved measurement; ensure the target part is open and contains measurement parameters')
     return {'file_path': file_path, 'mass_properties': result,
             'units': {'weight': 'kg', 'cog': 'mm', 'inertia': 'kg*mm^2'}}
 
@@ -236,14 +236,14 @@ def export_product_step(file_paths=None, output_folder=None, prefix='MD_', suffi
     from .conversion import convert_part_to_step
     from . import file_interaction
     if file_paths is not None and (doc is not None or active):
-        raise ValueError('文件集与 --doc/--active 互斥')
+        raise ValueError('file_paths cannot be combined with --doc or --active')
     if file_paths is None:
         _, document = _target(doc, active, 'ProductDocument')
         file_paths = [describe_document(document).full_name]
     if not isinstance(file_paths, list) or not file_paths:
-        raise ValueError('file_paths 必须为非空 CATProduct 路径数组')
+        raise ValueError('file_paths must be a non-empty array of CATProduct paths')
     if any(not isinstance(p, str) or Path(p).suffix.lower() != '.catproduct' for p in file_paths):
-        raise ValueError('整装配导出需要已保存的 CATProduct 文件路径')
+        raise ValueError('Exporting the full product requires a saved CATProduct file path')
     results = []
     old_handler = file_interaction.overwrite_handler
     try:
@@ -251,13 +251,13 @@ def export_product_step(file_paths=None, output_folder=None, prefix='MD_', suffi
             actions = []
             def observe(dest):
                 if old_handler is None:
-                    raise FileExistsError(f'输出文件已存在：{dest}；请指定 --overwrite')
+                    raise FileExistsError(f'Output file already exists: {dest}; specify --overwrite')
                 action = old_handler(dest)
                 actions.append(action)
                 return action
             file_interaction.overwrite_handler = observe
             if progress_signal:
-                progress_signal.emit(f'导出装配：{file_path}')
+                progress_signal.emit(f'Exporting product: {file_path}')
             try:
                 count = convert_part_to_step([file_path], output_folder, prefix, suffix)
                 if count == 1:
@@ -265,7 +265,7 @@ def export_product_step(file_paths=None, output_folder=None, prefix='MD_', suffi
                 elif any(action in ('skip', 'skip_all') for action in actions):
                     results.append({'file_path': file_path, 'status': 'skipped'})
                 else:
-                    results.append({'file_path': file_path, 'status': 'failed', 'error': 'STEP 导出失败，详见 worker 日志'})
+                    results.append({'file_path': file_path, 'status': 'failed', 'error': 'STEP export failed; see worker logs'})
             except Exception as exc:
                 results.append({'file_path': file_path, 'status': 'failed', 'error': str(exc)})
     finally:

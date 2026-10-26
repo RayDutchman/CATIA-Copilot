@@ -37,10 +37,6 @@ from catia_copilot.catia.modeling import (
     ModelingStepError,
 )
 from catia_copilot.catia.template import apply_part_template
-from catia_copilot.constants_data import (
-    PRESET_USER_REF_PROPERTIES,
-    PRESET_USER_REF_PROPERTY_OPTIONS,
-)
 from catia_copilot.utils import (
     check_catia_connection,
     diagnose_catia_connection,
@@ -58,9 +54,9 @@ def make_progress_callback(emit_fn: Callable[[str], None]) -> Callable:
     """
     def _cb(*args):
         if len(args) == 1:
-            emit_fn(f"进度：{args[0]}")
+            emit_fn(f"Progress: {args[0]}")
         elif len(args) == 2:
-            emit_fn(f"进度：{args[0]}/{args[1]}")
+            emit_fn(f"Progress: {args[0]}/{args[1]}")
         else:
             emit_fn(str(args))
     return _cb
@@ -83,7 +79,7 @@ def _wrap(fn: Callable, *args, **kwargs) -> str:
         result = fn(*args, **kwargs)
         return result
     except Exception as e:
-        logger.error("工具调用异常：%s", traceback.format_exc())
+        logger.error("Tool call failed: %s", traceback.format_exc())
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
@@ -102,7 +98,7 @@ def tool_diagnose_catia_connection(**_kwargs) -> str:
 def tool_open_catia_file(file_path: str, foreground: bool = True, **_kwargs) -> str:
     app = get_catia_v5_com_dispatch()
     if app is None:
-        return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+        return json.dumps({"error": "CATIA is not connected"}, ensure_ascii=False)
     try:
         doc = open_catia_file(app.Documents, file_path, foreground=foreground)
         name = getattr(doc, "Name", file_path)
@@ -119,7 +115,7 @@ def tool_write_bom_to_catia(
     **_kwargs,
 ) -> str:
     if not pn_data:
-        return json.dumps({"error": "pn_data 不能为空"}, ensure_ascii=False)
+        return json.dumps({"error": "pn_data must not be empty"}, ensure_ascii=False)
 
     cb = make_progress_callback(progress_signal.emit) if progress_signal else None
     write_bom_to_catia(file_path, pn_data, custom_columns or [], progress_callback=cb)
@@ -310,7 +306,7 @@ def tool_apply_part_template(
     cb_list: list[str] = []
 
     def _cb(index: int, total: int):
-        msg = f"进度：{index}/{total}"
+        msg = f"Progress: {index}/{total}"
         cb_list.append(msg)
         if progress_signal:
             progress_signal.emit(msg)
@@ -335,7 +331,7 @@ def tool_get_open_documents(**_kwargs) -> str:
 
     app = get_catia_v5_com_dispatch()
     if app is None:
-        return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+        return json.dumps({"error": "CATIA is not connected"}, ensure_ascii=False)
 
     open_docs: list[dict] = []
     try:
@@ -373,7 +369,7 @@ def tool_save_catia_document(
 
     app = get_catia_v5_com_dispatch()
     if app is None:
-        return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+        return json.dumps({"error": "CATIA is not connected"}, ensure_ascii=False)
 
     try:
         if file_path is None:
@@ -392,7 +388,7 @@ def tool_save_catia_document(
                     continue
             if doc is None:
                 return json.dumps(
-                    {"error": f"文档未在 CATIA 中打开：{file_path}"},
+                    {"error": f"Document is not open in CATIA: {file_path}"},
                     ensure_ascii=False,
                 )
         saved_path = doc.FullName
@@ -415,11 +411,11 @@ def tool_get_document_properties(
     if file_path is None:
         app = get_catia_v5_com_dispatch()
         if app is None:
-            return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+            return json.dumps({"error": "CATIA is not connected"}, ensure_ascii=False)
         try:
             file_path = app.ActiveDocument.FullName
         except Exception:
-            return json.dumps({"error": "当前没有活动文档"}, ensure_ascii=False)
+            return json.dumps({"error": "There is no active document"}, ensure_ascii=False)
 
     try:
         result = get_document_properties(file_path)
@@ -429,7 +425,7 @@ def tool_get_document_properties(
     except RuntimeError as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": f"读取属性失败：{e}"}, ensure_ascii=False)
+        return json.dumps({"error": f"Failed to read properties: {e}"}, ensure_ascii=False)
 
 
 def tool_set_document_properties(
@@ -446,50 +442,19 @@ def tool_set_document_properties(
 
     if not standard and not user_defined:
         return json.dumps(
-            {"error": "standard 和 user_defined 不能同时为空，请至少提供一个要写入的属性"},
+            {"error": "standard and user_defined cannot both be empty; provide at least one property to write"},
             ensure_ascii=False,
         )
-
-    # --- 校验 user_defined 字段名和枚举值 ---
-    if user_defined:
-        preset_set = set(PRESET_USER_REF_PROPERTIES)
-        invalid_keys = [k for k in user_defined if k not in preset_set]
-        if invalid_keys:
-            return json.dumps(
-                {
-                    "error": (
-                        f"user_defined 包含不在预设列表中的字段名：{invalid_keys}。"
-                        f"允许的字段名：{PRESET_USER_REF_PROPERTIES}。"
-                        "请告知用户该字段不在预设范围内，并询问确认后再执行。"
-                    )
-                },
-                ensure_ascii=False,
-            )
-        invalid_values = {}
-        for k, v in user_defined.items():
-            allowed = PRESET_USER_REF_PROPERTY_OPTIONS.get(k)
-            if allowed and v not in allowed:
-                invalid_values[k] = {"value": v, "allowed": allowed}
-        if invalid_values:
-            return json.dumps(
-                {
-                    "error": (
-                        f"user_defined 包含不合法的枚举值：{invalid_values}。"
-                        "请使用 allowed 列表中的值。"
-                    )
-                },
-                ensure_ascii=False,
-            )
 
     # 解析目标路径：null → 活动文档
     if file_path is None:
         app = get_catia_v5_com_dispatch()
         if app is None:
-            return json.dumps({"error": "CATIA 未连接"}, ensure_ascii=False)
+            return json.dumps({"error": "CATIA is not connected"}, ensure_ascii=False)
         try:
             file_path = app.ActiveDocument.FullName
         except Exception:
-            return json.dumps({"error": "当前没有活动文档"}, ensure_ascii=False)
+            return json.dumps({"error": "There is no active document"}, ensure_ascii=False)
 
     try:
         result = set_document_properties(
@@ -505,7 +470,7 @@ def tool_set_document_properties(
     except RuntimeError as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": f"写入属性失败：{e}"}, ensure_ascii=False)
+        return json.dumps({"error": f"Failed to write properties: {e}"}, ensure_ascii=False)
 
 
 def tool_find_part_for_drawing(
@@ -620,7 +585,7 @@ def tool_run_modeling_script(
                 encoding="utf-8",
             )
         except Exception as exc:
-            logger.warning("[MODELING] 写入运行记录失败：%s", exc)
+            logger.warning("[MODELING] Failed to write run record: %s", exc)
         return json.dumps(payload, ensure_ascii=False)
 
     status_base = {
@@ -633,7 +598,7 @@ def tool_run_modeling_script(
     except Exception as exc:
         return finish(
             {"success": False, "run_id": run_id, "status": status_base,
-             "error": f"无法确定 CATIA 活动文档：{exc}"},
+             "error": f"Unable to identify the active CATIA document: {exc}"},
         )
 
     if not matches_document(document_before, target_document_id):
@@ -642,14 +607,14 @@ def tool_run_modeling_script(
                 "success": False,
                 "run_id": run_id,
                 "status": status_base,
-                "error": "目标文档与当前活动文档不匹配，已拒绝执行建模脚本",
+                "error": "The target document does not match the active document; modeling script execution was rejected",
                 "target_document": document_before.to_dict(),
                 "requested_document_id": target_document_id,
             },
         )
 
     if progress_signal:
-        progress_signal.emit("正在执行建模脚本...")
+        progress_signal.emit("Executing modeling script...")
 
     # 将脚本写入临时文件（每次运行独立保留，便于调试）
     module_name = f"_catia_generated_model_{run_id}"
@@ -659,14 +624,14 @@ def tool_run_modeling_script(
     except Exception as e:
         return finish(
             {"success": False, "run_id": run_id, "status": status_base,
-             "error": f"写入脚本失败: {e}", "script_path": str(script_path)},
+             "error": f"Failed to write script: {e}", "script_path": str(script_path)},
         )
 
     # 检查脚本中是否定义了 build()
     if "def build(" not in script and "def build (" not in script:
         return finish(
             {"success": False, "run_id": run_id, "status": status_base,
-             "error": "脚本中未找到 build(ctx) 函数，请确保脚本包含 def build(ctx): ...",
+             "error": "No build(ctx) function was found. Ensure the script defines def build(ctx): ...",
              "script_path": str(script_path)},
         )
 
@@ -675,20 +640,20 @@ def tool_run_modeling_script(
         sys.modules.pop(module_name, None)
         spec   = importlib.util.spec_from_file_location(module_name, script_path)
         if spec is None or spec.loader is None:
-            raise ImportError(f"无法为 {script_path} 创建 ModuleSpec")
+            raise ImportError(f"Unable to create a ModuleSpec for {script_path}.")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)  # type: ignore[union-attr]
     except Exception:
         err = traceback.format_exc()
-        logger.error(f"[MODELING] 脚本加载失败:\n{err}")
+        logger.error(f"[MODELING] Script load failed:\n{err}")
         return finish(
             {"success": False, "run_id": run_id, "status": status_base,
-             "error": "脚本语法错误或 import 失败", "traceback": err,
+             "error": "Script syntax error or import failure", "traceback": err,
              "script_path": str(script_path)},
         )
 
     if progress_signal:
-        progress_signal.emit("脚本已加载，正在调用 build(ctx)...")
+        progress_signal.emit("Script loaded; calling build(ctx)...")
 
     # 创建执行上下文并调用 build(ctx)
     ctx = ModelingContext(cancel_check=cancel_check)
@@ -710,7 +675,7 @@ def tool_run_modeling_script(
 
     except ModelingStepError as mse:
         # 步骤级失败：有精确的步骤定位信息
-        logger.error(f"[MODELING] 步骤 [{mse.step_name}] 失败:\n{mse.traceback_str}")
+        logger.error(f"[MODELING] Step [{mse.step_name}] failed:\n{mse.traceback_str}")
         return finish(
             {
                 "success":             False,
@@ -729,14 +694,14 @@ def tool_run_modeling_script(
     except Exception:
         # build() 本身（非 _run 包裹的代码）抛出的异常
         err = traceback.format_exc()
-        logger.error(f"[MODELING] build() 执行失败:\n{err}")
+        logger.error(f"[MODELING] build() failed:\n{err}")
         return finish(
             {
                 "success":     False,
                 "run_id":      run_id,
                 "status":      {**status_base, "execution": "failed"},
                 "target_document": document_before.to_dict(),
-                "error":       "build() 执行失败（非建模步骤异常）",
+                "error":       "build() failed outside a modeling step",
                 "traceback":   err,
                 "steps":       ctx.steps,
                 "script_path": str(script_path),
@@ -745,7 +710,7 @@ def tool_run_modeling_script(
 
     # 执行成功，读取当前零件状态
     if progress_signal:
-        progress_signal.emit("build(ctx) 执行完成，正在读取模型状态...")
+        progress_signal.emit("build(ctx) completed; reading model state...")
 
     try:
         from catia_copilot.catia.modeling import (
@@ -800,7 +765,7 @@ def tool_run_modeling_script(
             "document_before": document_before.to_dict(),
             "steps":       ctx.steps,
             "script_path": str(script_path),
-            "note":        f"build(ctx) 已执行，但读取模型状态失败: {e}",
+            "note":        f"build(ctx) ran, but model state could not be read: {e}",
         }
 
     return finish(result)

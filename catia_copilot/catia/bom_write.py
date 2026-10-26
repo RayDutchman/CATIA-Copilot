@@ -56,7 +56,7 @@ def _set_prop(product, name: str, value: str) -> bool:
             return True
         except Exception:
             continue
-    logger.warning("_set_prop: COM 写入失败 name=%r value=%r", name, value)
+    logger.warning("_set_prop: COM write failed name=%r value=%r", name, value)
     return False
 
 
@@ -82,7 +82,7 @@ def _set_user_prop(product, name: str, value: str) -> bool:
             return True
         except Exception:
             continue
-    logger.warning("_set_user_prop: COM 写入失败 name=%r value=%r", name, value)
+    logger.warning("_set_user_prop: COM write failed name=%r value=%r", name, value)
     return False
 
 
@@ -115,7 +115,7 @@ def write_cell(
             product.Name = value
             return True
         except Exception as e:
-            logger.warning("write_cell: 实例名写入失败 col=%r: %s", col, e)
+            logger.warning("write_cell: instance-name write failed col=%r: %s", col, e)
             return False
     elif col == "Part Number":
         try:
@@ -126,7 +126,7 @@ def write_cell(
                 product.ReferenceProduct.PartNumber = value
                 return True
             except Exception as e:
-                logger.warning("write_cell: PartNumber 写入失败 col=%r: %s", col, e)
+                logger.warning("write_cell: PartNumber write failed col=%r: %s", col, e)
                 return False
     elif col in PRODUCT_ATTR_WRITE_MAP:
         return _set_prop(product, col, value)

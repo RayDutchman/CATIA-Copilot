@@ -34,7 +34,7 @@ def export_stp(path: str, product_doc=None, output_path: str | None = None) -> s
             app = get_catia_v5_application()
             product_doc = app.ActiveDocument.Product if app.ActiveDocument else None
         except Exception as e:
-            logger.warning(f"获取 CATIA 活动文档失败: {e}")
+            logger.warning(f"Failed to get the active CATIA document: {e}")
             return None
 
     if product_doc is None:
@@ -44,7 +44,7 @@ def export_stp(path: str, product_doc=None, output_path: str | None = None) -> s
 
     prod, _parent = _resolve_product_by_path(product_doc, path)
     if prod is None:
-        logger.warning(f"export_stp: 路径 {path} 找不到实例")
+        logger.warning(f"export_stp: no instance found at path {path}")
         return None
 
     part_number = ""
@@ -61,10 +61,10 @@ def export_stp(path: str, product_doc=None, output_path: str | None = None) -> s
         app = get_catia_v5_application()
         doc = prod.ReferenceProduct.Parent
         doc.ExportData(output_path, "stp")
-        logger.info(f"STP 导出成功: {output_path}")
+        logger.info(f"STP export succeeded: {output_path}")
         return output_path
     except Exception as e:
-        logger.warning(f"STP 导出失败 {path}: {e}")
+        logger.warning(f"STP export failed at {path}: {e}")
         if output_path and os.path.exists(output_path):
             try:
                 os.remove(output_path)

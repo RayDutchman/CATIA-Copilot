@@ -92,9 +92,9 @@ BOM_DEFAULT_COLUMNS: list[str] = [
     "Definition", "Revision", "Source", "Description", "Quantity",
 ]
 
-FILENAME_NOT_FOUND: str = "未检索到"
+FILENAME_NOT_FOUND: str = "Not found"
 
-FILENAME_UNSAVED: str = "未保存"
+FILENAME_UNSAVED: str = "Unsaved"
 
 BOM_ROW_NUMBER_COLUMN: str = "#"
 

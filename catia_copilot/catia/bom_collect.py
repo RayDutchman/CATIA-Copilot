@@ -46,7 +46,7 @@ def get_product_filepath(product) -> str:
     try:
         return product.ReferenceProduct.Parent.FullName
     except Exception as e:
-        logger.debug(f"无法获取产品文件路径: {e}")
+        logger.debug(f"Unable to get product file path: {e}")
         return ""
 
 
@@ -92,7 +92,7 @@ def collect_bom_rows_archive(
                 if value is not None:
                     return str(value)
             except Exception as e:
-                logger.debug(f"无法从 {target} 获取属性 {name}: {e}")
+                logger.debug(f"Unable to read property {name} from {target}: {e}")
         return ""
 
     def _get_user_prop(product, name: str) -> str:
@@ -301,7 +301,7 @@ def collect_bom_rows(
                 if value is not None:
                     return str(value)
             except Exception as e:
-                logger.debug(f"无法从 {target} 获取属性 {name}: {e}")
+                logger.debug(f"Unable to read property {name} from {target}: {e}")
         return ""
 
     def _get_user_prop(product, name: str) -> str:
@@ -640,7 +640,7 @@ def check_unsaved_docs(bom_rows: list[dict]) -> list[str]:
         application = get_catia_v5_application()
         documents   = application.Documents
     except Exception as exc:
-        logger.warning(f"check_unsaved_docs：无法连接 CATIA ，跳过 Document.Saved 检查 — {exc}")
+        logger.warning(f"check_unsaved_docs: unable to connect to CATIA; skipping Document.Saved checks — {exc}")
         return result  # 至少返回第一段结果
 
     # 构建 resolved_path → doc 的映射

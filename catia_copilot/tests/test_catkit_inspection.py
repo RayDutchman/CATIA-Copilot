@@ -37,22 +37,22 @@ class TestTargets(unittest.TestCase):
 
     def test_ambiguous_names_are_not_first_match(self):
         self.a.Name = 'B'
-        with self.assertRaisesRegex(ValueError, '歧义'):
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
             document_scope.resolve_document(self.app, doc='B')
 
     def test_target_conflict_and_type_mismatch(self):
-        with self.assertRaisesRegex(ValueError, '互斥'):
+        with self.assertRaisesRegex(ValueError, 'mutually exclusive'):
             document_scope.resolve_document(self.app, doc='B', active=True)
         with self.assertRaisesRegex(ValueError, 'ProductDocument'):
             document_scope.resolve_document(self.app, expected_type='ProductDocument')
 
     def test_missing_target_does_not_fallback_to_active(self):
-        with self.assertRaisesRegex(ValueError, '不存在'):
+        with self.assertRaisesRegex(ValueError, 'does not exist'):
             document_scope.resolve_document(self.app, doc='missing')
 
     def test_empty_documents_report_failure(self):
         self.app.Documents = Collection()
-        with self.assertRaisesRegex(ValueError, '文档'):
+        with self.assertRaisesRegex(ValueError, 'documents'):
             document_scope.resolve_document(self.app)
 
     def test_inaccessible_identity_fields_are_optional(self):
@@ -108,15 +108,15 @@ class TestDocumentOperations(unittest.TestCase):
     def test_save_as_changed_full_name_without_file_is_not_success(self):
         self.b.SaveAs.side_effect = lambda path: setattr(self.b, 'FullName', path)
         with tempfile.TemporaryDirectory() as temp:
-            with self.assertRaisesRegex(RuntimeError, '另存'):
+            with self.assertRaisesRegex(RuntimeError, 'Save As'):
                 self.service.save_document_as(str(Path(temp) / 'missing.CATPart'), doc='B')
 
     def test_cancelled_save_is_not_success(self):
-        with self.assertRaisesRegex(RuntimeError, '另存'):
+        with self.assertRaisesRegex(RuntimeError, 'Save As'):
             self.service.save_document_as(r'C:\Other.CATPart', doc='B')
 
     def test_cancelled_close_is_not_success(self):
-        with self.assertRaisesRegex(RuntimeError, '关闭'):
+        with self.assertRaisesRegex(RuntimeError, 'Close'):
             self.service.close_document(doc='B')
 
 
@@ -206,7 +206,7 @@ class TestProductOperations(TestDocumentOperations):
 
     def test_remeasure_reports_missing_measurement(self):
         with patch('catia_copilot.catia.mass_props_collect.remeasure_part_mass_props', return_value=None):
-            with self.assertRaisesRegex(RuntimeError, '测量'):
+            with self.assertRaisesRegex(RuntimeError, 'measurement'):
                 self.service.remeasure_product_part(r'C:\B.CATPart')
 
     def test_product_export_reuses_converter_and_records_partial_failure(self):

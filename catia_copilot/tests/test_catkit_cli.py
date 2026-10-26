@@ -142,6 +142,13 @@ class TestCli(unittest.TestCase):
             "import sys; from catia_copilot.cli.app import main; main(['--help']); assert 'catia_copilot.catia.tool_service' not in sys.modules"], capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn('CATIA', proc.stdout)
+        self.assertIn('CATIA command-line tools', proc.stdout)
+        self.assertNotIn('工具命令行', proc.stdout)
+
+    def test_invalid_schema_path_error_is_english(self):
+        code, out, _ = self.invoke(['schema', 'bogus'])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out)['error'], 'Unknown command path: bogus')
 
     def test_all_21_tools_have_commands(self):
         from catia_copilot.cli.app import COMMANDS

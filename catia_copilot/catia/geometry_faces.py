@@ -198,36 +198,36 @@ def confirm_rect_outline(edges: Sequence[SketchEdgeClass]) -> tuple[list[tuple[f
     失败 -> (None, 中文原因)。
     """
     if len(edges) != 4:
-        return None, f"矩形确认失败：需要恰好 4 条边（当前 {len(edges)} 条）"
+        return None, f"Rectangle confirmation failed: expected exactly 4 edges, got {len(edges)}"
     for e in edges:
         if e.kind != KIND_PLANAR:
-            return None, "矩形确认失败：非全部为平面（直线）边，不能按矩形套用"
+            return None, "Rectangle confirmation failed: not all edges are planar lines"
     for e in edges:
         if e.start is None or e.end is None:
-            return None, "无端点坐标，无法确认矩形，不得套表"
+            return None, "Endpoint coordinates are unavailable; cannot confirm the rectangle"
     starts = [e.start for e in edges]
     ends = [e.end for e in edges]
     dirs = [_vsub(ends[i], starts[i]) for i in range(4)]
 
     for i in range(4):
         if not _approx_vec(ends[i], starts[(i + 1) % 4], _CLOSURE_TOL):
-            return None, "矩形确认失败：边链未闭合，端点首尾未重合"
+            return None, "Rectangle confirmation failed: edge chain is not closed"
     for d in dirs:
         if _vlen(d) <= _CLOSURE_TOL:
-            return None, "矩形确认失败：存在长度过小的退化边"
+            return None, "Rectangle confirmation failed: a degenerate edge is too short"
     if not _approx_vec(dirs[2], _vneg(dirs[0]), _CLOSURE_TOL):
-        return None, "矩形确认失败：对边不反向平行，非矩形轮廓"
+        return None, "Rectangle confirmation failed: opposite edges are not antiparallel"
     if not _approx_vec(dirs[3], _vneg(dirs[1]), _CLOSURE_TOL):
-        return None, "矩形确认失败：对边不反向平行，非矩形轮廓"
+        return None, "Rectangle confirmation failed: opposite edges are not antiparallel"
     for d in dirs:
         if min(abs(d[0]), abs(d[1])) > _CLOSURE_TOL:
-            return None, "矩形确认失败：边未与草图 H/V 轴对齐"
+            return None, "Rectangle confirmation failed: edges are not aligned with sketch H/V axes"
 
     # 包围范围非退化：x/y 跨度均须 > 容差，排除四边共线等零面积闭合链（如沿轴往返）
     xs = [p[0] for p in starts]
     ys = [p[1] for p in starts]
     if max(xs) - min(xs) <= _CLOSURE_TOL or max(ys) - min(ys) <= _CLOSURE_TOL:
-        return None, "矩形确认失败：退化轮廓（二维包围范围退化为线或点，面积约为零），非矩形"
+        return None, "Rectangle confirmation failed: degenerate outline has approximately zero area"
 
     # 外法向：质心为内判据点，取「背离质心」一侧的垂向
     cx = sum(p[0] for p in starts) / 4.0
@@ -261,24 +261,24 @@ def describe_sides(outline: SketchOutline, brep_by_index: Mapping[int, str],
     """
     if outline.status != STATUS_OK:
         raise GeometryQueryError(
-            f"草图 outline 状态为 {outline.status}（{outline.note}），无法生成侧面描述。"
-            "请确认草图几何元素读取成功，或修复草图后重新读取。")
+            f"Sketch outline status is {outline.status} ({outline.note}); cannot describe side faces. "
+            "Ensure sketch geometry was read successfully or repair the sketch and retry.")
     n2s, reason = confirm_rect_outline(outline.edges)
     faces: list[dict] = []
     for pos, edge in enumerate(outline.edges):
         if n2s is not None:
             n3 = map_2d_normal_to_3d(n2s[pos], h_axis, v_axis)
             if n3 is None:
-                normal, unresolved = None, "草图 H/V 轴退化，无法把 2D 法向映射到 3D"
+                normal, unresolved = None, "Sketch H/V axes are degenerate; cannot map the 2D normal to 3D"
             else:
                 normal = tuple(-c for c in n3) if not outward else n3
                 unresolved = None
         elif edge.kind == KIND_PLANAR:
             normal, unresolved = None, reason
         elif edge.kind == KIND_CYLINDRICAL:
-            normal, unresolved = None, "圆柱曲面无单一全局法向"
+            normal, unresolved = None, "A cylindrical surface has no single global normal"
         else:
-            normal, unresolved = None, "元素类型无法归类为平面/圆柱"
+            normal, unresolved = None, "Element type cannot be classified as planar or cylindrical"
 
         origin_3d = None
         if origin is not None and edge.start is not None:
@@ -308,8 +308,8 @@ def describe_surfaces(outline: SketchOutline, brep_by_index: Mapping[int, str], 
     """
     if outline.status != STATUS_OK:
         raise GeometryQueryError(
-            f"草图 outline 状态为 {outline.status}（{outline.note}），无法生成旋转面描述。"
-            "请确认草图几何元素读取成功，或修复草图后重新读取。")
+            f"Sketch outline status is {outline.status} ({outline.note}); cannot describe revolved surfaces. "
+            "Ensure sketch geometry was read successfully or repair the sketch and retry.")
     faces: list[dict] = []
     for edge in outline.edges:
         faces.append({
@@ -317,7 +317,7 @@ def describe_surfaces(outline: SketchOutline, brep_by_index: Mapping[int, str], 
             "source": "feature_inference",
             "geometry_type": KIND_UNKNOWN,
             "normal": None,
-            "normal_unresolved": "旋转面类型依赖边相对旋转轴的方向，需坐标解析；S2 不分类",
+            "normal_unresolved": "Revolved-surface type depends on edge direction relative to the axis and requires coordinate analysis; not classified in S2",
             "origin": None,
             "face_brep": brep_by_index[edge.index],
             "edge_index": edge.index,
@@ -337,12 +337,12 @@ def filter_faces_by_normal(faces: Iterable[dict], normal: tuple, tolerance_deg: 
     与旧实现（点积累加 + 余弦阈值）一致。
     """
     if len(normal) != 3 or not all(math.isfinite(c) for c in normal):
-        raise ValueError("目标法向必须是有限非零向量")
+        raise ValueError("Target normal must be a finite, non-zero vector")
     n_len = math.sqrt(sum(c * c for c in normal))
     if n_len <= _VEC_EPS:
-        raise ValueError("目标法向必须是有限非零向量")
+        raise ValueError("Target normal must be a finite, non-zero vector")
     if not math.isfinite(tolerance_deg) or not (0.0 <= tolerance_deg <= 180.0):
-        raise ValueError("容差 tolerance_deg 必须为有限值，且位于 [0, 180] 度区间")
+        raise ValueError("tolerance_deg must be finite and within [0, 180] degrees")
 
     tgt = tuple(c / n_len for c in normal)
     cos_tol = math.cos(math.radians(tolerance_deg))

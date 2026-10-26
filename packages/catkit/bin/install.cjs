@@ -15,12 +15,12 @@ function checksum(file) {
 function selectedExecutable(home = installHome()) {
   const current = JSON.parse(fs.readFileSync(path.join(home, 'current.json'), 'utf8'));
   const executable = path.join(home, current.directory, 'catkit.exe');
-  if (!fs.existsSync(executable)) throw new Error('Catkit 程序缺失，请重新执行 install。');
+  if (!fs.existsSync(executable)) throw new Error('Catkit executable is missing. Run install again.');
   return executable;
 }
 function installDirectory(bundle, home, skillsDir, selectedVersion) {
   if (!fs.existsSync(path.join(bundle, 'catkit.exe')) || !fs.existsSync(path.join(bundle, 'skills', 'catkit', 'SKILL.md'))) {
-    throw new Error('ZIP 内容应包含 catkit.exe 与 skills/catkit/SKILL.md');
+    throw new Error('ZIP must contain catkit.exe and skills/catkit/SKILL.md');
   }
   // 固定运行目录；先检查文件占用，避免删除到一半才发现 EXE 正在运行。
   const directory = 'runtime';
@@ -32,7 +32,7 @@ function installDirectory(bundle, home, skillsDir, selectedVersion) {
       try {
         fs.closeSync(fs.openSync(path.join(entry.parentPath || entry.path, entry.name), 'r+'));
       } catch (error) {
-        throw new Error(`正式程序文件被占用或不可写，请退出 Catkit 后重试：${entry.name}`, { cause: error });
+        throw new Error(`Runtime file is locked or not writable. Close Catkit and try again: ${entry.name}`, { cause: error });
       }
     }
     fs.rmSync(target, { recursive: true });
@@ -56,7 +56,7 @@ function parseOptions(args) {
       continue;
     }
     if (!['--from-zip', '--sha256', '--skills-dir', '--version'].includes(key) || !args[i + 1]) {
-      throw new Error(`未知或缺值参数：${key}`);
+      throw new Error(`Unknown option or missing value: ${key}`);
     }
     options[key] = args[++i];
   }
@@ -64,14 +64,14 @@ function parseOptions(args) {
 }
 async function download(url, destination) {
   const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-  if (!response.ok) throw new Error(`下载失败 ${response.status}: ${url}`);
+  if (!response.ok) throw new Error(`Download failed (${response.status}): ${url}`);
   fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
 }
 async function install(args) {
-  if (process.platform !== 'win32') throw new Error('Catkit 仅支持 Windows 原生环境。');
+  if (process.platform !== 'win32') throw new Error('Catkit requires native Windows.');
   const options = parseOptions(args);
   const selectedVersion = options['--version'] || version;
-  if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?$/.test(selectedVersion)) throw new Error('版本号格式无效');
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?$/.test(selectedVersion)) throw new Error('Invalid version format');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'catkit-install-'));
   try {
     let archive = options['--from-zip'] && path.resolve(options['--from-zip']);
@@ -84,11 +84,11 @@ async function install(args) {
       const sums = path.join(temp, 'SHA256SUMS');
       await download(`${base}/SHA256SUMS`, sums);
       const line = fs.readFileSync(sums, 'utf8').split(/\r?\n/).find(line => line.trim().endsWith(`  ${name}`));
-      if (!line) throw new Error('发布包缺少对应 SHA256SUMS');
+      if (!line) throw new Error('Release archive has no matching entry in SHA256SUMS');
       expected = line.split(/\s+/)[0];
     }
     if (expected && (!/^[a-fA-F0-9]{64}$/.test(expected) || checksum(archive) !== expected.toLowerCase())) {
-      throw new Error('ZIP SHA-256 校验失败');
+      throw new Error('ZIP SHA-256 verification failed');
     }
     const extracted = path.join(temp, 'bundle');
     const quote = value => "'" + value.replaceAll("'", "''") + "'";
@@ -99,7 +99,7 @@ async function install(args) {
     const executable = selectedExecutable();
     const userPath = options['--no-path'] ? { skipped: true } : ensureUserPath(path.dirname(path.resolve(executable)));
     console.log(JSON.stringify({ installed: true, ...installed, executable, userPath,
-      ...(options['--no-path'] ? {} : { notice: '用户 PATH 已配置；现有终端或 AI 宿主需重新打开后使用 catkit。' }) }));
+      ...(options['--no-path'] ? {} : { notice: 'User PATH is configured. Reopen existing terminals or AI hosts to use catkit.' }) }));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }
 module.exports = { install, installHome, installDirectory, selectedExecutable, checksum };
