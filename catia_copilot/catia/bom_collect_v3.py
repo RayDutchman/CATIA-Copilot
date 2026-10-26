@@ -99,7 +99,7 @@ def flatten_bom_to_summary(
     computed by multiplying the per-level quantities along every path from the
     root to that part.
 
-    The root row (Level == 0) is always excluded from the result.
+    The root row (Level == 0) is excluded unless include_assemblies is True.
 
     Parameters
     ----------
@@ -329,6 +329,8 @@ def collect_bom_part_masters(
     progress_callback: Callable[[int], None] | None = None,
     config: CollectConfig | None = None,
     max_depth: int = -1,
+    *,
+    root_product=None,
 ) -> tuple[str, dict[str, dict], dict[int, dict]]:
     """遍历 CATIA 产品树，构建 part_masters 树和 inst_key_to_info 反向索引。
 
@@ -361,6 +363,10 @@ def collect_bom_part_masters(
         但仍会在父节点的 instances 列表中记录（pn、placement），
         供 _part_masters_to_bom_tree 构建带装配关系的 BomNode 树。
         用于按文件主键 sync 时只需一层子节点信息的场景。
+
+    root_product:
+        已由调用方解析的根 Product。提供时跳过 CATIA 连接、活动文档读取
+        和文件加载；不提供时沿用原有 GUI/PLM 调用行为。
     """
     if config is None:
         config = CollectConfig()
@@ -679,13 +685,14 @@ def collect_bom_part_masters(
         return pm_key
 
     # ── CATIA 连接与根节点 ────────────────────────────────────────────────────
-    application = get_catia_v5_application()
+    if root_product is None:
+        application = get_catia_v5_application()
 
-    if file_path is None:
-        root_product = application.ActiveDocument.Product
-    else:
-        from catia_copilot.plm.workspace_scanner import load_catia_file  # noqa: PLC0415
-        root_product = load_catia_file(application, file_path).Product
+        if file_path is None:
+            root_product = application.ActiveDocument.Product
+        else:
+            from catia_copilot.plm.workspace_scanner import load_catia_file  # noqa: PLC0415
+            root_product = load_catia_file(application, file_path).Product
 
     # 根节点始终是独立文件，pm_key == pn，host_file_pn 传 "" 即可（根节点不是嵌入部件）
     root_pm_key = _traverse(root_product, level=0, parent_filepath="", host_file_pn="")
@@ -955,8 +962,8 @@ def refresh_row_from_com(
     custom_columns:
         Column names that are user-defined properties.
     is_component:
-        若为 True，表示该行是嵌入部件（Component），不尝试读取 ReferenceProduct。
-        Component 的 ReferenceProduct 指向父产品，读取会得到父产品的属性值。
+        若为 True，表示调用方要求按当前嵌入部件读取，不尝试 ReferenceProduct。
+        这不意味着所有嵌入部件的 ReferenceProduct 都指向宿主；引用关系须以实际对象为准。
     """
     DIRECT_ATTR_MAP = PRODUCT_ATTR_READ_MAP
 
@@ -970,9 +977,7 @@ def refresh_row_from_com(
             pass
 
     targets = [product]
-    # Component 嵌入部件不走 ReferenceProduct：
-    # Component 实例的 ReferenceProduct 返回的是父产品对象，
-    # 读取会得到父产品的属性，导致属性值被父产品值覆盖。
+    # 按调用方确认的嵌入部件读取策略，不在这里推断 ReferenceProduct 的归属。
     if not is_component:
         try:
             targets.insert(0, product.ReferenceProduct)

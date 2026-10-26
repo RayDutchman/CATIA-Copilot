@@ -173,11 +173,11 @@ def detect_catia_status() -> dict:
     return result
 
 
-def read_assembly_tree(catia_app=None) -> dict | None:
-    if catia_app is None:
+def read_assembly_tree(catia_app=None, document=None, errors=None) -> dict | None:
+    if catia_app is None and document is None:
         catia_app = get_catia_v5_application()
 
-    doc = catia_app.ActiveDocument
+    doc = document if document is not None else catia_app.ActiveDocument
     if doc is None:
         logger.warning("CATIA 活动文档为空")
         return None
@@ -185,11 +185,11 @@ def read_assembly_tree(catia_app=None) -> dict | None:
         logger.warning("活动文档不是装配体（无 Product 对象）")
         return None
 
-    return _read_product_recursive(doc.Product, [], "")
+    return _read_product_recursive(doc.Product, [], "", errors)
 
 
 def _read_product_recursive(
-    product, path_indices: list[int], parent_filepath: str
+    product, path_indices: list[int], parent_filepath: str, errors=None
 ) -> dict:
     instance_name = ""
     try:
@@ -233,13 +233,17 @@ def _read_product_recursive(
                         child_product = products.Item(i)
                         child_indices = list(path_indices) + [i - 1]
                         child_node = _read_product_recursive(
-                            child_product, child_indices, doc_path
+                            child_product, child_indices, doc_path, errors
                         )
                         node["children"].append(child_node)
                     except Exception as e:
+                        if errors is not None:
+                            errors.append({'path': f'{path_str}.{i - 1}', 'error': str(e)})
                         logger.debug(f"读取子节点 {i} 失败: {e}")
                         continue
         except Exception as e:
+            if errors is not None:
+                errors.append({'path': path_str, 'error': str(e)})
             logger.debug(f"获取子产品集合失败: {e}")
 
     return node

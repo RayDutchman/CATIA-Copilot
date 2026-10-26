@@ -1,10 +1,11 @@
 """弹窗接续使用原任务，不重启业务执行。"""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 
-from catia_copilot.cli.tasks import TaskManager, write_json
+from catia_copilot.cli.tasks import TaskManager, run_worker, write_json
 
 
 class TestTasks(unittest.TestCase):
@@ -106,6 +107,83 @@ class TestTasks(unittest.TestCase):
         self.assertFalse(second['executed'])
         self.assertEqual(second['task_id'], first['task_id'])
         self.assertEqual(len(self.launches), 1)
+
+    def test_scheduler_pending_remains_busy_and_running_not_terminal(self):
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-test'}
+        from unittest.mock import patch
+        with patch('catia_copilot.cli.scheduler.task_state', return_value=4):
+            result = self.manager.start('first', {}, wait_seconds=0)
+            self.assertEqual(result['status'], 'running')
+            self.assertEqual(self.manager.status(result['task_id'])['status'], 'running')
+            busy = self.manager.start('second', {}, wait_seconds=0)
+        self.assertEqual(busy['status'], 'busy')
+        self.assertEqual(busy['task_id'], result['task_id'])
+
+    def test_ready_scheduler_with_failed_run_result_is_terminal_and_releases_slot(self):
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        from unittest.mock import patch
+        with patch('catia_copilot.cli.scheduler.task_state', return_value={'state': 3, 'last_run_time': '2026-10-26', 'last_task_result': 1, 'instances': 0}):
+            first = self.manager.start('first', {}, wait_seconds=0)
+            self.assertEqual(first['status'], 'launch_failed')
+            self.assertFalse((self.manager.root / 'active.json').exists())
+            self.manager.launcher = lambda task_id, root: {'pid': 321, 'created': 'fixture'}
+            self.visible = []
+            second = self.manager.start('second', {}, wait_seconds=0)
+        self.assertEqual(second['status'], 'running')
+        self.assertNotEqual(second['task_id'], first['task_id'])
+
+    def test_ready_scheduler_without_run_is_not_failure(self):
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        from unittest.mock import patch
+        with patch('catia_copilot.cli.scheduler.task_state', return_value={'state': 3, 'last_run_time': None, 'last_task_result': 0, 'instances': 0}):
+            result = self.manager.start('first', {}, wait_seconds=0)
+        self.assertEqual(result['status'], 'running')
+        self.assertIn('task_id', result)
+
+    def test_fast_scheduler_completion_race_prefers_worker_result(self):
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        from unittest.mock import patch
+        def info(_name):
+            task_id = json.loads((self.manager.root / 'active.json').read_text(encoding='utf-8'))['task_id']
+            write_json(self.manager.root / task_id / 'result.json', {'result': {'done': True}})
+            return {'state': 3, 'last_run_time': '2026-10-26', 'last_task_result': 0, 'instances': 0}
+        with patch('catia_copilot.cli.scheduler.task_state', side_effect=info):
+            self.assertEqual(self.manager.start('first', {}, wait_seconds=0), {'done': True})
+
+    def test_pending_scheduler_vanish_rereads_result_and_cleans_task(self):
+        task_id = 'b' * 32
+        directory = Path(self.temp.name) / task_id
+        write_json(directory / 'request.json', {'tool': 'fixture', 'parameters': {}})
+        write_json(directory / 'launch.json', {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id})
+        def missing(_name):
+            write_json(directory / 'result.json', {'result': {'ok': True}})
+            return None
+        from unittest.mock import patch
+        with patch('catia_copilot.cli.scheduler.task_state', side_effect=missing):
+            with patch('catia_copilot.cli.scheduler.delete_task') as cleanup:
+                self.assertEqual(self.manager.status(task_id)['status'], 'completed')
+                cleanup.assert_called_once_with('Catkit-' + task_id)
+
+    def test_completed_status_cleanup_failure_does_not_replace_result(self):
+        task_id = 'c' * 32
+        directory = Path(self.temp.name) / task_id
+        write_json(directory / 'request.json', {'tool': 'fixture', 'parameters': {}})
+        write_json(directory / 'launch.json', {'scheduler': 'Catkit-' + task_id})
+        write_json(directory / 'result.json', {'result': {'ok': True}})
+        from unittest.mock import patch
+        with patch('catia_copilot.cli.scheduler.delete_task', side_effect=OSError('no permission')):
+            self.assertEqual(self.manager.status(task_id), {'status': 'completed', 'task_id': task_id,
+                                                            'result': {'ok': True}})
+
+    def test_duplicate_worker_claim_does_not_execute_twice(self):
+        task_id = 'a' * 32
+        directory = Path(self.temp.name) / task_id
+        write_json(directory / 'request.json', {'tool': 'fixture', 'parameters': {}, 'cwd': os.getcwd()})
+        calls = []
+        operation = lambda tool, params: calls.append(tool) or {'ok': True}
+        self.assertEqual(run_worker(task_id, operation=operation, root=self.temp.name), 0)
+        self.assertEqual(run_worker(task_id, operation=operation, root=self.temp.name), 0)
+        self.assertEqual(calls, ['fixture'])
 
     def test_response_is_sent_even_if_read_operation_finished(self):
         blocked = self.manager.start('read', {})

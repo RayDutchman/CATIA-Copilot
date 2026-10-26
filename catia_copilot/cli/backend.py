@@ -13,6 +13,8 @@ class Progress:
 def execute(name, parameters):
     kwargs = dict(parameters)
     overwrite = kwargs.pop('overwrite', 'error')
+    if name == 'merge_mass_files':
+        kwargs['overwrite'] = overwrite
     pythoncom.CoInitialize()
     old_handler = file_interaction.overwrite_handler
     if overwrite in ('replace', 'skip'):

@@ -31,7 +31,9 @@ def main():
     version_file = ROOT / 'catia_copilot/cli/_build_version.json'
     command = [sys.executable, '-m', 'nuitka', '--mode=standalone', '--windows-console-mode=force',
                '--output-filename=catkit.exe', '--output-dir='+str(output),
-               '--include-package=pycatia', '--include-package=win32com', '--include-package=comtypes',
+               '--include-module=comtypes.persist', '--include-module=comtypes.typeinfo',
+               '--include-module=comtypes.automation', '--include-module=comtypes.stream',
+               '--include-package=comtypes.gen',
                '--nofollow-import-to=PySide6,PyQt5,nuitka,pytest,win32com.test,win32com.demos,comtypes.test',
                '--include-data-files='+str(version_file)+'=catia_copilot/cli/_build_version.json',
                '--assume-yes-for-downloads', str(ROOT / 'catkit.py')]
@@ -40,7 +42,7 @@ def main():
         return 0
     output.mkdir(parents=True, exist_ok=True)
     # pywinauto 导入 UIA 时会动态加载 comtypes 命名空间和类型库包装。
-    # 先在构建环境生成包装，再让 include-package 将它们一起编译。
+    # 只强制纳入动态命名空间及生成包装；其余模块按实际导入收集。
     subprocess.run([sys.executable, '-c', 'import sys; sys.coinit_flags=2; import pywinauto'], cwd=ROOT, check=True)
     old_version = version_file.read_bytes() if version_file.exists() else None
     try:

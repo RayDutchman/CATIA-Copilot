@@ -21,6 +21,7 @@ COMMANDS = {
     ('bom', 'collect'): 'collect_bom',
     ('bom', 'export'): 'export_bom_to_excel',
     ('bom', 'write'): 'write_bom_to_catia',
+    ('bom', 'edit'): 'edit_bom',
     ('drawing', 'create'): 'generate_drawing',
     ('drawing', 'refresh'): 'refresh_drawing',
     ('drawing', 'export', 'pdf'): 'convert_to_pdf',
@@ -28,6 +29,21 @@ COMMANDS = {
     ('part', 'template', 'apply'): 'apply_part_template',
     ('product', 'mass', 'collect'): 'collect_mass_props',
     ('run',): 'run_modeling_script',
+    ('document', 'current'): 'current_document',
+    ('document', 'info'): 'document_info',
+    ('document', 'activate'): 'activate_document',
+    ('document', 'save-as'): 'save_document_as',
+    ('document', 'close'): 'close_document',
+    ('part', 'info'): 'part_info',
+    ('part', 'tree'): 'part_tree',
+    ('part', 'update'): 'update_part_document',
+    ('part', 'mass'): 'part_mass',
+    ('drawing', 'info'): 'drawing_info',
+    ('product', 'info'): 'product_info',
+    ('product', 'tree'): 'product_tree',
+    ('product', 'mass', 'merge'): 'merge_mass_files',
+    ('product', 'mass', 'remeasure'): 'remeasure_product_part',
+    ('product', 'export', 'step'): 'export_product_step',
 }
 SCHEMAS = {s['function']['name']: s for s in tools_schema}
 CONTROL_COMMANDS = {('task', 'status'): '_task_status', ('task', 'wait'): '_task_wait',
@@ -64,6 +80,14 @@ def json_argument(value):
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
+class UniqueFiles(argparse.Action):
+    """文件数组别名只接受一次，避免后一个参数静默覆盖前一个。"""
+    def __call__(self, parser, namespace, values, option_string=None):
+        if hasattr(namespace, self.dest):
+            raise argparse.ArgumentError(self, '文件数组不能重复指定（含 --files 别名）')
+        setattr(namespace, self.dest, values)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog='catkit', description='CATIA 工具命令行')
     parser.add_argument('--version', action='version', version=version_text())
@@ -83,6 +107,7 @@ def build_parser():
         leaf.add_argument('--pretty', action='store_true')
         leaf.add_argument('--verbose', action='store_true')
         parameters = spec['parameters']
+        target_group = leaf.add_mutually_exclusive_group() if 'doc' in parameters.get('properties', {}) else None
         for key, field in parameters.get('properties', {}).items():
             if name == 'run_modeling_script' and key == 'script':
                 continue
@@ -101,7 +126,12 @@ def build_parser():
                 options['type'] = str
             if 'enum' in field:
                 options['choices'] = field['enum']
-            leaf.add_argument('--' + key.replace('_', '-'), **options)
+            destination = target_group if target_group is not None and key in ('doc', 'active', 'file_paths') else leaf
+            flags = ['--' + key.replace('_', '-')]
+            if key == 'file_paths':
+                flags.append('--files')
+                options['action'] = UniqueFiles
+            destination.add_argument(*flags, **options)
         if name == 'run_modeling_script':
             scripts = leaf.add_mutually_exclusive_group(required=True)
             scripts.add_argument('--file', dest='_script_file')
@@ -122,6 +152,8 @@ def result_exit_code(payload):
     if not isinstance(payload, dict):
         return 0
     if payload.get('error') or payload.get('success') is False or payload.get('failed_count', 0):
+        return 1
+    if payload.get('complete') is False:
         return 1
     if payload.get('status') in ('disconnected', 'broken', 'not_connected'):
         return 3

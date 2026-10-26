@@ -5,6 +5,31 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { checksum, installDirectory, selectedExecutable } = require('../bin/install.cjs');
+const { appendPath, ensureUserPath } = require('../bin/user-path.cjs');
+
+test('PATH append preserves entries and is case-insensitively idempotent', () => {
+  const before = '%USERPROFILE%\\bin;C:\\Other Tools';
+  const target = 'C:\\Catkit\\runtime';
+  const after = appendPath(before, target);
+  assert.equal(after, before + ';' + target);
+  assert.equal(appendPath(after, 'c:/catkit/runtime/'), after);
+  assert.equal(appendPath('', target), target);
+});
+
+test('existing variable-based PATH entry is preserved without duplication', () => {
+  const before = '%LOCALAPPDATA%\\Catkit\\runtime;C:\\Tools';
+  assert.equal(appendPath(before, 'C:\\Users\\Test\\AppData\\Local\\Catkit\\runtime',
+    { LOCALAPPDATA: 'C:\\Users\\Test\\AppData\\Local' }), before);
+});
+
+test('user PATH update writes only when required', () => {
+  let value = 'C:\\Tools';
+  let writes = 0;
+  const store = { read: () => value, write: next => { value = next; writes++; } };
+  assert.equal(ensureUserPath('C:\\Catkit\\runtime', store).changed, true);
+  assert.equal(ensureUserPath('C:\\Catkit\\runtime', store).changed, false);
+  assert.equal(writes, 1);
+});
 
 test('install preserves executable and skill layout with spaces', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'catkit test '));
@@ -54,7 +79,7 @@ test('Windows ZIP install works without touching user installation', { skip: pro
     assert.equal(packed.status, 0, packed.stderr);
     const home = path.join(temp, 'home');
     const installed = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/catkit.cjs'), 'install',
-      '--from-zip', zip, '--sha256', checksum(zip), '--skills-dir', path.join(temp, 'skills')],
+      '--from-zip', zip, '--sha256', checksum(zip), '--skills-dir', path.join(temp, 'skills'), '--no-path'],
       { encoding: 'utf8', env: { ...process.env, CATKIT_HOME: home } });
     assert.equal(installed.status, 0, installed.stderr);
     assert.equal(JSON.parse(installed.stdout).installed, true);

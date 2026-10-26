@@ -39,9 +39,14 @@ class DocumentIdentity:
 
 def describe_document(document) -> DocumentIdentity:
     """从 CATIA 文档 COM 对象提取稳定、可序列化身份。"""
-    name = str(getattr(document, "Name", "") or "")
-    full_name = str(getattr(document, "FullName", "") or "")
-    document_type = str(getattr(document, "Type", "") or "")
+    def text(property_name):
+        try:
+            return str(getattr(document, property_name, "") or "")
+        except Exception:
+            return ""
+    name = text("Name")
+    full_name = text("FullName")
+    document_type = text("Type")
     part_number = ""
     try:
         part_number = str(document.Product.PartNumber or "")
@@ -66,3 +71,30 @@ def matches_document(identity: DocumentIdentity, requested: str | None) -> bool:
         identity.full_name,
         identity.part_number,
     }
+
+
+def resolve_document(app, doc=None, active=False, expected_type=None):
+    """解析已打开文档，不通过激活文档改变调用目标。"""
+    from .document import get_document_type
+    if doc is not None and active:
+        raise ValueError('--doc 与 --active 互斥')
+    documents = app.Documents
+    if not documents.Count:
+        raise ValueError('没有已打开的文档')
+    if doc is None:
+        target = app.ActiveDocument
+        if target is None:
+            raise ValueError('没有活动文档')
+    else:
+        if not str(doc).strip():
+            raise ValueError('文档标识不能为空')
+        candidates = [documents.Item(i) for i in range(1, documents.Count + 1)]
+        matches = [item for item in candidates if matches_document(describe_document(item), doc)]
+        if not matches:
+            raise ValueError(f'文档不存在或未打开：{doc}')
+        if len(matches) != 1:
+            raise ValueError(f'文档标识歧义：{[describe_document(item).to_dict() for item in matches]}')
+        target = matches[0]
+    if expected_type and get_document_type(target) != expected_type:
+        raise ValueError(f'目标必须为 {expected_type}')
+    return target

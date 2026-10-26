@@ -1089,26 +1089,27 @@ def list_sketches(part) -> list[str]:
         return []
 
 
-def get_mass_props(part) -> dict | None:
+def get_mass_props(part, *, document=None) -> dict | None:
     """读取零件的质量特性（质量、重心、惯量），通过 Analyze API 实时计算。
 
     零件须已赋材料，否则返回 None。
 
-    返回字典（SI 单位）：
+    返回字典（CATIA Analyze 单位，与质量采集模块一致）：
       {
         "mass":    float,          # kg
         "cog":     [x, y, z],      # mm，零件局部坐标系
-        "inertia": [[3×3]],        # kg·m²，重心处
+        "inertia": [[3×3]],        # kg·mm²，重心处
       }
     """
     try:
-        app_com = get_catia_v5_application()
-        analyze = wrap_product(app_com.ActiveDocument.Product).analyze
+        if document is None:
+            document = get_catia_v5_application().ActiveDocument
+        analyze = wrap_product(document.Product).analyze
         mass    = analyze.mass
         if not mass or mass <= 0:
             return None
         cog = list(analyze.get_gravity_center())      # mm
-        raw = analyze.get_inertia()                   # kg·m²，9 元素
+        raw = analyze.get_inertia()                   # kg·mm²，9 元素
         inertia = [[raw[r * 3 + c] for c in range(3)] for r in range(3)]
         return {"mass": mass, "cog": cog, "inertia": inertia}
     except Exception as e:

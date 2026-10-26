@@ -60,14 +60,16 @@ catkit
 │  ├─ refresh                        # 刷新图纸及属性
 │  └─ export pdf                     # 指定图纸或文件集导出
 └─ bom                                # 装配 BOM 操作，不等同于模型树
-   ├─ collect                        # 采集明细/汇总，输出结构化数据
-   ├─ export                         # 从装配或已采集数据导出 Excel/CSV
-   └─ write                          # 将属性数据写回对应 CATIA 对象
+   ├─ collect                        # 采集完整/层级/汇总视图，输出结构化数据
+   ├─ export                         # 导出选定 BOM 视图为 Excel/CSV
+   ├─ edit                           # 区分主数据/实例属性的字段编辑与逐项结果
+   └─ write                          # 保留按 PN 批量写回接口
 ```
 
 `run --file` 是统一建模入口：新建零件、草图绘制、特征创建和建模内的几何查询在 `build(ctx)` 中组合，不另设 `part new/body/feature/sketch` 命令族。通用文件操作和聊天记忆由宿主提供。
 文档文件名由 open/save-as 的路径表达，PartNumber 等业务名称由 properties set 修改，避免含糊的 document rename。
 源文档和保存状态由文档查询提供，不设置独立 BOM 前置检查流程。阵列与装配约束不在本文目标范围；PLM 保留在 GUI。
+BOM 采集和导出统一使用 V3，默认层级视图，不保留旧行为回退；这是旧工具行为等价约定的明确例外。CLI 与 GUI 独立运行，不建立 IPC、自动刷新或共享撤销。CLI 写回后 GUI 由用户按需刷新；具体接口见独立 BOM 设计。
 建模 API 以 `modeling_contract.py` 的能力目录为准，由 Skill 按需提供方法签名与边界；不把模块中存在函数等同于脚本已可调用或实机已可用。
 Body 管理、既有特征参数修改、草图编辑等扩展若纳入目标，应补充 `ModelingContext` API 与契约，通过同一脚本入口使用，不再扩展逐项 CLI。脚本入口本身不构成这些能力已存在的保证。
 

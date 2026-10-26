@@ -12,6 +12,7 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from catia_copilot.catia import file_interaction
 from catia_copilot.catia.file_interaction import retry_locked, report_locked
 
 from catia_copilot.catia.bom_collect import (
@@ -28,6 +29,104 @@ from catia_copilot.constants_data import (
 from catia_copilot.utils import estimate_column_width
 
 logger = logging.getLogger(__name__)
+
+
+def _write_sheet(ws, rows: list[dict], columns: list[str]) -> None:
+    center = Alignment(horizontal="center", vertical="center")
+    header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
+    thin_side = Side(style="thin")
+    thin_border = Border(
+        left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
+    )
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx,
+                       value=BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+        cell.border = thin_border
+
+    for row_idx, row in enumerate(rows, start=2):
+        level = row.get("Level", 0)
+        for col_idx, col_name in enumerate(columns, start=1):
+            if col_name == "Level":
+                value = level
+            elif col_name == "Quantity":
+                value = row.get("Quantity", 1)
+            elif col_name == "Type":
+                value = row.get("Type", "")
+            elif col_name == "Source":
+                raw = str(row.get("Source", ""))
+                value = SOURCE_TO_DISPLAY.get(raw, raw)
+            else:
+                value = row.get(col_name, "")
+
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            if col_name in ("Level", "Quantity", "Type"):
+                cell.alignment = center
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        col_letter = ws.cell(row=1, column=col_idx).column_letter
+        header = BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name)
+        min_w = BOM_COLUMN_MIN_WIDTHS.get(col_name, 10)
+        max_width = max(estimate_column_width(header), min_w)
+        for row_idx in range(2, ws.max_row + 1):
+            cell_val = ws.cell(row=row_idx, column=col_idx).value
+            if cell_val is not None:
+                max_width = max(max_width, estimate_column_width(str(cell_val)))
+        ws.column_dimensions[col_letter].width = max_width + 2
+
+
+def _write_csv_file(dest: Path, rows: list[dict], columns: list[str]) -> None:
+    headers = [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
+    with open(dest, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow([row.get(c, "") for c in columns])
+
+
+def export_bom_rows(rows, columns, output_file) -> dict:
+    """将已采集的 BOM 行写入 XLSX 或 CSV，不访问 CATIA。"""
+    dest = Path(output_file)
+    extension = dest.suffix.lower()
+    if extension not in {".xlsx", ".csv"}:
+        raise ValueError(f"不支持的 BOM 导出格式：{dest.suffix}")
+
+    if dest.exists():
+        action = file_interaction.prompt_overwrite(dest)
+        if action in {"skip", "skip_all"}:
+            return {
+                "success": True,
+                "skipped": True,
+                "output_file": str(dest),
+                "row_count": 0,
+            }
+        if action == "cancel":
+            return {"success": False, "cancelled": True, "output_file": str(dest)}
+        if action not in {"overwrite", "overwrite_all"}:
+            raise ValueError(f"无效的覆盖操作：{action}")
+
+    rows = list(rows)
+    columns = list(columns)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if extension == ".csv":
+        _write_csv_file(dest, rows, columns)
+    else:
+        workbook = openpyxl.Workbook()
+        try:
+            worksheet = workbook.active
+            assert worksheet is not None
+            worksheet.title = "BOM"
+            _write_sheet(worksheet, rows, columns)
+            workbook.save(dest)
+        finally:
+            workbook.close()
+    return {"success": True, "output_file": str(dest), "row_count": len(rows)}
 
 
 def export_bom_to_excel(
@@ -96,68 +195,6 @@ def export_bom_to_excel(
     # application.Visible = True # 不需要强制显示 CATIA 窗口，后台静默状态下 COM 调用仍然正常
     documents   = application.Documents
 
-    # ── Shared xlsx style objects ────────────────────────────────────────────
-    center       = Alignment(horizontal="center", vertical="center")
-    header_fill  = PatternFill(fill_type="solid", fgColor="D9D9D9")
-    thin_side    = Side(style="thin")
-    thin_border  = Border(
-        left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
-    )
-
-    def _write_sheet(ws, rows: list[dict]) -> None:
-        # Header row
-        for col_idx, col_name in enumerate(columns, start=1):
-            cell       = ws.cell(row=1, column=col_idx,
-                                 value=BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name))
-            cell.font  = Font(bold=True)
-            cell.fill  = header_fill
-            cell.border = thin_border
-
-        # Data rows
-        for row_idx, row in enumerate(rows, start=2):
-            level = row.get("Level", 0)
-            for col_idx, col_name in enumerate(columns, start=1):
-                if col_name == "Level":
-                    value = level
-                elif col_name == "Quantity":
-                    value = row.get("Quantity", 1)
-                elif col_name == "Type":
-                    value = row.get("Type", "")
-                elif col_name == "Source":
-                    raw   = str(row.get("Source", ""))
-                    value = SOURCE_TO_DISPLAY.get(raw, raw)
-                else:
-                    value = row.get(col_name, "")
-
-                cell = ws.cell(row=row_idx, column=col_idx, value=value)
-                cell.border = thin_border
-                if col_name in ("Level", "Quantity", "Type"):
-                    cell.alignment = center
-
-        # Freeze header row and enable auto-filter
-        ws.freeze_panes = "A2"
-        ws.auto_filter.ref = ws.dimensions
-
-        # Auto-width columns
-        for col_idx, col_name in enumerate(columns, start=1):
-            col_letter = ws.cell(row=1, column=col_idx).column_letter
-            header     = BOM_COLUMN_DISPLAY_NAMES.get(col_name, col_name)
-            min_w      = BOM_COLUMN_MIN_WIDTHS.get(col_name, 10)
-            max_width  = max(estimate_column_width(header), min_w)
-            for row_idx in range(2, ws.max_row + 1):
-                cell_val = ws.cell(row=row_idx, column=col_idx).value
-                if cell_val is not None:
-                    max_width = max(max_width, estimate_column_width(str(cell_val)))
-            ws.column_dimensions[col_letter].width = max_width + 2
-
-    def _write_csv_file(dest: Path, rows: list[dict]) -> None:
-        headers = [BOM_COLUMN_DISPLAY_NAMES.get(c, c) for c in columns]
-        with open(dest, "w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.writer(f)
-            writer.writerow(headers)
-            for row in rows:
-                writer.writerow([row.get(c, "") for c in columns])
-
     written_paths: list[Path] = []
     total_files = len(file_paths)
     for file_idx, path in enumerate(file_paths, start=1):
@@ -184,13 +221,13 @@ def export_bom_to_excel(
                     sort_column=summary_sort_column,
                 )
             if use_csv:
-                _write_csv_file(dest, rows)
+                _write_csv_file(dest, rows, columns)
             else:
                 wb   = openpyxl.Workbook()
                 ws   = wb.active
                 assert ws is not None
                 ws.title = "汇总 BOM" if summarize else "BOM"
-                _write_sheet(ws, rows)
+                _write_sheet(ws, rows, columns)
                 wb.save(dest)
             written_paths.append(dest)
             continue
@@ -234,13 +271,13 @@ def export_bom_to_excel(
             )
 
         if use_csv:
-            _write_csv_file(dest, rows)
+            _write_csv_file(dest, rows, columns)
         else:
             wb       = openpyxl.Workbook()
             ws       = wb.active
             assert ws is not None
             ws.title = "汇总 BOM" if summarize else "BOM"
-            _write_sheet(ws, rows)
+            _write_sheet(ws, rows, columns)
             wb.save(dest)
         written_paths.append(dest)
 

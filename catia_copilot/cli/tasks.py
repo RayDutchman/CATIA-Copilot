@@ -10,6 +10,8 @@ import sys
 import time
 import traceback
 import uuid
+from catia_copilot.cli.scheduler import (SchedulerLaunch, SchedulerUncertain,
+                                         is_job_breakaway_denied, process_in_job)
 
 import win32api
 import win32event
@@ -75,7 +77,16 @@ def spawn_worker(task_id, root, *, command=None):
     with (directory / 'worker.log').open('ab', buffering=0) as output:
         options = dict(stdin=subprocess.DEVNULL, stdout=output, stderr=output,
                        close_fds=True, env=env, cwd=os.getcwd())
-        process = subprocess.Popen(command, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **options)
+        try:
+            process = subprocess.Popen(command, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **options)
+        except OSError as exc:
+            if not is_job_breakaway_denied(exc, in_job=process_in_job()):
+                raise
+            if command[1:3] == ['-m', 'catia_copilot.cli']:
+                command = [command[0], '-m', 'catia_copilot.cli', '_worker', task_id]
+            return SchedulerLaunch().start(task_id, command, cwd=options['cwd'], root=root,
+                                           log_path=directory / 'worker.log',
+                                           source_root=str(Path(__file__).resolve().parents[2]))
     identity = process_identity(process.pid)
     identity['breakaway'] = True
     return identity
@@ -114,17 +125,37 @@ class TaskManager:
             raise ValueError('任务不存在：' + task_id)
         return directory
 
+    def _cleanup_scheduler(self, task_id, directory):
+        launch = read_json(directory / 'launch.json') or {}
+        name = launch.get('scheduler')
+        if name != 'Catkit-' + task_id:
+            return
+        try:
+            from catia_copilot.cli.scheduler import delete_task
+            delete_task(name)
+        except Exception:
+            # 清理失败不覆盖已经持久化的业务结果/worker 状态。
+            return
+
     def start(self, tool, parameters, *, wait_seconds=30):
         with task_guard(self.root):
             active = read_json(self.root / 'active.json')
             if active:
                 previous = self.directory(active['task_id'])
                 terminal = read_json(previous / 'result.json')
-                identity = read_json(previous / 'worker.json')
-                if terminal is None and (identity is None or self.alive(identity)):
-                    return {'status': 'busy', 'task_id': active['task_id'], 'executed': False,
-                            'requested_tool': tool,
-                            'next': 'catkit task status --task ' + active['task_id']}
+                if terminal is None:
+                    state = self._state(active['task_id'])
+                    if state['status'] in ('launch_failed', 'worker_lost', 'completed'):
+                        (self.root / 'active.json').unlink(missing_ok=True)
+                        active = None
+                if active is None:
+                    pass
+                else:
+                    identity = read_json(previous / 'worker.json')
+                    if terminal is None and (identity is None or identity.get('scheduler_pending') or self.alive(identity)):
+                        return {'status': 'busy', 'task_id': active['task_id'], 'executed': False,
+                                'requested_tool': tool,
+                                'next': 'catkit task status --task ' + active['task_id']}
             task_id = uuid.uuid4().hex
             directory = self.root / task_id
             write_json(directory / 'request.json', {'tool': tool, 'parameters': parameters,
@@ -135,21 +166,73 @@ class TaskManager:
             write_json(self.root / 'active.json', {'task_id': task_id})
             try:
                 identity = self.launcher(task_id, self.root)
-                write_json(directory / 'worker.json', identity)
+                if identity.get('scheduler_pending'):
+                    write_json(directory / 'launch.json', identity)
+                else:
+                    write_json(directory / 'worker.json', identity)
             except Exception as exc:
-                write_json(directory / 'result.json', {'result': {'error': str(exc), 'task_id': task_id}})
+                if isinstance(exc, SchedulerUncertain):
+                    write_json(directory / 'launch.json', {'scheduler_pending': True,
+                                                          'scheduler': str(exc).split(':', 1)[0]})
+                else:
+                    write_json(directory / 'result.json', {'result': {'error': str(exc), 'task_id': task_id}})
         return self.wait(task_id, wait_seconds=wait_seconds)
 
     def _state(self, task_id):
         directory = self.directory(task_id)
         terminal = read_json(directory / 'result.json')
         if terminal is not None:
+            self._cleanup_scheduler(task_id, directory)
             return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
         identity = read_json(directory / 'worker.json')
+        launch = read_json(directory / 'launch.json') or {}
+        if launch.get('scheduler_pending') and identity is None:
+            try:
+                from catia_copilot.cli.scheduler import task_state
+                state = task_state(launch.get('scheduler')) if launch.get('scheduler') else None
+            except Exception as exc:
+                return {'status': 'running', 'task_id': task_id, 'scheduler': 'query_error',
+                        'monitor_message': str(exc), 'log_path': str(directory / 'worker.log')}
+            if state is None:
+                # Run 与 worker 完成/删除任务并发时，重新核对握手及业务结果。
+                terminal = read_json(directory / 'result.json')
+                identity = read_json(directory / 'worker.json')
+                if terminal is not None:
+                    self._cleanup_scheduler(task_id, directory)
+                    return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
+                if identity is not None:
+                    return self._state(task_id)
+                self._cleanup_scheduler(task_id, directory)
+                return {'status': 'worker_lost', 'task_id': task_id,
+                        'error': '计划任务不存在且无 worker 握手/结果；不会重复派发'}
+            if (isinstance(state, dict) and state.get('state') == 3 and
+                    state.get('last_run_time') is not None and not state.get('instances') and
+                    state.get('last_task_result', 0) != 0):
+                # 只有调度器确认曾运行且实例已结束、结果失败时才判定启动失败。
+                if read_json(directory / 'worker.json') is None and read_json(directory / 'result.json') is None:
+                    self._cleanup_scheduler(task_id, directory)
+                    active = read_json(self.root / 'active.json') or {}
+                    if active.get('task_id') == task_id:
+                        (self.root / 'active.json').unlink(missing_ok=True)
+                    return {'status': 'launch_failed', 'task_id': task_id,
+                            'error': '计划任务已尝试运行但失败；不会重复派发'}
+            terminal = read_json(directory / 'result.json')
+            identity = read_json(directory / 'worker.json')
+            if terminal is not None:
+                self._cleanup_scheduler(task_id, directory)
+                return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
+            if identity is not None:
+                return self._state(task_id)
+            return {'status': 'running', 'task_id': task_id, 'scheduler_state': state,
+                    'log_path': str(directory / 'worker.log')}
+        if identity is not None and identity.get('scheduler_pending'):
+            return {'status': 'running', 'task_id': task_id, 'log_path': str(directory / 'worker.log')}
         if identity is not None and not self.alive(identity):
             terminal = read_json(directory / 'result.json')
             if terminal is not None:
+                self._cleanup_scheduler(task_id, directory)
                 return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
+            self._cleanup_scheduler(task_id, directory)
             return {'status': 'worker_lost', 'task_id': task_id,
                     'error': '操作进程已退出且未留下结果；不会自动重复执行，CATIA 状态需另行确认'}
         scope = read_json(directory / 'catia.json')
@@ -187,7 +270,7 @@ class TaskManager:
             state = self._state(task_id)
             if state['status'] == 'completed':
                 return state['result']
-            if state['status'] == 'worker_lost':
+            if state['status'] in ('worker_lost', 'launch_failed'):
                 return state
             if state['status'] == 'waiting_for_dialog':
                 unchanged = state['dialog']['fingerprint'] == ignore_fingerprint
@@ -223,6 +306,7 @@ def run_worker(task_id, *, operation=execute_operation, root=None):
             claim.write(str(os.getpid()))
     except FileExistsError:
         return 0
+    write_json(directory / 'worker.json', process_identity(os.getpid()))
     request = read_json(directory / 'request.json')
     try:
         os.chdir(request['cwd'])
@@ -232,6 +316,13 @@ def run_worker(task_id, *, operation=execute_operation, root=None):
         traceback.print_exc(file=sys.stderr)
         payload = {'error': str(exc) or type(exc).__name__, 'task_id': task_id}
     write_json(directory / 'result.json', {'result': payload})
+    identity = read_json(directory / 'launch.json') or {}
+    if identity.get('scheduler'):
+        from catia_copilot.cli.scheduler import delete_task
+        try:
+            delete_task(identity['scheduler'])
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
     return 0
 
 

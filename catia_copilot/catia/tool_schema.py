@@ -1,5 +1,6 @@
 """CATIA 工具参数契约，供 CLI 查询与参数解析。"""
 from catia_copilot.catia.modeling_contract import build_run_modeling_script_description
+from catia_copilot.catia.bom_schema import bom_schema
 
 tools_schema = [
 {
@@ -39,96 +40,7 @@ tools_schema = [
             },
         },
     },
-{
-        "type": "function",
-        "function": {
-            "name": "collect_bom",
-            "description": (
-                "采集 CATIA CATProduct 的 BOM（物料清单），返回层级零件清单。"
-                "file_path 为 null 时使用当前活动文档。"
-                "返回 {row_count, rows}，每行包含 Level/Type/Part Number/Nomenclature/"
-                "Definition/Revision/Source/Description/Quantity 等标准列，"
-                "以及 custom_columns 中指定的用户自定义属性列。"
-                "summarize=true 时返回去重汇总结果（无 Level 列，Quantity 为全树累计）。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": ["string", "null"],
-                        "description": "CATProduct 文件路径，传 null 使用当前活动文档",
-                    },
-                    "columns": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": ("要采集的标准列名列表。""可选值：Level, Type, Part Number, Nomenclature, Definition, Revision, Source, Description, Quantity。""默认采集全部标准列。"),
-                    },
-                    "custom_columns": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": ("用户自定义属性列名列表（通过 CATIA 零件属性对话框写入的属性）。""预设属性名包括：零件类型、设计状态、材料、重量、物料编码、存货类别、规格型号、备注。"),
-                    },
-                    "summarize": {
-                        "type": "boolean",
-                        "description": "是否折叠为平面汇总（去重 + 累计数量），默认 false",
-                    },
-                    "include_assemblies": {
-                        "type": "boolean",
-                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
-                    },
-                    "sort_column": {
-                        "type": ["string", "null"],
-                        "description": "汇总模式下的排序列名，默认按 Part Number 排序（仅在 summarize=true 时生效）",
-                    },
-                },
-                "required": [],
-            },
-        },
-    },
-{
-        "type": "function",
-        "function": {
-            "name": "export_bom_to_excel",
-            "description": ("将 CATProduct 的 BOM 导出为 Excel（.xlsx）或 CSV 文件。""输出文件名规则：{原文件名}_BOM.xlsx（层级模式）或 {原文件名}_汇总BOM.xlsx（汇总模式）。""传 [null] 使用当前活动文档。返回 {success, exported_files}（导出文件路径列表）。"),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_paths": {
-                        "type": "array",
-                        "items": {"type": ["string", "null"]},
-                        "description": "CATProduct 文件路径列表（传 [null] 使用当前活动文档）",
-                    },
-                    "output_folder": {
-                        "type": "string",
-                        "description": "输出目录路径，不填则与源文件同目录",
-                    },
-                    "columns": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": ("要导出的标准列名列表。""可选值：Level, Type, Part Number, Nomenclature, Definition, Revision, Source, Description, Quantity。""默认导出全部标准列。"),
-                    },
-                    "summarize": {
-                        "type": "boolean",
-                        "description": "是否导出汇总模式（去重+累计数量），默认 false",
-                    },
-                    "summary_include_assemblies": {
-                        "type": "boolean",
-                        "description": "汇总模式下是否包含产品行，默认 false（仅在 summarize=true 时生效）",
-                    },
-                    "summary_sort_column": {
-                        "type": ["string", "null"],
-                        "description": "汇总模式下的排序列名，默认按 Part Number 排序（仅在 summarize=true 时生效）",
-                    },
-                    "output_format": {
-                        "type": "string",
-                        "enum": ["xlsx", "csv"],
-                        "description": "输出格式，默认 xlsx",
-                    },
-                },
-                "required": ["file_paths"],
-            },
-        },
-    },
+*bom_schema,
 {
         "type": "function",
         "function": {
@@ -647,3 +559,6 @@ tools_schema = [
         },
     }
 ]
+
+from .inspection_schema import inspection_schema
+tools_schema.extend(inspection_schema)

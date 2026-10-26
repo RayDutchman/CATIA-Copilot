@@ -1,4 +1,4 @@
-"""CATIA 工具服务：保持原工具参数与结果，独立于聊天界面。"""
+"""CATIA 工具服务与业务分发，独立于聊天界面。"""
 
 from __future__ import annotations
 import fnmatch
@@ -11,11 +11,8 @@ import traceback
 import uuid
 from pathlib import Path
 from typing import Any, Callable
-from catia_copilot.catia.bom_collect import (
-    collect_bom_rows_archive,
-    flatten_bom_to_summary,
-)
-from catia_copilot.catia.bom_export import export_bom_to_excel
+from catia_copilot.catia.bom_service import collect_bom, edit_bom
+from catia_copilot.catia.bom_output import export_bom
 from catia_copilot.catia.bom_write import write_bom_to_catia
 from catia_copilot.catia.conversion import convert_drawing_to_pdf, convert_part_to_step
 from catia_copilot.catia.dependencies import (
@@ -41,7 +38,6 @@ from catia_copilot.catia.modeling import (
 )
 from catia_copilot.catia.template import apply_part_template
 from catia_copilot.constants_data import (
-    BOM_DEFAULT_COLUMNS,
     PRESET_USER_REF_PROPERTIES,
     PRESET_USER_REF_PROPERTY_OPTIONS,
 )
@@ -113,73 +109,6 @@ def tool_open_catia_file(file_path: str, foreground: bool = True, **_kwargs) -> 
         return json.dumps({"success": True, "document_name": name}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
-
-
-def tool_collect_bom(
-    file_path: str | None = None,
-    columns: list[str] | None = None,
-    custom_columns: list[str] | None = None,
-    summarize: bool = False,
-    include_assemblies: bool = False,
-    sort_column: str | None = None,
-    progress_signal=None,
-    **_kwargs,
-) -> str:
-
-    cols = columns or BOM_DEFAULT_COLUMNS
-    custom_cols = custom_columns or []
-    cb = make_progress_callback(progress_signal.emit) if progress_signal else None
-
-    rows = collect_bom_rows_archive(file_path, cols, custom_cols, progress_callback=cb)
-
-    # 过滤内部键（以 _ 开头），只保留可读字段
-    _INTERNAL = {"_filepath", "_not_found", "_no_file", "_unreadable",
-                 "_placement", "_mass_props", "_root_mp", "_meas_failed"}
-    clean_rows = [
-        {k: v for k, v in row.items() if k not in _INTERNAL}
-        for row in rows
-    ]
-
-    # summarize=True 时折叠为平面汇总（去重 + 累计数量）
-    if summarize:
-        clean_rows = flatten_bom_to_summary(clean_rows, include_assemblies, sort_column)
-
-    return json.dumps(
-        {"row_count": len(clean_rows), "rows": clean_rows},
-        ensure_ascii=False,
-        default=str,
-    )
-
-
-def tool_export_bom_to_excel(
-    file_paths: list[str | None],
-    output_folder: str | None = None,
-    columns: list[str] | None = None,
-    custom_columns: list[str] | None = None,
-    summarize: bool = False,
-    summary_include_assemblies: bool = False,
-    summary_sort_column: str | None = None,
-    output_format: str = "xlsx",
-    progress_signal=None,
-    **_kwargs,
-) -> str:
-
-    cb = make_progress_callback(progress_signal.emit) if progress_signal else None
-    paths = export_bom_to_excel(
-        file_paths,
-        output_folder=output_folder,
-        columns=columns,
-        custom_columns=custom_columns,
-        row_progress_callback=cb,
-        summarize=summarize,
-        summary_include_assemblies=summary_include_assemblies,
-        summary_sort_column=summary_sort_column,
-        output_format=output_format,
-    )
-    return json.dumps(
-        {"success": True, "exported_files": [str(p) for p in paths]},
-        ensure_ascii=False,
-    )
 
 
 def tool_write_bom_to_catia(
@@ -881,8 +810,9 @@ tools_map = {
     'check_catia_connection': tool_check_catia_connection,
     'diagnose_catia_connection': tool_diagnose_catia_connection,
     'open_catia_file': tool_open_catia_file,
-    'collect_bom': tool_collect_bom,
-    'export_bom_to_excel': tool_export_bom_to_excel,
+    'collect_bom': collect_bom,
+    'export_bom_to_excel': export_bom,
+    'edit_bom': edit_bom,
     'write_bom_to_catia': tool_write_bom_to_catia,
     'convert_to_pdf': tool_convert_to_pdf,
     'convert_to_step': tool_convert_to_step,
@@ -900,3 +830,6 @@ tools_map = {
     'find_drawing_for_part': tool_find_drawing_for_part,
     'run_modeling_script': tool_run_modeling_script,
 }
+
+from .inspection_service import inspection_tools
+tools_map.update(inspection_tools)

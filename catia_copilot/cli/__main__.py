@@ -9,8 +9,12 @@ def entrypoint():
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    if len(sys.argv) == 3 and sys.argv[1] == '_worker':
-        return run_worker(sys.argv[2])
+    if len(sys.argv) >= 3 and sys.argv[1] == '_worker':
+        root = sys.argv[3] if len(sys.argv) > 3 else None
+        if len(sys.argv) > 4:
+            log = open(sys.argv[4], 'a', encoding='utf-8', buffering=1)
+            sys.stdout = sys.stderr = log
+        return run_worker(sys.argv[2], root=root)
     return main(executor=execute)
 
 

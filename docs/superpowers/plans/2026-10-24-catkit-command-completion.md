@@ -106,3 +106,12 @@
 - `product export step --node` 按用户决定排除；树的 --node 仅是只读定位。
 - COM 查证安排在对应实现前；查证失败时记录确切缺口，不用 guessed API 或 mock 通过冒充实现完成。
 - 执行方式待用户选择；本计划不授权自动提交、发布或关闭用户既有 CATIA 文档。
+
+## 执行记录
+
+- 用户选择本会话顺序实施；随后另行授权提交基线 `e6ffbfa`，新命令补全改动尚未提交。
+- 任务 1–5 已接线并回归；旧工具函数 AST 对照仍通过。16 步源码 CLI 实机闭环通过，夹具清理并恢复原活动文档。
+- 任务 6：411 项 Python 回归、3 项安装器测试通过；统一 Nuitka 构建与正式目录覆盖安装完成，正式 EXE 的 15 个新增命令 schema 全部验证通过，构建中间文件已清理。
+- 纠正规划依据：mass_props_collect 的实际内部单位为 kg/mm/kg·mm²（源码顶部、Analyze实现与实机公式一致），上文 SI 表述不准确；不变更现有数值。
+- 查询范围明确：part tree 不展开特征参数/布尔吸收体；drawing info 用已查证的 GenerativeBehavior.Document 获取生成源，而非完整底层几何链接枚举。这些边界写入 schema 和 Skill，不伪称全量读取。
+- 待验证：有效保持测量的正向实机重读、真实关闭/另存取消操作、无 Python Windows 环境及旧图纸相关未测场景。详情见 `docs/CATKIT_ACCEPTANCE.md`。

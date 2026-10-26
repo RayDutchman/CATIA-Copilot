@@ -4,6 +4,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { version } = require('../package.json');
+const { ensureUserPath } = require('./user-path.cjs');
 
 function installHome() {
   return process.env.CATKIT_HOME || path.join(process.env.LOCALAPPDATA || os.homedir(), 'Catkit');
@@ -50,6 +51,10 @@ function parseOptions(args) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
+    if (key === '--no-path') {
+      options[key] = true;
+      continue;
+    }
     if (!['--from-zip', '--sha256', '--skills-dir', '--version'].includes(key) || !args[i + 1]) {
       throw new Error(`未知或缺值参数：${key}`);
     }
@@ -91,7 +96,10 @@ async function install(args) {
       `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(extracted)}`], { stdio: 'inherit' });
     const skillsDir = options['--skills-dir'] ? path.resolve(options['--skills-dir']) : path.join(os.homedir(), '.agents', 'skills');
     const installed = installDirectory(extracted, installHome(), skillsDir, selectedVersion);
-    console.log(JSON.stringify({ installed: true, ...installed, executable: selectedExecutable() }));
+    const executable = selectedExecutable();
+    const userPath = options['--no-path'] ? { skipped: true } : ensureUserPath(path.dirname(path.resolve(executable)));
+    console.log(JSON.stringify({ installed: true, ...installed, executable, userPath,
+      ...(options['--no-path'] ? {} : { notice: '用户 PATH 已配置；现有终端或 AI 宿主需重新打开后使用 catkit。' }) }));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }
 module.exports = { install, installHome, installDirectory, selectedExecutable, checksum };
