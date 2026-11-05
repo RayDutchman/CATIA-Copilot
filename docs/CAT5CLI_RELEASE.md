@@ -31,7 +31,7 @@ ZIP 内为 standalone runtime、许可证及配套 Skill，不含用户 CAD 文�
 2. 确认 npm 账号有 `@raydutchman` scope 发布权限，GitHub 账号有目标仓库 Release 权限。
 3. 将发布提交推送至仓库，并为该提交建立 `cat5cli-v0.1.0-beta.1` 标签。
 4. 创建 GitHub prerelease，上传 ZIP 与 SHA256SUMS。先确认公开下载地址可读，再发 npm，避免启动器指向不存在的文件。
-5. 在 `packages/cat5cli` 执行 `npm publish --access public --tag beta`。当前 publishConfig 默认 beta，不应把预览版发布为 latest。
+5. 在 `packages/cat5cli` 执行 `npm publish --access public --tag beta`。当前 publishConfig 默认 beta；首版发布后 latest 和 beta 均指向0.1.0-beta.1，按用户决定保留。latest是默认安装渠道，不等同于稳定性承诺，不自动移除。
 6. 从另一干净环境运行 `npx @raydutchman/cat5cli@beta install`，确认版本、校验和、PATH、Skill，以及有许可 CATIA 环境中的业务调用。
 
 本机登录操作由账号持有人完成：
