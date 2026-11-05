@@ -24,4 +24,4 @@ dependencies = [
 
 [project.scripts]
 catia-copilot = "main:main"
-catkit = "catia_copilot.cli.__main__:entrypoint"
+cat5cli = "catia_copilot.cli.__main__:entrypoint"

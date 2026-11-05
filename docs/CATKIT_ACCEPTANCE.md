@@ -1,5 +1,9 @@
 # Catkit 验收记录
 
+> **当前状态（2026-11-05）：** 用户侧名称已迁移为 cat5cli，预览版本为 0.1.0-beta.1；本文其余 Catkit 命名及数据均为历史验收记录，不代表当前发布状态。CLI/Skill 当前入口见 [skills/cat5cli/SKILL.md](../skills/cat5cli/SKILL.md)。
+
+最新验证：488项Python、8项安装器测试通过；本机npx安装、独立Skill安装和正式EXE业务实测通过，尚未公开发布。详见[cat5cli发布准备验收](superpowers/benchmarks/2026-11-05-cat5cli-release-preparation.md)及[发布流程](CAT5CLI_RELEASE.md)。
+
 实现工作区：`feat/catkit-cli`（独立 worktree）；迁移基线：`1523f65`。
 目标：原 21 个 AI CATIA 工具等价迁移到 CLI，GUI 不再内置 AI。
 

@@ -9,6 +9,22 @@ from catia_copilot.cli.tasks import TaskManager, run_worker, write_json
 
 
 class TestTasks(unittest.TestCase):
+    def test_task_root_environment_precedence(self):
+        from unittest.mock import patch
+        from catia_copilot.cli.tasks import task_root
+        with patch.dict(os.environ, {'CAT5CLI_TASKS_DIR': 'D:/explicit/tasks',
+                                     'CAT5CLI_HOME': 'D:/home',
+                                     'LOCALAPPDATA': 'D:/local'}, clear=False):
+            self.assertEqual(task_root(), Path('D:/explicit/tasks'))
+        with patch.dict(os.environ, {'CAT5CLI_HOME': 'D:/home',
+                                     'LOCALAPPDATA': 'D:/local'}, clear=False):
+            os.environ.pop('CAT5CLI_TASKS_DIR', None)
+            self.assertEqual(task_root(), Path('D:/home/tasks'))
+        with patch.dict(os.environ, {'LOCALAPPDATA': 'D:/local'}, clear=False):
+            os.environ.pop('CAT5CLI_TASKS_DIR', None)
+            os.environ.pop('CAT5CLI_HOME', None)
+            self.assertEqual(task_root(), Path('D:/local/Cat5cli/tasks'))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -109,7 +125,7 @@ class TestTasks(unittest.TestCase):
         self.assertEqual(len(self.launches), 1)
 
     def test_scheduler_pending_remains_busy_and_running_not_terminal(self):
-        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-test'}
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Cat5cli-test'}
         from unittest.mock import patch
         with patch('catia_copilot.cli.scheduler.task_state', return_value=4):
             result = self.manager.start('first', {}, wait_seconds=0)
@@ -120,7 +136,7 @@ class TestTasks(unittest.TestCase):
         self.assertEqual(busy['task_id'], result['task_id'])
 
     def test_ready_scheduler_with_failed_run_result_is_terminal_and_releases_slot(self):
-        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Cat5cli-' + task_id}
         from unittest.mock import patch
         with patch('catia_copilot.cli.scheduler.task_state', return_value={'state': 3, 'last_run_time': '2026-10-26', 'last_task_result': 1, 'instances': 0}):
             first = self.manager.start('first', {}, wait_seconds=0)
@@ -133,7 +149,7 @@ class TestTasks(unittest.TestCase):
         self.assertNotEqual(second['task_id'], first['task_id'])
 
     def test_ready_scheduler_without_run_is_not_failure(self):
-        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Cat5cli-' + task_id}
         from unittest.mock import patch
         with patch('catia_copilot.cli.scheduler.task_state', return_value={'state': 3, 'last_run_time': None, 'last_task_result': 0, 'instances': 0}):
             result = self.manager.start('first', {}, wait_seconds=0)
@@ -141,7 +157,7 @@ class TestTasks(unittest.TestCase):
         self.assertIn('task_id', result)
 
     def test_fast_scheduler_completion_race_prefers_worker_result(self):
-        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id}
+        self.manager.launcher = lambda task_id, root: {'scheduler_pending': True, 'scheduler': 'Cat5cli-' + task_id}
         from unittest.mock import patch
         def info(_name):
             task_id = json.loads((self.manager.root / 'active.json').read_text(encoding='utf-8'))['task_id']
@@ -154,7 +170,7 @@ class TestTasks(unittest.TestCase):
         task_id = 'b' * 32
         directory = Path(self.temp.name) / task_id
         write_json(directory / 'request.json', {'tool': 'fixture', 'parameters': {}})
-        write_json(directory / 'launch.json', {'scheduler_pending': True, 'scheduler': 'Catkit-' + task_id})
+        write_json(directory / 'launch.json', {'scheduler_pending': True, 'scheduler': 'Cat5cli-' + task_id})
         def missing(_name):
             write_json(directory / 'result.json', {'result': {'ok': True}})
             return None
@@ -162,13 +178,13 @@ class TestTasks(unittest.TestCase):
         with patch('catia_copilot.cli.scheduler.task_state', side_effect=missing):
             with patch('catia_copilot.cli.scheduler.delete_task') as cleanup:
                 self.assertEqual(self.manager.status(task_id)['status'], 'completed')
-                cleanup.assert_called_once_with('Catkit-' + task_id)
+                cleanup.assert_called_once_with('Cat5cli-' + task_id)
 
     def test_completed_status_cleanup_failure_does_not_replace_result(self):
         task_id = 'c' * 32
         directory = Path(self.temp.name) / task_id
         write_json(directory / 'request.json', {'tool': 'fixture', 'parameters': {}})
-        write_json(directory / 'launch.json', {'scheduler': 'Catkit-' + task_id})
+        write_json(directory / 'launch.json', {'scheduler': 'Cat5cli-' + task_id})
         write_json(directory / 'result.json', {'result': {'ok': True}})
         from unittest.mock import patch
         with patch('catia_copilot.cli.scheduler.delete_task', side_effect=OSError('no permission')):

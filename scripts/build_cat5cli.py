@@ -1,4 +1,4 @@
-"""Windows 原生 Nuitka standalone 构建与 ZIP 打包。"""
+"""Build and package the native Windows cat5cli standalone runtime."""
 import argparse
 import ast
 import hashlib
@@ -12,31 +12,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def app_version():
-    tree = ast.parse((ROOT / 'catia_copilot/constants.py').read_text(encoding='utf-8'))
+    tree = ast.parse((ROOT / 'catia_copilot/cli/version.py').read_text(encoding='utf-8'))
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'APP_VERSION' for t in node.targets):
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'CLI_VERSION' for t in node.targets):
             return ast.literal_eval(node.value)
-    raise RuntimeError('APP_VERSION 未找到')
+    raise RuntimeError('CLI_VERSION was not found')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, default=ROOT / 'dist/catkit')
-    parser.add_argument('--dry-run', action='store_true', help='只打印构建命令')
+    parser.add_argument('--output', type=Path, default=ROOT / 'dist/cat5cli')
+    parser.add_argument('--dry-run', action='store_true', help='Print the build command without executing it')
+    parser.add_argument('--no-install', action='store_true', help='Build release artifacts without installing locally')
     args = parser.parse_args()
     if sys.platform != 'win32':
-        parser.error('请在 Windows 原生 Python 中构建')
+        parser.error('Build using native Windows Python')
     version = app_version()
     output = args.output.resolve()
     version_file = ROOT / 'catia_copilot/cli/_build_version.json'
     command = [sys.executable, '-m', 'nuitka', '--mode=standalone', '--windows-console-mode=force',
-               '--output-filename=catkit.exe', '--output-dir='+str(output),
+               '--output-filename=cat5cli.exe', '--output-dir='+str(output),
                '--include-module=comtypes.persist', '--include-module=comtypes.typeinfo',
                '--include-module=comtypes.automation', '--include-module=comtypes.stream',
                '--include-package=comtypes.gen',
                '--nofollow-import-to=PySide6,PyQt5,nuitka,pytest,win32com.test,win32com.demos,comtypes.test',
                '--include-data-files='+str(version_file)+'=catia_copilot/cli/_build_version.json',
-               '--assume-yes-for-downloads', str(ROOT / 'catkit.py')]
+               '--assume-yes-for-downloads', str(ROOT / 'cat5cli.py')]
     if args.dry_run:
         print(json.dumps(command, ensure_ascii=False, indent=2))
         return 0
@@ -53,29 +54,31 @@ def main():
             version_file.unlink(missing_ok=True)
         else:
             version_file.write_bytes(old_version)
-    distribution = output / 'catkit.dist'
-    subprocess.run([str(distribution / 'catkit.exe'), '--help'], check=True)
-    subprocess.run([str(distribution / 'catkit.exe'), '--version'], check=True)
-    subprocess.run([str(distribution / 'catkit.exe'), 'schema', 'document', 'save'], check=True)
-    subprocess.run([str(distribution / 'catkit.exe'), 'schema', 'status', '--diagnose'], check=True)
-    invalid = subprocess.run([str(distribution / 'catkit.exe'), 'schema', 'not-a-command'], capture_output=True, text=True, encoding='utf-8')
+    distribution = output / 'cat5cli.dist'
+    subprocess.run([str(distribution / 'cat5cli.exe'), '--help'], check=True)
+    subprocess.run([str(distribution / 'cat5cli.exe'), '--version'], check=True)
+    subprocess.run([str(distribution / 'cat5cli.exe'), 'schema', 'document', 'save'], check=True)
+    subprocess.run([str(distribution / 'cat5cli.exe'), 'schema', 'status', '--diagnose'], check=True)
+    invalid = subprocess.run([str(distribution / 'cat5cli.exe'), 'schema', 'not-a-command'], capture_output=True, text=True, encoding='utf-8')
     if invalid.returncode != 2:
-        raise RuntimeError('未知 schema 路径应返回退出码 2')
+        raise RuntimeError('An unknown schema path must return exit code 2')
     if not json.loads(invalid.stdout).get('error'):
-        raise RuntimeError('未知 schema 路径应返回 JSON 错误')
-    shutil.copytree(ROOT / 'skills/catkit', distribution / 'skills/catkit', dirs_exist_ok=True)
+        raise RuntimeError('An unknown schema path must return a JSON error')
+    shutil.copytree(ROOT / 'skills/cat5cli', distribution / 'skills/cat5cli', dirs_exist_ok=True)
     shutil.copy2(ROOT / 'LICENSE', distribution / 'LICENSE')
-    archive = Path(shutil.make_archive(str(output / f'catkit-{version}-windows-x64'), 'zip', distribution))
+    shutil.copy2(ROOT / 'THIRD_PARTY_NOTICES.md', distribution / 'THIRD_PARTY_NOTICES.md')
+    archive = Path(shutil.make_archive(str(output / f'cat5cli-{version}-windows-x64'), 'zip', distribution))
     with archive.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output / 'SHA256SUMS').write_text(f'{digest}  {archive.name}\n', encoding='utf-8')
     # 构建验证通过后覆盖正式安装，避免散落多套可执行程序。
-    subprocess.run(['node', str(ROOT / 'packages/catkit/bin/catkit.cjs'), 'install',
-                    '--from-zip', str(archive), '--sha256', digest], cwd=ROOT, check=True)
-    for old_archive in output.glob('catkit-*-windows-x64.zip'):
+    if not args.no_install:
+        subprocess.run(['node', str(ROOT / 'packages/cat5cli/bin/cat5cli.cjs'), 'install',
+                        '--from-zip', str(archive), '--sha256', digest], cwd=ROOT, check=True)
+    for old_archive in output.glob('cat5cli-*-windows-x64.zip'):
         if old_archive != archive:
             old_archive.unlink()
-    for name in ('catkit.build', 'catkit.dist', 'catkit.onefile-build'):
+    for name in ('cat5cli.build', 'cat5cli.dist', 'cat5cli.onefile-build'):
         if (output / name).exists():
             shutil.rmtree(output / name)
     print(archive)

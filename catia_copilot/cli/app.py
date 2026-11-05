@@ -2,10 +2,10 @@
 import argparse
 from contextlib import redirect_stdout
 import json
-from importlib import metadata
 from pathlib import Path
 import sys
 from catia_copilot.catia.tool_schema import tools_schema
+from .version import CLI_VERSION
 
 COMMANDS = {
     ('status',): 'check_catia_connection',
@@ -65,11 +65,8 @@ CONTROL_SCHEMAS = {
 def version_text():
     info = Path(__file__).with_name('_build_version.json')
     if info.is_file():
-        return 'catkit ' + json.loads(info.read_text(encoding='utf-8'))['version']
-    try:
-        return 'catkit ' + metadata.version('catia-copilot')
-    except metadata.PackageNotFoundError:
-        return 'catkit (source)'
+        return 'cat5cli ' + json.loads(info.read_text(encoding='utf-8'))['version']
+    return 'cat5cli ' + CLI_VERSION
 
 
 def json_argument(value):
@@ -89,7 +86,7 @@ class UniqueFiles(argparse.Action):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog='catkit', description='CATIA command-line tools')
+    parser = argparse.ArgumentParser(prog='cat5cli', description='CATIA command-line tools')
     parser.add_argument('--version', action='version', version=version_text())
     parsers = {(): parser}
     groups = {}
@@ -141,7 +138,7 @@ def build_parser():
         if name in ('convert_to_pdf', 'convert_to_step'):
             leaf.add_argument('--overwrite', choices=['error', 'skip', 'replace'], default=argparse.SUPPRESS)
     schema = groups[()].add_parser('schema', help='Inspect tool parameter schemas',
-        description='Enter command paths as separate words, such as catkit schema bom export or catkit schema drawing export pdf. Omit the path to list all commands.')
+        description='Enter command paths as separate words, such as cat5cli schema bom export or cat5cli schema drawing export pdf. Omit the path to list all commands.')
     schema.add_argument('path', nargs='*', help='Space-separated command path; do not use dots or tool function names')
     schema.add_argument('--diagnose', action='store_true', help='Inspect the detailed schema for status diagnostics')
     schema.set_defaults(_tool='_schema', pretty=True, verbose=False)
@@ -197,7 +194,7 @@ def main(argv=None, *, executor=None):
             if args.get('script', object()) is None:
                 args.pop('script')
             if executor is None:
-                raise RuntimeError('Use the python -m catia_copilot.cli or catkit entry point')
+                raise RuntimeError('Use the python -m catia_copilot.cli or cat5cli entry point')
             # 业务函数中偶发 print 也不能污染 JSON。
             with redirect_stdout(sys.stderr):
                 result = executor(name, args)

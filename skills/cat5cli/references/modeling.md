@@ -1,10 +1,10 @@
 # 脚本建模
 
-建模只有一个入口：`catkit run --file <脚本>`。由宿主写 UTF-8 Python 文件，CLI 在自身 worker 中执行 `build(ctx)`；不直接从宿主调用 Python/COM 来替代 CLI。
+建模只有一个入口：`cat5cli run --file <脚本>`。由宿主写 UTF-8 Python 文件，CLI 在自身 worker 中执行 `build(ctx)`；不直接从宿主调用 Python/COM 来替代 CLI。
 
 ## 先发现能力
 
-运行 `catkit schema run` 获取该版本公开的 ctx 方法、签名和示例；需要参数用法时再读 `catkit run --help`。尺寸计算、循环、草图及特征引用在同一脚本内组合。
+运行 `cat5cli schema run` 获取该版本公开的 ctx 方法、签名和示例；需要参数用法时再读 `cat5cli run --help`。尺寸计算、循环、草图及特征引用在同一脚本内组合。
 
 已有脚本入口不代表任意 Body 编辑、既有特征参数修改、草图编辑都已支持。未在契约中提供的方法不能按名称猜测；先明确缺口。运行环境只保证内置能力所需依赖，不保证任意第三方 import。
 
@@ -24,7 +24,7 @@ def build(ctx):
 ```
 
 ```powershell
-catkit run --file D:/任务/build.py
+cat5cli run --file D:/任务/build.py
 ```
 
 `ctx.save_part` 的 SaveAs 路径使用 Windows 原生反斜杠 raw string。不要依赖 CATIA 接受正斜杠，更不要传 `/mnt/d/...`。

@@ -12,20 +12,20 @@
 
 ## Features
 
-### External AI integration: Catkit
+### External AI integration: cat5cli
 
-The desktop application no longer includes AI chat or provider configuration. External AI hosts use the Windows Catkit CLI and its [Skill](skills/catkit/SKILL.md).
+The desktop application no longer includes AI chat or provider configuration. External AI hosts use the Windows cat5cli CLI and its [Skill](skills/cat5cli/SKILL.md), compatible with the cat5cli 0.1.x preview; command details follow the installed schema. Company-specific BOM rules belong in a separate private Skill.
 The CLI preserves the existing 21 CATIA tools: documents, properties, BOM, exports, templates, mass properties and `build(ctx)` scripts.
 
 ```powershell
-python -m catia_copilot.cli --help
-python -m catia_copilot.cli schema bom export
-python -m catia_copilot.cli run --file D:/scripts/build.py
+cat5cli --help
+cat5cli schema bom export
+cat5cli run --file D:/scripts/build.py
 ```
 
-Build a Windows standalone distribution with `python scripts/build_catkit.py`.
-See [local installer instructions](packages/catkit/README.md); the npm package has not been published.
-CATIA integration acceptance is pending; offline tests do not establish live COM compatibility.
+The preview version is `0.1.0-beta.1`; the executable is `Cat5cli/runtime/cat5cli.exe` under LOCALAPPDATA. Install with `npx @raydutchman/cat5cli@beta install`.
+Install the matching Skill: `npx skills add https://github.com/RayDutchman/CATIA-Copilot/tree/cat5cli-v0.1.0-beta.1/skills/cat5cli --skill cat5cli -g -a opencode`. For local ZIP installation, use `node packages/cat5cli/bin/cat5cli.cjs install --from-zip ...`. See the [Skill](skills/cat5cli/SKILL.md).
+BOM and modeling workflows have live CATIA coverage; some drawing workflows and deployment on a separate Windows machine still need acceptance. See [release notes and validation boundaries](docs/CAT5CLI_RELEASE.md).
 
 ### Workbenches
 

@@ -29,7 +29,7 @@ def main(executable=None):
             command = [str(executable)] if executable else [sys.executable, '-m', 'catia_copilot.cli']
             process = subprocess.run([*command, *args],
                                      cwd=ROOT, capture_output=True, encoding='utf-8', timeout=50,
-                                     env={**os.environ, 'CATKIT_TASKS_DIR': str(folder / 'tasks')})
+                                     env={**os.environ, 'CAT5CLI_TASKS_DIR': str(folder / 'tasks')})
             payload = json.loads(process.stdout)
             pending = payload.get('status') in ('running', 'waiting_for_dialog', 'busy')
             results.append({'command': list(args), 'exit': process.returncode,

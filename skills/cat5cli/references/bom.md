@@ -13,9 +13,9 @@ collect、edit、export 通过 `--doc <已打开文档标识>` 或 `--active` �
 | `summary` | 全树数量汇总；默认不包含装配件，--include-assemblies 会包含装配件及根装配 |
 
 ```powershell
-catkit document open --file-path 'D:\项目\总装.CATProduct'
-catkit bom collect --view hierarchical
-catkit bom collect --doc '总装.CATProduct' --view full
+cat5cli document open --file-path 'D:\项目\总装.CATProduct'
+cat5cli bom collect --view hierarchical
+cat5cli bom collect --doc '总装.CATProduct' --view full
 ```
 
 采集结果提供行数据、列和目标定位信息。编辑的 node 使用返回的目标路径或 product tree 的路径，不用表格行号、显示名或猜测的 PN 代替。装配结构变化后重新查询；同 PN 不一定代表同一引用文件。
@@ -48,11 +48,12 @@ CATIA COM 的参数 Name 可能为“产品名\属性组\字段名”；CLI 去�
 ```
 
 ```powershell
-catkit schema bom edit
-catkit bom edit --doc '总装.CATProduct' --changes '@D:\任务\changes.json'
+cat5cli schema bom edit
+cat5cli bom edit --doc '总装.CATProduct' --changes '@D:\任务\changes.json'
 ```
 
 - master 修改共享主数据，可能影响多个引用实例；instance 修改实例定义，目前可写列为 Instance Name。重复引用同一子装配时，其内部实例定义也可能在多个出现路径联动。
+- 实例改名写入父级子装配定义，并重新沿目标出现路径回读；只有名称一致才计入 applied_count。results 中 observed_value 是实际回读值；不一致或无法回读时返回 failed，不代表已撤销写入，不应盲目重跑整批。
 - 列名使用契约中的业务键，value 为字符串。自定义用户属性需在 --custom-columns 显式声明并使用 master；已有属性更新，不存在时新建字符串属性。新建不支持指定数值/长度等参数类型；只读结构列、实例描述不能冒充自定义属性写入。
 - CLI 不限定公司的自定义属性名单或枚举值；公司填写规范由适用 Skill 指导。`document properties set` 的 user_defined 同样不受 GUI 预设名单约束。
 - 查看 applied_count、failed_count 和逐项 results。失败项不会让成功项回滚，也不会自动重跑整批；依据结果修正必要项。
@@ -61,7 +62,7 @@ catkit bom edit --doc '总装.CATProduct' --changes '@D:\任务\changes.json'
 ## 导出
 
 ```powershell
-catkit bom export --doc '总装.CATProduct' --view summary --output-file 'D:\任务\BOM.xlsx'
+cat5cli bom export --doc '总装.CATProduct' --view summary --output-file 'D:\任务\BOM.xlsx'
 ```
 
 输出扩展名选择 `.xlsx` 或 `.csv`，内容与 collect 的同视图一致；使用 --columns/--custom-columns 选择列，省略 --custom-columns 时导出自动发现的全部用户属性列。覆盖策略是 --overwrite error/skip/replace；这不是 CATIA 弹窗的通用自动确认。

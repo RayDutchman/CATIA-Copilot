@@ -1,4 +1,4 @@
-"""经用户授权运行的 Catkit 实机工具验收；仅修改本次临时夹具。"""
+"""经用户授权运行的 Cat5cli 实机工具验收；仅修改本次临时夹具。"""
 import json
 import argparse
 import os
@@ -96,13 +96,13 @@ def main():
         script = directory / 'fixtures.py'
         script.write_text(
             'def build(ctx):\n'
-            '    a = ctx.create_part("CKT_BASE", "Catkit base fixture")\n'
+            '    a = ctx.create_part("CKT_BASE", "Cat5cli base fixture")\n'
             '    sk = ctx.add_sketch(a, "xy")\n'
             '    ctx.draw_rect(sk, 0, 0, 100, 60)\n'
             '    ctx.add_pad(a, sk, 20)\n'
             '    ctx.update_part(a)\n'
             f'    ctx.save_part(a, {str(part_a)!r})\n'
-            '    b = ctx.create_part("CKT_CAP", "Catkit cap fixture")\n'
+            '    b = ctx.create_part("CKT_CAP", "Cat5cli cap fixture")\n'
             '    sk = ctx.add_sketch(b, "xy")\n'
             '    ctx.draw_rect(sk, 0, 0, 40, 30)\n'
             '    ctx.add_pad(b, sk, 10)\n'
@@ -117,10 +117,10 @@ def main():
         cli('06-apply-template', ['part', 'template', 'apply'], {'file_paths': [str(part_a), str(part_b)], 'keep_open': True},
             check=lambda p: require(p.get('success_count') == 2, 'template count'))
         cli('07-set-properties', ['document', 'properties', 'set'], {'file_path': str(part_a),
-            'standard': {'Nomenclature': 'Catkit test base', 'Revision': 'A'},
+            'standard': {'Nomenclature': 'Cat5cli test base', 'Revision': 'A'},
             'user_defined': {'材料': 'TEST-MATERIAL', '备注': 'CLI smoke fixture'}, 'save': True})
         cli('08-get-properties', ['document', 'properties', 'get'], {'file_path': str(part_a)},
-            check=lambda p: require(p.get('standard', {}).get('Nomenclature') == 'Catkit test base', 'property not read back'))
+            check=lambda p: require(p.get('standard', {}).get('Nomenclature') == 'Cat5cli test base', 'property not read back'))
         cli('09-save-part', ['document', 'save'], {'file_path': str(part_a)})
 
         assembly_path = directory / 'CKT_ASSEMBLY.CATProduct'

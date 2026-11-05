@@ -1,6 +1,6 @@
-# Catkit CLI 开发约定
+# Cat5cli CLI 开发约定
 
-适用于本目录及其子目录。用户调用指引维护在 `skills/catkit/`；本文件约束 CLI 实现与验证，不记录开发进度。
+适用于本目录及其子目录。用户调用指引维护在 `skills/cat5cli/`；本文件约束 CLI 实现与验证，不记录开发进度。
 
 ## 先看哪里
 
@@ -51,11 +51,11 @@
 ```powershell
 $env:QT_QPA_PLATFORM = 'offscreen'
 python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -q
-node --test packages/catkit/test/installer.cjs
+node --test packages/cat5cli/test/installer.cjs
 ```
 
 - 经授权的真实验收仅操作自建夹具；复用 `tests/catia_manual/catkit_completion_smoke.py` 和 `catkit_dialog_smoke.py`（位于 catia_copilot 下），`--exe` 可验证正式二进制。离线 mock 通过不等于 CATIA 实机通过。
-- 最后统一运行 `python scripts/build_catkit.py`（项目根目录），覆盖 `%LOCALAPPDATA%/Catkit/runtime` 或 CATKIT_HOME；不积累 UUID 安装副本，构建中间文件和测试夹具用完清理。
+- 最后统一运行 `python scripts/build_cat5cli.py`（项目根目录），支持 `--no-install`，覆盖 `%LOCALAPPDATA%/Cat5cli/runtime` 或 CAT5CLI_HOME；不积累 UUID 安装副本，构建中间文件和测试夹具用完清理。
 - 安装器默认将 runtime 加入用户 PATH，保留已有项且不重复添加；隔离安装测试必须使用 --no-path，避免将临时目录写入用户环境。
 - Nuitka 不整包包含 pycatia/win32com/comtypes；必要动态 comtypes 模块及生成包装由构建脚本精确保留。任何裁剪必须验证实际 EXE 建模与弹窗接续。
 - 目标设计保持目标用途；过程和证据写计划/验收文档。未经用户授权不 commit、push 或发布。

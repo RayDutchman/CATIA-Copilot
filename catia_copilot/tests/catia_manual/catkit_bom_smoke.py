@@ -30,8 +30,11 @@ def main(executable=None):
         command = [str(executable)] if executable else [sys.executable, '-m', 'catia_copilot.cli']
         process = subprocess.run([*command, *args], cwd=ROOT, capture_output=True,
                                  encoding='utf-8', timeout=45,
-                                 env={**os.environ, 'CATKIT_TASKS_DIR': str(folder / 'tasks')})
+                                 env={**os.environ, 'CAT5CLI_TASKS_DIR': str(folder / 'tasks')})
         payload = json.loads(process.stdout)
+        if payload.get('status') in ('running', 'waiting_for_dialog') and args[:2] != ('task', 'wait'):
+            # 启动欢迎页可能仍存在；先等待原操作结果，不重复采集或写入。
+            return call('task', 'wait', '--task', payload['task_id'], '--timeout', '3', expected_exit=expected_exit)
         pending = payload.get('status') in ('running', 'waiting_for_dialog', 'busy')
         results.append({'command': list(args[:2]), 'exit': process.returncode, 'expected_exit': expected_exit})
         assert not pending and process.returncode == expected_exit, payload

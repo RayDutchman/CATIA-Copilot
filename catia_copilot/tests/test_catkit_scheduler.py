@@ -21,8 +21,8 @@ class TestScheduler(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             from pathlib import Path
             (Path(temp) / 'id').mkdir()
-            with patch.object(launch, '_register_and_run', return_value={'scheduler': 'Catkit-one'}):
-                self.assertEqual(launch.start('id', [], cwd='.', root=temp, log_path='x')['scheduler'], 'Catkit-one')
+            with patch.object(launch, '_register_and_run', return_value={'scheduler': 'Cat5cli-one'}):
+                self.assertEqual(launch.start('id', [], cwd='.', root=temp, log_path='x')['scheduler'], 'Cat5cli-one')
 
     def test_compiled_worker_receives_root_and_log_arguments(self):
         launch = SchedulerLaunch()
@@ -30,8 +30,8 @@ class TestScheduler(unittest.TestCase):
             from pathlib import Path
             (Path(temp) / 'id').mkdir()
             with patch.object(launch, '_register_and_run', side_effect=lambda task, command, cwd: command):
-                command = launch.start('id', ['catkit.exe', '_worker', 'id'], cwd='.', root=temp, log_path='R:/tasks/id/worker.log')
-        self.assertEqual(command, ['catkit.exe', '_worker', 'id', temp, 'R:/tasks/id/worker.log'])
+                command = launch.start('id', ['cat5cli.exe', '_worker', 'id'], cwd='.', root=temp, log_path='R:/tasks/id/worker.log')
+        self.assertEqual(command, ['cat5cli.exe', '_worker', 'id', temp, 'R:/tasks/id/worker.log'])
 
     def test_source_module_uses_importable_cwd_and_request_root(self):
         launch = SchedulerLaunch()

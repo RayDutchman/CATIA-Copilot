@@ -12,20 +12,20 @@
 
 ## 功能一览
 
-### 外部 AI：Catkit
+### 外部 AI：cat5cli
 
-GUI 不再内置聊天和模型配置；外部 AI 宿主通过 Windows CLI 与 [Skill](skills/catkit/SKILL.md) 使用 CATIA。
+GUI 不再内置聊天和模型配置；外部 AI 宿主通过 Windows cat5cli CLI 与 [Skill](skills/cat5cli/SKILL.md) 使用 CATIA。Skill 兼容 cat5cli 0.1.x 预览版本，命令细节以安装版本 schema 为准；公司 BOM 规范应放在另一个私有 Skill。
 CLI 保留原有 21 个 CATIA 工具：文档、属性、BOM、导出、模板、质量特性与 `build(ctx)` 脚本执行。
 
 ```powershell
-python -m catia_copilot.cli --help
-python -m catia_copilot.cli schema bom export
-python -m catia_copilot.cli run --file D:/scripts/build.py
+cat5cli --help
+cat5cli schema bom export
+cat5cli run --file D:/scripts/build.py
 ```
 
-使用 `python scripts/build_catkit.py` 构建 Windows standalone 分发包。
-安装器目前通过[本地入口](packages/catkit/README.md)使用，尚未发布 npm 包。
-真实 CATIA 验收待集中执行；离线测试通过不等于 COM 实机已验证。
+预览版本为 `0.1.0-beta.1`，程序位于 LOCALAPPDATA 下的 `Cat5cli/runtime/cat5cli.exe`。npm 安装命令为 `npx @raydutchman/cat5cli@beta install`。
+配套 Skill 安装：`npx skills add https://github.com/RayDutchman/CATIA-Copilot/tree/cat5cli-v0.1.0-beta.1/skills/cat5cli --skill cat5cli -g -a opencode`；本地 ZIP 安装示例：`node packages/cat5cli/bin/cat5cli.cjs install --from-zip ...`，详见 [Skill](skills/cat5cli/SKILL.md)。
+BOM、建模等流程已有实机验证；部分图纸场景及另一台Windows环境仍待补验，详见[发布与验收边界](docs/CAT5CLI_RELEASE.md)。
 
 ### 工作台
 

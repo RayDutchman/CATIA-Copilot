@@ -23,8 +23,13 @@ from catia_copilot.cli.backend import execute as execute_operation
 
 
 def task_root():
-    return Path(os.environ.get('CATKIT_TASKS_DIR') or
-                str(Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Catkit' / 'tasks'))
+    tasks_dir = os.environ.get('CAT5CLI_TASKS_DIR')
+    if tasks_dir:
+        return Path(tasks_dir)
+    home = os.environ.get('CAT5CLI_HOME')
+    if home:
+        return Path(home) / 'tasks'
+    return Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'Cat5cli' / 'tasks'
 
 
 def write_json(path, value):
@@ -63,7 +68,7 @@ def worker_alive(identity):
 
 
 def spawn_worker(task_id, root, *, command=None):
-    env = dict(os.environ, CATKIT_TASKS_DIR=str(root))
+    env = dict(os.environ, CAT5CLI_TASKS_DIR=str(root))
     if command is not None:
         command = list(command)
     elif '__compiled__' in globals() or getattr(sys, 'frozen', False):
@@ -96,7 +101,7 @@ def spawn_worker(task_id, root, *, command=None):
 def task_guard(root):
     """仅保护短暂的任务认领/响应操作，不在 COM 调用期间持锁。"""
     key = hashlib.sha256(str(Path(root).resolve()).casefold().encode()).hexdigest()[:24]
-    mutex = win32event.CreateMutex(None, False, 'Local\\CatkitTasks-' + key)
+    mutex = win32event.CreateMutex(None, False, 'Local\\Cat5cliTasks-' + key)
     acquired = win32event.WaitForSingleObject(mutex, 5000)
     if acquired not in (win32event.WAIT_OBJECT_0, win32event.WAIT_ABANDONED):
         mutex.Close()
@@ -128,7 +133,7 @@ class TaskManager:
     def _cleanup_scheduler(self, task_id, directory):
         launch = read_json(directory / 'launch.json') or {}
         name = launch.get('scheduler')
-        if name != 'Catkit-' + task_id:
+        if name != 'Cat5cli-' + task_id:
             return
         try:
             from catia_copilot.cli.scheduler import delete_task
@@ -155,7 +160,7 @@ class TaskManager:
                     if terminal is None and (identity is None or identity.get('scheduler_pending') or self.alive(identity)):
                         return {'status': 'busy', 'task_id': active['task_id'], 'executed': False,
                                 'requested_tool': tool,
-                                'next': 'catkit task status --task ' + active['task_id']}
+                                'next': 'cat5cli task status --task ' + active['task_id']}
             task_id = uuid.uuid4().hex
             directory = self.root / task_id
             write_json(directory / 'request.json', {'tool': tool, 'parameters': parameters,
@@ -251,13 +256,13 @@ class TaskManager:
             return {'status': 'running', 'task_id': task_id,
                     'dialog_monitor': 'scan_error', 'monitor_message': str(exc),
                     'log_path': str(directory / 'worker.log'),
-                    'next': 'catkit task wait --task ' + task_id}
+                    'next': 'cat5cli task wait --task ' + task_id}
         if dialogs:
             snapshot = dialogs[0]
             write_json(directory / 'dialog.json', snapshot)
             return {'status': 'waiting_for_dialog', 'task_id': task_id, 'dialog': snapshot,
                     'log_path': str(directory / 'worker.log'),
-                    'next': 'catkit dialog respond --task ' + task_id + ' --button <button-id>'}
+                    'next': 'cat5cli dialog respond --task ' + task_id + ' --button <button-id>'}
         return {'status': 'running', 'task_id': task_id, 'log_path': str(directory / 'worker.log')}
 
     def status(self, task_id):

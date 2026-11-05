@@ -38,10 +38,10 @@ CLI 自身生成的 help/schema、错误、提示、进度和日志统一为英�
 普通命令自动管理 worker，无需预先启动监控。脚本建模、SaveAs 和其他业务都走相同接续路径。
 
 ```powershell
-catkit task status --task <task-id>
-catkit task wait --task <task-id> --timeout 30
-catkit dialog respond --task <task-id> --button <返回的按钮id>
-catkit dialog respond --task <task-id> --control <返回的输入框id> --text "输入内容"
+cat5cli task status --task <task-id>
+cat5cli task wait --task <task-id> --timeout 30
+cat5cli dialog respond --task <task-id> --button <返回的按钮id>
+cat5cli dialog respond --task <task-id> --control <返回的输入框id> --text "输入内容"
 ```
 
 - 根据弹窗文字选择控件；不能一律点“确定/是”，也不猜按钮 ID。用户目标不足以决定选项时再询问。

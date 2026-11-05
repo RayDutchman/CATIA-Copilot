@@ -1,1 +1,1 @@
-"""Catkit Windows CLI。"""
+"""Cat5cli Windows CLI。"""

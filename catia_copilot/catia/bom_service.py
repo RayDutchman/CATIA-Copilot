@@ -358,6 +358,28 @@ def _read_current(product, column, custom_columns):
     return ""
 
 
+def _resolve_product_path(root_product, path):
+    """每次从根重新取得出现路径，避免沿用可能失效的 COM 子项引用。"""
+    product = root_product
+    for index in path[1:]:
+        product = product.Products.Item(index + 1)
+    return product
+
+
+def _instance_definition(root_product, path, occurrence):
+    """从父级引用定义中解析实例名写入对象，并确认其对应当前出现。"""
+    parent = _resolve_product_path(root_product, path[:-1])
+    definition = parent.ReferenceProduct.Products.Item(path[-1] + 1)
+    occurrence_ref = occurrence.ReferenceProduct
+    definition_ref = definition.ReferenceProduct
+    # 写入定位必须完整读取引用身份，不能用采集阶段的容错空值证明两者相同。
+    occurrence_info = (str(occurrence_ref.PartNumber), str(occurrence_ref.Parent.FullName))
+    definition_info = (str(definition_ref.PartNumber), str(definition_ref.Parent.FullName))
+    if occurrence_info != definition_info:
+        raise ValueError("Instance definition does not match the selected occurrence (Part Number/file mismatch)")
+    return definition
+
+
 def _pn_conflicts(part_masters, pm_key, new_pn):
     """沿用工作台主数据 PN 冲突规则，分别检查独立文件和嵌入部件。"""
     current = part_masters.get(pm_key, {})
@@ -421,6 +443,7 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
                     raise ValueError("Instance scope supports only Instance Name")
                 if target["level"] == 0:
                     raise ValueError("The root node has no Instance Name and cannot be edited")
+                product = _resolve_product_path(root_product, node)
             elif scope == "master":
                 if (column in BOM_READONLY_COLUMNS
                         or column in {BOM_INSTANCE_NAME_COLUMN, "description_inst"}
@@ -440,7 +463,7 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
             else:
                 raise ValueError("scope must be master or instance")
 
-            old_value = _read_current(product, column, custom)
+            old_value = str(product.Name) if scope == "instance" else _read_current(product, column, custom)
             result["old_value"] = old_value
             assignment_key = (pm_key, column)
             if scope == "master" and successful_assignments.get(assignment_key) == value:
@@ -454,13 +477,27 @@ def edit_bom(changes, doc=None, active=False, custom_columns=None, **kwargs) -> 
                 if not rename_part_master(part_masters, pm_key_to_inst_keys, pm_key, value):
                     raise ValueError(f"Unable to update Part Number master-data cache: {pm_key}")
                 cache_renamed = True
-            if not write_cell(product, column, value, custom):
+            write_product = product
+            if scope == "instance":
+                try:
+                    write_product = _instance_definition(root_product, node, product)
+                except Exception as exc:
+                    raise ValueError(f"Unable to resolve matching instance definition: {exc}") from exc
+            if not write_cell(write_product, column, value, custom):
                 if cache_renamed:
                     restored = rename_part_master(part_masters, pm_key_to_inst_keys, pm_key, cached_pn)
                     cache_renamed = False
                     if not restored:
                         raise RuntimeError(f"CATIA write failed and the PN cache could not be restored: {pm_key}")
                 raise ValueError("CATIA field write failed or the field is read-only")
+            if scope == "instance":
+                try:
+                    observed = _text(getattr(_resolve_product_path(root_product, node), "Name"))
+                    result["observed_value"] = observed
+                except Exception as exc:
+                    raise ValueError(f"Instance Name write could not be verified: {exc}") from exc
+                if observed != value:
+                    raise ValueError(f"Instance Name verification failed: expected {value!r}, observed {observed!r}")
             cache_renamed = False
             result["new_value"] = value
             result["status"] = "success"

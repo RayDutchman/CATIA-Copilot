@@ -1,0 +1,14 @@
+{
+  "name": "@raydutchman/cat5cli",
+  "version": "0.1.0-beta.1",
+  "description": "Windows CATIA toolkit launcher and skill installer",
+  "bin": { "cat5cli": "bin/cat5cli.cjs" },
+  "files": ["bin", "README.md"],
+  "engines": { "node": ">=22" },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "scripts": { "test": "node --test test/*.cjs", "pack:check": "npm pack --dry-run --ignore-scripts" },
+  "publishConfig": { "access": "public", "tag": "beta" },
+  "repository": { "type": "git", "url": "https://github.com/RayDutchman/CATIA-Copilot.git", "directory": "packages/cat5cli" },
+  "license": "MIT"
+}

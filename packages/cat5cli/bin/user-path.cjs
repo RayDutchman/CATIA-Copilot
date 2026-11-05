@@ -16,7 +16,7 @@ function powershell(script, value) {
   return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
     Buffer.from(code, 'utf16le').toString('base64')], {
     encoding: 'utf8', timeout: 30000,
-    env: { ...process.env, CATKIT_USER_PATH_VALUE: value || '' },
+    env: { ...process.env, CAT5CLI_USER_PATH_VALUE: value || '' },
   }).trim();
 }
 
@@ -34,13 +34,13 @@ const windowsUserPath = {
   write(value) {
     powershell(`
       $key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');
-      try { $key.SetValue('Path',$env:CATKIT_USER_PATH_VALUE,[Microsoft.Win32.RegistryValueKind]::ExpandString) }
+      try { $key.SetValue('Path',$env:CAT5CLI_USER_PATH_VALUE,[Microsoft.Win32.RegistryValueKind]::ExpandString) }
       finally { $key.Dispose() }
-      Add-Type -Namespace Catkit -Name EnvironmentNotice -MemberDefinition '
+      Add-Type -Namespace Cat5cli -Name EnvironmentNotice -MemberDefinition '
         [DllImport("user32.dll", CharSet=CharSet.Unicode)]
         public static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, UIntPtr wparam, string lparam, uint flags, uint timeout, out UIntPtr result);';
       [UIntPtr]$result=[UIntPtr]::Zero;
-      [Catkit.EnvironmentNotice]::SendMessageTimeout([IntPtr]65535,26,[UIntPtr]::Zero,'Environment',2,100,[ref]$result) | Out-Null
+      [Cat5cli.EnvironmentNotice]::SendMessageTimeout([IntPtr]65535,26,[UIntPtr]::Zero,'Environment',2,100,[ref]$result) | Out-Null
     `, value);
   },
 };

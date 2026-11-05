@@ -41,10 +41,14 @@ class TestMigration(unittest.TestCase):
         with self.assertRaises(AssertionError):
             restore_approved_messages(original, edits)
 
-    def test_installer_version_matches_application(self):
+    def test_installer_version_matches_cli_independently_of_gui(self):
         from catia_copilot.constants import APP_VERSION
-        package = json.loads((ROOT / 'packages/catkit/package.json').read_text(encoding='utf-8'))
-        self.assertEqual(package['version'], APP_VERSION)
+        from catia_copilot.cli.version import CLI_VERSION
+        package = json.loads((ROOT / 'packages/cat5cli/package.json').read_text(encoding='utf-8'))
+        self.assertEqual(package['version'], CLI_VERSION)
+        self.assertEqual(package['name'], '@raydutchman/cat5cli')
+        self.assertEqual(set(package['bin']), {'cat5cli'})
+        self.assertEqual(APP_VERSION, '2.2.0')
 
     def test_tool_service_import_does_not_load_qt(self):
         result = subprocess.run([sys.executable, '-c',

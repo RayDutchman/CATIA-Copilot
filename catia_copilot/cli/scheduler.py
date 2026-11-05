@@ -24,9 +24,9 @@ class SchedulerLaunch:
         service = win32com.client.Dispatch('Schedule.Service')
         service.Connect()
         folder = service.GetFolder('\\')
-        name = 'Catkit-' + task_id
+        name = 'Cat5cli-' + task_id
         definition = service.NewTask(0)
-        definition.RegistrationInfo.Description = 'Catkit temporary operation worker'
+        definition.RegistrationInfo.Description = 'Cat5cli temporary operation worker'
         definition.Principal.UserId = win32api.GetUserName()
         definition.Principal.LogonType = 3  # TASK_LOGON_INTERACTIVE_TOKEN
         definition.Principal.RunLevel = 0  # TASK_RUNLEVEL_LUA
@@ -51,7 +51,7 @@ class SchedulerLaunch:
     def start(self, task_id, command, *, cwd, root, log_path, source_root=None):
         from catia_copilot.cli.tasks import write_json
         root = Path(root)
-        name = 'Catkit-' + task_id
+        name = 'Cat5cli-' + task_id
         is_module = len(command) > 2 and command[1:3] == ['-m', 'catia_copilot.cli']
         is_worker = len(command) > 1 and command[1] == '_worker'
         if is_module:

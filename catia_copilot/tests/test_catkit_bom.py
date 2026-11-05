@@ -417,12 +417,101 @@ class TestBomEditing(unittest.TestCase):
         self.addCleanup(self.app_patch.stop)
 
     def test_instance_name_targets_only_selected_node(self):
-        with patch("catia_copilot.catia.bom_service.write_cell", return_value=True) as writer:
+        with patch("catia_copilot.catia.bom_service.write_cell", wraps=bom_service.write_cell) as writer:
             result = bom_service.edit_bom([
                 {"node": "0.1", "scope": "instance", "column": "Instance Name", "value": "Chosen"}
             ])
         self.assertTrue(result["success"])
+        self.assertEqual(self.second.Name, "Chosen")
         self.assertIs(writer.call_args.args[0], self.second)
+
+    def test_instance_definition_write_avoids_silent_occurrence_name_setter(self):
+        class SilentOccurrence(_Product):
+            @property
+            def Name(self):
+                return self.ReferenceProduct.Name
+
+            @Name.setter
+            def Name(self, value):
+                self._name = value
+
+        shared = _Product("LEAF", "old", filepath="C:/cad/sub.CATProduct")
+        occurrence = SilentOccurrence("LEAF", "old", filepath="C:/cad/sub.CATProduct")
+        occurrence.ReferenceProduct = shared
+        sub_definition = _Product("SUB", children=[shared], filepath="C:/cad/sub.CATProduct")
+        sub_occurrence = _Product("SUB", children=[occurrence], filepath="C:/cad/sub.CATProduct")
+        sub_occurrence.ReferenceProduct = sub_definition
+        root = _Product("ROOT", children=[sub_occurrence], filepath="C:/cad/root.CATProduct")
+        doc = _Document("root.CATProduct", root)
+        app = _Application([doc], doc)
+        with patch("catia_copilot.catia.bom_service.get_catia_v5_application", return_value=app), \
+             patch("catia_copilot.catia.bom_service.collect_bom_part_masters", return_value=("ROOT", {}, {})):
+            result = bom_service.edit_bom([{"node": "0.0.0", "scope": "instance",
+                                            "column": "Instance Name", "value": "new"}])
+        self.assertEqual(result["applied_count"], 1, result)
+        self.assertEqual(shared.Name, "new")
+        self.assertEqual(occurrence.Name, "new")
+
+    def test_instance_writer_true_but_readback_mismatch_fails_and_continues(self):
+        with patch("catia_copilot.catia.bom_service.write_cell", side_effect=[True, True]):
+            result = bom_service.edit_bom([
+                {"node": "0.0", "scope": "instance", "column": "Instance Name", "value": "missed"},
+                {"node": "0.1", "scope": "master", "column": "Revision", "value": "B"},
+            ])
+        self.assertEqual((result["applied_count"], result["failed_count"]), (1, 1))
+        self.assertEqual(result["results"][0]["observed_value"], "PN.1")
+        self.assertIn("verification failed", result["results"][0]["error"])
+
+    def test_instance_definition_mismatch_fails_before_write(self):
+        self.root.ReferenceProduct = _Product("ROOT", children=[_Product("OTHER"), _Product("PN")])
+        with patch("catia_copilot.catia.bom_service.write_cell") as writer:
+            result = bom_service.edit_bom([{"node": "0.0", "scope": "instance",
+                                            "column": "Instance Name", "value": "wrong"}])
+        self.assertEqual(result["failed_count"], 1)
+        self.assertIn("does not match", result["results"][0]["error"])
+        writer.assert_not_called()
+
+    def test_instance_definition_unreadable_identity_fails_before_write(self):
+        class BrokenParent:
+            @property
+            def FullName(self):
+                raise RuntimeError('reference document unreadable')
+        self.shared_ref.Parent = BrokenParent()
+        with patch.object(bom_service, 'write_cell') as writer:
+            result = bom_service.edit_bom([
+                {'node': '0.0', 'scope': 'instance', 'column': 'Instance Name', 'value': 'new'}
+            ])
+        self.assertEqual(result['failed_count'], 1)
+        writer.assert_not_called()
+
+    def test_instance_old_value_is_read_from_fresh_occurrence(self):
+        targets = bom_service._tree_targets(self.root)
+        targets[1]['_product'] = _Product('PN', 'StaleName', filepath='C:/cad/pn.CATPart')
+        with patch.object(bom_service, '_tree_targets', return_value=targets):
+            result = bom_service.edit_bom([
+                {'node': '0.0', 'scope': 'instance', 'column': 'Instance Name', 'value': 'NewName'}
+            ])
+        self.assertTrue(result['success'], result)
+        self.assertEqual(result['results'][0]['old_value'], 'PN.1')
+
+    def test_instance_readback_error_is_not_success(self):
+        original = bom_service._resolve_product_path
+        wrote = False
+        def write(*args):
+            nonlocal wrote
+            wrote = True
+            return True
+        def resolve(*args):
+            if wrote:
+                raise RuntimeError('fresh tree unavailable')
+            return original(*args)
+        with patch.object(bom_service, '_resolve_product_path', side_effect=resolve), \
+             patch.object(bom_service, 'write_cell', side_effect=write):
+            result = bom_service.edit_bom([
+                {'node': '0.0', 'scope': 'instance', 'column': 'Instance Name', 'value': 'new'}
+            ])
+        self.assertEqual(result['applied_count'], 0)
+        self.assertIn('could not be verified', result['results'][0]['error'])
 
     def test_root_instance_name_is_rejected_and_empty_node_alias_is_invalid(self):
         with patch("catia_copilot.catia.bom_service.write_cell") as writer:

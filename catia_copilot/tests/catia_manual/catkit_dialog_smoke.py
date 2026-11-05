@@ -31,7 +31,7 @@ def main(exe):
 
         def call(*args):
             completed = subprocess.run([str(exe), *args], capture_output=True, encoding='utf-8', timeout=45,
-                                       env={**os.environ, 'CATKIT_TASKS_DIR': str(folder / 'tasks')})
+                                       env={**os.environ, 'CAT5CLI_TASKS_DIR': str(folder / 'tasks')})
             return completed.returncode, json.loads(completed.stdout)
 
         pending = True

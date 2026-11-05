@@ -7,20 +7,20 @@ const { version } = require('../package.json');
 const { ensureUserPath } = require('./user-path.cjs');
 
 function installHome() {
-  return process.env.CATKIT_HOME || path.join(process.env.LOCALAPPDATA || os.homedir(), 'Catkit');
+  return process.env.CAT5CLI_HOME || path.join(process.env.LOCALAPPDATA || os.homedir(), 'Cat5cli');
 }
 function checksum(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 function selectedExecutable(home = installHome()) {
   const current = JSON.parse(fs.readFileSync(path.join(home, 'current.json'), 'utf8'));
-  const executable = path.join(home, current.directory, 'catkit.exe');
-  if (!fs.existsSync(executable)) throw new Error('Catkit executable is missing. Run install again.');
+  const executable = path.join(home, current.directory, 'cat5cli.exe');
+  if (!fs.existsSync(executable)) throw new Error('Cat5cli executable is missing. Run install again.');
   return executable;
 }
 function installDirectory(bundle, home, skillsDir, selectedVersion) {
-  if (!fs.existsSync(path.join(bundle, 'catkit.exe')) || !fs.existsSync(path.join(bundle, 'skills', 'catkit', 'SKILL.md'))) {
-    throw new Error('ZIP must contain catkit.exe and skills/catkit/SKILL.md');
+  if (!fs.existsSync(path.join(bundle, 'cat5cli.exe')) || !fs.existsSync(path.join(bundle, 'skills', 'cat5cli', 'SKILL.md'))) {
+    throw new Error('ZIP must contain cat5cli.exe and skills/cat5cli/SKILL.md');
   }
   // 固定运行目录；先检查文件占用，避免删除到一半才发现 EXE 正在运行。
   const directory = 'runtime';
@@ -32,15 +32,15 @@ function installDirectory(bundle, home, skillsDir, selectedVersion) {
       try {
         fs.closeSync(fs.openSync(path.join(entry.parentPath || entry.path, entry.name), 'r+'));
       } catch (error) {
-        throw new Error(`Runtime file is locked or not writable. Close Catkit and try again: ${entry.name}`, { cause: error });
+        throw new Error(`Runtime file is locked or not writable. Close Cat5cli and try again: ${entry.name}`, { cause: error });
       }
     }
     fs.rmSync(target, { recursive: true });
   }
   fs.cpSync(bundle, target, { recursive: true });
   fs.mkdirSync(skillsDir, { recursive: true });
-  fs.rmSync(path.join(skillsDir, 'catkit'), { recursive: true, force: true });
-  fs.cpSync(path.join(target, 'skills', 'catkit'), path.join(skillsDir, 'catkit'), { recursive: true });
+  fs.rmSync(path.join(skillsDir, 'cat5cli'), { recursive: true, force: true });
+  fs.cpSync(path.join(target, 'skills', 'cat5cli'), path.join(skillsDir, 'cat5cli'), { recursive: true });
   const current = { version: selectedVersion, directory, skillsDir };
   const temporary = path.join(home, 'current.tmp.json');
   fs.writeFileSync(temporary, JSON.stringify(current, null, 2));
@@ -68,17 +68,17 @@ async function download(url, destination) {
   fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
 }
 async function install(args) {
-  if (process.platform !== 'win32') throw new Error('Catkit requires native Windows.');
+  if (process.platform !== 'win32') throw new Error('Cat5cli requires native Windows.');
   const options = parseOptions(args);
   const selectedVersion = options['--version'] || version;
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-zA-Z0-9.-]+)?$/.test(selectedVersion)) throw new Error('Invalid version format');
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'catkit-install-'));
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cat5cli-install-'));
   try {
     let archive = options['--from-zip'] && path.resolve(options['--from-zip']);
     let expected = options['--sha256'];
     if (!archive) {
-      const name = `catkit-${selectedVersion}-windows-x64.zip`;
-      const base = `https://github.com/RayDutchman/CATIA-Copilot/releases/download/catkit-v${selectedVersion}`;
+      const name = `cat5cli-${selectedVersion}-windows-x64.zip`;
+      const base = `https://github.com/RayDutchman/CATIA-Copilot/releases/download/cat5cli-v${selectedVersion}`;
       archive = path.join(temp, name);
       await download(`${base}/${name}`, archive);
       const sums = path.join(temp, 'SHA256SUMS');
@@ -99,7 +99,7 @@ async function install(args) {
     const executable = selectedExecutable();
     const userPath = options['--no-path'] ? { skipped: true } : ensureUserPath(path.dirname(path.resolve(executable)));
     console.log(JSON.stringify({ installed: true, ...installed, executable, userPath,
-      ...(options['--no-path'] ? {} : { notice: 'User PATH is configured. Reopen existing terminals or AI hosts to use catkit.' }) }));
+      ...(options['--no-path'] ? {} : { notice: 'User PATH is configured. Reopen existing terminals or AI hosts to use cat5cli.' }) }));
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }
 module.exports = { install, installHome, installDirectory, selectedExecutable, checksum };

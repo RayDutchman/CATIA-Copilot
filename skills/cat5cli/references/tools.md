@@ -1,6 +1,6 @@
 # 工具路由
 
-完整参数以 `catkit schema <下表命令路径>` 为准，原参数下划线在 CLI 中写为短横线。
+完整参数以 `cat5cli schema <下表命令路径>` 为准，原参数下划线在 CLI 中写为短横线。
 
 | 操作 | 命令路径 |
 |---|---|
@@ -25,7 +25,7 @@ PDF 默认前缀 `DR_`，STEP 默认前缀 `MD_`；不需要时明确传空字�
 例如先由宿主文件工具写 `D:/任务/drawings.json`，内容 `["D:/A.CATDrawing"]`，再调用：
 
 ```powershell
-catkit drawing export pdf --file-paths '@D:/任务/drawings.json' --update-before-export
+cat5cli drawing export pdf --file-paths '@D:/任务/drawings.json' --update-before-export
 ```
 
 碰到原先需要弹窗选择的导出覆盖冲突，可用 `--overwrite replace` 或 `--overwrite skip` 表达处理方式。
