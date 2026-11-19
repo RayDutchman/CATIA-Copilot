@@ -232,8 +232,17 @@ $QtTransTarget = @(
     (Join-Path $OutputDir 'PySide6\translations')
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $QtTransTarget) {
-    Write-Error "[i18n] PySide6\translations dir not found in output, cannot ship qtbase_zh_CN.qm"
-    exit 1
+    # Nuitka 未收集 Qt 翻译时不会创建 translations；在实际 PySide6 目录下补齐。
+    $QtPackageDir = @(
+        (Join-Path $OutputDir '_internal\PySide6'),
+        (Join-Path $OutputDir 'PySide6')
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $QtPackageDir) {
+        Write-Error "[i18n] PySide6 package dir not found in output"
+        exit 1
+    }
+    $QtTransTarget = Join-Path $QtPackageDir 'translations'
+    New-Item -ItemType Directory -Path $QtTransTarget -Force | Out-Null
 }
 $QtBaseDest = Join-Path $QtTransTarget 'qtbase_zh_CN.qm'
 Copy-Item -Force $QtBaseZhQm $QtBaseDest
