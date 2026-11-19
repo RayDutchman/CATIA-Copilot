@@ -18,12 +18,14 @@ BOM 编辑对话框 V3 模块（part_master / instance 分离架构）。
 
 import csv
 import ctypes
+from io import BytesIO
 import logging
 from pathlib import Path
 
 import openpyxl
+from openpyxl.drawing.image import Image as WorkbookImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from PySide6.QtCore import QByteArray, QSettings, Qt, QUrl
+from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QSettings, Qt, QUrl
 from PySide6.QtGui import (
     QBrush,
     QCloseEvent,
@@ -41,6 +43,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -148,6 +151,37 @@ def _set_combo_value(combo: QComboBox, value: str) -> None:
         combo.setCurrentIndex(idx)
     else:
         combo.setCurrentText(value)
+
+
+def _create_thumbnail_export_options_dialog(
+    parent: QWidget | None = None,
+) -> tuple[QDialog, QCheckBox]:
+    """创建 XLSX 导出选项弹窗。缩略图默认关闭，由调用方决定是否显示。"""
+    dialog = QDialog(parent)
+    dialog.setWindowTitle(translate("CATIACopilot", "导出选项"))
+    dialog.setModal(True)
+
+    layout = QVBoxLayout(dialog)
+    layout.setSpacing(10)
+    layout.setContentsMargins(16, 12, 16, 12)
+
+    checkbox = QCheckBox(translate("CATIACopilot", "包含零件缩略图"))
+    checkbox.setChecked(False)
+    layout.addWidget(checkbox)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+    )
+    ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    if ok_button is not None:
+        ok_button.setText(translate("CATIACopilot", "确定"))
+    if cancel_button is not None:
+        cancel_button.setText(translate("CATIACopilot", "取消"))
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    return dialog, checkbox
 
 
 class BomEditDialogV3(QDialog):
@@ -2981,6 +3015,15 @@ class BomEditDialogV3(QDialog):
             dest_path = dest_path.with_suffix(".xlsx")
             suffix = ".xlsx"
 
+        include_thumbnail = False
+        if suffix == ".xlsx":
+            options_dialog, thumbnail_checkbox = (
+                _create_thumbnail_export_options_dialog(self)
+            )
+            if options_dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            include_thumbnail = thumbnail_checkbox.isChecked()
+
         # 导出列：当前可见列，排除行号"#"列
         export_cols = [c for c in self._columns if c != BOM_ROW_NUMBER_COLUMN]
 
@@ -3019,11 +3062,22 @@ class BomEditDialogV3(QDialog):
                         str(row_data.get(col_name, ""))
                     )
                 row_out[col_name] = val
+            row_out["_filepath"] = str(row_data.get("_filepath", ""))
+            row_out["_not_found"] = bool(row_data.get("_not_found"))
+            row_out["_is_component"] = (
+                row_data.get("Type") == BomNodeType.COMPONENT
+            )
             rows_data.append(row_out)
 
         try:
             if suffix == ".xlsx":
-                self._write_xlsx(dest_path, export_cols, col_px_widths, rows_data)
+                self._write_xlsx(
+                    dest_path,
+                    export_cols,
+                    col_px_widths,
+                    rows_data,
+                    include_thumbnail=include_thumbnail,
+                )
             else:
                 self._write_csv(dest_path, export_cols, rows_data)
         except PermissionError:
@@ -3070,6 +3124,8 @@ class BomEditDialogV3(QDialog):
         cols: list[str],
         px_widths: dict[str, int],
         rows: list[dict],
+        *,
+        include_thumbnail: bool = False,
     ) -> None:
         """将 *rows* 写入 *dest* 路径的 .xlsx 工作簿。"""
 
@@ -3077,6 +3133,7 @@ class BomEditDialogV3(QDialog):
         ws = wb.active
         assert ws is not None  # 新建工作簿 active 必然非 None
         ws.title = "汇总 BOM" if self._summarize else "BOM"
+        thumbnail_col = len(cols) + 1 if include_thumbnail else None
 
         center      = Alignment(horizontal="center", vertical="center")
         header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
@@ -3091,8 +3148,16 @@ class BomEditDialogV3(QDialog):
             cell.font   = Font(bold=True)
             cell.fill   = header_fill
             cell.border = thin_border
+        if thumbnail_col is not None:
+            cell = ws.cell(row=1, column=thumbnail_col, value="缩略图")
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+            cell.border = thin_border
+            thumb_letter = cell.column_letter
+            ws.column_dimensions[thumb_letter].width = 20
 
         # 数据行
+        thumbnail_cache: dict[str, bytes | None] = {}
         for row_idx, row in enumerate(rows, start=2):
             for col_idx, col_name in enumerate(cols, start=1):
                 raw_val = row.get(col_name, "")
@@ -3112,6 +3177,56 @@ class BomEditDialogV3(QDialog):
                 cell.border = thin_border
                 if col_name in ("Level", "Quantity", "Type"):
                     cell.alignment = center
+            if thumbnail_col is not None:
+                cell = ws.cell(row=row_idx, column=thumbnail_col, value="")
+                cell.border = thin_border
+                filepath = str(row.get("_filepath", ""))
+                if (
+                    filepath
+                    and not row.get("_not_found")
+                    and not row.get("_is_component")
+                    and Path(filepath).is_file()
+                ):
+                    if filepath not in thumbnail_cache:
+                        try:
+                            thumbnail_cache[filepath] = read_catia_thumbnail(filepath)
+                        except Exception:
+                            logger.debug(
+                                "Unable to read BOM thumbnail for %s",
+                                filepath,
+                                exc_info=True,
+                            )
+                            thumbnail_cache[filepath] = None
+                    image_bytes = thumbnail_cache[filepath]
+                    if image_bytes:
+                        try:
+                            pixmap = QPixmap()
+                            if pixmap.loadFromData(image_bytes) and not pixmap.isNull():
+                                pixmap = pixmap.scaled(
+                                    BOM_THUMBNAIL_MAX_SIZE,
+                                    BOM_THUMBNAIL_MAX_SIZE,
+                                    Qt.AspectRatioMode.KeepAspectRatio,
+                                    Qt.TransformationMode.SmoothTransformation,
+                                )
+                                buffer = QBuffer()
+                                buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+                                if pixmap.save(buffer, "PNG"):
+                                    image = WorkbookImage(
+                                        BytesIO(bytes(buffer.data()))
+                                    )
+                                    image.width = pixmap.width()
+                                    image.height = pixmap.height()
+                                    ws.add_image(
+                                        image,
+                                        f"{cell.column_letter}{row_idx}",
+                                    )
+                                    ws.row_dimensions[row_idx].height = 100
+                        except Exception:
+                            logger.debug(
+                                "Unable to embed BOM thumbnail for %s",
+                                filepath,
+                                exc_info=True,
+                            )
 
         # 冻结表头行并启用自动筛选
         ws.freeze_panes = "A2"

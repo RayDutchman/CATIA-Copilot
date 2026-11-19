@@ -3337,6 +3337,14 @@ Push 后 Pull 时 CATIA 将无法在同目录找到引用的子文件。
             <translation>该零件/产品处于轻量化模式，无法读取属性。</translation>
         </message>
         <message>
+            <source>导出选项</source>
+            <translation>导出选项</translation>
+        </message>
+        <message>
+            <source>包含零件缩略图</source>
+            <translation>包含零件缩略图</translation>
+        </message>
+        <message>
             <source>该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。</source>
             <translation>该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。</translation>
         </message>

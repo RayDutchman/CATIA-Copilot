@@ -16,7 +16,8 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QTranslator, Qt  # noqa: E402
+from PySide6.QtCore import QBuffer, QIODevice, QPoint, QTranslator, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication, QComboBox, QTreeWidgetItem  # noqa: E402
 
 import catia_copilot.ui.bom_edit_dialog_v3 as bed3  # noqa: E402
@@ -188,6 +189,51 @@ class TestHeaders(_BomI18nTestCase):
         self.assertEqual(dlg._export_header("Source"), "源")
         dlg._show_filepath_col = True
         self.assertEqual(dlg._export_header("Filename"), "完整路径")
+
+    def test_thumbnail_export_option_defaults_off_and_is_translated(self) -> None:
+        dlg = self._make_dialog()
+        options, checkbox = bed3._create_thumbnail_export_options_dialog(dlg)
+        self._track(options)
+
+        self.assertEqual(options.windowTitle(), "导出选项")
+        self.assertEqual(checkbox.text(), "包含零件缩略图")
+        self.assertFalse(checkbox.isChecked())
+
+    def test_xlsx_thumbnail_option_embeds_image_in_added_column(self) -> None:
+        dlg = self._make_dialog()
+        dlg._summarize = False
+        with tempfile.TemporaryDirectory() as temp_dir:
+            part_path = Path(temp_dir) / "part.CATPart"
+            part_path.touch()
+            output = Path(temp_dir) / "bom.xlsx"
+            pixmap = QPixmap(2, 2)
+            pixmap.fill(QColor("red"))
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            pixmap.save(buffer, "PNG")
+            png_bytes = bytes(buffer.data())
+            rows = [{
+                "Part Number": "P-1",
+                "_filepath": str(part_path),
+                "_is_component": False,
+                "_not_found": False,
+            }]
+            with patch.object(bed3, "read_catia_thumbnail", return_value=png_bytes):
+                dlg._write_xlsx(
+                    output,
+                    ["Part Number"],
+                    {},
+                    rows,
+                    include_thumbnail=True,
+                )
+
+            workbook = bed3.openpyxl.load_workbook(output)
+            worksheet = workbook.active
+            self.assertEqual(worksheet.cell(1, 2).value, "缩略图")
+            self.assertEqual(len(worksheet._images), 1)
+            self.assertEqual(worksheet._images[0].anchor._from.col, 1)
+            self.assertEqual(worksheet._images[0].anchor._from.row, 1)
+            workbook.close()
 
 
 class _FakeAction:

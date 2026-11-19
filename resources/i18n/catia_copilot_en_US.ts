@@ -3337,6 +3337,14 @@ This action cannot be undone.</translation>
             <translation>This part/product is in lightweight mode; attributes cannot be read.</translation>
         </message>
         <message>
+            <source>导出选项</source>
+            <translation>Export Options</translation>
+        </message>
+        <message>
+            <source>包含零件缩略图</source>
+            <translation>Include part thumbnails</translation>
+        </message>
+        <message>
             <source>该零件/产品的文件未被 CATIA 检索到，行内容不可编辑。</source>
             <translation>CATIA could not retrieve the file of this part/product; row content is not editable.</translation>
         </message>
