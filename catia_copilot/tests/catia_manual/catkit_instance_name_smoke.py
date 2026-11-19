@@ -14,7 +14,7 @@ import win32com.client
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def main(installed=False):
+def main(installed=False, exe=None):
     app = win32com.client.GetActiveObject('CATIA.Application')
     previous = app.ActiveDocument if app.Documents.Count else None
     folder = Path(tempfile.mkdtemp(prefix='instance-smoke-', dir=ROOT / '.superpowers'))
@@ -22,6 +22,8 @@ def main(installed=False):
     pending = False
     command = ([str(Path(os.environ['LOCALAPPDATA']) / 'Cat5cli/runtime/cat5cli.exe')]
                if installed else [sys.executable, '-m', 'catia_copilot.cli'])
+    if exe is not None:
+        command = [str(exe)]
 
     def call(*args, expected=0):
         nonlocal pending
@@ -100,4 +102,6 @@ if __name__ == '__main__':
     sys.stdout.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--installed', action='store_true')
-    main(parser.parse_args().installed)
+    parser.add_argument('--exe', type=Path, help='指定候选 EXE 的路径')
+    args = parser.parse_args()
+    main(args.installed, args.exe)

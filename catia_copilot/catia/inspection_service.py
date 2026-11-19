@@ -202,6 +202,91 @@ def product_info(doc=None, active=False, **_kwargs):
     return result
 
 
+def replace_product_component(file_path, node, doc=None, active=False, all_instances=False, **_kwargs):
+    """Replace an assembly component reference using CATIA's native Products API."""
+    app, document = _target(doc, active, 'ProductDocument')
+    if node == '0':
+        raise ValueError('The product root node cannot be replaced')
+    path = Path(file_path)
+    if not path.is_file():
+        raise ValueError(f'Replacement file does not exist: {file_path}')
+    indices = node.split('.')
+    if (len(indices) < 2 or indices[0] != '0' or
+            any(not item.isdigit() or str(int(item)) != item for item in indices)):
+        raise ValueError(f'Invalid product tree node: {node}')
+
+    def resolve_node():
+        owner_definition = document.Product
+        try:
+            for index in map(int, indices[1:-1]):
+                instance = owner_definition.Products.Item(index + 1)
+                owner_definition = instance.ReferenceProduct
+            component = owner_definition.Products.Item(int(indices[-1]) + 1)
+            return owner_definition, component
+        except Exception as exc:
+            raise ValueError(f'Product tree node does not exist: {node}') from exc
+
+    owner_definition, component = resolve_node()
+    old_name = ''
+    try:
+        old_name = str(component.ReferenceProduct.Parent.FullName)
+    except Exception:
+        pass
+    # ReplaceComponent is exposed on the owning Product.Products collection (verified by the manual probe).
+    owner_definition.Products.ReplaceComponent(component, str(path.resolve()), bool(all_instances))
+    try:
+        # Re-resolve the same zero-based path: CATIA may replace/reorder the component object.
+        _, verified_component = resolve_node()
+        actual = str(verified_component.ReferenceProduct.Parent.FullName)
+    except Exception as exc:
+        raise RuntimeError('Replacement completed but the selected node could not be re-resolved and read') from exc
+    if Path(actual).resolve() != path.resolve():
+        raise RuntimeError(f'Replacement read-back mismatch: expected {path.resolve()}, got {actual}')
+    return {'success': True, 'node': node, 'old_source': old_name, 'new_source': actual,
+            'selected_node_verified': True, 'all_instances_requested': bool(all_instances),
+            'other_nodes_verified': False}
+
+
+def _drawing_source_identity(generative_document):
+    current = generative_document
+    for _ in range(32):
+        if current is None:
+            break
+        if get_document_type(current) in ('PartDocument', 'ProductDocument'):
+            return describe_document(current).to_dict()
+        try:
+            current = current.Parent
+        except Exception:
+            break
+    raise RuntimeError('The generative view source could not be resolved to a part or product document')
+
+
+def set_drawing_source(doc=None, active=False, sheet=None, view=None, source_doc=None, **_kwargs):
+    app, drawing = _target(doc, active, 'DrawingDocument')
+    target = resolve_document(app, source_doc)
+    source_type = get_document_type(target)
+    if source_type not in ('PartDocument', 'ProductDocument'):
+        raise ValueError('The source document must be a CATPart or CATProduct')
+    try:
+        sheet_object = drawing.Sheets.Item(sheet)
+        view_object = sheet_object.Views.Item(view)
+    except Exception as exc:
+        raise ValueError(f'Drawing sheet or view does not exist: {sheet}/{view}') from exc
+    if not view_object.IsGenerative():
+        raise ValueError('The selected drawing view is not generative')
+    behavior = view_object.GenerativeBehavior
+    # CATIA ignores Document reassignment while the old view links remain; clear only this view's
+    # generative links before setting its loaded source document (verified on a CATIA fixture).
+    view_object.GenerativeLinks.RemoveAllLinks()
+    behavior.Document = target if source_type == 'PartDocument' else target.Product
+    behavior.Update()
+    identity = _drawing_source_identity(behavior.Document)
+    expected = describe_document(target).to_dict()
+    if identity.get('full_name') != expected['full_name'] or identity.get('name') != expected['name']:
+        raise RuntimeError('Drawing source read-back mismatch')
+    return {'success': True, 'sheet': str(sheet), 'view': str(view), 'source_document': expected}
+
+
 def merge_mass_files(files, output_file, overwrite='error', **_kwargs):
     from .mass_props_collect import load_rows, merge_rows, save_rows
     if not isinstance(files, list) or not files:
@@ -289,6 +374,8 @@ inspection_tools = {
     'drawing_info': drawing_info,
     'product_info': product_info,
     'product_tree': product_tree,
+    'replace_product_component': replace_product_component,
+    'set_drawing_source': set_drawing_source,
     'merge_mass_files': merge_mass_files,
     'remeasure_product_part': remeasure_product_part,
     'export_product_step': export_product_step,

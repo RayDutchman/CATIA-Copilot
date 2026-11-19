@@ -92,8 +92,9 @@ async function install(args) {
     }
     const extracted = path.join(temp, 'bundle');
     const quote = value => "'" + value.replaceAll("'", "''") + "'";
+    // Node可能继承PowerShell 7模块路径；明确加载当前Windows PowerShell自带模块。
     execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(extracted)}`], { stdio: 'inherit' });
+      `$ErrorActionPreference='Stop'; Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Archive/Microsoft.PowerShell.Archive.psd1'); Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(extracted)}`], { stdio: 'inherit' });
     const skillsDir = options['--skills-dir'] ? path.resolve(options['--skills-dir']) : path.join(os.homedir(), '.agents', 'skills');
     const installed = installDirectory(extracted, installHome(), skillsDir, selectedVersion);
     const executable = selectedExecutable();

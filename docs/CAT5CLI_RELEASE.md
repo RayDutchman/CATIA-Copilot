@@ -4,6 +4,8 @@ CLI 独立版本从 `catia_copilot/cli/version.py` 读取，须与 `packages/cat
 
 ## 本地准备
 
+2026-11-19 的 beta.2 本机候选验收见 [通用可靠性验收](superpowers/benchmarks/2026-11-19-cat5cli-polish.md)。下文 beta.1 文件名与标签为首版示例；新发布须替换为实际版本，不能覆盖旧标签。候选验证不表示已公开发布。
+
 ```powershell
 python -m unittest discover -s catia_copilot/tests -p 'test_*.py' -q
 node --test packages/cat5cli/test/installer.cjs

@@ -152,6 +152,116 @@ class TestInspection(TestDocumentOperations):
 
 
 class TestProductOperations(TestDocumentOperations):
+    def test_replace_component_targets_real_parent_definition_and_verifies_readback(self):
+        self.b.FullName = r'C:\B.CATProduct'
+        source = NS(Parent=NS(FullName=r'C:\old.CATPart'))
+        component = NS(Name='Leaf.1', ReferenceProduct=source)
+        leaf_products = Collection(component)
+        leaf_products.ReplaceComponent = Mock(side_effect=lambda old, path, scope: setattr(source.Parent, 'FullName', path))
+        sub_definition = NS(Products=leaf_products)
+        sub_instance = NS(Name='Sub.1', ReferenceProduct=sub_definition)
+        root = NS(Products=Collection(sub_instance))
+        self.b.Product = root
+        self.b.Product = root
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'new.CATPart'
+            path.touch()
+            result = self.service.replace_product_component(str(path), doc='B', node='0.0.0')
+        self.assertTrue(result['success'])
+        leaf_products.ReplaceComponent.assert_called_once()
+        self.assertTrue(result['selected_node_verified'])
+        self.assertFalse(result['all_instances_requested'])
+        self.assertFalse(result['other_nodes_verified'])
+
+    def test_replacement_rejects_noncanonical_node_paths(self):
+        self.b.FullName = r'C:\B.CATProduct'
+        self.b.Product = NS(Products=Collection())
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'new.CATPart'
+            path.touch()
+            for node in ('0.00', '0..1', '1.0'):
+                with self.subTest(node=node), self.assertRaisesRegex(ValueError, 'Invalid product tree node'):
+                    self.service.replace_product_component(str(path), doc='B', node=node)
+
+    def test_replacement_fails_on_com_error_or_unverified_readback(self):
+        self.b.FullName = r'C:\B.CATProduct'
+        for mode in ('com_error', 'mismatch'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temp:
+                path = Path(temp) / 'new.CATPart'
+                path.touch()
+                source = NS(Parent=NS(FullName=r'C:\old.CATPart'))
+                component = NS(Name='Leaf.1', ReferenceProduct=source)
+                products = Collection(component)
+                if mode == 'com_error':
+                    products.ReplaceComponent = Mock(side_effect=RuntimeError('CATIA COM failure'))
+                else:
+                    products.ReplaceComponent = Mock()
+                self.b.Product = NS(Products=products)
+                with self.assertRaisesRegex(RuntimeError, 'CATIA COM failure' if mode == 'com_error' else 'read-back mismatch'):
+                    self.service.replace_product_component(str(path), doc='B', node='0.0')
+
+    def test_replacement_rejects_root_node(self):
+        product_doc = document('Assembly', r'C:\Assembly.CATProduct', 'ProductDocument')
+        self.app.Documents = Collection(product_doc)
+        with self.assertRaisesRegex(ValueError, 'root'):
+            self.service.replace_product_component('missing.CATPart', doc='Assembly', node='0')
+
+    def test_drawing_source_set_uses_exact_view_and_source_com_object(self):
+        target = document('Model', r'C:\Model.CATProduct', 'ProductDocument')
+        target.Product = NS(Name='Model.Product')
+        remove_links = Mock()
+        view = NS(Name='Front', IsGenerative=lambda: True,
+                  GenerativeBehavior=NS(Document=None, Update=Mock()),
+                  GenerativeLinks=NS(RemoveAllLinks=remove_links))
+        sheet = NS(Name='Sheet.1', Views=Collection(view))
+        sheets = Collection(sheet)
+        sheets.Item = lambda key: sheet if key == 'Sheet.1' else Collection.Item(sheets, key)
+        views = sheet.Views
+        views.Item = lambda key: view if key == 'Front' else Collection.Item(views, key)
+        drawing = document('Drawing', r'C:\Drawing.CATDrawing', 'DrawingDocument')
+        drawing.Sheets = sheets
+        self.app.Documents = Collection(drawing, target)
+        with patch('catia_copilot.catia.inspection_service._drawing_source_identity', return_value={'full_name': target.FullName, 'name': target.Name}):
+            result = self.service.set_drawing_source(doc='Drawing', sheet='Sheet.1', view='Front', source_doc='Model')
+        self.assertIs(view.GenerativeBehavior.Document, target.Product)
+        remove_links.assert_called_once_with()
+        self.assertTrue(result['success'])
+
+    def test_drawing_source_set_accepts_part_document_and_checks_readback(self):
+        target = document('Part', r'C:\Part.CATPart', 'PartDocument')
+        view = NS(Name='Front', IsGenerative=lambda: True,
+                  GenerativeBehavior=NS(Document=None, Update=Mock()),
+                  GenerativeLinks=NS(RemoveAllLinks=Mock()))
+        sheet = NS(Name='Sheet.1', Views=Collection(view))
+        sheets = Collection(sheet)
+        sheets.Item = lambda key: sheet if key == 'Sheet.1' else Collection.Item(sheets, key)
+        sheet.Views.Item = lambda key: view if key == 'Front' else Collection.Item(sheet.Views, key)
+        drawing = document('Drawing', r'C:\Drawing.CATDrawing', 'DrawingDocument')
+        drawing.Sheets = sheets
+        self.app.Documents = Collection(drawing, target)
+        identity = {'full_name': target.FullName, 'name': target.Name}
+        with patch('catia_copilot.catia.inspection_service._drawing_source_identity', return_value=identity):
+            result = self.service.set_drawing_source(doc='Drawing', sheet='Sheet.1', view='Front', source_doc='Part')
+        self.assertIs(view.GenerativeBehavior.Document, target)
+        self.assertTrue(result['success'])
+
+    def test_drawing_source_mismatch_is_not_reported_as_success(self):
+        target = document('Part', r'C:\Part.CATPart', 'PartDocument')
+        view = NS(Name='Front', IsGenerative=lambda: True,
+                  GenerativeBehavior=NS(Document=None, Update=Mock()),
+                  GenerativeLinks=NS(RemoveAllLinks=Mock()))
+        sheet = NS(Name='Sheet.1', Views=Collection(view))
+        sheets = Collection(sheet)
+        sheets.Item = lambda key: sheet if key == 'Sheet.1' else Collection.Item(sheets, key)
+        sheet.Views.Item = lambda key: view if key == 'Front' else Collection.Item(sheet.Views, key)
+        drawing = document('Drawing', r'C:\Drawing.CATDrawing', 'DrawingDocument')
+        drawing.Sheets = sheets
+        self.app.Documents = Collection(drawing, target)
+        wrong_identity = {'full_name': r'C:\Wrong.CATPart', 'name': 'Wrong.CATPart'}
+        with patch('catia_copilot.catia.inspection_service._drawing_source_identity', return_value=wrong_identity):
+            with self.assertRaisesRegex(RuntimeError, 'read-back mismatch'):
+                self.service.set_drawing_source(doc='Drawing', sheet='Sheet.1', view='Front', source_doc='Part')
+
     def test_product_tree_reports_recursive_read_error(self):
         from catia_copilot.catia import assembly_reader
         self.b.FullName = r'C:\B.CATProduct'

@@ -44,6 +44,16 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertEqual(calls, [])
 
+    def test_reference_operations_dispatch_and_schema(self):
+        self.assertEqual(self.invoke(['product', 'component', 'replace', '--doc', 'Assembly', '--node', '0.1',
+                                      '--file-path', 'D:/part.CATPart', '--all-instances'])[2],
+                         [('replace_product_component', {'doc': 'Assembly', 'node': '0.1',
+                                                         'file_path': 'D:/part.CATPart', 'all_instances': True})])
+        self.assertEqual(self.invoke(['drawing', 'source', 'set', '--sheet', 'Sheet.1', '--view', 'Front',
+                                      '--source-doc', 'Part'])[2],
+                         [('set_drawing_source', {'sheet': 'Sheet.1', 'view': 'Front', 'source_doc': 'Part'})])
+        self.assertEqual(self.invoke(['schema', 'product', 'component', 'replace'])[2], [])
+
     def test_partial_inspection_is_not_success_exit(self):
         self.assertEqual(self.invoke(['part', 'tree'], {'complete': False, 'errors': [{'error': 'unreadable'}]})[0], 1)
 

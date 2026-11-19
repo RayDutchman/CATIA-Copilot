@@ -11,7 +11,7 @@ description: Use when operating CATIA V5 on Windows through Cat5cli, including C
 
 CATIA 与调用 CLI 的宿主使用同一 Windows 用户、同一交互会话，优先都以普通权限运行。连接异常的 UAC 排查见 [执行与任务接续](references/execution.md)。
 
-预览版本为 `0.1.0-beta.1`。安装器默认添加用户 PATH，优先直接使用 `cat5cli`。安装根目录名为 `Cat5cli`，可执行文件为 `runtime/cat5cli.exe`；安装后已有终端或 AI 宿主需重新打开以获取新环境；若当前进程尚未更新 PATH，或使用了 `--no-path`，可临时直接调用：
+使用 `cat5cli --version` 确认实际版本。安装器默认添加用户 PATH，优先直接使用 `cat5cli`。安装根目录名为 `Cat5cli`，可执行文件为 `runtime/cat5cli.exe`；安装后已有终端或 AI 宿主需重新打开以获取新环境；若当前进程尚未更新 PATH，或使用了 `--no-path`，可临时直接调用：
 
 ```powershell
 $homeDir = if ($env:CAT5CLI_HOME) { $env:CAT5CLI_HOME } else { Join-Path $env:LOCALAPPDATA 'Cat5cli' }
@@ -29,6 +29,7 @@ $cat5cli = Join-Path $homeDir 'runtime/cat5cli.exe'
 |---|---|
 | 文档定位、属性、质量、模型树、图纸、导出、模板 | [操作路由与对象边界](references/tools.md) |
 | BOM 完整/层级/汇总、共享或实例字段编辑、BOM 表格导出 | [BOM 操作](references/bom.md) |
+| 装配组件替换、文件改名后重连、图纸生成源重绑 | [引用修改](references/references.md) |
 | 新建几何、组合建模、编写或修复 `build(ctx)` | [脚本建模](references/modeling.md) |
 | JSON 输入输出、判断执行结果、`running/busy/waiting_for_dialog`、处理弹窗 | [执行与任务接续](references/execution.md) |
 

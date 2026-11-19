@@ -253,10 +253,19 @@ class TaskManager:
             dialogs = self.scanner(scope['pids'])
         except Exception as exc:
             # Win32 窗口可在枚举与包装之间销毁；观察失败不代表业务进程失败。
+            terminal = read_json(directory / 'result.json')
+            if terminal is not None:
+                self._cleanup_scheduler(task_id, directory)
+                return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
             return {'status': 'running', 'task_id': task_id,
                     'dialog_monitor': 'scan_error', 'monitor_message': str(exc),
                     'log_path': str(directory / 'worker.log'),
                     'next': 'cat5cli task wait --task ' + task_id}
+        # 扫描期间 worker 可能已经完成；业务终态优先于残留或无关窗口。
+        terminal = read_json(directory / 'result.json')
+        if terminal is not None:
+            self._cleanup_scheduler(task_id, directory)
+            return {'status': 'completed', 'task_id': task_id, 'result': terminal['result']}
         if dialogs:
             snapshot = dialogs[0]
             write_json(directory / 'dialog.json', snapshot)

@@ -27,7 +27,17 @@ inspection_schema = [
     schema('drawing_info', 'Read drawing sheets, views, and each view source document (GenerativeBehavior.Document); does not enumerate all underlying geometry links; unreadable items are returned in errors'),
     schema('product_info', 'Get root assembly properties, position, and direct child instance count'),
     schema('product_tree', 'Read the assembly instance tree; repeated references remain separate instances. Node paths become invalid when the tree changes',
-           {'node': {'type': 'string', 'description': 'Optional subtree path, for example 0.0; obtain it from the tree result'}}),
+            {'node': {'type': 'string', 'description': 'Optional subtree path, for example 0.0; obtain it from the tree result'}}),
+    schema('replace_product_component', 'Replace the selected component reference in an open CATProduct. The file must exist; the root cannot be replaced. Default scope is the component definition and can affect occurrences sharing it. Readback verifies only the selected node; all_instances reports the CATIA request, not verification of every occurrence. Changes are not saved automatically.', {
+        'node': {'type': 'string', 'description': 'Zero-based product tree node path, excluding root 0'},
+        'file_path': {'type': 'string', 'description': 'Existing CATPart or CATProduct replacement file'},
+        'all_instances': {'type': 'boolean', 'description': 'Request CATIA ReplaceComponent all-instances mode; defaults to false'},
+    }, ['node', 'file_path']),
+    schema('set_drawing_source', 'Set a generative drawing view source to an already open CATPart or CATProduct. Updates the view but does not save either document.', {
+        'sheet': {'type': 'string', 'description': 'Exact sheet name'},
+        'view': {'type': 'string', 'description': 'Exact view name'},
+        'source_doc': {'type': 'string', 'description': 'Key, path, or unambiguous name of an open CATPart or CATProduct'},
+    }, ['sheet', 'view', 'source_doc']),
     schema('merge_mass_files', 'Offline-merge MPD files in the same root coordinate system using existing mass rollup; coordinates are not transformed', {
         'files': {'type': 'array', 'items': {'type': 'string'}, 'description': 'Non-empty array of MPD paths or an @JSON file'},
         'output_file': {'type': 'string', 'description': 'Output MPD path'},

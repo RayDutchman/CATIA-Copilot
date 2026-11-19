@@ -41,6 +41,8 @@ COMMANDS = {
     ('drawing', 'info'): 'drawing_info',
     ('product', 'info'): 'product_info',
     ('product', 'tree'): 'product_tree',
+    ('product', 'component', 'replace'): 'replace_product_component',
+    ('drawing', 'source', 'set'): 'set_drawing_source',
     ('product', 'mass', 'merge'): 'merge_mass_files',
     ('product', 'mass', 'remeasure'): 'remeasure_product_part',
     ('product', 'export', 'step'): 'export_product_step',

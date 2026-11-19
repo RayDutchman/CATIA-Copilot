@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,21 +31,21 @@ def main():
     version = app_version()
     output = args.output.resolve()
     version_file = ROOT / 'catia_copilot/cli/_build_version.json'
+    report_file = output / 'compilation-report.xml'
     command = [sys.executable, '-m', 'nuitka', '--mode=standalone', '--windows-console-mode=force',
-               '--output-filename=cat5cli.exe', '--output-dir='+str(output),
+               '--output-filename=cat5cli.exe', '--output-dir='+str(output), '--report='+str(report_file),
                '--include-module=comtypes.persist', '--include-module=comtypes.typeinfo',
                '--include-module=comtypes.automation', '--include-module=comtypes.stream',
-               '--include-package=comtypes.gen',
-               '--nofollow-import-to=PySide6,PyQt5,nuitka,pytest,win32com.test,win32com.demos,comtypes.test',
+               '--include-module=comtypes.gen', '--include-module=comtypes._tlib_version_checker',
+               '--include-module=comtypes.client._generate',
+               '--nofollow-import-to=PySide6,PyQt5,nuitka,pytest,win32com.test,win32com.demos,comtypes.test,comtypes.gen.*',
                '--include-data-files='+str(version_file)+'=catia_copilot/cli/_build_version.json',
                '--assume-yes-for-downloads', str(ROOT / 'cat5cli.py')]
     if args.dry_run:
         print(json.dumps(command, ensure_ascii=False, indent=2))
         return 0
     output.mkdir(parents=True, exist_ok=True)
-    # pywinauto 导入 UIA 时会动态加载 comtypes 命名空间和类型库包装。
-    # 只强制纳入动态命名空间及生成包装；其余模块按实际导入收集。
-    subprocess.run([sys.executable, '-c', 'import sys; sys.coinit_flags=2; import pywinauto'], cwd=ROOT, check=True)
+    # 仅打包gen命名空间及代码生成器；禁止把本机类型库包装器编译进EXE。
     old_version = version_file.read_bytes() if version_file.exists() else None
     try:
         version_file.write_text(json.dumps({'version': version}), encoding='utf-8')
@@ -55,6 +56,15 @@ def main():
         else:
             version_file.write_bytes(old_version)
     distribution = output / 'cat5cli.dist'
+    modules = ET.parse(report_file).getroot().findall('module')
+    generated = [module.attrib['name'] for module in modules
+                 if module.attrib.get('name', '').startswith('comtypes.gen.')]
+    if generated:
+        raise RuntimeError(f'Build-machine COM wrappers must not be bundled: {generated}')
+    (output / 'comtypes-build-check.json').write_text(json.dumps({
+        'version': version, 'bundled_generated_wrappers': generated,
+        'runtime_cache': 'CAT5CLI_HOME/comtypes_cache',
+    }, indent=2), encoding='utf-8')
     subprocess.run([str(distribution / 'cat5cli.exe'), '--help'], check=True)
     subprocess.run([str(distribution / 'cat5cli.exe'), '--version'], check=True)
     subprocess.run([str(distribution / 'cat5cli.exe'), 'schema', 'document', 'save'], check=True)
@@ -81,6 +91,7 @@ def main():
     for name in ('cat5cli.build', 'cat5cli.dist', 'cat5cli.onefile-build'):
         if (output / name).exists():
             shutil.rmtree(output / name)
+    report_file.unlink(missing_ok=True)
     print(archive)
     return 0
 

@@ -75,6 +75,23 @@ class TestTasks(unittest.TestCase):
         write_json(self.manager.root / blocked['task_id'] / 'result.json', {'result': {'rows': []}})
         self.assertEqual(self.manager.wait(blocked['task_id']), {'rows': []})
 
+    def test_result_written_during_dialog_scan_wins_over_window(self):
+        def scan(pids):
+            write_json(self.manager.root / self.launches[0] / 'result.json',
+                       {'result': {'success': True}})
+            return [self.dialog]
+        self.manager.scanner = scan
+        self.assertEqual(self.manager.start('fixture', {}, wait_seconds=0), {'success': True})
+        self.assertFalse((self.manager.root / self.launches[0] / 'dialog.json').exists())
+
+    def test_result_written_during_failed_scan_wins_over_monitor_error(self):
+        def scan(pids):
+            write_json(self.manager.root / self.launches[0] / 'result.json',
+                       {'result': {'success': True}})
+            raise RuntimeError('Window disappeared')
+        self.manager.scanner = scan
+        self.assertEqual(self.manager.start('fixture', {}, wait_seconds=0), {'success': True})
+
     def test_invalid_task_id_cannot_escape_task_directory(self):
         with self.assertRaises(ValueError):
             self.manager.status('../elsewhere')
