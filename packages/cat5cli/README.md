@@ -2,7 +2,7 @@
 
 Windows-native CATIA V5 tools for humans and AI agents. This npm package is a thin installer and launcher; the business runtime is a separate Nuitka standalone ZIP and does not require system Python.
 
-Initial preview: **0.1.0-beta.1**. The CLI has its own version, independent of the CATIA Copilot GUI.
+Current preview: **0.1.0-beta.2**. The CLI has its own version, independent of the CATIA Copilot GUI.
 
 ## Requirements
 
@@ -31,13 +31,13 @@ There is no postinstall script. npm installation alone installs the launcher, no
 For offline installation, use local artifacts:
 
 ```powershell
-npx --yes --package .\raydutchman-cat5cli-0.1.0-beta.1.tgz cat5cli install --from-zip .\cat5cli-0.1.0-beta.1-windows-x64.zip --sha256 <HASH> --skills-dir "$env:USERPROFILE/.config/opencode/skills"
+npx --yes --package .\raydutchman-cat5cli-0.1.0-beta.2.tgz cat5cli install --from-zip .\cat5cli-0.1.0-beta.2-windows-x64.zip --sha256 <HASH> --skills-dir "$env:USERPROFILE/.config/opencode/skills"
 ```
 
 From this repository:
 
 ```powershell
-node packages/cat5cli/bin/cat5cli.cjs install --from-zip dist/cat5cli/cat5cli-0.1.0-beta.1-windows-x64.zip --skills-dir "$env:USERPROFILE/.config/opencode/skills"
+node packages/cat5cli/bin/cat5cli.cjs install --from-zip dist/cat5cli/cat5cli-0.1.0-beta.2-windows-x64.zip --skills-dir "$env:USERPROFILE/.config/opencode/skills"
 ```
 
 The fixed runtime location is `%LOCALAPPDATA%/Cat5cli/runtime/cat5cli.exe`. `CAT5CLI_HOME` overrides the installation root; `CAT5CLI_TASKS_DIR` overrides task storage. Installation updates the user PATH without duplicating entries. Reopen existing terminals/agents afterward. `--no-path` leaves PATH unchanged for isolated tests.
@@ -51,7 +51,7 @@ Repeated installation replaces runtime in place and preserves task records. Fini
 The matching Skill can be installed separately from the release tag:
 
 ```powershell
-npx skills add https://github.com/RayDutchman/CATIA-Copilot/tree/cat5cli-v0.1.0-beta.1/skills/cat5cli --skill cat5cli -g -a opencode
+npx skills add https://github.com/RayDutchman/CATIA-Copilot/tree/cat5cli-v0.1.0-beta.2/skills/cat5cli --skill cat5cli -g -a opencode
 ```
 
 The separate Skills CLI currently requires Node.js 22.20+. Company-specific BOM rules belong in a separate private Skill. The public Skill describes CLI usage and supports the 0.1.x preview contract; consult the installed command schema for exact capabilities.
